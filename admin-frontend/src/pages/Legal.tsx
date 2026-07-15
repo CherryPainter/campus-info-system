@@ -30,11 +30,11 @@ export default function Legal() {
         <Title level={4}>一、版权声明</Title>
         <Paragraph>
           1.1 本系统（校园信息聚合与智能推送系统）的名称、标识、界面设计、源代码、
-          文档以及其他所有相关内容的著作权和相关知识产权归 Campus Notify Team 所有，
+          文档以及其他所有相关内容的著作权和相关知识产权归 CherryPainter 所有，
           受《中华人民共和国著作权法》、《计算机软件保护条例》等法律法规的保护。
         </Paragraph>
         <Paragraph>
-          1.2 未经 Campus Notify Team 书面许可，任何单位或个人不得以任何方式复制、修改、
+          1.2 未经 CherryPainter 书面许可，任何单位或个人不得以任何方式复制、修改、
           传播、反编译、反向工程或以其他方式使用本系统的任何组成部分。
         </Paragraph>
         <Paragraph>
@@ -43,7 +43,7 @@ export default function Legal() {
 
         <Title level={4}>二、名称与标识</Title>
         <Paragraph>
-          本系统中使用的名称和标识由 Campus Notify Team 设计和使用。
+          本系统中使用的名称和标识由 CherryPainter 设计和使用。
           未经授权，任何单位或个人不得在可能导致公众混淆的情况下使用与本系统相同或近似的名称与标识。
         </Paragraph>
 
@@ -94,7 +94,7 @@ export default function Legal() {
 
         <Title level={4}>六、链接政策</Title>
         <Paragraph>
-          6.1 未经 Campus Notify Team 书面同意，任何网站或平台不得建立指向本系统的超链接。
+          6.1 未经 CherryPainter 书面同意，任何网站或平台不得建立指向本系统的超链接。
         </Paragraph>
         <Paragraph>
           6.2 如需在您的网站或应用中引用本系统的信息，应当注明信息来源，
@@ -130,7 +130,7 @@ export default function Legal() {
 
         <Divider />
         <Paragraph type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
-          校园信息聚合与智能推送系统 · Campus Notify Team · © 2026
+          校园信息聚合与智能推送系统 · CherryPainter · © 2026
         </Paragraph>
       </Card>
     </div>

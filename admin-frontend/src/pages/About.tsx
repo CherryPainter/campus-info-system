@@ -249,7 +249,7 @@ export default function About() {
       <div style={{ textAlign: 'center', marginTop: 32, color: '#999', fontSize: 13 }}>
         <Text type="secondary">校园信息聚合与智能推送系统 v{APP_VERSION}</Text>
         <br />
-        <Text type="secondary">由 Campus Notify Team 维护 &nbsp;|&nbsp; © 2026</Text>
+        <Text type="secondary">由 CherryPainter 维护 &nbsp;|&nbsp; © 2026</Text>
       </div>
     </div>
   );

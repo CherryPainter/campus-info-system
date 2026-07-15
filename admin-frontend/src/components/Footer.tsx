@@ -93,11 +93,11 @@ export default function Footer({ style }: FooterProps) {
         </span>
         <span style={{ fontSize: 12, color: '#d9d9d9' }}>|</span>
         <span style={{ fontSize: 12, color: '#999' }}>
-          技术支持：Campus Notify Team
+          技术支持：CherryPainter
         </span>
         <span style={{ fontSize: 12, color: '#d9d9d9' }}>|</span>
         <span style={{ fontSize: 12, color: '#999' }}>
-          © 2026 Campus Notify Team. All rights reserved.
+          © 2026 CherryPainter. All rights reserved.
         </span>
       </div>
 

@@ -20,7 +20,7 @@ export default function Terms() {
         <Title level={4}>一、协议说明</Title>
         <Paragraph>
           欢迎使用<Text strong>校园信息聚合与智能推送系统</Text>（以下简称"本系统"）。
-          本协议是您（以下简称"用户"）与本系统开发团队（Campus Notify Team）之间关于使用本系统服务所订立的协议。
+          本协议是您（以下简称"用户"）与本系统开发团队（CherryPainter）之间关于使用本系统服务所订立的协议。
         </Paragraph>
         <Paragraph>
           请您在注册和使用本系统前仔细阅读本协议。如果您不同意本协议的任何条款，请勿注册或使用本系统。

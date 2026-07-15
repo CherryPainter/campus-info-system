@@ -182,7 +182,7 @@ export default function Cookies() {
 
         <Divider />
         <Paragraph type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
-          校园信息聚合与智能推送系统 · Campus Notify Team · © 2026
+          校园信息聚合与智能推送系统 · CherryPainter · © 2026
         </Paragraph>
       </Card>
     </div>

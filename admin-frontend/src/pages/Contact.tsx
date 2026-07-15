@@ -28,9 +28,9 @@ export default function Contact() {
             >
               <div style={{ textAlign: 'center' }}>
                 <TeamOutlined style={{ fontSize: 40, color: '#1890ff', marginBottom: 12 }} />
-                <Title level={5}>由 Campus Notify Team 维护</Title>
+                <Title level={5}>由 CherryPainter 维护</Title>
                 <Paragraph type="secondary" style={{ fontSize: 13 }}>
-                  本系统由 Campus Notify Team 开发和维护。如您在使用过程中遇到技术问题或系统故障，欢迎通过以下方式反馈。
+                  本系统由 CherryPainter 开发和维护。如您在使用过程中遇到技术问题或系统故障，欢迎通过以下方式反馈。
                 </Paragraph>
               </div>
             </Card>
