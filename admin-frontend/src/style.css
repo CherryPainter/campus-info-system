@@ -1,0 +1,216 @@
+/* ========== 课程管理页面移动端优化 ========== */
+@media (max-width: 768px) {
+  /* 课程管理页面 - 抵消内容区 12px 边距，保持课程表全宽 */
+  .course-page {
+    padding: 0 !important;
+    margin-inline: -12px !important;
+  }
+
+  .course-card {
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  .course-card .ant-card-body {
+    padding: 12px !important;
+  }
+
+  /* 课程表表格移动端优化 */
+  .course-page table {
+    font-size: 11px;
+  }
+
+  .course-page th,
+  .course-page td {
+    padding: 4px 2px !important;
+  }
+
+  /* 课程表内容区域 */
+  .course-page .ant-card-extra {
+    flex-wrap: wrap;
+    justify-content: center !important;
+  }
+
+  /* 移动端按钮组优化 */
+  .course-page .ant-space {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ========== 全局响应式样式 ========== */
+
+/* 移动端：表格横向滚动 */
+@media (max-width: 768px) {
+  .ant-table {
+    font-size: 13px;
+  }
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td {
+    padding: 8px 6px !important;
+    white-space: nowrap;
+  }
+  .ant-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Modal 在小屏接近全屏 */
+  .ant-modal {
+    max-width: calc(100vw - 16px) !important;
+    margin: 8px auto;
+    top: 16px;
+  }
+  .ant-modal-content {
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+  }
+  .ant-modal-body {
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+  }
+
+  /* Drawer 撑满宽度 */
+  .ant-drawer-content-wrapper {
+    max-width: 100vw !important;
+  }
+
+  /* 卡片间距缩小 */
+  .ant-card {
+    margin-bottom: 12px !important;
+  }
+
+  /* ProLayout 外层容器去掉默认横向边距（避免与内容区叠加造成双倍留白） */
+  .ant-pro-page-container .ant-pro-page-container-children-container,
+  .ant-pro-page-container .ant-pro-grid-content,
+  .ant-pro-layout-content,
+  .ant-pro-layout .ant-pro-layout-container > main {
+    padding-inline: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* 内容区与页头标题两侧留出 12px 边距，避免手机端内容贴边 */
+  .ant-pro-page-container-children-content,
+  .ant-pro-page-container .ant-pro-page-container-warp-page-header,
+  .ant-pro-page-container .ant-page-header {
+    padding-inline: 12px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  /* 表单全宽 */
+  .ant-form-item {
+    margin-bottom: 12px;
+  }
+
+  /* 描述列表紧凑 */
+  .ant-descriptions-item-label,
+  .ant-descriptions-item-content {
+    padding: 8px !important;
+  }
+
+  /* Tabs 紧凑 */
+  .ant-tabs-tab {
+    padding: 8px 12px !important;
+    font-size: 13px;
+  }
+
+  /* Statistic 组件紧凑 */
+  .ant-statistic-title {
+    font-size: 12px;
+  }
+  .ant-statistic-content {
+    font-size: 20px;
+  }
+
+  /* 按钮组紧凑 */
+  .ant-space {
+    gap: 4px !important;
+    flex-wrap: wrap;
+  }
+
+  /* Collapse 面板紧凑 */
+  .ant-collapse-header {
+    padding: 10px 12px !important;
+  }
+  .ant-collapse-content-box {
+    padding: 8px !important;
+  }
+}
+
+/* 中等屏幕：表格适度紧凑 */
+@media (max-width: 992px) and (min-width: 769px) {
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td {
+    padding: 10px 8px !important;
+  }
+}
+
+/* 大屏：表格宽松 */
+@media (min-width: 1200px) {
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td {
+    padding: 12px 16px;
+  }
+}
+
+/* ========== 任务管理页面 ========== */
+.tasks-page {
+  padding: 24px;
+}
+
+@media (max-width: 768px) {
+  /* 横向留白交由 PageContainer 内容区统一处理，避免双倍边距 */
+  .tasks-page {
+    padding: 16px 0;
+  }
+}
+
+/* ========== 任务按钮 ========== */
+.task-action-btn {
+  border-radius: 6px !important;
+  font-weight: 500 !important;
+  border-color: #1890ff !important;
+  color: #1890ff !important;
+  transition: all 0.2s ease !important;
+  cursor: pointer !important;
+}
+
+.task-action-btn:hover:not(:disabled) {
+  background: #e6fffb !important;
+  border-color: #13c2c2 !important;
+  color: #08979c !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(19, 194, 194, 0.3);
+}
+
+@media (max-width: 768px) {
+  .task-action-btn {
+    padding: 4px 10px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* ========== ProLayout 移动端侧边栏遮罩修复 ==========
+ * 根因：移动端 ProLayout 把侧边栏渲染成 antd Drawer，且用 getContainer=false
+ * 内联渲染（不 Portal 到 body）。此时 antd 会给 .ant-drawer 加上 .ant-drawer-inline，
+ * 把定位从 fixed 改成 absolute。绝对定位元素随文档一起滚动，抽屉/遮罩被锚定在
+ * 文档顶部——页面滚到底部后再打开侧边栏，遮罩就停留在顶部滑出可视区，看起来"遮罩没了"。
+ * 解决：强制内联 Drawer 回到 fixed 定位，使其始终相对视口，滚动到任何位置都能覆盖全屏。
+ */
+@media (max-width: 768px) {
+  .ant-drawer.ant-drawer-inline {
+    position: fixed !important;
+  }
+}
+
+/* ========== 全局水平溢出防护 ==========
+ * 防止任何页面在大屏下出现不必要的水平滚动条
+ * Table 内部滚动不受影响（scroll.x 由 Table 容器自身处理）
+ */
+.ant-pro-layout-content,
+.ant-pro-page-container-children-content,
+.ant-pro-grid-content {
+  overflow-x: hidden !important;
+}

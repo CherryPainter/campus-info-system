@@ -1,0 +1,50 @@
+[
+  {
+    "id": "course_reminder_before_class",
+    "name": "上课前提醒",
+    "type": "course_reminder",
+    "sub_type": "before_class",
+    "msg_type": "markdown",
+    "content": "# 课程提醒\n\n> **课程名称**：{{course_name}}\n> **上课时间**：{{start_time}} - {{end_time}}\n> **授课教师**：{{teacher}}\n> **上课地点**：{{classroom}}\n\n请提前<font color=\"warning\">{{minutes_before}}分钟</font>到达教室！"
+  },
+  {
+    "id": "course_reminder_before_end_class",
+    "name": "即将下课提醒",
+    "type": "course_reminder",
+    "sub_type": "before_end_class",
+    "msg_type": "markdown",
+    "content": "# 即将下课\n\n> **当前课程**：{{course_name}}\n> **下课时间**：{{end_time}}\n\n还有<font color=\"warning\">{{minutes_before_end}}分钟</font>下课。\n\n{{next_course_block}}"
+  },
+  {
+    "id": "course_reminder_after_class",
+    "name": "上课后确认",
+    "type": "course_reminder",
+    "sub_type": "after_class",
+    "msg_type": "markdown",
+    "content": "# 上课确认\n\n> **课程名称**：{{course_name}}\n> **上课时间**：{{start_time}} - {{end_time}}\n\n课程已开始，请专注听讲！"
+  },
+  {
+    "id": "schedule_summary_daily",
+    "name": "每日课表",
+    "type": "schedule_summary",
+    "sub_type": "daily",
+    "msg_type": "markdown",
+    "content": "# 今日课程安排\n\n{{courses_list}}\n\n祝学习愉快！"
+  },
+  {
+    "id": "schedule_summary_weekly",
+    "name": "每周课表",
+    "type": "schedule_summary",
+    "sub_type": "weekly",
+    "msg_type": "markdown",
+    "content": "# 本周课程安排\n\n{{courses_list}}\n\n祝本周学习顺利！"
+  },
+  {
+    "id": "schedule_summary_daily_no_class",
+    "name": "今日无课",
+    "type": "schedule_summary",
+    "sub_type": "daily_no_class",
+    "msg_type": "markdown",
+    "content": "# 今日课程安排\n\n> 今天没有课程安排，好好休息吧！"
+  }
+]

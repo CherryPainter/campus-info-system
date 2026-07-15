@@ -1,0 +1,87 @@
+# ============================================================
+# .gitignore - Push System Flask 项目
+# Python Flask + React 前端项目
+# ============================================================
+
+# -------------------- Python --------------------
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*$py.class
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# 打包与构建
+*.egg-info/
+*.egg
+dist/
+build/
+eggs/
+sdist/
+develop-eggs/
+.installed.cfg
+
+# -------------------- 环境配置 --------------------
+.env
+.env.bak
+.env.linux
+# 保留 .env.example 作为模板，不忽略
+!.env.example
+
+# -------------------- 数据库 --------------------
+data/*.db
+*.sqlite
+*.sqlite3
+
+# -------------------- 日志 --------------------
+logs/
+*.log
+
+# -------------------- 密钥文件 --------------------
+*.pem
+*.key
+
+# -------------------- 前端 (React) --------------------
+admin-frontend/node_modules/
+admin-frontend/dist/
+
+# -------------------- 临时文件 --------------------
+output/
+.uploads/
+check_*.py
+test_*.py
+migrate_db.py
+
+# 修改前备份文件（开发规范要求改动前做 .bak 备份，不入库）
+*.bak*
+_probe_out.txt
+_gen_token*.py
+_inject_task*.py
+_api_probe*.py
+_pw_*.py
+
+# -------------------- IDE --------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# -------------------- OS --------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+nul
+
+# -------------------- 运行期数据产出（不应入库） --------------------
+# 爬虫运行产出的整学期课表快照
+app/cqie-course-timetable/course_table.json
+# 电表运行数据
+data/electricity/*.json
+# 天气采集冷却状态（点文件）
+data/weather/.cooldown_state

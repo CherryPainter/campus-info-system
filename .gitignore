@@ -1,0 +1,43 @@
+# ===== 依赖 =====
+node_modules/
+.venv/
+venv/
+
+# ===== 构建产物 =====
+dist/
+build/
+dist-ssr/
+build.log
+
+# ===== 环境变量与密钥（严禁入库）=====
+.env
+.env.*
+!.env.example
+参考/
+
+# ===== 运行数据 / 上传 / 日志 =====
+.uploads/
+uploads/
+data/
+logs/
+*.log
+__pycache__/
+*.pyc
+
+# ===== 备份 =====
+*.bak
+*.bak*
+
+# ===== 密钥文件 =====
+*.pem
+ed25519-private.pem
+ed25519-public.pem
+
+# ===== 工具 / IDE =====
+.workbuddy/
+.vscode/
+.idea/
+
+# ===== 系统 =====
+.DS_Store
+Thumbs.db

@@ -1,0 +1,35 @@
+# 课程表爬虫与处理系统依赖
+
+# ============ 核心依赖 ============
+
+# 浏览器自动化
+playwright>=1.40.0
+
+# 网页解析
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# 数据处理
+pandas>=2.0.2
+numpy>=1.26.4
+
+# 图片处理与生成
+matplotlib>=3.7.0
+Pillow>=10.0.0
+
+# ============ 可选依赖 ============
+
+# OCR识别（验证码识别需要）
+# 安装后需要配置 Tesseract OCR 路径
+# pytesseract>=0.3.10
+# opencv-python>=4.8.0
+
+# ============ 安装说明 ============
+# 安装命令:
+# pip install -r requirements.txt
+# playwright install chromium
+#
+# 如果需要验证码自动识别功能，请取消上面两行的注释
+# 并安装 Tesseract OCR 引擎
+# Windows: https://github.com/UB-Mannheim/tesseract/wiki
+# 设置环境变量或在代码中指定路径
