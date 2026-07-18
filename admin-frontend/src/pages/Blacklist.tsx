@@ -356,7 +356,7 @@ export default function Blacklist() {
             {row.is_active ? '生效' : '禁用'}
           </Tag>
           {/* 登录安全信号来源高亮（撞库/枚举/限流等） */}
-          {['brute', 'enum', 'rate_limit'].some((k) => row.source?.includes(k)) && (
+          {['brute', 'enum', 'rate_limit', 'account_target'].some((k) => row.source?.includes(k)) && (
             <Tag color="red" icon={<ExclamationCircleOutlined />}>登录风险</Tag>
           )}
         </Space>
@@ -376,7 +376,7 @@ export default function Blacklist() {
       width: 150,
       render: (s: string) => {
         const style = IP_SOURCE_STYLE[s];
-        const isLoginRisk = ['brute', 'enum', 'rate_limit'].some((k) => s?.includes(k));
+        const isLoginRisk = ['brute', 'enum', 'rate_limit', 'account_target'].some((k) => s?.includes(k));
         return (
           <Tooltip title={isLoginRisk ? '登录安全自动处置' : `来源: ${s}`}>
             <Tag
@@ -593,7 +593,7 @@ export default function Blacklist() {
                   <Space size={6}>
                     <Text strong>{rec.ip_address}</Text>
                     <Tag color={rec.is_active ? 'green' : 'default'}>{rec.is_active ? '生效' : '禁用'}</Tag>
-                    {['brute', 'enum', 'rate_limit'].some((k) => rec.source?.includes(k)) && <Tag color="red" icon={<ExclamationCircleOutlined />}>登录风险</Tag>}
+                    {['brute', 'enum', 'rate_limit', 'account_target'].some((k) => rec.source?.includes(k)) && <Tag color="red" icon={<ExclamationCircleOutlined />}>登录风险</Tag>}
                   </Space>
                   <Tag color={sourceColor(rec.source)}>{SOURCE_CN[rec.source] || rec.source}</Tag>
                 </div>

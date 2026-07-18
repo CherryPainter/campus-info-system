@@ -52,13 +52,15 @@ AUTO_BLOCK_THRESHOLDS = {
 # 避免一刀切把"失败 N 次"都咬死为"暴力破解"，并避免对共享 IP 永久封禁。
 LOGIN_FAIL_WINDOW_SECONDS = 300  # 滑动窗口：5 分钟
 
-# 维度一：账号级（同一账号失败次数）→ 临时锁定【该账号】，不碰 IP，避免误伤共享 IP
+# 维度一：账号级（同一 IP 对该账号失败次数）→ 限流该 IP，不锁账号、不影响其他 IP
+# 关键点：计数 key 带 IP，故攻击者从某 IP 试错只限流该 IP，admin 从自己 IP 登录不受影响
 ACCOUNT_FAIL_TIERS = {
     1: {
-        'threshold': 5,            # 同一账号 5 分钟内失败 5 次
-        'lock_seconds': 1800,      # 临时锁定 30 分钟（窗口内自然失效，无需 DB 字段）
+        'threshold': 5,            # 同一 IP 对同一账号 5 分钟内失败 5 次
+        'action': 'rate_limit',    # 仅限流该 (IP,账号)，不锁账号
+        'lock_seconds': 1800,      # 限流窗口 30 分钟（窗口内自然失效）
         'severity': 'warning',
-        'label': '账号尝试次数过多(已临时锁定)',
+        'label': '该IP对该账号尝试次数过多(限流)',
     },
 }
 
@@ -104,8 +106,23 @@ IP_VOLUME_TIERS = {
     },
 }
 
+# 维度五：账号遭多 IP 围攻（同一账号窗口内失败的【不同来源 IP】数）→ 临时封那些攻击源 IP
+# 用于防护 admin 等重点账号被分布式爆破：账号本身永不锁，只临时封攻击源 IP
+ACCOUNT_CROSS_IP_TIERS = {
+    1: {
+        'threshold': 5,            # 5 个不同来源 IP 在窗口内试同一账号
+        'action': 'temp_block',    # 临时封禁这些攻击源 IP（非永久）
+        'lock_seconds': 3600,
+        'duration_hours': 1,       # 封禁 1 小时
+        'source': 'login_account_target',
+        'severity': 'critical',
+        'label': '账号遭多IP围攻(临时封禁攻击源)',
+    },
+}
+
 # Redis key 前缀
-_AFAIL_PREFIX = 'login_afail:'       # ZSET member=timestamp，按账号
+_AFAIL_PREFIX = 'login_afail:'       # ZSET member=timestamp，按 (IP,账号)
+_ACFAILIP_PREFIX = 'login_afailip:'  # ZSET member=ip（不同来源IP数），按账号
 _IPXA_PREFIX = 'login_ipxa:'         # ZSET member=username（不同账号数），按 IP
 _IENUM_PREFIX = 'login_ienum:'       # ZSET member=username（不同不存在用户名数），按 IP
 _IVOL_PREFIX = 'login_ivol:'         # ZSET member=timestamp（总量），按 IP
@@ -180,6 +197,16 @@ def _win_zrem(rc, prefix: str, key: str, member: str) -> None:
         _login_fail_memory.get(full, {}).pop(member, None)
 
 
+def _win_members(rc, prefix: str, key: str, now_ts: float) -> List[str]:
+    """返回窗口内的 member 列表（用于"账号遭多IP围攻"维度取攻击源 IP）"""
+    full = f'{prefix}{key}'
+    cutoff = now_ts - LOGIN_FAIL_WINDOW_SECONDS
+    if rc is not None:
+        return list(rc.zrange(full, 0, -1))
+    d = _login_fail_memory.get(full, {})
+    return [m for m, ts in d.items() if ts >= cutoff]
+
+
 def _match_tier(tiers: Dict[int, Dict], count: int) -> Optional[int]:
     """返回触发的最高层级（达到阈值的最大 tier），未触发返回 None"""
     triggered = None
@@ -194,7 +221,11 @@ def reset_login_counters(ip_address: str, username: str) -> bool:
     """登录成功后重置计数：清除该账号计数，并从 IP 跨账号集合中移除该账号"""
     try:
         rc = _get_redis_client()
-        _win_del(rc, _AFAIL_PREFIX, username)
+        # 维度一按 (IP,账号) 计数：key 形如 'ip:username'，需与写入保持一致
+        if username:
+            _win_del(rc, _AFAIL_PREFIX, f'{ip_address}:{username}')
+            _win_del(rc, _AFAIL_PREFIX, username)  # 兼容升级前旧版 key
+        _win_del(rc, _ACFAILIP_PREFIX, username)
         if username:
             _win_zrem(rc, _IPXA_PREFIX, ip_address, username)
         return True
@@ -218,8 +249,8 @@ def evaluate_login_failure(
     Returns:
         决策 dict（按严重程度取最高优先级）：
         {
-          'level', 'scope'('account'|'ip'),
-          'action'('account_lock'|'rate_limit'|'temp_block'),
+          'level', 'scope'('ip_account'|'ip'|'account_target'),
+          'action'('rate_limit'|'temp_block'),
           'lock_seconds', 'source', 'duration_hours', 'severity', 'label', 'current_count'
         }
         或 None。
@@ -228,14 +259,14 @@ def evaluate_login_failure(
     rc = _get_redis_client()
     results: List[Dict[str, Any]] = []
 
-    # 维度一：账号级（仅 password 失败计入；notfound 账号可能不存在，不锁账号）
+    # 维度一：账号级（同一 IP 对该账号失败次数）→ 限流该 IP，不锁账号、不影响其他 IP
     if kind == 'password' and username:
-        cnt = _win_add(rc, _AFAIL_PREFIX, username, str(now_ts), now_ts)
+        cnt = _win_add(rc, _AFAIL_PREFIX, f'{ip_address}:{username}', str(now_ts), now_ts)
         t = _match_tier(ACCOUNT_FAIL_TIERS, cnt)
         if t:
             cfg = ACCOUNT_FAIL_TIERS[t]
             results.append({
-                'level': t, 'scope': 'account', 'action': 'account_lock',
+                'level': t, 'scope': 'ip_account', 'action': 'rate_limit',
                 'lock_seconds': cfg['lock_seconds'], 'source': None,
                 'duration_hours': None, 'severity': cfg['severity'],
                 'label': cfg['label'], 'current_count': cnt,
@@ -279,11 +310,26 @@ def evaluate_login_failure(
             'label': cfg['label'], 'current_count': cnt,
         })
 
+    # 维度五：账号遭多 IP 围攻（同一账号窗口内失败的【不同来源 IP】数）
+    if kind == 'password' and username:
+        cnt = _win_add(rc, _ACFAILIP_PREFIX, username, ip_address, now_ts)
+        t = _match_tier(ACCOUNT_CROSS_IP_TIERS, cnt)
+        if t:
+            cfg = ACCOUNT_CROSS_IP_TIERS[t]
+            target_ips = _win_members(rc, _ACFAILIP_PREFIX, username, now_ts)
+            results.append({
+                'level': t, 'scope': 'account_target', 'action': 'temp_block',
+                'lock_seconds': cfg['lock_seconds'], 'source': cfg['source'],
+                'duration_hours': cfg.get('duration_hours'),
+                'severity': cfg['severity'], 'label': cfg['label'],
+                'current_count': cnt, 'target_ips': target_ips,
+            })
+
     if not results:
         return None
 
-    # 优先级：account_lock > temp_block > rate_limit
-    _pri = {'account_lock': 3, 'temp_block': 2, 'rate_limit': 1}.get
+    # 优先级：temp_block(多IP围攻/跨账号) > rate_limit(单IP限流)
+    _pri = {'temp_block': 2, 'rate_limit': 1}.get
     results.sort(key=lambda r: _pri(r['action'], 0), reverse=True)
     return results[0]
 
@@ -669,11 +715,16 @@ class IPBlacklistService:
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
             sev = dec.get('severity', 'warning')
             sev_label = {'warning': '警告', 'critical': '严重', 'info': '提示'}.get(sev, '提示')
-            scope_cn = '账号' if dec.get('scope') == 'account' else 'IP'
+            if dec.get('scope') == 'account_target':
+                scope_cn = '账号(多IP围攻)'
+            elif dec.get('scope') == 'ip_account':
+                scope_cn = '该IP-账号'
+            else:
+                scope_cn = 'IP'
             title = f'**{dec["label"]}（第 {dec["level"]} 级 · {sev_label}）**'
 
-            if dec['action'] == 'account_lock':
-                status_cn = '已临时锁定该账号（窗口内自动解除）'
+            if dec.get('scope') == 'account_target':
+                status_cn = '已临时封禁围攻的攻击源 IP'
             elif blocked:
                 status_cn = '已临时封禁该 IP'
             else:

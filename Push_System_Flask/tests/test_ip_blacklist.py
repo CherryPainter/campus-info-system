@@ -143,26 +143,29 @@ def test_win_zrem_removes_member():
 # 三、evaluate_login_failure 信号感知决策
 # ============================================================
 
-def test_evaluate_account_lock_triggered(fake_clock):
+def test_evaluate_password_per_ip_account_rate_limit(fake_clock):
+    # 同一 IP 对同一账号失败 5 次 => 仅限流该 (IP,账号)，不锁账号、不影响其他 IP
     dec = None
     for _ in range(5):
         fake_clock.advance(1)
         dec = svc.evaluate_login_failure('1.1.1.1', 'alice', 'password')
     assert dec is not None
-    assert dec['scope'] == 'account'
-    assert dec['action'] == 'account_lock'
+    assert dec['scope'] == 'ip_account'
+    assert dec['action'] == 'rate_limit'
     assert dec['current_count'] == 5
+    # 另一个 IP 试同一账号不应被限流（证明不会误伤 admin 自身或其他正常来源）
+    assert svc.evaluate_login_failure('2.2.2.2', 'alice', 'password') is None
 
 
-def test_evaluate_account_lock_not_before_threshold(fake_clock):
+def test_evaluate_password_rate_limit_not_before_threshold(fake_clock):
     for _ in range(4):
         fake_clock.advance(1)
         dec = svc.evaluate_login_failure('1.1.1.1', 'alice', 'password')
     assert dec is None  # 4 次未达阈值 5
 
 
-def test_evaluate_notfound_does_not_lock_account(fake_clock):
-    # 同一"不存在用户名"尝试 10 次：账号维度不锁定（kind=notfound 不计入账号级）
+def test_evaluate_notfound_does_not_rate_limit_account(fake_clock):
+    # 同一"不存在用户名"尝试 10 次：账号维度不计入（kind=notfound 不计入账号级）
     for _ in range(10):
         fake_clock.advance(1)
         dec = svc.evaluate_login_failure('1.1.1.1', 'ghost', 'notfound')
@@ -205,14 +208,24 @@ def test_evaluate_volume_rate_limit(fake_clock):
     assert dec['current_count'] == 30
 
 
-def test_evaluate_priority_account_lock_over_rate_limit(fake_clock):
-    # 同一账号失败 30 次：账号锁定(account_lock) 优先级高于 IP 限流(rate_limit)
+def test_evaluate_account_targeted_by_many_ips(fake_clock):
+    # admin 为重点账号：5 个不同来源 IP 各试一次 => 触发"账号遭多IP围攻"
+    # 仅临时封那些攻击源 IP，账号本身永不锁；新 IP 登录不受影响
     dec = None
-    for _ in range(30):
+    ips = [f'10.0.0.{i}' for i in range(1, 6)]
+    for ip in ips:
         fake_clock.advance(1)
-        dec = svc.evaluate_login_failure('5.5.5.5', 'victim', 'password')
-    assert dec['action'] == 'account_lock'
-    assert dec['current_count'] >= 5
+        dec = svc.evaluate_login_failure(ip, 'admin', 'password')
+    assert dec['scope'] == 'account_target'
+    assert dec['action'] == 'temp_block'
+    assert dec['source'] == 'login_account_target'
+    assert set(dec['target_ips']) == set(ips)
+    # 第 6 个全新攻击 IP 试 admin：窗口内已有 >=5 个不同来源 IP，理应继续临时封禁该攻击源
+    # （这正是"多IP围攻"要做的；账号本身永不锁，故成功登录不受阻，仅攻击源 IP 被封）
+    dec2 = svc.evaluate_login_failure('10.0.0.99', 'admin', 'password')
+    assert dec2['scope'] == 'account_target'
+    assert dec2['action'] == 'temp_block'
+    assert '10.0.0.99' in dec2['target_ips']
 
 
 def test_evaluate_returns_none_when_quiet():
@@ -224,10 +237,11 @@ def test_reset_login_counters_clears_account(fake_clock):
     for _ in range(5):
         fake_clock.advance(1)
         svc.evaluate_login_failure('3.3.3.3', 'carol', 'password')
-    # 已触发账号锁定
+    # 已触发该 (IP,账号) 限流
     dec = svc.evaluate_login_failure('3.3.3.3', 'carol', 'password')
-    assert dec['action'] == 'account_lock'
-    # 重置后，再次失败 1 次不应立即再锁定
+    assert dec['action'] == 'rate_limit'
+    assert dec['scope'] == 'ip_account'
+    # 重置后，再次失败 1 次不应立即再限流（per-IP-account 与多IP围攻计数均清零）
     assert svc.reset_login_counters('3.3.3.3', 'carol') is True
     dec2 = svc.evaluate_login_failure('3.3.3.3', 'carol', 'password')
     assert dec2 is None  # 计数被清零，仅 1 次

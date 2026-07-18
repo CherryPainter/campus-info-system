@@ -92,6 +92,7 @@ export const IP_SOURCE_MAP: Record<string, string> = {
   'auto-brute': '暴力破解自动封禁',
   login_enum: '用户名枚举探测',
   login_rate_limit: '登录限流',
+  login_account_target: '账号遭多IP围攻(临时封禁)',
 };
 
 /** IP 来源视觉样式（颜色 + 图标语义） */
@@ -109,6 +110,7 @@ export const IP_SOURCE_STYLE: Record<string, { color: string; icon: string }> = 
   'auto-brute': { color: 'volcano', icon: 'key' },
   login_enum: { color: 'orange', icon: 'apartment' },
   login_rate_limit: { color: 'gold', icon: 'clock-circle' },
+  login_account_target: { color: 'red', icon: 'team' },
 };
 
 /** IP 安全事件类型（原 ipBlacklist.ts EVENT_TYPE_CN，迁至此） */

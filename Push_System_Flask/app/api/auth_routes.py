@@ -241,7 +241,8 @@ def _login_failure_response(client_ip, username, kind, user_id, user_agent):
     """评估登录失败信号并返回对应响应；返回 None 表示按普通'密码错误'处理。
 
     kind: 'password'（密码错/账号存在）| 'notfound'（用户名不存在）| 'empty'（空参数）
-    信号感知：账号级失败→锁账号(423)；IP跨账号/枚举/总量→限流(429)或临时封禁(403)。
+    信号感知：账号级(按IP+账号)失败→限流该IP(429)；IP跨账号/枚举/总量→限流(429)或临时封禁(403)；
+    账号遭多IP围攻→临时封禁攻击源IP(403)。账号本身永不锁，避免攻击源自锁 admin。
     """
     from app.services.ip_blacklist_service import (
         evaluate_login_failure, IPBlacklistService,
@@ -270,16 +271,6 @@ def _login_failure_response(client_ip, username, kind, user_id, user_agent):
             severity=severity,
         )
 
-        if action == 'account_lock':
-            _bs.commit()
-            _record_login_log(user_id or 0, username, client_ip, user_agent,
-                              'account_locked', label)
-            return api_error(
-                message=f'该账号尝试次数过多，已临时锁定，请 {lock_sec // 60} 分钟后再试或找回密码',
-                http_status=423,
-                headers={'Retry-After': str(lock_sec)},
-            )
-
         if action == 'rate_limit':
             IPBlacklistService.send_login_security_alert(client_ip, dec, blocked=False)
             _bs.commit()
@@ -294,15 +285,19 @@ def _login_failure_response(client_ip, username, kind, user_id, user_agent):
         if action == 'temp_block':
             source = dec.get('source') or 'login_brute_tier2'
             dur_h = dec.get('duration_hours')
-            reason = (
-                f'{label}(5分钟内{dec.get("current_count")}个不同账号失败)'
-                if dec.get('scope') == 'ip' else f'{label}'
-            )
-            IPBlacklistService.block_ip(
-                session=_bs, ip_address=client_ip, reason=reason,
-                source=source, created_by='auto-detect',
-                duration_hours=dur_h, note='登录信号感知自动封禁',
-            )
+            if dec.get('scope') == 'account_target':
+                reason = f'{label}(账号 {username} 遭 {dec.get("current_count")} 个不同IP围攻)'
+            else:
+                reason = f'{label}(5分钟内{dec.get("current_count")}个不同账号失败)'
+            target_ips = dec.get('target_ips') or [client_ip]
+            for tip in target_ips:
+                if not tip:
+                    continue
+                IPBlacklistService.block_ip(
+                    session=_bs, ip_address=tip, reason=reason,
+                    source=source, created_by='auto-detect',
+                    duration_hours=dur_h, note='登录信号感知自动封禁',
+                )
             IPBlacklistService._send_block_alert(client_ip, reason, source, tier_info=dec)
             _bs.commit()
             _record_login_log(user_id or 0, username, client_ip, user_agent, 'blocked', label)
