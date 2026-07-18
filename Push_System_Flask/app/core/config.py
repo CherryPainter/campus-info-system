@@ -116,7 +116,7 @@ class Config:
         
         # 应用
         cls.APP_NAME = os.getenv('APP_NAME', '校园信息聚合与智能推送系统')
-        cls.APP_VERSION = os.getenv('APP_VERSION', '6.8.3')
+        cls.APP_VERSION = os.getenv('APP_VERSION', '6.8.4')
         cls.DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
         cls.HOST = os.getenv('HOST', '0.0.0.0')
         cls.PORT = int(os.getenv('PORT', '29528'))

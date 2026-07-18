@@ -17,7 +17,8 @@ import ResponsiveTable from '@/components/ResponsiveTable';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined,
   CheckCircleOutlined, CloseCircleOutlined, SendOutlined,
-  LinkOutlined, InfoCircleOutlined, CheckOutlined, StopOutlined
+  LinkOutlined, InfoCircleOutlined, CheckOutlined, StopOutlined,
+  WarningOutlined
 } from '@ant-design/icons';
 import { webhookApi } from '@/api/admin';
 import dayjs from 'dayjs';
@@ -235,14 +236,27 @@ export default function Webhooks() {
       key: 'last_test_status',
       width: 130,
       render: (status: string, record: Webhook) => {
+        const isTesting = testingId === record.id;
+        // 配置在「上次测试之后」被改动过（或未曾测试）→ 需重新测试
+        const needsTest = !record.last_test_time
+          || dayjs(record.updated_at).isAfter(dayjs(record.last_test_time));
+        if (isTesting) {
+          return <Badge status="processing" text="测试中" />;
+        }
+        if (needsTest) {
+          return (
+            <Tooltip title="配置已更新，建议重新发送测试以确认可用性">
+              <Tag color="warning" icon={<WarningOutlined />}>须测试</Tag>
+            </Tooltip>
+          );
+        }
         if (!status) return <span style={{ color: '#999' }}>-</span>;
         const meta = WEBHOOK_TEST_STATUS_MAP[status];
-        const isTesting = testingId === record.id;
         return (
           <div style={{ whiteSpace: 'nowrap' }}>
             <Badge
-              status={isTesting ? 'processing' : meta.color as any}
-              text={isTesting ? '测试中' : meta.text}
+              status={meta.color as any}
+              text={meta.text}
             />
             {record.last_test_time && (
               <span style={{ fontSize: 11, color: '#999', marginLeft: 4 }}>
