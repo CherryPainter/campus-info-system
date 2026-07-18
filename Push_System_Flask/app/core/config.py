@@ -116,7 +116,7 @@ class Config:
         
         # 应用
         cls.APP_NAME = os.getenv('APP_NAME', '校园信息聚合与智能推送系统')
-        cls.APP_VERSION = os.getenv('APP_VERSION', '6.8.2')
+        cls.APP_VERSION = os.getenv('APP_VERSION', '6.8.3')
         cls.DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
         cls.HOST = os.getenv('HOST', '0.0.0.0')
         cls.PORT = int(os.getenv('PORT', '29528'))
@@ -266,6 +266,9 @@ class Config:
         cls.DATABASE_USER = os.getenv('DATABASE_USER', 'root')
         cls.DATABASE_PASSWORD = os.getenv('DATABASE_PASSWORD', '123456')
         cls.DATABASE_NAME = os.getenv('DATABASE_NAME', 'push_system')
+
+        # Redis（登录爆破滑动窗口计数；不配则降级为内存字典）
+        cls.REDIS_URL = os.getenv('REDIS_URL', '')
 
         # ============================================================
         # JWT 认证配置

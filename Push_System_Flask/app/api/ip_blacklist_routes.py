@@ -16,6 +16,7 @@ IP黑名单管理 API 路由蓝图
 """
 
 import ipaddress
+from datetime import datetime
 from flask import Blueprint, request, jsonify, g
 from app.core.api_response import api_success, api_error, api_paginate
 from sqlalchemy import func
@@ -158,6 +159,55 @@ def toggle_blacklist(ip_address):
         return api_success(message=f"IP {ip_address} 已{('启用' if active else '禁用')}", data=record.to_dict(), http_status=200)
     except Exception as exc:
         logger.error(f'切换黑名单状态失败: {exc}')
+        if session:
+            session.rollback()
+        return api_error(message=str(exc), http_status=500)
+    finally:
+        if session:
+            session.close()
+
+
+@ip_blacklist_bp.route('/<ip_address>/update', methods=['PUT'])
+@admin_required
+def update_blacklist(ip_address):
+    """更新黑名单记录（封禁期限、原因、备注）"""
+    session = None
+    try:
+        data = request.get_json(silent=True) or {}
+
+        session = get_db()
+        record = session.query(IPBlacklist).filter(
+            IPBlacklist.ip_address == ip_address
+        ).first()
+
+        if not record:
+            return api_error(message=f'IP {ip_address} 不在黑名单中', http_status=404)
+
+        # 逐字段更新（只传的才改）
+        if 'reason' in data and data['reason'] is not None:
+            record.reason = str(data['reason']).strip() or record.reason
+        if 'duration_hours' in data:
+            dh = data['duration_hours']
+            if dh is None or dh == 0:
+                record.expires_at = None  # 永久
+            elif isinstance(dh, (int, float)) and dh > 0:
+                from datetime import timedelta
+                record.expires_at = datetime.now() + timedelta(hours=float(dh))
+        if 'note' in data and data['note'] is not None:
+            record.note = str(data['note']).strip() or record.note
+        if 'is_active' in data:
+            record.is_active = bool(data['is_active'])
+
+        record.updated_at = datetime.now()
+        session.commit()
+
+        return api_success(
+            message=f'IP {ip_address} 已更新',
+            data=record.to_dict(),
+            http_status=200,
+        )
+    except Exception as exc:
+        logger.error(f'更新黑名单记录失败: {exc}')
         if session:
             session.rollback()
         return api_error(message=str(exc), http_status=500)

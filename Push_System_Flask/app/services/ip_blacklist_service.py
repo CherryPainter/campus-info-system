@@ -44,6 +44,185 @@ AUTO_BLOCK_THRESHOLDS = {
 }
 
 
+# ============================================================
+# 登录密码爆破分层封禁配置
+# ============================================================
+LOGIN_BRUTE_TIERS = {
+    1: {
+        'threshold': 3,           # 3 次密码错误触发
+        'lock_seconds': 300,      # 锁定 5 分钟（仅限流，不写黑名单）
+        'source': None,            # L1 不写黑名单，source 为 None
+        'duration_hours': None,
+        'severity': 'warning',
+        'label': '疑似暴力破解',
+    },
+    2: {
+        'threshold': 4,           # 4 次密码错误触发
+        'lock_seconds': 1800,     # 锁定 30 分钟
+        'source': 'login_brute_tier2',
+        'duration_hours': 0.5,    # 30 分钟 = 0.5 小时
+        'severity': 'warning',
+        'label': '暴力破解-临时封禁',
+    },
+    3: {
+        'threshold': 5,           # 5 次密码错误触发
+        'lock_seconds': None,     # 永久封禁
+        'source': 'login_brute_tier3',
+        'duration_hours': None,   # None = 永久
+        'severity': 'critical',
+        'label': '暴力破解-永久封禁',
+    },
+}
+
+# Redis key 前缀：login_brute:{ip}
+_LOGIN_BRUTE_PREFIX = 'login_brute:'
+_LOGIN_BRUTE_WINDOW_SECONDS = 300  # 滑动窗口 5 分钟
+
+
+def _get_redis_client():
+    """获取 Redis 客户端（单例缓存）；不可用时返回 None 降级为内存"""
+    if not hasattr(_get_redis_client, '_client'):
+        _get_redis_client._client = None
+        try:
+            from app.core.config import Config
+            url = getattr(Config, 'REDIS_URL', '') or ''
+            if url:
+                import redis as redis_lib
+                _get_redis_client._client = redis_lib.Redis.from_url(
+                    url, decode_responses=True, health_check_interval=30
+                )
+                _get_redis_client._client.ping()  # 验证连接
+                logger.info('[IP黑名单] Redis 已连接 (登录爆破计数)')
+            else:
+                logger.warning('[IP黑名单] REDIS_URL 未配置，登录爆破降级为内存字典')
+        except Exception as exc:
+            logger.warning(f'[IP黑名单] Redis 连接失败 ({exc})，降级为内存字典')
+            _get_redis_client._client = False  # 标记"已尝试但失败"
+    return _get_redis_client._client or None
+
+
+# 内存降级字典（Redis 不可用时的 fallback）
+_login_brute_memory: Dict[str, Dict] = {}  # {ip: {'count': int, 'first_fail': float}}
+
+
+def reset_login_brute_counter(ip_address: str) -> bool:
+    """重置指定 IP 的爆破计数器（正确登录时调用）"""
+    try:
+        rc = _get_redis_client()
+        if rc is not None:
+            key = f'{_LOGIN_BRUTE_PREFIX}{ip_address}'
+            rc.delete(key)
+        else:
+            _login_brute_memory.pop(ip_address, None)
+        return True
+    except Exception as exc:
+        logger.warning(f'[IP黑名单] 重置爆破计数失败: {exc}')
+        return False
+
+
+def check_login_brute_tier(ip_address: str) -> Optional[Dict[str, Any]]:
+    """检查 IP 的登录爆破层级
+
+    在每次密码校验**失败后**调用。返回值：
+      - None: 未达到任何阈值，仅递增计数
+      - dict: 触发了某层封禁，包含 {tier, action, lock_seconds, source, duration_hours, severity, label}
+         调用方据此执行对应动作（L1 返回 429 / L2-L3 调 block_ip）
+
+    注意：调用方需自行将 count +1 后再调本函数（或在本函数内部 +1）。
+    本函数内部会自动递增计数并判断。
+    """
+    now = datetime.now()
+    now_ts = now.timestamp()
+    rc = _get_redis_client()
+
+    if rc is not None:
+        return _check_brute_redis(rc, ip_address, now, now_ts)
+    else:
+        return _check_brute_memory(ip_address, now, now_ts)
+
+
+def _check_brute_redis(rc, ip_address: str, now: datetime, now_ts: float) -> Optional[Dict]:
+    """Redis 实现的滑动窗口检测"""
+    key = f'{_LOGIN_BRUTE_PREFIX}{ip_address}'
+
+    pipe = rc.pipeline()
+    # 用有序集合存时间戳实现滑动窗口
+    pipe.zadd(key, {str(now_ts): now_ts})
+    pipe.zremrangebyscore(key, 0, now_ts - _LOGIN_BRUTE_WINDOW_SECONDS)
+    pipe.zcard(key)
+    pipe.expire(key, _LOGIN_BRUTE_WINDOW_SECONDS + 10)
+    results = pipe.execute()
+    count = results[2]  # zcard 结果
+
+    # 找到触发的最高层级
+    triggered = None
+    for tier_num in sorted(LOGIN_BRUTE_TIERS.keys(), reverse=True):
+        tier_cfg = LOGIN_BRUTE_TIERS[tier_num]
+        if count >= tier_cfg['threshold']:
+            triggered = tier_num
+            break
+
+    if triggered is None:
+        return None
+
+    cfg = LOGIN_BRUTE_TIERS[triggered]
+    return {
+        'tier': triggered,
+        'action': 'rate_limit' if triggered == 1 else ('temp_block' if triggered == 2 else 'perm_block'),
+        'lock_seconds': cfg['lock_seconds'],
+        'source': cfg['source'],
+        'duration_hours': cfg['duration_hours'],
+        'severity': cfg['severity'],
+        'label': cfg['label'],
+        'current_count': count,
+    }
+
+
+def _check_brute_memory(ip_address: str, now: datetime, now_ts: float) -> Optional[Dict]:
+    """内存字典实现的滑动窗口检测（Redis 不可用时的降级方案）"""
+    entry = _login_brute_memory.get(ip_address)
+
+    # 清理过期条目（简单 GC：每 100 次调用清理一次）
+    if not hasattr(_check_brute_memory, '_gc_counter'):
+        _check_brute_memory._gc_counter = 0
+    _check_brute_memory._gc_counter += 1
+    if _check_brute_memory._gc_counter % 100 == 0:
+        cutoff = now_ts - _LOGIN_BRUTE_WINDOW_SECONDS
+        expired = [ip for ip, e in _login_brute_memory.items() if e.get('first_fail', 0) < cutoff]
+        for ip in expired:
+            del _login_brute_memory[ip]
+
+    if entry is None or (now_ts - entry.get('first_fail', now_ts)) > _LOGIN_BRUTE_WINDOW_SECONDS:
+        # 窗口过期或首次，重置
+        entry = {'count': 0, 'first_fail': now_ts}
+        _login_brute_memory[ip_address] = entry
+
+    entry['count'] += 1
+    count = entry['count']
+
+    # 判定最高层级
+    triggered = None
+    for tier_num in sorted(LOGIN_BRUTE_TIERS.keys(), reverse=True):
+        if count >= LOGIN_BRUTE_TIERS[tier_num]['threshold']:
+            triggered = tier_num
+            break
+
+    if triggered is None:
+        return None
+
+    cfg = LOGIN_BRUTE_TIERS[triggered]
+    return {
+        'tier': triggered,
+        'action': 'rate_limit' if triggered == 1 else ('temp_block' if triggered == 2 else 'perm_block'),
+        'lock_seconds': cfg['lock_seconds'],
+        'source': cfg['source'],
+        'duration_hours': cfg['duration_hours'],
+        'severity': cfg['severity'],
+        'label': cfg['label'],
+        'current_count': count,
+    }
+
+
 class IPBlacklistService:
     """IP黑名单管理服务"""
 
@@ -348,29 +527,56 @@ class IPBlacklistService:
         return False, '', ''
 
     @staticmethod
-    def _send_block_alert(ip_address: str, reason: str, source: str):
-        """发送IP封禁告警通知（通过适配器服务推送到企业微信）"""
+    def _send_block_alert(ip_address: str, reason: str, source: str, tier_info: Optional[Dict] = None):
+        """发送 IP 封禁告警通知（通过 system 适配器推送到企业微信）
+
+        Args:
+            tier_info: 可选，登录爆破分层信息 {tier, label, severity, current_count}
+                     有此参数时推送文案包含层级信息
+        """
         try:
             from app.services.adapter_service import adapter_service
-            
-            # 使用系统适配器发送告警
+
             adapter = adapter_service.get_adapter('system')
             if adapter is None:
                 logger.warning('[IP黑名单] 系统适配器未初始化，无法发送告警')
                 return
-            
+
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+            if tier_info:
+                # 分层爆破封禁——差异化文案
+                tier = tier_info['tier']
+                label = tier_info['label']
+                severity = tier_info['severity']
+                count = tier_info.get('current_count', '?')
+                sev_emoji = {'warning': '⚠️', 'critical': '🚨'}.get(severity, '📋')
+                title = f'{sev_emoji} **{label}（第 {tier} 级）**'
+                content = (
+                    f'{title}\n\n'
+                    f'> **IP地址**: `{ip_address}`\n\n'
+                    f'> **累计失败**: {count} 次 / 5分钟\n\n'
+                    f'> **原因**: {reason}\n\n'
+                    f'> **来源**: {source}\n\n'
+                    f'> **时间**: {now_str}\n\n'
+                    f'> **处置状态**: 已自动{"临时" if tier == 2 else "永久"}封禁'
+                )
+            else:
+                # 常规安全事件封禁（原有格式）
+                content = (
+                    f'**安全告警：IP已被封禁**\n\n'
+                    f'> **IP地址**: `{ip_address}`\n\n'
+                    f'> **原因**: {reason}\n\n'
+                    f'> **来源**: {source}\n\n'
+                    f'> **时间**: {now_str}\n\n'
+                    f'> 请管理员及时处理。'
+                )
+
             message = {
                 'msgtype': 'markdown',
                 'markdown': {
-                    'content': (
-                        f'**安全告警：IP已被封禁**\n\n'
-                        f'**IP地址**: `{ip_address}`\n\n'
-                        f'**原因**: {reason}\n\n'
-                        f'**来源**: {source}\n\n'
-                        f'**时间**: {datetime.now().strftime("%Y-%m-%d %H:%M")}\n\n'
-                        f'请管理员及时处理。'
-                    )
-                }
+                    'content': content,
+                },
             }
             result = adapter.send(message)
             if result and result.get('success'):
@@ -379,6 +585,46 @@ class IPBlacklistService:
                 logger.warning(f'[IP黑名单] 封禁告警发送失败: {result}')
         except Exception as exc:
             logger.warning(f'[IP黑名单] 发送告警通知失败: {exc}')
+
+    @staticmethod
+    def send_brute_force_alert(ip_address: str, tier_info: Dict[str, Any]):
+        """推送登录爆破安全事件告警（L1 级别：未封禁但需关注）
+
+        与 _send_block_alert 不同，此方法用于"已检测到暴力破解但尚未封禁"
+        的场景（L1 限流），提醒管理员关注。
+        """
+        try:
+            from app.services.adapter_service import adapter_service
+
+            adapter = adapter_service.get_adapter('system')
+            if adapter is None:
+                return
+
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+            tier = tier_info['tier']
+            label = tier_info['label']
+            count = tier_info.get('current_count', '?')
+
+            message = {
+                'msgtype': 'markdown',
+                'markdown': {
+                    'content': (
+                        f'⚠️ **安全预警：{label}（第 {tier} 级）**\n\n'
+                        f'> **IP地址**: `{ip_address}`\n\n'
+                        f'> **累计失败**: {count} 次 / 5分钟窗口\n\n'
+                        f'> **当前状态**: 已触发速率限制（锁定 {tier_info["lock_seconds"]} 秒），未写入黑名单\n\n'
+                        f'> **时间**: {now_str}\n\n'
+                        f'> 如继续尝试将升级到第 2 级临时封禁 / 第 3 级永久封禁。'
+                    ),
+                },
+            }
+            result = adapter.send(message)
+            if result and result.get('success'):
+                logger.info(f'[IP黑名单] 爆破预警已发送 (L{tier}): {ip_address}')
+            else:
+                logger.warning(f'[IP黑名单] 爆破预警发送失败: {result}')
+        except Exception as exc:
+            logger.warning(f'[IP黑名单] 发送爆破预警失败: {exc}')
 
     @staticmethod
     def cleanup_expired(session: Session) -> int:

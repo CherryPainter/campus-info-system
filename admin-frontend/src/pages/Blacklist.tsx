@@ -24,6 +24,7 @@ import {
   Divider,
   Spin,
   Pagination,
+  Drawer,
 } from 'antd';
 import ResponsiveTable from '@/components/ResponsiveTable';
 import {
@@ -31,6 +32,9 @@ import {
   DeleteOutlined,
   ReloadOutlined,
   SafetyOutlined,
+  UnlockOutlined,
+  EditOutlined,
+  ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { formatDateTime } from '@/utils/datetime';
 import ipBlacklistApi, {
@@ -39,6 +43,7 @@ import ipBlacklistApi, {
   SOURCE_CN,
   EVENT_TYPE_CN,
 } from '@/api/ipBlacklist';
+import { IP_SOURCE_STYLE } from '@/constants/statusMaps';
 import { useMessage, showApiError } from '@/utils/message';
 
 const { Text } = Typography;
@@ -50,14 +55,11 @@ const fmtTime = (s: string | null) => (s ? formatDateTime(s) : '—');
 const sevColor = (s: string) =>
   s === 'critical' ? 'red' : s === 'warning' ? 'orange' : 'blue';
 
-/** 来源颜色 */
-const sourceColor = (s: string) => {
-  if (s === 'manual') return 'blue';
-  if (s === 'auto') return 'default';
-  if (s && s.includes('ddos')) return 'red';
-  if (s && s.includes('rate_limit')) return 'orange';
-  return 'default';
-};
+/** 来源颜色（优先用 IP_SOURCE_STYLE 映射） */
+const sourceColor = (s: string) => (IP_SOURCE_STYLE[s]?.color || 'default');
+
+/** 来源图标名 */
+const sourceIcon = (s: string) => IP_SOURCE_STYLE[s]?.icon;
 
 /** IP 格式校验 */
 const validateIp = (_: unknown, value: string) => {
@@ -97,6 +99,12 @@ export default function Blacklist() {
   const [addVisible, setAddVisible] = useState(false);
   const [addLoading, setAddLoading] = useState(false);
   const [form] = Form.useForm();
+
+  // 编辑抽屉（修改已有黑名单记录的期限/备注/原因）
+  const [editVisible, setEditVisible] = useState(false);
+  const [editRecord, setEditRecord] = useState<IPBlacklistRecord | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editForm] = Form.useForm();
 
   // 安全事件状态
   const [events, setEvents] = useState<IPSecurityEvent[]>([]);
@@ -209,7 +217,7 @@ export default function Blacklist() {
     }
   };
 
-  /** 删除 */
+  /** 删除（彻底移除） */
   const handleRemove = async (record: IPBlacklistRecord) => {
     try {
       const res = await ipBlacklistApi.remove(record.ip_address);
@@ -221,6 +229,64 @@ export default function Blacklist() {
       }
     } catch (e: any) {
       message.error(showApiError(e, '移除失败'));
+    }
+  };
+
+  /** 一键解封（显式 unblock，区别于 toggle 禁用） */
+  const handleUnblock = async (record: IPBlacklistRecord) => {
+    try {
+      const res = await ipBlacklistApi.remove(record.ip_address);
+      if (res.status === 'success') {
+        message.success(`IP ${record.ip_address} 已解封，恢复访问权限`);
+        loadList();
+      } else {
+        message.error(res.message || '解封失败');
+      }
+    } catch (e: any) {
+      message.error(showApiError(e, '解封失败'));
+    }
+  };
+
+  /** 打开编辑抽屉 */
+  const handleEdit = (record: IPBlacklistRecord) => {
+    setEditRecord(record);
+    editForm.setFieldsValue({
+      reason: record.reason || '',
+      duration_hours: record.expires_at
+        ? Math.max(1, Math.round((new Date(record.expires_at).getTime() - Date.now()) / 3600000))
+        : 0,
+      note: record.note || '',
+      is_active: record.is_active,
+    });
+    setEditVisible(true);
+  };
+
+  /** 提交编辑 */
+  const handleEditSubmit = async () => {
+    try {
+      const values = await editForm.validateFields();
+      if (!editRecord) return;
+      setEditLoading(true);
+      const res = await ipBlacklistApi.update(editRecord.ip_address, {
+        reason: values.reason,
+        duration_hours: values.duration_hours === 0 ? null : values.duration_hours,
+        note: values.note,
+        is_active: values.is_active,
+      });
+      if (res.status === 'success') {
+        message.success(`IP ${editRecord.ip_address} 已更新`);
+        setEditVisible(false);
+        setEditRecord(null);
+        loadList();
+      } else {
+        message.error(res.message || '更新失败');
+      }
+    } catch (e: any) {
+      if (e?.response?.status !== 400) {
+        message.error(showApiError(e, '更新失败'));
+      }
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -286,10 +352,12 @@ export default function Blacklist() {
       render: (ip: string, row: IPBlacklistRecord) => (
         <Space>
           <Text strong>{ip}</Text>
-          {row.is_active ? (
-            <Tag color="green">生效</Tag>
-          ) : (
-            <Tag color="default">禁用</Tag>
+          <Tag color={row.is_active ? 'green' : 'default'}>
+            {row.is_active ? '生效' : '禁用'}
+          </Tag>
+          {/* 爆破来源高亮 */}
+          {row.source?.includes('brute') && (
+            <Tag color="red" icon={<ExclamationCircleOutlined />}>爆破</Tag>
           )}
         </Space>
       ),
@@ -298,38 +366,76 @@ export default function Blacklist() {
       title: '原因',
       dataIndex: 'reason',
       key: 'reason',
+      ellipsis: true,
       render: (v: string | null) => v || <Text type="secondary">—</Text>,
     },
     {
       title: '来源',
       dataIndex: 'source',
       key: 'source',
-      width: 130,
-      render: (s: string) => <Tag color={sourceColor(s)}>{SOURCE_CN[s] || s}</Tag>,
+      width: 150,
+      render: (s: string) => {
+        const style = IP_SOURCE_STYLE[s];
+        const isBrute = s?.includes('brute') || s?.includes('brute');
+        return (
+          <Tooltip title={isBrute ? '登录密码爆破自动封禁' : `来源: ${s}`}>
+            <Tag
+              color={style?.color || 'default'}
+              style={isBrute ? { fontWeight: 600 } : undefined}
+            >
+              {SOURCE_CN[s] || s}
+            </Tag>
+          </Tooltip>
+        );
+      },
     },
     {
       title: '封禁时间',
       dataIndex: 'blocked_at',
       key: 'blocked_at',
-      width: 170,
+      width: 165,
       render: (v: string | null) => fmtTime(v),
     },
     {
       title: '过期时间',
       dataIndex: 'expires_at',
       key: 'expires_at',
-      width: 170,
+      width: 165,
       render: (v: string | null) =>
         v ? fmtTime(v) : <Tag color="purple">永久</Tag>,
     },
     {
       title: '操作',
       key: 'action',
-      width: 160,
+      width: 240,
       fixed: 'right' as const,
       render: (_: unknown, row: IPBlacklistRecord) => (
-        <Space>
-          <Tooltip title={row.is_active ? '点击禁用' : '点击启用'}>
+        <Space size={4} wrap>
+          {/* 一键解封（显式，区别于 toggle 禁用） */}
+          {row.is_active && (
+            <Popconfirm
+              title="确认解封该 IP？"
+              description="解封后该 IP 将立即恢复访问权限"
+              okText="解封"
+              cancelText="取消"
+              okButtonProps={{ danger: false }}
+              onConfirm={() => handleUnblock(row)}
+            >
+              <Button size="small" icon={<UnlockOutlined />}>
+                解封
+              </Button>
+            </Popconfirm>
+          )}
+          {/* 编辑（期限/备注/原因） */}
+          <Button
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => handleEdit(row)}
+          >
+            编辑
+          </Button>
+          {/* 启停开关 */}
+          <Tooltip title={row.is_active ? '点击禁用（保留记录）' : '点击启用'}>
             <Switch
               checked={row.is_active}
               size="small"
@@ -337,17 +443,16 @@ export default function Blacklist() {
               onChange={(checked) => handleToggle(row, checked)}
             />
           </Tooltip>
+          {/* 彻底删除 */}
           <Popconfirm
-            title="确认移除该 IP？"
-            description="移除后该 IP 将恢复访问权限"
-            okText="移除"
+            title="确认彻底移除？"
+            description="将从黑名单中永久删除该记录"
+            okText="删除"
             cancelText="取消"
             okButtonProps={{ danger: true }}
             onConfirm={() => handleRemove(row)}
           >
-            <Button danger size="small" icon={<DeleteOutlined />}>
-              移除
-            </Button>
+            <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ),
@@ -487,28 +592,26 @@ export default function Blacklist() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Space size={6}>
                     <Text strong>{rec.ip_address}</Text>
-                    {rec.is_active ? <Tag color="green">生效</Tag> : <Tag color="default">禁用</Tag>}
+                    <Tag color={rec.is_active ? 'green' : 'default'}>{rec.is_active ? '生效' : '禁用'}</Tag>
+                    {rec.source?.includes('brute') && <Tag color="red" icon={<ExclamationCircleOutlined />}>爆破</Tag>}
                   </Space>
-                  <Popconfirm
-                    title="确认移除该 IP？"
-                    description="移除后该 IP 将恢复访问权限"
-                    okText="移除"
-                    cancelText="取消"
-                    okButtonProps={{ danger: true }}
-                    onConfirm={() => handleRemove(rec)}
-                  >
-                    <Button danger size="small" icon={<DeleteOutlined />}>移除</Button>
-                  </Popconfirm>
+                  <Tag color={sourceColor(rec.source)}>{SOURCE_CN[rec.source] || rec.source}</Tag>
                 </div>
-                <Divider style={{ margin: '10px 0' }} />
+                <Divider style={{ margin: '8px 0' }} />
                 <div style={{ fontSize: 12, color: '#666', lineHeight: '20px' }}>
                   <div>原因：{rec.reason || '—'}</div>
-                  <div>来源：<Tag color={sourceColor(rec.source)}>{SOURCE_CN[rec.source] || rec.source}</Tag></div>
                   <div>封禁时间：{fmtTime(rec.blocked_at)}</div>
                   <div>过期时间：{rec.expires_at ? fmtTime(rec.expires_at) : <Tag color="purple">永久</Tag>}</div>
+                  {rec.note && <div>备注：{rec.note}</div>}
                 </div>
-                <div style={{ marginTop: 10, textAlign: 'right' }}>
-                  <Tooltip title={rec.is_active ? '点击禁用' : '点击启用'}>
+                <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                  {rec.is_active && (
+                    <Button size="small" icon={<UnlockOutlined />} onClick={() => handleUnblock(rec)}>
+                      解封
+                    </Button>
+                  )}
+                  <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(rec)}>编辑</Button>
+                  <Tooltip title={rec.is_active ? '禁用（保留记录）' : '启用'}>
                     <Switch
                       checked={rec.is_active}
                       size="small"
@@ -516,6 +619,12 @@ export default function Blacklist() {
                       onChange={(c) => handleToggle(rec, c)}
                     />
                   </Tooltip>
+                  <Popconfirm title="确认彻底移除？" description="将从黑名单永久删除"
+                    okText="删除" cancelText="取消" okButtonProps={{ danger: true }}
+                    onConfirm={() => handleRemove(rec)}
+                  >
+                    <Button size="small" danger icon={<DeleteOutlined />} />
+                  </Popconfirm>
                 </div>
               </Card>
             ))
@@ -755,6 +864,59 @@ export default function Blacklist() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 编辑黑名单抽屉 */}
+      <Drawer
+        title={`编辑封禁记录 — ${editRecord?.ip_address || ''}`}
+        open={editVisible}
+        onClose={() => {
+          setEditVisible(false);
+          setEditRecord(null);
+          editForm.resetFields();
+        }}
+        width={420}
+        destroyOnClose
+        extra={
+          <Space>
+            <Button onClick={() => { setEditVisible(false); setEditRecord(null); }}>取消</Button>
+            <Button type="primary" loading={editLoading} onClick={handleEditSubmit}>
+              保存修改
+            </Button>
+          </Space>
+        }
+      >
+        {editRecord && (
+          <>
+            <div style={{ marginBottom: 16, padding: '8px 12px', background: '#fafafa', borderRadius: 6, fontSize: 12 }}>
+              <Space direction="vertical" size={4}>
+                <Text><Text strong>IP：</Text>{editRecord.ip_address}</Text>
+                <Text><Text strong>当前来源：</Text>
+                  <Tag color={sourceColor(editRecord.source)}>{SOURCE_CN[editRecord.source] || editRecord.source}</Tag>
+                </Text>
+                <Text><Text strong>封禁时间：</Text>{fmtTime(editRecord.blocked_at)}</Text>
+              </Space>
+            </div>
+            <Form form={editForm} layout="vertical">
+              <Form.Item label="封禁原因" name="reason">
+                <Input placeholder="例如：恶意爬虫 / 攻击来源 / 暴力破解" />
+              </Form.Item>
+              <Form.Item
+                label="封禁时长（小时）"
+                name="duration_hours"
+                extra="0 = 永久封禁；修改后从当前时间重新计算过期时间"
+              >
+                <InputNumber min={0} max={87600} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item label="备注" name="note">
+                <Input.TextArea rows={3} placeholder="可选备注信息（如误封原因、处置说明等）" />
+              </Form.Item>
+              <Form.Item label="状态" name="is_active" valuePropName="checked">
+                <Switch checkedChildren="生效" unCheckedChildren="禁用" />
+              </Form.Item>
+            </Form>
+          </>
+        )}
+      </Drawer>
     </div>
   );
 }

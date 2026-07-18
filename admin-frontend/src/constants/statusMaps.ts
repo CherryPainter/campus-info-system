@@ -84,6 +84,27 @@ export const IP_SOURCE_MAP: Record<string, string> = {
   rate_limit: '限频触发',
   'ddos攻击检测': 'DDoS 攻击检测',
   'rate_limit限频': '限频触发',
+  // 登录爆破分层封禁
+  auto_ddos_detect: '自动化 DDoS 检测',
+  auto_security_violation: '安全违规自动检测',
+  login_brute_tier2: '暴力破解(临时封禁)',
+  login_brute_tier3: '暴力破解(永久封禁)',
+  'auto-brute': '暴力破解自动封禁',
+};
+
+/** IP 来源视觉样式（颜色 + 图标语义） */
+export const IP_SOURCE_STYLE: Record<string, { color: string; icon: string }> = {
+  manual: { color: 'blue', icon: 'user' },
+  auto: { color: 'default', icon: 'robot' },
+  ddos: { color: 'red', icon: 'fire' },
+  rate_limit: { color: 'orange', icon: 'clock-circle' },
+  'ddos攻击检测': { color: 'red', icon: 'fire' },
+  'rate_limit限频': { color: 'orange', icon: 'clock-circle' },
+  auto_ddos_detect: { color: 'red', icon: 'fire' },
+  auto_security_violation: { color: 'magenta', icon: 'warning' },
+  login_brute_tier2: { color: 'volcano', icon: 'key' },
+  login_brute_tier3: { color: 'red', icon: 'lock' },
+  'auto-brute': { color: 'volcano', icon: 'key' },
 };
 
 /** IP 安全事件类型（原 ipBlacklist.ts EVENT_TYPE_CN，迁至此） */
@@ -95,4 +116,5 @@ export const IP_EVENT_TYPE_MAP: Record<string, string> = {
   large_request: '超大请求',
   ddos: 'DDoS 攻击',
   file_upload_abuse: '文件上传滥用',
+  login_brute_force: '登录密码爆破',
 };

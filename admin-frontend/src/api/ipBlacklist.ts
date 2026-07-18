@@ -86,6 +86,10 @@ const ipBlacklistApi = {
   toggle: (ip: string, active: boolean) =>
     request.put<any, ApiResponse<IPBlacklistRecord>>(`/admin/ip-blacklist/${encodeURIComponent(ip)}/toggle`, { active }),
 
+  /** 更新黑名单记录（封禁期限/原因/备注/状态） */
+  update: (ip: string, data: { reason?: string; duration_hours?: number | null; note?: string; is_active?: boolean }) =>
+    request.put<any, ApiResponse<IPBlacklistRecord>>(`/admin/ip-blacklist/${encodeURIComponent(ip)}/update`, data),
+
   /** 获取安全事件列表（归一为统一的 Paginated<IPSecurityEvent>） */
   getEvents: async (params: { page?: number; per_page?: number; event_type?: string; severity?: string; only_pending?: boolean }) => {
     const res = await request.get<any, ApiResponse<SecurityEventListResp>>('/admin/ip-blacklist/events', { params });
