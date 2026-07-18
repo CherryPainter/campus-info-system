@@ -574,8 +574,8 @@ class IPBlacklistService:
         session.add(event)
         session.flush()
 
-        # 检查是否需要自动封禁
-        should_block, block_reason, block_source = IPBlacklistService._check_auto_block(session, ip_address)
+        # 检查是否需要自动封禁（自动封禁一律限时，到期自动解除，避免误判永久拉黑）
+        should_block, block_reason, block_source, block_dur = IPBlacklistService._check_auto_block(session, ip_address)
         if should_block:
             IPBlacklistService.block_ip(
                 session=session,
@@ -583,6 +583,7 @@ class IPBlacklistService:
                 reason=f'{block_reason}: {block_source}',
                 source=block_source,
                 created_by='auto-detect',
+                duration_hours=block_dur,
             )
             event.is_blocked = True
             session.flush()
@@ -591,11 +592,14 @@ class IPBlacklistService:
         return event
 
     @staticmethod
-    def _check_auto_block(session: Session, ip_address: str) -> Tuple[bool, str, str]:
+    def _check_auto_block(session: Session, ip_address: str) -> Tuple[bool, str, str, Optional[int]]:
         """检查是否需要自动封禁该IP
 
         Returns:
-            (should_block, reason, source) 三元组
+            (should_block, reason, source, duration_hours) 四元组。
+            duration_hours 从对应阈值配置的 block_duration_hours 读取（限时封禁，
+            到期自动解除），None 表示永久。红线：自动封禁一律限时，避免误判把正常
+            IP 永久拉黑；只有管理员手动封禁才可永久。
         """
         now = datetime.now()
 
@@ -615,6 +619,7 @@ class IPBlacklistService:
                 True,
                 f'{rate_cfg["window_seconds"]}秒内{recent_requests}次请求(阈值{rate_cfg["request_count"]})',
                 'auto_ddos_detect',
+                rate_cfg.get('block_duration_hours'),
             )
 
         # 检查安全违规阈值
@@ -633,9 +638,10 @@ class IPBlacklistService:
                 True,
                 f'{sec_cfg["window_seconds"]}秒内{violations}次安全违规(阈值{sec_cfg["violation_count"]})',
                 'auto_security_violation',
+                sec_cfg.get('block_duration_hours'),
             )
 
-        return False, '', ''
+        return False, '', '', None
 
     @staticmethod
     def _send_block_alert(ip_address: str, reason: str, source: str, tier_info: Optional[Dict] = None):

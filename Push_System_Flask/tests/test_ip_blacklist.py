@@ -345,6 +345,12 @@ def test_record_event_auto_block(session):
     blocked_events = session.query(IPSecurityEvent).filter_by(
         ip_address='8.8.8.8', is_blocked=True).count()
     assert blocked_events >= 1
+    # 自动封禁应为【限时】封禁（读取配置 block_duration_hours），而非永久
+    # 红线：自动封禁一律限时、可自动解除；只有管理员手动封禁才可永久
+    rec = session.query(IPBlacklist).filter_by(ip_address='8.8.8.8').first()
+    assert rec is not None
+    assert rec.expires_at is not None  # 有过期时间 = 限时，不是永久
+    assert rec.source == 'auto_ddos_detect'
 
 
 def test_ignore_event(session):
