@@ -85,6 +85,35 @@ def _record_login_log(user_id, username, ip_address, user_agent, status='success
     return log_id
 
 
+def _ip_is_blocked(ip_address):
+    """检查 IP 是否已被封禁（检查失败视为未封禁，不阻塞登录）"""
+    try:
+        from app.services.ip_blacklist_service import IPBlacklistService
+        from app.core.database import get_db
+        s = get_db()
+        try:
+            return IPBlacklistService.is_ip_blocked(s, ip_address)
+        finally:
+            s.close()
+    except Exception as exc:
+        logger.warning(f'IP 黑名单检查失败: {exc}')
+        return False
+
+
+def _verify_password(user, password):
+    """校验密码（bcrypt），异常视为失败"""
+    try:
+        if not user:
+            return False
+        return bcrypt.checkpw(
+            password.encode('utf-8'),
+            user.password_hash.encode('utf-8'),
+        )
+    except Exception as exc:
+        logger.error(f'密码验证异常: {exc}')
+        return False
+
+
 def _record_logout(log_id):
     """
     记录退出时间
@@ -250,6 +279,28 @@ def login():
     data = request.get_json(silent=True) or {}
     username = data.get('username', '').strip()
     password = data.get('password', '')
+
+    # IP 黑名单拦截：被封禁 IP 直接拒绝，不再产生“密码错误”登录日志，避免暴力破解与日志污染
+    # 仅保留“持有正确凭据的管理员”自助解封通道（避免误封自己 IP 后无法登录）
+    if _ip_is_blocked(client_ip):
+        if not (username and password):
+            _record_login_log(0, username or '(空)', client_ip, user_agent, 'blocked', 'IP 已被封禁')
+            return api_error(message='拒绝访问', http_status=403)
+        # 查用户并校验密码，决定是否放行（自助解封通道）
+        from app.model.user import User
+        from app.core.database import get_db
+        _s = get_db()
+        try:
+            _u = _s.query(User).filter_by(username=username, is_active=True).first()
+            _ok = _verify_password(_u, password)
+        finally:
+            _s.close()
+        if not _ok:
+            logger.warning(f'登录被拦截: 封禁 IP {client_ip} 凭据无效')
+            _record_login_log(_u.id if _u else 0, username, client_ip, user_agent, 'blocked', 'IP 已被封禁')
+            return api_error(message='拒绝访问', http_status=403)
+        # 被封禁 IP 凭正确凭据登录（管理员自助解封通道）
+        logger.warning(f'被封禁 IP {client_ip} 凭正确凭据登录，进入自助解封通道')
 
     # 参数校验
     if not username or not password:
