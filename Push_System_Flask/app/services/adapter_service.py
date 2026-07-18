@@ -4,6 +4,7 @@
 import os
 import json
 import requests
+from datetime import datetime
 from app.core.logger import get_logger
 
 # 使用统一日志系统
@@ -51,13 +52,21 @@ class WeComAdapter(BaseAdapter):
             data = resp.json()
             if data.get('errcode') == 0:
                 self.status = 'ok'
-                return {'success': True, 'data': data}
+                result = {'success': True, 'data': data}
             else:
                 self.status = 'error'
-                return {'success': False, 'error': data.get('errmsg', 'Unknown error'), 'data': data}
+                result = {'success': False, 'error': data.get('errmsg', 'Unknown error'), 'data': data}
         except Exception as e:
             self.status = 'error'
-            return {'success': False, 'error': str(e)}
+            result = {'success': False, 'error': str(e)}
+
+        # 真实推送结果写回 Webhook 记录（仅落库，异常不影响主推送流程）
+        try:
+            mark_webhook_send_result(self.webhook_url, result.get('success'))
+        except Exception:
+            pass
+
+        return result
     
     def send_image(self, image_path):
         """发送图片：使用 base64 + md5 方式（企业微信群机器人推荐方式）"""
@@ -271,6 +280,43 @@ class MultiWeComAdapter(BaseAdapter):
             'adapter_count': len(self.adapters),
             'adapters': [adapter.get_status() for adapter in self.adapters]
         }
+
+
+def mark_webhook_send_result(webhook_url, success):
+    """真实推送后写回对应 Webhook 记录的测试结果（仅落库，失败不影响主流程）。
+
+    失败 -> 标记 failed；成功且当前为 failed -> 标记 success（自动恢复）。
+    仅在与当前状态不同（发生状态迁移）时才写库，避免正常轮询频繁写库。
+    """
+    if not webhook_url:
+        return
+    try:
+        from app.core.database import get_db
+        from app.model.webhook import Webhook
+        session = get_db()
+        try:
+            rows = session.query(Webhook).filter(Webhook.url == webhook_url).all()
+            if not rows:
+                return
+            changed = False
+            for w in rows:
+                if success:
+                    # 仅在之前为 failed 时恢复 success，避免覆盖人工测试状态
+                    if w.last_test_status == 'failed':
+                        w.last_test_status = 'success'
+                        w.last_test_time = datetime.now()
+                        changed = True
+                else:
+                    if w.last_test_status != 'failed':
+                        w.last_test_status = 'failed'
+                        w.last_test_time = datetime.now()
+                        changed = True
+            if changed:
+                session.commit()
+        finally:
+            session.close()
+    except Exception as e:
+        logger.warning(f'mark_webhook_send_result 写回失败(已忽略): {e}')
 
 
 class AdapterService:
