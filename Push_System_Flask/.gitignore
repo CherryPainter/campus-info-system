@@ -57,6 +57,9 @@ check_*.py
 test_*.py
 migrate_db.py
 
+# 保留正式单元测试目录（与上面的 test_*.py 临时脚本规则互斥，置于其后生效）
+!tests/test_*.py
+
 # 修改前备份文件（开发规范要求改动前做 .bak 备份，不入库）
 *.bak*
 _probe_out.txt
