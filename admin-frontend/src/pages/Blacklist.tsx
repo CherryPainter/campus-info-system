@@ -355,9 +355,9 @@ export default function Blacklist() {
           <Tag color={row.is_active ? 'green' : 'default'}>
             {row.is_active ? '生效' : '禁用'}
           </Tag>
-          {/* 爆破来源高亮 */}
-          {row.source?.includes('brute') && (
-            <Tag color="red" icon={<ExclamationCircleOutlined />}>爆破</Tag>
+          {/* 登录安全信号来源高亮（撞库/枚举/限流等） */}
+          {['brute', 'enum', 'rate_limit'].some((k) => row.source?.includes(k)) && (
+            <Tag color="red" icon={<ExclamationCircleOutlined />}>登录风险</Tag>
           )}
         </Space>
       ),
@@ -376,12 +376,12 @@ export default function Blacklist() {
       width: 150,
       render: (s: string) => {
         const style = IP_SOURCE_STYLE[s];
-        const isBrute = s?.includes('brute') || s?.includes('brute');
+        const isLoginRisk = ['brute', 'enum', 'rate_limit'].some((k) => s?.includes(k));
         return (
-          <Tooltip title={isBrute ? '登录密码爆破自动封禁' : `来源: ${s}`}>
+          <Tooltip title={isLoginRisk ? '登录安全自动处置' : `来源: ${s}`}>
             <Tag
               color={style?.color || 'default'}
-              style={isBrute ? { fontWeight: 600 } : undefined}
+              style={isLoginRisk ? { fontWeight: 600 } : undefined}
             >
               {SOURCE_CN[s] || s}
             </Tag>
@@ -593,7 +593,7 @@ export default function Blacklist() {
                   <Space size={6}>
                     <Text strong>{rec.ip_address}</Text>
                     <Tag color={rec.is_active ? 'green' : 'default'}>{rec.is_active ? '生效' : '禁用'}</Tag>
-                    {rec.source?.includes('brute') && <Tag color="red" icon={<ExclamationCircleOutlined />}>爆破</Tag>}
+                    {['brute', 'enum', 'rate_limit'].some((k) => rec.source?.includes(k)) && <Tag color="red" icon={<ExclamationCircleOutlined />}>登录风险</Tag>}
                   </Space>
                   <Tag color={sourceColor(rec.source)}>{SOURCE_CN[rec.source] || rec.source}</Tag>
                 </div>

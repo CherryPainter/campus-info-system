@@ -237,6 +237,81 @@ def _get_jwt_manager():
 
 @auth_bp.route('/login', methods=['POST'])
 @limiter.limit(RATE_LIMITS['strict'])
+def _login_failure_response(client_ip, username, kind, user_id, user_agent):
+    """评估登录失败信号并返回对应响应；返回 None 表示按普通'密码错误'处理。
+
+    kind: 'password'（密码错/账号存在）| 'notfound'（用户名不存在）| 'empty'（空参数）
+    信号感知：账号级失败→锁账号(423)；IP跨账号/枚举/总量→限流(429)或临时封禁(403)。
+    """
+    from app.services.ip_blacklist_service import (
+        evaluate_login_failure, IPBlacklistService,
+    )
+    try:
+        dec = evaluate_login_failure(client_ip, username, kind)
+    except Exception as exc:
+        logger.warning(f'[登录防护] 信号评估异常，按原流程继续: {exc}')
+        return None
+    if not dec:
+        return None
+
+    action = dec['action']
+    label = dec['label']
+    severity = dec['severity']
+    lock_sec = dec.get('lock_seconds') or 300
+
+    from app.core.database import get_db as _gdb
+    _bs = _gdb()
+    try:
+        IPBlacklistService.record_event(
+            session=_bs, ip_address=client_ip,
+            event_type='login_security', path='/api/auth/login',
+            method='POST', user_agent=(user_agent or '')[:200],
+            detail=f'{label}({kind}): 第{dec["level"]}级(累计{dec.get("current_count", "?")})',
+            severity=severity,
+        )
+
+        if action == 'account_lock':
+            _bs.commit()
+            _record_login_log(user_id or 0, username, client_ip, user_agent,
+                              'account_locked', label)
+            return api_error(
+                message=f'该账号尝试次数过多，已临时锁定，请 {lock_sec // 60} 分钟后再试或找回密码',
+                http_status=423,
+                headers={'Retry-After': str(lock_sec)},
+            )
+
+        if action == 'rate_limit':
+            IPBlacklistService.send_login_security_alert(client_ip, dec, blocked=False)
+            _bs.commit()
+            _record_login_log(user_id or 0, username, client_ip, user_agent,
+                              'rate_limited', label)
+            return api_error(
+                message=f'登录尝试过于频繁，请 {max(lock_sec // 60, 1)} 分钟后再试',
+                http_status=429,
+                headers={'Retry-After': str(lock_sec)},
+            )
+
+        if action == 'temp_block':
+            source = dec.get('source') or 'login_brute_tier2'
+            dur_h = dec.get('duration_hours')
+            reason = (
+                f'{label}(5分钟内{dec.get("current_count")}个不同账号失败)'
+                if dec.get('scope') == 'ip' else f'{label}'
+            )
+            IPBlacklistService.block_ip(
+                session=_bs, ip_address=client_ip, reason=reason,
+                source=source, created_by='auto-detect',
+                duration_hours=dur_h, note='登录信号感知自动封禁',
+            )
+            IPBlacklistService._send_block_alert(client_ip, reason, source, tier_info=dec)
+            _bs.commit()
+            _record_login_log(user_id or 0, username, client_ip, user_agent, 'blocked', label)
+            return api_error(message='拒绝访问', http_status=403)
+    finally:
+        _bs.close()
+    return None
+
+
 def login():
     """
     管理员登录接口
@@ -304,41 +379,9 @@ def login():
 
     # 参数校验
     if not username or not password:
-        # 空参数也计入爆破检测
-        try:
-            from app.services.ip_blacklist_service import (
-                check_login_brute_tier as _clbt2, IPBlacklistService as _IPS2,
-            )
-            _tr2 = _clbt2(client_ip)
-            if _tr2:
-                from app.core.database import get_db as _gdb2
-                _ts2 = _gdb2()
-                try:
-                    _IPS2.record_event(
-                        session=_ts2, ip_address=client_ip,
-                        event_type='login_brute_force', path='/api/auth/login',
-                        method='POST', user_agent=(user_agent or '')[:200],
-                        detail=f'{_tr2["label"]}(空参数): 第{_tr2["tier"]}级',
-                        severity=_tr2['severity'],
-                    )
-                    if _tr2['action'] != 'rate_limit':
-                        _IPS2.block_ip(
-                            session=_ts2, ip_address=client_ip,
-                            reason=f'{_tr2["label"]}(空参数)',
-                            source=_tr2['source'] or f'login_brute_tier{_tr2["tier"]}',
-                            created_by='auto-brute', duration_hours=_tr2.get('duration_hours'),
-                            note='登录空参数自动封禁',
-                        )
-                        _IPS2._send_block_alert(client_ip, f'{_tr2["label"]}(空参数)',
-                                                _tr2.get('source',''), tier_info=_tr2)
-                    else:
-                        _IPS2.send_brute_force_alert(client_ip, _tr2)
-                    _ts2.commit()
-                finally:
-                    _ts2.close()
-        except Exception:
-            pass
-
+        _r = _login_failure_response(client_ip, username, 'empty', 0, user_agent)
+        if _r:
+            return _r
         logger.warning('登录失败: 用户名或密码为空')
         # 记录失败日志
         _record_login_log(0, username, client_ip, user_agent, 'failed', '用户名或密码为空')
@@ -356,43 +399,9 @@ def login():
         session.close()
 
     if not user:
-        # 用户不存在也计入爆破检测（防止枚举用户名）
-        try:
-            from app.services.ip_blacklist_service import (
-                check_login_brute_tier as _clbt, IPBlacklistService as _IPS,
-            )
-            _tr = _clbt(client_ip)
-            if _tr:
-                from app.core.database import get_db as _gdb
-                _ts = _gdb()
-                try:
-                    _IPS.record_event(
-                        session=_ts, ip_address=client_ip,
-                        event_type='login_brute_force', path='/api/auth/login',
-                        method='POST', user_agent=(user_agent or '')[:200],
-                        detail=f'{_tr["label"]}(用户名枚举): 第{_tr["tier"]}级',
-                        severity=_tr['severity'],
-                    )
-                    if _tr['action'] != 'rate_limit':
-                        _IPS.block_ip(
-                            session=_ts, ip_address=client_ip,
-                            reason=f'{_tr["label"]}(用户名枚举)',
-                            source=_tr['source'] or f'login_brute_tier{_tr["tier"]}',
-                            created_by='auto-brute',
-                            duration_hours=_tr.get('duration_hours'),
-                            note='登录用户名枚举自动封禁',
-                        )
-                        _IPS._send_block_alert(client_ip, f'{_tr["label"]}(用户名枚举)',
-                                               _tr.get('source',''), tier_info=_tr)
-                    else:
-                        _IPS.send_brute_force_alert(client_ip, _tr)
-                    logger.warning(f'[登录防护] 用户不存在触发 L{_tr["tier"]}: {client_ip}')
-                    _ts.commit()
-                finally:
-                    _ts.close()
-        except Exception:
-            pass
-
+        _r = _login_failure_response(client_ip, username, 'notfound', 0, user_agent)
+        if _r:
+            return _r
         logger.warning(f'登录失败: 用户不存在或已禁用 (input={username})')
         _record_login_log(0, username, client_ip, user_agent, 'failed', '用户不存在或已禁用')
         return api_error(message='用户名或密码错误', http_status=401)
@@ -402,88 +411,20 @@ def login():
         password_bytes = password.encode('utf-8')
         hash_bytes = user.password_hash.encode('utf-8')
         if not bcrypt.checkpw(password_bytes, hash_bytes):
-            # ===== 密码错误 → 分层爆破检测 =====
-            tier_result = None
-            try:
-                from app.services.ip_blacklist_service import (
-                    check_login_brute_tier, reset_login_brute_counter,
-                    IPBlacklistService,
-                )
-                tier_result = check_login_brute_tier(client_ip)
-            except Exception as _tier_exc:
-                logger.warning(f'分层爆破检测异常，按原流程继续: {_tier_exc}')
+            # ===== 密码错误 → 信号感知处置 =====
+            _r = _login_failure_response(client_ip, username, 'password', user.id, user_agent)
+            if _r:
+                return _r
 
-            if tier_result:
-                from app.core.database import get_db as _get_db2
-                _bs = _get_db2()
-                try:
-                    tier = tier_result['tier']
-                    action = tier_result['action']
-                    label = tier_result['label']
-                    severity = tier_result['severity']
-
-                    # 记录安全事件（每层都记录）
-                    IPBlacklistService.record_event(
-                        session=_bs,
-                        ip_address=client_ip,
-                        event_type='login_brute_force',
-                        path='/api/auth/login',
-                        method='POST',
-                        user_agent=user_agent[:200] if user_agent else '',
-                        detail=f'{label}: 第{tier}级(累计{tier_result.get("current_count","?")}次)',
-                        severity=severity,
-                    )
-
-                    if action == 'rate_limit':
-                        # L1: 仅限流 + 推送预警，不写黑名单
-                        lock_sec = tier_result['lock_seconds'] or 300
-                        IPBlacklistService.send_brute_force_alert(client_ip, tier_result)
-                        logger.warning(
-                            f'[登录防护] L{tier} {label}: {client_ip} '
-                            f'锁定{lock_sec}秒 (累计{tier_result.get("current_count")}次失败)'
-                        )
-                        _record_login_log(user.id, username, client_ip, user_agent, 'rate_limited', label)
-                        _bs.commit()
-                        return api_error(
-                            message=f'登录尝试过于频繁，请 {lock_sec // 60} 分钟后再试',
-                            http_status=429,
-                            headers={'Retry-After': str(lock_sec)},
-                        )
-                    else:
-                        # L2/L3: 写入黑名单 + 推送告警
-                        source = tier_result['source'] or f'login_brute_tier{tier}'
-                        dur_h = tier_result.get('duration_hours')
-                        reason = f'{label}(5分钟内{tier_result.get("current_count")}次失败)'
-                        IPBlacklistService.block_ip(
-                            session=_bs,
-                            ip_address=client_ip,
-                            reason=reason,
-                            source=source,
-                            created_by='auto-brute',
-                            duration_hours=dur_h,
-                            note=f'登录密码爆破自动封禁·第{tier}级',
-                        )
-                        IPBlacklistService._send_block_alert(
-                            client_ip, reason, source, tier_info=tier_result
-                        )
-                        logger.warning(
-                            f'[登录防护] L{tier} {label}: {client_ip} 已{"临时" if tier==2 else "永久"}封禁'
-                        )
-                        _record_login_log(user.id, username, client_ip, user_agent, 'blocked', label)
-                        _bs.commit()
-                        return api_error(message='拒绝访问', http_status=403)
-                finally:
-                    _bs.close()
-
-            # 未触发任何层级或检测异常 → 原有"密码错误"返回
+            # 未触发任何信号 → 原有"密码错误"返回
             logger.warning(f'登录失败: 密码验证失败 (user={username})')
             _record_login_log(user.id, username, client_ip, user_agent, 'failed', '密码错误')
             return api_error(message='用户名或密码错误', http_status=401)
 
-        # ===== 密码正确 → 重置爆破计数器 =====
+        # ===== 密码正确 → 重置登录计数 =====
         try:
-            from app.services.ip_blacklist_service import reset_login_brute_counter
-            reset_login_brute_counter(client_ip)
+            from app.services.ip_blacklist_service import reset_login_counters
+            reset_login_counters(client_ip, username)
         except Exception:
             pass  # 重置失败不阻塞正常登录
     except Exception as e:

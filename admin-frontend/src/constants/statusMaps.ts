@@ -84,12 +84,14 @@ export const IP_SOURCE_MAP: Record<string, string> = {
   rate_limit: '限频触发',
   'ddos攻击检测': 'DDoS 攻击检测',
   'rate_limit限频': '限频触发',
-  // 登录爆破分层封禁
+  // 登录信号感知分层处置
   auto_ddos_detect: '自动化 DDoS 检测',
   auto_security_violation: '安全违规自动检测',
-  login_brute_tier2: '暴力破解(临时封禁)',
+  login_brute_tier2: '撞库/枚举(临时封禁)',
   login_brute_tier3: '暴力破解(永久封禁)',
   'auto-brute': '暴力破解自动封禁',
+  login_enum: '用户名枚举探测',
+  login_rate_limit: '登录限流',
 };
 
 /** IP 来源视觉样式（颜色 + 图标语义） */
@@ -105,6 +107,8 @@ export const IP_SOURCE_STYLE: Record<string, { color: string; icon: string }> = 
   login_brute_tier2: { color: 'volcano', icon: 'key' },
   login_brute_tier3: { color: 'red', icon: 'lock' },
   'auto-brute': { color: 'volcano', icon: 'key' },
+  login_enum: { color: 'orange', icon: 'apartment' },
+  login_rate_limit: { color: 'gold', icon: 'clock-circle' },
 };
 
 /** IP 安全事件类型（原 ipBlacklist.ts EVENT_TYPE_CN，迁至此） */
@@ -117,4 +121,5 @@ export const IP_EVENT_TYPE_MAP: Record<string, string> = {
   ddos: 'DDoS 攻击',
   file_upload_abuse: '文件上传滥用',
   login_brute_force: '登录密码爆破',
+  login_security: '登录安全信号',
 };

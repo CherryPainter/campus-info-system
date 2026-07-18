@@ -45,38 +45,70 @@ AUTO_BLOCK_THRESHOLDS = {
 
 
 # ============================================================
-# 登录密码爆破分层封禁配置
+# 登录失败「信号感知」分层配置（滑动窗口 5 分钟）
 # ============================================================
-LOGIN_BRUTE_TIERS = {
+# 设计原则：登录失败信号高度歧义——可能是攻击，也可能是真人忘密码、
+# 或校园网 NAT 下多人各自输错叠加。因此按"信号维度"分别判定，
+# 避免一刀切把"失败 N 次"都咬死为"暴力破解"，并避免对共享 IP 永久封禁。
+LOGIN_FAIL_WINDOW_SECONDS = 300  # 滑动窗口：5 分钟
+
+# 维度一：账号级（同一账号失败次数）→ 临时锁定【该账号】，不碰 IP，避免误伤共享 IP
+ACCOUNT_FAIL_TIERS = {
     1: {
-        'threshold': 3,           # 3 次密码错误触发
-        'lock_seconds': 300,      # 锁定 5 分钟（仅限流，不写黑名单）
-        'source': None,            # L1 不写黑名单，source 为 None
-        'duration_hours': None,
+        'threshold': 5,            # 同一账号 5 分钟内失败 5 次
+        'lock_seconds': 1800,      # 临时锁定 30 分钟（窗口内自然失效，无需 DB 字段）
         'severity': 'warning',
-        'label': '疑似暴力破解',
-    },
-    2: {
-        'threshold': 4,           # 4 次密码错误触发
-        'lock_seconds': 1800,     # 锁定 30 分钟
-        'source': 'login_brute_tier2',
-        'duration_hours': 0.5,    # 30 分钟 = 0.5 小时
-        'severity': 'warning',
-        'label': '暴力破解-临时封禁',
-    },
-    3: {
-        'threshold': 5,           # 5 次密码错误触发
-        'lock_seconds': None,     # 永久封禁
-        'source': 'login_brute_tier3',
-        'duration_hours': None,   # None = 永久
-        'severity': 'critical',
-        'label': '暴力破解-永久封禁',
+        'label': '账号尝试次数过多(已临时锁定)',
     },
 }
 
-# Redis key 前缀：login_brute:{ip}
-_LOGIN_BRUTE_PREFIX = 'login_brute:'
-_LOGIN_BRUTE_WINDOW_SECONDS = 300  # 滑动窗口 5 分钟
+# 维度二：IP 跨账号（同一 IP 窗口内失败涉及的【不同账号】数）→ 疑似撞库/枚举
+IP_CROSS_ACCOUNT_TIERS = {
+    1: {
+        'threshold': 3,            # 3 个不同账号失败
+        'action': 'rate_limit',    # 仅限流（不封禁，避免共享 IP 连坐）
+        'lock_seconds': 300,
+        'severity': 'warning',
+        'label': '疑似撞库/枚举(限流)',
+    },
+    2: {
+        'threshold': 5,            # 5 个不同账号失败
+        'action': 'temp_block',    # 临时封禁该 IP（非永久）
+        'lock_seconds': 3600,
+        'duration_hours': 1,       # 封禁 1 小时
+        'source': 'login_brute_tier2',
+        'severity': 'critical',
+        'label': '疑似撞库/枚举(临时封禁)',
+    },
+}
+
+# 维度三：IP 枚举（同一 IP 窗口内"用户名不存在"涉及的【不同用户名】数）→ 枚举探测
+IP_ENUM_TIERS = {
+    1: {
+        'threshold': 8,            # 8 个不同不存在的用户名
+        'action': 'rate_limit',
+        'lock_seconds': 600,
+        'severity': 'warning',
+        'label': '用户名枚举探测(限流)',
+    },
+}
+
+# 维度四：IP 总量（同一 IP 窗口内登录失败总次数，含空参数/异常客户端）→ 纯限流
+IP_VOLUME_TIERS = {
+    1: {
+        'threshold': 30,           # 5 分钟内 30 次失败
+        'action': 'rate_limit',
+        'lock_seconds': 120,
+        'severity': 'info',
+        'label': '登录失败频率过高(限流)',
+    },
+}
+
+# Redis key 前缀
+_AFAIL_PREFIX = 'login_afail:'       # ZSET member=timestamp，按账号
+_IPXA_PREFIX = 'login_ipxa:'         # ZSET member=username（不同账号数），按 IP
+_IENUM_PREFIX = 'login_ienum:'       # ZSET member=username（不同不存在用户名数），按 IP
+_IVOL_PREFIX = 'login_ivol:'         # ZSET member=timestamp（总量），按 IP
 
 
 def _get_redis_client():
@@ -101,126 +133,159 @@ def _get_redis_client():
     return _get_redis_client._client or None
 
 
-# 内存降级字典（Redis 不可用时的 fallback）
-_login_brute_memory: Dict[str, Dict] = {}  # {ip: {'count': int, 'first_fail': float}}
+# 内存降级字典（Redis 不可用时的 fallback）：full_key -> {member: ts}
+_login_fail_memory: Dict[str, Dict[str, float]] = {}
 
 
-def reset_login_brute_counter(ip_address: str) -> bool:
-    """重置指定 IP 的爆破计数器（正确登录时调用）"""
+def _win_add(rc, prefix: str, key: str, member: str, now_ts: float) -> int:
+    """滑动窗口增量写入，返回窗口内计数。rc=None 走内存。
+
+    member 语义：
+      - 账号级 / 总量：member = 时间戳字符串（每次唯一）
+      - 跨账号 / 枚举：member = 用户名（天然去重，ZCARD=不同账号数）
+    """
+    full = f'{prefix}{key}'
+    cutoff = now_ts - LOGIN_FAIL_WINDOW_SECONDS
+    if rc is not None:
+        pipe = rc.pipeline()
+        pipe.zadd(full, {member: now_ts})
+        pipe.zremrangebyscore(full, 0, cutoff)
+        pipe.zcard(full)
+        pipe.expire(full, LOGIN_FAIL_WINDOW_SECONDS + 10)
+        return pipe.execute()[2]
+    # 内存降级
+    d = _login_fail_memory.setdefault(full, {})
+    for m in list(d.keys()):
+        if d[m] < cutoff:
+            del d[m]
+    d[member] = now_ts
+    return len(d)
+
+
+def _win_del(rc, prefix: str, key: str) -> None:
+    """删除整个键（账号计数重置）"""
+    full = f'{prefix}{key}'
+    if rc is not None:
+        rc.delete(full)
+    else:
+        _login_fail_memory.pop(full, None)
+
+
+def _win_zrem(rc, prefix: str, key: str, member: str) -> None:
+    """从集合中移除某个 member（如登录成功后移除该账号）"""
+    full = f'{prefix}{key}'
+    if rc is not None:
+        rc.zrem(full, member)
+    else:
+        _login_fail_memory.get(full, {}).pop(member, None)
+
+
+def _match_tier(tiers: Dict[int, Dict], count: int) -> Optional[int]:
+    """返回触发的最高层级（达到阈值的最大 tier），未触发返回 None"""
+    triggered = None
+    for n in sorted(tiers.keys(), reverse=True):
+        if count >= tiers[n]['threshold']:
+            triggered = n
+            break
+    return triggered
+
+
+def reset_login_counters(ip_address: str, username: str) -> bool:
+    """登录成功后重置计数：清除该账号计数，并从 IP 跨账号集合中移除该账号"""
     try:
         rc = _get_redis_client()
-        if rc is not None:
-            key = f'{_LOGIN_BRUTE_PREFIX}{ip_address}'
-            rc.delete(key)
-        else:
-            _login_brute_memory.pop(ip_address, None)
+        _win_del(rc, _AFAIL_PREFIX, username)
+        if username:
+            _win_zrem(rc, _IPXA_PREFIX, ip_address, username)
         return True
     except Exception as exc:
-        logger.warning(f'[IP黑名单] 重置爆破计数失败: {exc}')
+        logger.warning(f'[IP黑名单] 重置登录计数失败: {exc}')
         return False
 
 
-def check_login_brute_tier(ip_address: str) -> Optional[Dict[str, Any]]:
-    """检查 IP 的登录爆破层级
+def evaluate_login_failure(
+    ip_address: str,
+    username: str,
+    kind: str,
+) -> Optional[Dict[str, Any]]:
+    """评估一次登录失败信号，返回应执行的处置决策（或 None 表示无需拦截）。
 
-    在每次密码校验**失败后**调用。返回值：
-      - None: 未达到任何阈值，仅递增计数
-      - dict: 触发了某层封禁，包含 {tier, action, lock_seconds, source, duration_hours, severity, label}
-         调用方据此执行对应动作（L1 返回 429 / L2-L3 调 block_ip）
+    Args:
+        ip_address: 客户端 IP
+        username: 尝试的用户名（空参数时可为 ''）
+        kind: 'password'（密码错/账号存在）| 'notfound'（用户名不存在）| 'empty'（空参数）
 
-    注意：调用方需自行将 count +1 后再调本函数（或在本函数内部 +1）。
-    本函数内部会自动递增计数并判断。
+    Returns:
+        决策 dict（按严重程度取最高优先级）：
+        {
+          'level', 'scope'('account'|'ip'),
+          'action'('account_lock'|'rate_limit'|'temp_block'),
+          'lock_seconds', 'source', 'duration_hours', 'severity', 'label', 'current_count'
+        }
+        或 None。
     """
-    now = datetime.now()
-    now_ts = now.timestamp()
+    now_ts = datetime.now().timestamp()
     rc = _get_redis_client()
+    results: List[Dict[str, Any]] = []
 
-    if rc is not None:
-        return _check_brute_redis(rc, ip_address, now, now_ts)
-    else:
-        return _check_brute_memory(ip_address, now, now_ts)
+    # 维度一：账号级（仅 password 失败计入；notfound 账号可能不存在，不锁账号）
+    if kind == 'password' and username:
+        cnt = _win_add(rc, _AFAIL_PREFIX, username, str(now_ts), now_ts)
+        t = _match_tier(ACCOUNT_FAIL_TIERS, cnt)
+        if t:
+            cfg = ACCOUNT_FAIL_TIERS[t]
+            results.append({
+                'level': t, 'scope': 'account', 'action': 'account_lock',
+                'lock_seconds': cfg['lock_seconds'], 'source': None,
+                'duration_hours': None, 'severity': cfg['severity'],
+                'label': cfg['label'], 'current_count': cnt,
+            })
 
+    # 维度二：IP 跨账号（不同账号失败数）
+    if username:
+        cnt = _win_add(rc, _IPXA_PREFIX, ip_address, username, now_ts)
+        t = _match_tier(IP_CROSS_ACCOUNT_TIERS, cnt)
+        if t:
+            cfg = IP_CROSS_ACCOUNT_TIERS[t]
+            results.append({
+                'level': t, 'scope': 'ip', 'action': cfg['action'],
+                'lock_seconds': cfg['lock_seconds'], 'source': cfg.get('source'),
+                'duration_hours': cfg.get('duration_hours'),
+                'severity': cfg['severity'], 'label': cfg['label'], 'current_count': cnt,
+            })
 
-def _check_brute_redis(rc, ip_address: str, now: datetime, now_ts: float) -> Optional[Dict]:
-    """Redis 实现的滑动窗口检测"""
-    key = f'{_LOGIN_BRUTE_PREFIX}{ip_address}'
+    # 维度三：IP 枚举（用户名不存在涉及的不同用户名）
+    if kind == 'notfound' and username:
+        cnt = _win_add(rc, _IENUM_PREFIX, ip_address, username, now_ts)
+        t = _match_tier(IP_ENUM_TIERS, cnt)
+        if t:
+            cfg = IP_ENUM_TIERS[t]
+            results.append({
+                'level': t, 'scope': 'ip', 'action': cfg['action'],
+                'lock_seconds': cfg['lock_seconds'], 'source': 'login_enum',
+                'duration_hours': None, 'severity': cfg['severity'],
+                'label': cfg['label'], 'current_count': cnt,
+            })
 
-    pipe = rc.pipeline()
-    # 用有序集合存时间戳实现滑动窗口
-    pipe.zadd(key, {str(now_ts): now_ts})
-    pipe.zremrangebyscore(key, 0, now_ts - _LOGIN_BRUTE_WINDOW_SECONDS)
-    pipe.zcard(key)
-    pipe.expire(key, _LOGIN_BRUTE_WINDOW_SECONDS + 10)
-    results = pipe.execute()
-    count = results[2]  # zcard 结果
+    # 维度四：IP 总量限流（所有失败，含空参数）
+    cnt = _win_add(rc, _IVOL_PREFIX, ip_address, str(now_ts), now_ts)
+    t = _match_tier(IP_VOLUME_TIERS, cnt)
+    if t:
+        cfg = IP_VOLUME_TIERS[t]
+        results.append({
+            'level': t, 'scope': 'ip', 'action': cfg['action'],
+            'lock_seconds': cfg['lock_seconds'], 'source': 'login_rate_limit',
+            'duration_hours': None, 'severity': cfg['severity'],
+            'label': cfg['label'], 'current_count': cnt,
+        })
 
-    # 找到触发的最高层级
-    triggered = None
-    for tier_num in sorted(LOGIN_BRUTE_TIERS.keys(), reverse=True):
-        tier_cfg = LOGIN_BRUTE_TIERS[tier_num]
-        if count >= tier_cfg['threshold']:
-            triggered = tier_num
-            break
-
-    if triggered is None:
+    if not results:
         return None
 
-    cfg = LOGIN_BRUTE_TIERS[triggered]
-    return {
-        'tier': triggered,
-        'action': 'rate_limit' if triggered == 1 else ('temp_block' if triggered == 2 else 'perm_block'),
-        'lock_seconds': cfg['lock_seconds'],
-        'source': cfg['source'],
-        'duration_hours': cfg['duration_hours'],
-        'severity': cfg['severity'],
-        'label': cfg['label'],
-        'current_count': count,
-    }
-
-
-def _check_brute_memory(ip_address: str, now: datetime, now_ts: float) -> Optional[Dict]:
-    """内存字典实现的滑动窗口检测（Redis 不可用时的降级方案）"""
-    entry = _login_brute_memory.get(ip_address)
-
-    # 清理过期条目（简单 GC：每 100 次调用清理一次）
-    if not hasattr(_check_brute_memory, '_gc_counter'):
-        _check_brute_memory._gc_counter = 0
-    _check_brute_memory._gc_counter += 1
-    if _check_brute_memory._gc_counter % 100 == 0:
-        cutoff = now_ts - _LOGIN_BRUTE_WINDOW_SECONDS
-        expired = [ip for ip, e in _login_brute_memory.items() if e.get('first_fail', 0) < cutoff]
-        for ip in expired:
-            del _login_brute_memory[ip]
-
-    if entry is None or (now_ts - entry.get('first_fail', now_ts)) > _LOGIN_BRUTE_WINDOW_SECONDS:
-        # 窗口过期或首次，重置
-        entry = {'count': 0, 'first_fail': now_ts}
-        _login_brute_memory[ip_address] = entry
-
-    entry['count'] += 1
-    count = entry['count']
-
-    # 判定最高层级
-    triggered = None
-    for tier_num in sorted(LOGIN_BRUTE_TIERS.keys(), reverse=True):
-        if count >= LOGIN_BRUTE_TIERS[tier_num]['threshold']:
-            triggered = tier_num
-            break
-
-    if triggered is None:
-        return None
-
-    cfg = LOGIN_BRUTE_TIERS[triggered]
-    return {
-        'tier': triggered,
-        'action': 'rate_limit' if triggered == 1 else ('temp_block' if triggered == 2 else 'perm_block'),
-        'lock_seconds': cfg['lock_seconds'],
-        'source': cfg['source'],
-        'duration_hours': cfg['duration_hours'],
-        'severity': cfg['severity'],
-        'label': cfg['label'],
-        'current_count': count,
-    }
+    # 优先级：account_lock > temp_block > rate_limit
+    _pri = {'account_lock': 3, 'temp_block': 2, 'rate_limit': 1}.get
+    results.sort(key=lambda r: _pri(r['action'], 0), reverse=True)
+    return results[0]
 
 
 class IPBlacklistService:
@@ -587,11 +652,12 @@ class IPBlacklistService:
             logger.warning(f'[IP黑名单] 发送告警通知失败: {exc}')
 
     @staticmethod
-    def send_brute_force_alert(ip_address: str, tier_info: Dict[str, Any]):
-        """推送登录爆破安全事件告警（L1 级别：未封禁但需关注）
+    def send_login_security_alert(ip_address: str, dec: Dict[str, Any], blocked: bool = False):
+        """推送登录安全信号告警（限流/锁定/封禁均可能触发）
 
-        与 _send_block_alert 不同，此方法用于"已检测到暴力破解但尚未封禁"
-        的场景（L1 限流），提醒管理员关注。
+        Args:
+            dec: evaluate_login_failure 返回的决策 dict
+            blocked: 是否已对该 IP 执行封禁（影响文案）
         """
         try:
             from app.services.adapter_service import adapter_service
@@ -601,30 +667,37 @@ class IPBlacklistService:
                 return
 
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
-            tier = tier_info['tier']
-            label = tier_info['label']
-            count = tier_info.get('current_count', '?')
+            sev = dec.get('severity', 'warning')
+            emoji = {'warning': '⚠️', 'critical': '🚨', 'info': '📋'}.get(sev, '📋')
+            scope_cn = '账号' if dec.get('scope') == 'account' else 'IP'
+            title = f'{emoji} **{dec["label"]}（第 {dec["level"]} 级）**'
 
+            if dec['action'] == 'account_lock':
+                status_cn = '已临时锁定该账号（窗口内自动解除）'
+            elif blocked:
+                status_cn = '已临时封禁该 IP'
+            else:
+                status_cn = '已限流，未写入黑名单'
+
+            content = (
+                f'{title}\n\n'
+                f'> **IP地址**: `{ip_address}`\n\n'
+                f'> **信号维度**: {scope_cn}\n\n'
+                f'> **累计失败**: {dec.get("current_count", "?")} 次 / 5分钟窗口\n\n'
+                f'> **时间**: {now_str}\n\n'
+                f'> **处置状态**: {status_cn}\n'
+            )
             message = {
                 'msgtype': 'markdown',
-                'markdown': {
-                    'content': (
-                        f'⚠️ **安全预警：{label}（第 {tier} 级）**\n\n'
-                        f'> **IP地址**: `{ip_address}`\n\n'
-                        f'> **累计失败**: {count} 次 / 5分钟窗口\n\n'
-                        f'> **当前状态**: 已触发速率限制（锁定 {tier_info["lock_seconds"]} 秒），未写入黑名单\n\n'
-                        f'> **时间**: {now_str}\n\n'
-                        f'> 如继续尝试将升级到第 2 级临时封禁 / 第 3 级永久封禁。'
-                    ),
-                },
+                'markdown': {'content': content},
             }
             result = adapter.send(message)
             if result and result.get('success'):
-                logger.info(f'[IP黑名单] 爆破预警已发送 (L{tier}): {ip_address}')
+                logger.info(f'[IP黑名单] 登录安全告警已发送: {ip_address}')
             else:
-                logger.warning(f'[IP黑名单] 爆破预警发送失败: {result}')
+                logger.warning(f'[IP黑名单] 登录安全告警发送失败: {result}')
         except Exception as exc:
-            logger.warning(f'[IP黑名单] 发送爆破预警失败: {exc}')
+            logger.warning(f'[IP黑名单] 发送登录安全告警失败: {exc}')
 
     @staticmethod
     def cleanup_expired(session: Session) -> int:
