@@ -659,7 +659,7 @@ def _notify_spider_failure(exit_code, error_msg):
 def get_spider_status():
     """获取「日常课表爬虫」（run_spider / 同步课表）执行状态。
 
-    ⚠️ 语义边界（勿再回退）：本函数返回的 running **只代表日常课表爬虫**，
+    语义边界（勿再回退）：本函数返回的 running **只代表日常课表爬虫**，
     绝不能把「全量/指定学期爬取」(ScheduledCrawlTask) 算进 running。
     原因：前端任务管理页「课表爬虫」卡片读 spider.running，「全量爬取」卡片读
     spider.running_tasks.course_full_crawl（由 admin 路由 spider_status() 单独填充）。

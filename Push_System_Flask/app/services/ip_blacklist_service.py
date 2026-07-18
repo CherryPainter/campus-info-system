@@ -615,8 +615,8 @@ class IPBlacklistService:
                 label = tier_info['label']
                 severity = tier_info['severity']
                 count = tier_info.get('current_count', '?')
-                sev_emoji = {'warning': '⚠️', 'critical': '🚨'}.get(severity, '📋')
-                title = f'{sev_emoji} **{label}（第 {tier} 级）**'
+                sev_label = {'warning': '警告', 'critical': '严重'}.get(severity, '提示')
+                title = f'**{label}（第 {tier} 级 · {sev_label}）**'
                 content = (
                     f'{title}\n\n'
                     f'> **IP地址**: `{ip_address}`\n\n'
@@ -668,9 +668,9 @@ class IPBlacklistService:
 
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
             sev = dec.get('severity', 'warning')
-            emoji = {'warning': '⚠️', 'critical': '🚨', 'info': '📋'}.get(sev, '📋')
+            sev_label = {'warning': '警告', 'critical': '严重', 'info': '提示'}.get(sev, '提示')
             scope_cn = '账号' if dec.get('scope') == 'account' else 'IP'
-            title = f'{emoji} **{dec["label"]}（第 {dec["level"]} 级）**'
+            title = f'**{dec["label"]}（第 {dec["level"]} 级 · {sev_label}）**'
 
             if dec['action'] == 'account_lock':
                 status_cn = '已临时锁定该账号（窗口内自动解除）'

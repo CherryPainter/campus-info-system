@@ -202,24 +202,48 @@ def test_webhook(webhook_id: int):
         test_message = {
             'msgtype': 'markdown',
             'markdown': {
-                'content': f'**测试消息**\n\nWebhook: {webhook.name}\n时间: 刚刚\n\n> 如果收到此消息，说明 webhook 配置正确 ✅'
+                'content': f'**测试消息**\n\nWebhook: {webhook.name}\n时间: 刚刚\n\n> 如果收到此消息，说明 webhook 配置正确'
             }
         }
         
         try:
             resp = requests.post(webhook.url, json=test_message, timeout=10)
-            data = resp.json()
-            
-            if resp.status_code == 200 and data.get('errcode') == 0:
-                webhook.update_test_status(session, 'success')
-                logger.info(f'[Webhook] 测试成功: {webhook.name}')
-                return api_success(message='测试消息发送成功', data={'webhook_response': data})
-            else:
+            try:
+                data = resp.json()
+            except ValueError:
+                data = {'raw': resp.text[:200]}
+
+            # 企业微信返回 HTTP 200 + JSON {errcode, errmsg}；
+            # 其他通用 webhook 仅以 HTTP 状态码判断。
+            if resp.status_code != 200:
+                error_msg = f'HTTP {resp.status_code}'
+                webhook.update_test_status(session, 'failed')
+                logger.warning(f'[Webhook] 测试失败: {webhook.name} - {error_msg}')
+                return api_error(
+                    message=f'测试失败: {error_msg}',
+                    data={'webhook_response': data},
+                    http_status=400,
+                )
+
+            errcode = data.get('errcode')
+            if errcode is not None and errcode != 0:
                 error_msg = data.get('errmsg', '未知错误')
                 webhook.update_test_status(session, 'failed')
                 logger.warning(f'[Webhook] 测试失败: {webhook.name} - {error_msg}')
-                return api_error(message=f'测试失败: {error_msg}', data={'webhook_response': data}, http_status=400)
-        
+                return api_error(
+                    message=f'测试失败: {error_msg}',
+                    data={'webhook_response': data},
+                    http_status=400,
+                )
+
+            # 成功（errcode=0，或无 errcode 字段的通用 webhook）
+            webhook.update_test_status(session, 'success')
+            logger.info(f'[Webhook] 测试成功: {webhook.name}')
+            return api_success(
+                message='测试消息发送成功',
+                data={'webhook_response': data},
+            )
+
         except Exception as e:
             webhook.update_test_status(session, 'failed')
             logger.error(f'[Webhook] 测试异常: {webhook.name} - {e}')
