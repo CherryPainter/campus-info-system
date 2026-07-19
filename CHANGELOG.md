@@ -16,6 +16,15 @@
 - **问题**：`CourseWeek.week_number` 全局唯一，而爬虫 `_calculate_date` 把每门课日期盖成"本周"，不反映真实学期日历；`get_week_number` 只能正确表示单一学期时间线。重爬旧学期会据此覆盖 `CourseWeek.week_number==1` 起始日，破坏正在用的当前学期周次。v6.11.5 的 Fix B 把此隐患波及面从"重爬 N=1"扩大到"重爬任意 N≥1"。
 - **修复**：`pipeline.save_to_database` 增加 `_is_current_semester` 闸门——仅当 `semester_id` 命中当前学期（或每日爬虫未指定学期、即当前周）才写/维护 `CourseWeek` 锚点，旧学期爬取整段跳过，避免污染全局 week1 锚点。当前学期的锚点维护行为不变（Fix B 仍生效）。
 
+### 日志口径修正：消除重爬假警报（crawl_task_service.py / pipeline.py / scheduler.py）
+- **问题**：`pipeline.save_to_database` 之前仅返回"新建数"。重爬已存在课程时新建数为 0，但数据已刷新（命中更新分支）；`crawl_task_service` 却据此打印 `WARNING 学期 X 未导入任何课程（可能无排课数据）`，且任务状态被置为 `COMPLETED_EMPTY`、消息"未获取到任何课程数据"——属典型的"狼来了"假警报，正常重爬也会每天刷 warning、误导排查。
+- **修复**：`save_to_database` 返回值由 `int` 改为 `(新建数, 更新数)` 元组（空结果护栏 / 异常分别返回 `(0, 0)` / `(-1, 0)`，契约兼容）；`crawl_task_service` 据此精确分级——
+  - 新建 0 **且**更新 0 → 仍 `WARNING`（确无排课 / 爬虫解析退化，空结果护栏已另告警）；
+  - 新建 0 但更新 > 0 → 降级为 `INFO`「重爬刷新完成（新增 0 条 / 更新 N 条），属正常」，**不再告警**；
+  - 新建 > 0 → `INFO` 正常导入日志。
+  - 单次/指定学期爬取的任务消息同步修正：有更新时状态为 `COMPLETED`、消息「重爬刷新 N 门课程（新增 0 条），属正常」，不再误报空。
+- 同步更新 `scheduler.py` 每日爬虫入库日志（新增/更新分列）与 README 文档中 `return 0` 的旧描述。
+
 ---
 
 ## v6.11.5 (2026-07-19)

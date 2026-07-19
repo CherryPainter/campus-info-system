@@ -7,6 +7,7 @@
 import os
 import json
 import sys
+from typing import Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -78,7 +79,7 @@ def extract_course_data_from_json(course_table_json):
     }
 
 
-def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_label: str = None, data_source: str = 'full', create_task_process: bool = True) -> int:
+def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_label: str = None, data_source: str = 'full', create_task_process: bool = True) -> Tuple[int, int]:
     """
     将处理后的课程数据保存到数据库
 
@@ -96,8 +97,10 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
                      指定学期时留空（名称自动取 课程全量爬取·学期{semester_id}）。
 
     Returns:
-        int: 成功时返回导入的课程记录条数（0 表示无数据可导入）；
-             导入阶段发生异常时返回 -1。
+        Tuple[int, int]: (新建数, 更新数)。
+            正常入库时返回新建与更新的课程记录条数；
+            无数据可导入（文件缺失 / 空结果护栏触发）时返回 (0, 0)；
+            导入阶段发生异常时返回 (-1, 0)。
     """
     # 导入进程管理模块
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -144,7 +147,7 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
         processed_file = os.path.join(processed_dir, 'processed_course_table.json')
         if not os.path.exists(processed_file):
             logger.warning(f"未找到处理后的数据文件: {processed_file}")
-            return 0
+            return 0, 0
 
         with open(processed_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -181,7 +184,7 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
             _send_status_alert(_alert)
             if process_id is not None:
                 complete_task_process(process_id, 'completed', '空结果护栏：拒绝入库')
-            return 0
+            return 0, 0
 
         # 更新总项目数
         total_courses = len(courses_data)
@@ -312,7 +315,7 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
                     process_id, 'completed',
                     f'成功导入 {created_count} 条课程记录（新增 {created_count} / 更新 {updated_count}）',
                 )
-            return created_count
+            return created_count, updated_count
         finally:
             session.close()
 
@@ -321,7 +324,7 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
         # 标记任务失败
         if process_id is not None:
             complete_task_process(process_id, 'failed', error=str(e))
-        return -1
+        return -1, 0
 
 
 def parse_period_name(period_name: str, default_period: int) -> list:

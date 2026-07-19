@@ -615,7 +615,7 @@ def run_spider(trigger_source='cron'):
             _try_deferred_daily_push()
             # v6.11.1：每日爬虫同步将「当前周」数据入库（来源标记 daily）。
             # 用每日爬取的当前周正确数据 upsert 修正全量爬取的当前周错误，实现每日校验。
-            # 空结果不会覆盖（save_to_database 空结果护栏 return 0 不入库）。
+            # 空结果不会覆盖（save_to_database 空结果护栏 return (0, 0) 不入库）。
             # create_task_process=False：每日爬虫已有自己的 'spider' 进程记录，
             # 避免再生成冗余的 'course_full_crawl' 进程记录污染执行历史。
             try:
@@ -625,10 +625,10 @@ def run_spider(trigger_source='cron'):
                 import importlib as _il
                 _pipeline_mod = _il.import_module('pipeline')
                 _daily_processed = os.path.join(spider_dir, 'output', 'course-data', 'processed')
-                _n = _pipeline_mod.save_to_database(
+                _created, _updated = _pipeline_mod.save_to_database(
                     _daily_processed, logger, data_source='daily', create_task_process=False
                 )
-                logger.info(f'[每日爬虫] 当前周数据已入库: {_n} 条 (data_source=daily)')
+                logger.info(f'[每日爬虫] 当前周数据已入库 (data_source=daily): 新增 {_created} 条 / 更新 {_updated} 条')
             except Exception as _e:
                 logger.error(f'[每日爬虫] 当前周数据入库失败（不影响图片生成与推送）: {_e}')
             complete_task_process(spider_pid, TaskStatus.COMPLETED, '爬虫执行成功')

@@ -111,6 +111,9 @@ def _crawl_one_semester(eams_id: str, semester_id: int, week: int = None, timeou
         timeout: 单学期爬虫超时（秒）
         scope_label: 可选，透传给 pipeline.save_to_database 用于进程名称区分
                      （全量爬取各学期传 '全部学期'；指定学期留空由 semester_id 决定）
+
+    Returns:
+        Tuple[int, int]: (新建课程数, 更新课程数)。导入失败时抛 RuntimeError。
     """
     from app.core.config import Config
     spider_dir = os.path.join(Config.BASE_DIR, 'app', 'cqie-course-timetable')
@@ -144,18 +147,22 @@ def _crawl_one_semester(eams_id: str, semester_id: int, week: int = None, timeou
     sys.path.insert(0, spider_dir)
     import importlib
     pipeline = importlib.import_module('pipeline')
-    imported = pipeline.save_to_database(
+    created, updated = pipeline.save_to_database(
         processed_subdir, logger, semester_id=semester_id, scope_label=scope_label,
         data_source='full'
     )
-    if imported < 0:
+    if created < 0:
         raise RuntimeError(f'学期 {eams_id} 数据导入失败')
-    if imported == 0:
+    if created == 0 and updated == 0:
+        # 真·无数据：本次既无新增也无更新，学期可能确无排课（或爬虫解析退化，已由空结果护栏另行告警）
         logger.warning(f'[爬取任务] 学期 {eams_id} 未导入任何课程（可能无排课数据）')
+    elif created == 0:
+        # 重爬已存在课程：全部命中 update 分支、新建数为 0，但已有数据已刷新，属正常，不告警
+        logger.info(f'[爬取任务] 学期 {eams_id} 重爬刷新完成（新增 0 条 / 更新 {updated} 条），属正常')
     else:
-        logger.info(f'[爬取任务] 学期 {eams_id} 成功导入 {imported} 门课程')
+        logger.info(f'[爬取任务] 学期 {eams_id} 成功导入 {created} 门课程（更新 {updated} 条）')
     logger.info(f'[爬取任务] 学期 eams_id={eams_id} 爬取+导入完成')
-    return imported
+    return created, updated
 
 
 def _crawl_all_semesters(timeout: int = 900):
@@ -172,9 +179,9 @@ def _crawl_all_semesters(timeout: int = 900):
     for idx, (eid, db_id) in enumerate(pairs, 1):
         logger.info(f'[爬取任务] 全量进度 {idx}/{len(pairs)}：学期 {eid}')
         try:
-            n = _crawl_one_semester(eid, db_id, week=None, timeout=timeout, scope_label='全部学期')
-            if n is not None and n > 0:
-                total_imported += n
+            created, updated = _crawl_one_semester(eid, db_id, week=None, timeout=timeout, scope_label='全部学期')
+            if created > 0:
+                total_imported += created
         except Exception as e:
             logger.error(f'[爬取任务] 学期 {eid} 爬取失败，跳过继续: {e}')
             failed.append((eid, str(e)[:200]))
@@ -233,11 +240,15 @@ def _run_scheduled_crawl(task_id: int):
                 eams_id = task.eams_id or _resolve_eams_id(task.semester_id)
                 if not eams_id:
                     raise RuntimeError(f'无法解析学期 eams_id（semester_id={task.semester_id}）')
-                n = _crawl_one_semester(eams_id, task.semester_id, week=task.week)
-                total = n if n is not None else 0
+                created, updated = _crawl_one_semester(eams_id, task.semester_id, week=task.week)
+                total = created + updated  # 总处理条数（新增 + 更新）
             if total and total > 0:
                 task.status = TaskStatus.COMPLETED
-                task.message = f'爬取完成，成功导入 {total} 门课程'
+                if created > 0:
+                    task.message = f'爬取完成，成功导入 {created} 门课程（更新 {updated} 条）'
+                else:
+                    # 重爬已存在课程：无新增、全部为更新，属正常，不报空
+                    task.message = f'爬取完成，重爬刷新 {updated} 门课程（新增 0 条），属正常'
                 if process_id is not None:
                     complete_task_process(process_id, TaskStatus.COMPLETED, task.message)
             else:

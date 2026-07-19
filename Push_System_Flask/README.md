@@ -1136,7 +1136,7 @@ flowchart TD
 
 - `courses` 表每条记录带 `data_source`（`full`=全量/指定学期爬虫、`daily`=每日爬虫、`admin`=后台手动）与 `last_verified_at`（最后被爬虫写入/校验时间），便于追溯数据来源与新鲜度。
 - **每日校验**：每日爬虫（`scheduler.run_spider`）成功后额外把"当前周"数据 upsert 入库（`data_source='daily'`），用每日爬取的当前周正确数据修正全量爬取的当前周错误。注意 `create_batch` 是 upsert 且只更新不删除，**非当前周的历史数据仍只由全量爬取维护**——每日爬虫按设计只爬当前周、碰不到历史周，因此历史周若全量写入了错误数据，仍需一次正确的全量/指定学期爬取覆盖。
-- **空结果护栏**：`save_to_database` 在爬虫产出 0 条课程时**拒绝入库（不会清空库）**；若数据库该周已有历史课程则判定"疑似解析退化"，升级 `logger.error` 并经由 `WECOM_STATUS_WEBHOOK` 发送企业微信告警，否则仅 `logger.warning`。
+- **空结果护栏**：`save_to_database` 在爬虫产出 0 条课程时**拒绝入库（不会清空库）**并返回 `(0, 0)`；若数据库该周已有历史课程则判定"疑似解析退化"，升级 `logger.error` 并经由 `WECOM_STATUS_WEBHOOK` 发送企业微信告警，否则仅 `logger.warning`。正常入库返回 `(新建数, 更新数)` 元组。
 - **手动课保护（v6.11.2）**：后台创建/编辑的课程落库时打 `data_source='admin'`；`create_batch` 在爬虫来源（`full`/`daily`）下**不会覆盖已有的 `admin` 记录，也不会在同一时间槽插入第二条挤占手动课**——你手动加/改的课在每日与全量爬取中始终保留。手动来源调用 `create_batch` 不受此限。
 
 **课程数据写入流程（来源与保护）**：
