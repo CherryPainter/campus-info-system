@@ -28,6 +28,7 @@ import Tasks from '@/pages/Tasks';
 import Push from '@/pages/Push';
 import Processes from '@/pages/Processes';
 import Webhooks from '@/pages/Webhooks';
+import HolidayMode from '@/pages/HolidayMode';
 import Settings from '@/pages/Settings';
 import Profile from '@/pages/Profile';
 import AccessControl from '@/pages/AccessControl';
@@ -81,6 +82,7 @@ export default function App() {
                   <Route path="/processes" element={<AdminGuard><Processes /></AdminGuard>} />
                   <Route path="/blacklist" element={<Navigate to="/access" replace />} />
                   <Route path="/webhooks" element={<AdminGuard><Webhooks /></AdminGuard>} />
+                  <Route path="/holiday" element={<AdminGuard><HolidayMode /></AdminGuard>} />
                   <Route path="/settings" element={<AdminGuard><Settings /></AdminGuard>} />
                   
                   {/* 欢迎页面 - 普通用户默认首页 */}

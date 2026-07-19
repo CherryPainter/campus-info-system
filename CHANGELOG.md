@@ -4,6 +4,47 @@
 
 ---
 
+## v6.14.0 (2026-07-20)
+
+> 发版类型：**新功能（minor）**。新增「假期模式」：进入寒假/暑假后系统自动全体静默（不再向用户推送任何消息），并跳过课表爬取以节省资源；配套前端独立配置页。同时并入原拟单独发布的周课表教学周修复。
+
+### 假期模式（全体静默）
+- **需求**：用户在毕业设计答辩/寒暑假期间希望系统「全体静默」——自动停掉一切面向用户的推送，且能配置假期区间（寒假/暑假/自定义），无需手动逐个关开关。
+- **设计原则（单点收口 + 双层防护）**：
+  - **真实发送出口单点收口**：静音的最终生效点压在真正的发送出口，确保任何来源的消息都不会漏发；同时在各定时 job 顶部提前 `return` 做性能优化（假期不浪费爬取/渲染资源）。
+  - **覆盖全部真实出口**：经排查，天气/电量/自定义推送「立即发送」均为直接 `adapter.send()`，**不经过 `delivery_service` 队列**；课程定时与每日推送经 `delivery_service` 队列。故在 4 个出口分别落闸：`delivery_service._process_pending_tasks`、`push_routes._send_push`/`send_push_now`、天气 `tasks._send_markdown`、电量 `tasks._send_markdown`/`_send_image`。
+  - **安全告警绝不静音**：`system` 安全告警适配器（IP 黑名单等）不在静音范围内，账号安全事件照常推送。
+  - **fail-open 原则**：`holiday_service.is_active()` 自身异常时回退「不静音」，避免配置异常导致永久失声。
+  - **总开关保守默认**：`system.holiday_mode_enabled` 默认 `false`，关闭时假期区间完全不生效。
+  - **保留运维状态告警**：电量 `_send_markdown(notify_only=True)` 管理员运维状态告警不受假期静音影响。
+- **数据模型**：新增 `holiday_periods` 表（`app/model/holiday_period.py`），字段 `name` / `holiday_type`（winter/summer/custom）/ `start_date` / `end_date`（DATE 闭区间，复用 `course_weeks` 范式 `start_date <= today <= end_date`）/ `enabled` / `note`；`init_database()` 自动建表。
+- **后端实现**：
+  - 新增 `app/services/holiday_service.py` 单例 `holiday_service`：`is_active()` 返回 `(是否静音, 命中期)`；`get_status()` 供前端横幅；`list/create/update/delete_period`、`set_enabled`、`set_master`（写 `module_configs`）。
+  - 新增蓝图 `app/api/holiday_routes.py`（`/api/holiday`，全部 `@admin_required`）：`GET /status`、`PUT /master`、`GET/POST/PUT/DELETE /periods`。
+  - `app/modules/electricity/tasks.py`、`app/modules/weather/tasks.py`、`app/tasks/scheduler.py`（含 `check_push_rules`/`generate_weekly_course`/`run_spider`）、`app/services/delivery_service.py`、`app/api/push_routes.py` 增加假期闸口。
+  - 推送任务新增 `skipped` 状态：假期静默任务标记 skipped（区别于 failed/processing）。
+- **前端实现**：
+  - 新增 `src/api/holiday.ts`（`holidayApi`：status/master/list/create/update/remove）。
+  - 新增 `src/pages/HolidayMode.tsx`：总开关 Switch + 实时状态横幅（未开启/静默中/非假期）+ 说明 Alert + 区间表格（名称/类型 Tag/起止/状态 Switch/备注/操作）+ 新增/编辑 Modal 表单。
+  - `src/App.tsx` 增加 `/holiday` 路由，`src/layouts/AdminLayout.tsx` 侧边栏增加「假期模式」入口（仿 Webhooks 范式）。
+- **验证**：后端导入校验通过；前端 `npm run build`（tsc 无类型错误）通过；`init_db` 自动建表 + 播种 `holiday_mode_enabled`。
+
+### 周课表教学周修复（并入本期，原拟 v6.13.2）
+- **问题**（提交 `22c2a7d`）：`generate_weekly_course` 每周一 00:00 直接 `run_spider` + `_send_weekly_image` 发图，绕过 `rule_service` 推送规则引擎，且无「无课」判断，导致暑假仍发整周课表长图。
+- **修复**：新增 `_is_in_teaching_week()` 基于 `course_weeks.start_date~end_date` 真实日期范围判断今天是否在教学周内；不在任何教学周内即视为「这一周没课」跳过推送。避免依赖易错的 `_calculate_date`（其在假期把 `week_number=1` 误算成本周日期）；异常时回退 True（继续推送），避免 `course_weeks` 数据缺失时静默漏推。与每日推送「无课不推」语义对齐。
+
+### 调整（并入本期，未单独升版）
+- **停用进程记录自动清理（保留历史）**：`app/tasks/scheduler.py` 中每日 02:00 的 `clean_old_processes` 定时任务不再注册。用户 2026-07-20 决定保留历史进程记录、不做自动清理；`clean_old_processes` 函数体保留（此前 `datetime` 导入 bug 已修正，仅不再被定时触发），必要时可手动调用。
+
+### 课程管理假期视图（联动假期模式）
+- **问题**：课程管理页表头日期由前端写死学期开学日（3/2）推算；后端 `get_current_week_number()` 在暑假（7/19 之后）写死返回最后一周=20，导致页面冻结在最后教学周（7/13–7/19），表头显示 13 号而非今天，且无假期提示。
+- **修复/优化**：
+  - 表头日期改用后端 `available_weeks`（course_weeks 真实日期区间）的 `start_date` 推算，与后端完全一致，任意周次日期均正确。
+  - **优先联动管理员配置的假期模式**（权威来源，`GET /api/holiday/status`）：假期模式生效（总开关开 + 命中 enabled 区间覆盖今天）时，课程页直接接管为假期视图，展示管理员填写的假期名称/类型/起止区间；界限清楚、数据可靠。
+  - **回退逻辑**：未配置假期模式（或假期模式未生效）时，由课程页依 `available_weeks` 日期区间自行判定「今天是否在任一教学周内」，不在即视为非教学周，兼容真实校历（7/20 若在某教学周范围内则正常显示该周，不会误判假期）。
+  - **后端根因修复**：`app/api/course_routes.py:get_current_week_number()` 原在暑假/寒假**写死返回 week_number=20**，导致前端页面冻结在第 20 周（表头显示 07-13 而非今天 07-20），且「(本周)」「今天」标记全部错位。现改为按开学日动态推算真实周次（暑假自然算出第 21 周及以后），由前端 `inBreak` / 假期模式联动接管假期展示。
+  - **按「选中周」判定而非「今天」**：假期视图接管条件原以「今天是否在假期区间」为准，导致全局接管、用周次选择器切历史教学周也被假期卡片顶掉。现改为以「选中的周（`selectedWeek`，默认当前周）对应的日期区间是否与假期区间重叠」为准——选中的周落在假期区间内显示假期提示，选中的周为历史教学周（非假期区间）则正常显示课表，周次选择器可自由切换。判定优先用后端 `available_weeks` 真实日期区间，超出教学周范围时用开学日推算兜底。
+
 ---
 
 ## v6.13.1 (2026-07-20)

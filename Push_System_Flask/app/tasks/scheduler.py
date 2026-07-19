@@ -148,12 +148,9 @@ def start_scheduler(app):
         id='weekly_course_job', replace_existing=True
     )
     
-    # 4. 每天凌晨2点清理一个月前的进程记录
-    _scheduler.add_job(
-        clean_old_processes, 'cron',
-        hour=2, minute=0,
-        id='clean_processes_job', replace_existing=True
-    )
+    # 4. 进程记录自动清理已停用（用户 2026-07-20 决定保留历史进程记录）
+    #    原 clean_old_processes 定时任务不再注册；如需手动清理可临时调用该函数。
+    #    注意：clean_old_processes 函数体保留（已修正 datetime 导入），仅不再被定时触发。
 
     # 4.5 每天凌晨3点清理过期的服务端 Session 记录
     _scheduler.add_job(
@@ -521,6 +518,12 @@ def run_spider(trigger_source='cron'):
     if _spider_running:
         logger.warning("爬虫正在执行中，跳过本次触发")
         return False
+
+    # 假期模式：静默期间无需同步课表（提前返回，不触发失败告警）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.is_active()[0]:
+        logger.info('[爬虫] 假期模式静默中，跳过课表爬取')
+        return False
     
     source_label = '定时' if trigger_source == 'cron' else '手动'
     _spider_running = True
@@ -771,6 +774,11 @@ def check_push_rules():
     from datetime import datetime
     now = datetime.now()
     today_str = now.strftime('%Y-%m-%d')
+    # 假期模式：静默全体面向用户的课表推送（调试级日志，避免每分钟刷屏）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.is_active()[0]:
+        logger.debug('[推送规则] 假期模式静默中，跳过本次规则检查')
+        return
     schedules = schedule_service.get_schedules()
     
     # 从未成功加载过数据时，跳过所有推送规则（避免在系统刚部署无数据时误触发）
@@ -839,6 +847,11 @@ def generate_weekly_course():
     """生成每周课表"""
     logger.info("开始生成每周课表...")
     try:
+        # 假期模式：静默全体面向用户的周课表推送
+        from app.services.holiday_service import holiday_service
+        if holiday_service.is_active()[0]:
+            logger.info('[周课表] 假期模式静默中，跳过周课表推送')
+            return
         # 在独立线程中执行爬虫（避免阻塞 APScheduler 线程池）
         import threading
         from datetime import datetime
@@ -968,7 +981,7 @@ def _notify_weekly_failure(reason):
 
 def clean_old_processes():
     """清理一个月前的进程记录"""
-    from datetime import timedelta
+    from datetime import datetime, timedelta
     from app.core.database import get_db
     from app.model.task_process import TaskProcess
     

@@ -15,6 +15,7 @@ from app.model.electricity import ElectricityRecord, ElectricityRemaining, Elect
 from app.model.course import Course
 from app.model.course_week import CourseWeek
 from app.model.custom_push import CustomPush
+from app.model.holiday_period import HolidayPeriod
 from app.model.task_process import TaskProcess
 from app.model.scheduled_crawl_task import ScheduledCrawlTask
 from app.model.token_blacklist import TokenBlacklist
@@ -35,6 +36,7 @@ __all__ = [
     'Course',
     'CourseWeek',
     'CustomPush',
+    'HolidayPeriod',
     'TaskProcess',
     'ScheduledCrawlTask',
     'TokenBlacklist',

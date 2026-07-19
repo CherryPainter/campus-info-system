@@ -119,6 +119,12 @@ def _make_analyzer():
 
 def _send_markdown(content: str, *, notify_only: bool = False) -> None:
     """通过 adapter_service 发送 Markdown 消息。"""
+    # 假期模式：静默全体面向用户的天气推送（系统/安全告警不走此函数，不受影响）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.is_active()[0]:
+        logger.info('[天气] 假期模式静默，跳过发送')
+        return
+
     from app.services.adapter_service import adapter_service
 
     # 使用天气专用适配器

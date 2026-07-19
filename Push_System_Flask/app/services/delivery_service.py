@@ -10,6 +10,7 @@ logger = get_logger(__name__)
 from app.services.task_service import task_service
 from app.services.template_service import template_service
 from app.services.adapter_service import adapter_service
+from app.services.holiday_service import holiday_service
 from app.services import unified_task_service as uts
 from app.core.task_state import TaskType
 
@@ -88,6 +89,15 @@ class DeliveryService:
         
         for task in pending:
             try:
+                # 假期模式：静默全体面向用户的推送（system/安全告警不走此队列，不受影响）。
+                # force_send 为预留豁免位（当前无来源设置，默认 False = 一律静音）。
+                active, period = holiday_service.is_active()
+                if active and not task.get('force_send'):
+                    reason = f"假期模式静默（{period.name} {period.start_date}~{period.end_date}）"
+                    task_service.update_status(task['task_id'], 'skipped', {'reason': reason})
+                    logger.info(f'[推送执行] 任务 {task["task_id"]} 假期模式静默跳过: {reason}')
+                    continue
+
                 task_service.update_status(task['task_id'], 'processing')
                 
                 # 创建执行历史记录

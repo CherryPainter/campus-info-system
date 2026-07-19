@@ -87,6 +87,8 @@ DEFAULT_CONFIGS = [
      'description': '系统名称', 'is_editable': True, 'is_sensitive': False},
     {'module': 'system', 'key': 'cors_origins', 'value': '', 'value_type': 'string',
      'description': '允许的跨域来源（逗号分隔，留空仅允许本地）。注意：CORS 在启动时注册，修改后需重启服务生效', 'is_editable': True, 'is_sensitive': False},
+    {'module': 'system', 'key': 'holiday_mode_enabled', 'value': 'false', 'value_type': 'boolean',
+     'description': '假期模式总开关：开启后，落在「假期静默区间」内的日期全体面向用户的推送自动静默（系统/安全告警不受影响）', 'is_editable': True, 'is_sensitive': False},
 
     # ========== 天气模块配置 ==========
     # key 命名规则：module_key → 对应 Config 属性 QWEATHER_{KEY.upper()} 或 WEATHER_{KEY.upper()}

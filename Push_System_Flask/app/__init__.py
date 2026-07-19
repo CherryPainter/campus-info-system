@@ -321,7 +321,7 @@ def create_app(config_class=None):
     # 先导入所有模型，确保 Base.metadata 包含所有表
     from app.model import (
         WeatherRecord, WeatherAlert, ElectricityRecord, ElectricityRemaining, ElectricityTotalCapacity,
-        Course, CourseWeek, CustomPush, TaskProcess, TokenBlacklist, UserMFA, User,
+        Course, CourseWeek, CustomPush, HolidayPeriod, TaskProcess, TokenBlacklist, UserMFA, User,
         LoginLog, ModuleConfig, Webhook, PushTask,
     )
     from app.model.ip_blacklist import IPBlacklist, IPSecurityEvent
@@ -405,6 +405,10 @@ def create_app(config_class=None):
     # 注册 Session 管理蓝图
     from app.api.session_routes import session_bp
     app.register_blueprint(session_bp, url_prefix='/api/auth')
+
+    # 注册假期模式管理蓝图
+    from app.api.holiday_routes import holiday_bp
+    app.register_blueprint(holiday_bp, url_prefix='/api/holiday')
 
     # 注册统一任务查询蓝图（按 ID 查任务状态的单一入口）
     from app.api.task_routes import task_bp

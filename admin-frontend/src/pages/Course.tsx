@@ -14,6 +14,8 @@ import {
   ScheduleOutlined, SyncOutlined
 } from '@ant-design/icons';
 import { courseApi, WEEK_DAY_MAP, PERIOD_MAP, BUILDINGS, FIRST_SCHEDULE, SECOND_SCHEDULE, getScheduleByBuilding, type Course, type TimetableData, type SemesterInfo, type CrawlTask } from '@/api/course';
+import HolidayCourseView from '@/components/HolidayCourseView';
+import { holidayApi, type HolidayStatus } from '@/api/holiday';
 
 // 中文数字 → 阿拉伯数字映射
 const CN_NUM: Record<string, number> = {
@@ -25,6 +27,38 @@ const CN_NUM: Record<string, number> = {
 function normalizePeriodName(name: string): string {
   return name.replace(/[一二三四五六七八九十]+/g, (m) => String(CN_NUM[m] ?? m));
 }
+
+/**
+ * 按 course_weeks 真实日期区间计算某周某天的表头日期（MM-DD），保证与后端一致。
+ * 优先用后端 available_weeks 中该周的 start_date 推算；缺数据时回退到写死的学期开学日。
+ */
+function getWeekDateLabel(
+  weekNumber: number,
+  weekDay: number,
+  availableWeeks?: { week_number: number; start_date?: string | null; end_date?: string | null }[]
+): string {
+  const wk = availableWeeks?.find((w) => w.week_number === weekNumber);
+  if (wk?.start_date) {
+    const parts = wk.start_date.split('-').map(Number);
+    if (parts.length === 3 && parts.every((n) => !Number.isNaN(n))) {
+      const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+      dt.setDate(dt.getDate() + (weekDay - 1));
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const d = String(dt.getDate()).padStart(2, '0');
+      return `${m}-${d}`;
+    }
+  }
+  return getWeekDate(weekNumber, weekDay, undefined);
+}
+
+/** 解析 'YYYY-MM-DD' 为本地 0 点 Date，非法返回 null */
+function parseYmd(s?: string | null): Date | null {
+  if (!s) return null;
+  const p = s.split('-').map(Number);
+  if (p.length !== 3 || p.some((n) => Number.isNaN(n))) return null;
+  return new Date(p[0], p[1] - 1, p[2]);
+}
+
 import { adminApi, processApi, type TaskProcess } from '@/api/admin';
 import { useTaskPolling } from '@/hooks/useTaskPolling';
 import { useIntervalPolling } from '@/hooks/useIntervalPolling';
@@ -32,7 +66,7 @@ import { POLL_FAST } from '@/hooks/pollIntervals';
 import { useUser } from '@/contexts/UserContext';
 import CrawlScheduler from './CrawlScheduler';
 import { useSemester } from '@/hooks/useSemester';
-import { getWeekDate } from '@/utils/semester';
+import { getWeekDate, getSemesterStartDate } from '@/utils/semester';
 
 const { Option } = Select;
 
@@ -75,6 +109,15 @@ export default function Course() {
   const [isFullCrawl, setIsFullCrawl] = useState(false); // 是否全量爬取
   // 学期列表与选中项统一由 useSemester Hook 管理（避免与 CrawlScheduler 重复实现）
   const { semesters: semesterList, selectedSemester, setSelectedSemester, currentSemesterId } = useSemester();
+  // 假期模式状态（管理员配置，作为课程页假期视图的权威来源；未配置时回退 course_weeks 判定）
+  const [holidayStatus, setHolidayStatus] = useState<HolidayStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    holidayApi.getStatus()
+      .then((res) => { if (!cancelled && res.status === 'success' && res.data) setHolidayStatus(res.data); })
+      .catch(() => { /* 接口异常不阻断课表加载，回退到 course_weeks 判定 */ });
+    return () => { cancelled = true; };
+  }, []);
   // 统一轮询 Hook 的启用开关（替代原先散落的 setInterval 定时器引用）
   const [spiderPolling, setSpiderPolling] = useState(false);
   const [listPolling, setListPolling] = useState(false);
@@ -1025,6 +1068,91 @@ export default function Course() {
   // 是否正在查看"当前学期"：决定周次下拉是否标记"(本周)"，避免历史学期误标
   const isViewingCurrentSemester = selectedSemester !== undefined && selectedSemester === currentSemesterId;
 
+  // 是否在「假期 / 非教学周」：当前学期 + 今天不在任何教学周日期区间内（或超出教学周范围）
+  const inBreak = useMemo(() => {
+    if (!isViewingCurrentSemester) return false;
+    const weeks = timetableData?.available_weeks;
+
+    // 兜底1：没有任何教学周数据 → 视为非教学周/假期
+    if (!weeks || weeks.length === 0) return true;
+
+    const t = currentTime;
+    const today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+
+    // 检查今天是否落在任一教学周的日期区间内
+    const inAnyRange = weeks.some((w) => {
+      if (!w.start_date || !w.end_date) return false;
+      const p1 = w.start_date.split('-').map(Number);
+      const p2 = w.end_date.split('-').map(Number);
+      if (p1.length !== 3 || p2.length !== 3) return false;
+      const s = new Date(p1[0], p1[1] - 1, p1[2]);
+      const e = new Date(p2[0], p2[1] - 1, p2[2]);
+      return today >= s && today <= e;
+    });
+
+    if (!inAnyRange) return true; // 今天不在任何教学周日期范围内 → 假期
+
+    // 兜底2：当前周次已超过所有教学周的最大周次 → 视为假期
+    const maxWeek = Math.max(...weeks.map((w) => w.week_number || 0));
+    if (currentWeek && currentWeek > maxWeek) return true;
+
+    return false;
+  }, [isViewingCurrentSemester, timetableData, currentTime, currentWeek]);
+
+  // 假期模式是否生效（管理员配置，权威来源）：仅在查看当前学期时有效
+  const holidayModeActive = isViewingCurrentSemester && (holidayStatus?.active ?? false);
+
+  // 选中周（默认当前周）对应的日期区间（含年份）：优先用后端 available_weeks 真实区间；
+  // 超出教学周范围时用学期开学日推算，保证任何周次都能拿到正确日期用于假期判定。
+  const selectedWeekRange = useMemo(() => {
+    const wkNum = selectedWeek ?? currentWeek;
+    if (!wkNum) return null;
+    const weeks = timetableData?.available_weeks;
+    const wk = weeks?.find((w) => w.week_number === wkNum);
+    if (wk?.start_date && wk?.end_date) {
+      const s = parseYmd(wk.start_date);
+      const e = parseYmd(wk.end_date);
+      if (s && e) return { start: s, end: e };
+    }
+    const start = getSemesterStartDate(selectedSemester);
+    const monday = new Date(start);
+    monday.setDate(start.getDate() + (wkNum - 1) * 7);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return { start: monday, end: sunday };
+  }, [selectedWeek, currentWeek, timetableData, selectedSemester]);
+
+  // 假期模式：选中的周落在某条启用假期区间内 → 接管为假期视图
+  const selectedWeekInHoliday = useMemo(() => {
+    if (!holidayModeActive) return false;
+    const ps = parseYmd(holidayStatus?.period?.start_date);
+    const pe = parseYmd(holidayStatus?.period?.end_date);
+    if (!ps || !pe || !selectedWeekRange) return false;
+    return selectedWeekRange.start <= pe && selectedWeekRange.end >= ps;
+  }, [holidayModeActive, holidayStatus, selectedWeekRange]);
+
+  // 未配置假期模式时回退：选中的周不在任何教学周区间内（或超出范围）→ 视为非教学周
+  const selectedWeekInBreak = useMemo(() => {
+    if (!isViewingCurrentSemester || holidayModeActive) return false;
+    const weeks = timetableData?.available_weeks;
+    if (!weeks || weeks.length === 0) return true;
+    if (!selectedWeekRange) return false;
+    const inAny = weeks.some((w) => {
+      const s = parseYmd(w.start_date);
+      const e = parseYmd(w.end_date);
+      if (!s || !e) return false;
+      return selectedWeekRange.start <= e && selectedWeekRange.end >= s;
+    });
+    if (!inAny) return true;
+    const maxWeek = Math.max(...weeks.map((w) => w.week_number || 0));
+    if (selectedWeek && selectedWeek > maxWeek) return true;
+    return false;
+  }, [isViewingCurrentSemester, holidayModeActive, timetableData, selectedWeekRange, selectedWeek]);
+
+  // 假期页是否接管课程表视图：按「选中周」是否处于假期/非教学周判定，而非按「今天」。
+  // 这样假期区间内选中的周显示假期提示，历史教学周正常显示课表（周次选择器可自由切换）。
+  const showHoliday = activeView === 'timetable' && (selectedWeekInHoliday || selectedWeekInBreak);
+
   // 视图切换「课表/列表」按钮：放到标题「第X周课表」右侧，桌面端/移动端共用
   const viewSwitch = (
     <Space.Compact>
@@ -1061,7 +1189,7 @@ export default function Course() {
         disabled={isPolling}
       >
         {Array.from({ length: 25 }, (_, i) => i + 1).map((w) => {
-          const isCurrentWeek = isViewingCurrentSemester && currentWeek === w;
+          const isCurrentWeek = isViewingCurrentSemester && currentWeek === w && !inBreak && !holidayModeActive;
           return (
             <Option key={w} value={w}>
               <span style={{ fontWeight: isCurrentWeek ? 'bold' : 'normal', color: isCurrentWeek ? '#1890ff' : undefined }}>
@@ -1115,7 +1243,7 @@ export default function Course() {
         title={
           <Space wrap align="center">
             <CalendarOutlined />
-            {selectedWeek ? `第${selectedWeek}周课表` : '课程管理'}
+            {showHoliday ? '假期模式' : (selectedWeek ? `第${selectedWeek}周课表` : '课程管理')}
             {viewSwitch}
             {isPolling && <Badge dot offset={[4, -4]} />}
             {isViewingCurrentSemester && currentStatus.hasCurrentCourse && currentWeek === selectedWeek && currentStatus.currentPeriod >= 1 && currentStatus.currentPeriod <= 12 && (
@@ -1180,6 +1308,13 @@ export default function Course() {
         {loading ? (
           <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>
         ) : activeView === 'timetable' ? (
+          showHoliday ? (
+            <HolidayCourseView
+              today={currentTime}
+              semesterName={semesterList.find((s: SemesterInfo) => s.id === selectedSemester)?.name}
+              holidayPeriod={holidayStatus?.period ?? undefined}
+            />
+          ) : (
           <div style={isMobile ? { width: '100%', overflow: 'hidden' } : { overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
             <table style={{ width: '100%', minWidth: isMobile ? 'unset' : 900, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               {/* colgroup 锁定列宽：移动端只渲染有课的天，均分剩余宽度，空白列（如无课的周六/周日）不再占位置 */}
@@ -1196,7 +1331,7 @@ export default function Course() {
                     // 计算该天的日期
                     const label = WEEK_DAY_MAP[day];
                     const weekNum = selectedWeek || 1;
-                    const dateStr = getWeekDate(weekNum, day, selectedSemester);
+                    const dateStr = getWeekDateLabel(weekNum, day, timetableData?.available_weeks);
                     // 只有"正在查看当前学期"且选中的周次是真实本周时，才显示"今天"
                     const isToday = isViewingCurrentSemester && currentWeek === weekNum && currentStatus.currentWeekDay === day;
                     return (
@@ -1234,6 +1369,7 @@ export default function Course() {
               </tbody>
             </table>
           </div>
+          )
         ) : (
           <Table dataSource={courses} columns={columns} rowKey="id" scroll={isMobile ? undefined : { x: isAdmin ? 850 : 700 }} />
         )}

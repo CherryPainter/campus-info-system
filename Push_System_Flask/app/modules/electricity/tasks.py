@@ -75,6 +75,12 @@ def _send_markdown(content: str, *, notify_only: bool = False) -> None:
     from app.services.adapter_service import adapter_service
     from app.core.config import Config
 
+    # 假期模式：静默面向用户的电量推送；notify_only 状态告警（发给管理员）不受影响
+    from app.services.holiday_service import holiday_service
+    if not notify_only and holiday_service.is_active()[0]:
+        logger.info('[电量] 假期模式静默，跳过发送')
+        return
+
     # notify_only 时使用状态 Webhook（如已配置），否则使用电量专用适配器
     if notify_only:
         webhook = getattr(Config, 'WECOM_STATUS_WEBHOOK', None)
@@ -100,6 +106,11 @@ def _send_markdown(content: str, *, notify_only: bool = False) -> None:
 
 
 def _send_image(image_path: str) -> None:
+    # 假期模式：图片类电量推送均为面向用户，整段静音
+    from app.services.holiday_service import holiday_service
+    if holiday_service.is_active()[0]:
+        logger.info('[电量] 假期模式静默，跳过图片发送')
+        return
     from app.services.adapter_service import adapter_service
     adapter = adapter_service.get_adapter('electricity')
     if adapter is None:

@@ -221,7 +221,9 @@ def create_push():
         # 如果是立即推送，直接发送
         if push_type == 'immediate':
             success = _send_push(push)
-            if success:
+            if push.status == 'skipped':
+                pass  # 假期模式静默，_send_push 已置为 skipped
+            elif success:
                 push.status = 'sent'
                 push.sent_at = datetime.now()
             else:
@@ -313,7 +315,10 @@ def send_push_now(push_id: int):
             return api_error(message='推送已发送', http_status=400)
         
         success = _send_push(push)
-        if success:
+        if push.status == 'skipped':
+            session.commit()
+            return api_success(message='假期模式静默中，未发送')
+        elif success:
             push.status = 'sent'
             push.sent_at = datetime.now()
             session.commit()
@@ -367,6 +372,17 @@ def _send_push(push: CustomPush) -> bool:
         )
 
         logger.info(f'[自定义推送] 发送推送: {push.title} (msg_type={push.msg_type})')
+
+        # 假期模式：静默全体面向用户的推送（含手动自定义推送）
+        from app.services.holiday_service import holiday_service
+        active, period = holiday_service.is_active()
+        if active:
+            reason = f'假期模式静默（{period.name}）'
+            logger.info(f'[自定义推送] {push.title} 假期模式静默，跳过发送')
+            complete_task_process(pid, 'skipped', reason)
+            push.status = 'skipped'
+            push.error_message = reason
+            return True
 
         from app.services.adapter_service import adapter_service
         # 自定义推送使用 course 适配器（课表/通用推送）

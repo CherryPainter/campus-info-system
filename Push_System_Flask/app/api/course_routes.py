@@ -391,11 +391,14 @@ def get_current_week_number() -> int:
         days_diff = (today - fall_start).days
         week_number = days_diff // 7 + 1
     elif today > spring_end and today < fall_start:
-        # 暑假，返回第二学期最后一周
-        week_number = 20
+        # 暑假：按开学日起继续推算（可能超出教学周范围），由前端 inBreak / 假期模式接管展示
+        days_diff = (today - spring_start).days
+        week_number = days_diff // 7 + 1
     elif today < spring_start:
-        # 寒假，返回第一学期最后一周
-        week_number = 20
+        # 寒假：按上一学年秋季学期起推算
+        prev_fall_start = date(year - 1, 9, 1)
+        days_diff = (today - prev_fall_start).days
+        week_number = days_diff // 7 + 1
     else:
         # 其他情况，默认第1周
         week_number = 1
