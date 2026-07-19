@@ -390,6 +390,22 @@ class CourseRepository:
         created_count = 0
         sem = derive_current_semester()
 
+        # 手动课保护（v6.11.2）：爬虫来源（full/daily）不得覆盖或挤占
+        # data_source='admin' 的记录。先按批次涉及周次预载手动课所占槽位，
+        # 用一个集合快速判断"该时间槽是否已被手动课占据"。
+        _crawler_source = data_source in ('full', 'daily')
+        _admin_slots = set()
+        if _crawler_source:
+            _wk_numbers = {d.get('week_number') for d in courses_data
+                           if d.get('week_number') is not None}
+            if _wk_numbers:
+                _admins = session.query(Course).filter(
+                    Course.data_source == 'admin',
+                    Course.is_deleted == False,
+                    Course.week_number.in_(_wk_numbers),
+                ).all()
+                _admin_slots = {(c.week_day, c.period_idx, c.week_number) for c in _admins}
+
         for data in courses_data:
             # 规范化学期、周次、节次
             weeks = normalize_weeks(data.get('weeks'))
@@ -419,6 +435,14 @@ class CourseRepository:
             ).first()
 
             if existing:
+                # v6.11.2：爬虫来源不得覆盖手动课（admin），保留人工修正；
+                # 手动来源（admin）调用时仍可正常 upsert 自身。
+                if _crawler_source and existing.data_source == 'admin':
+                    continue
+                # v6.11.2：同槽已被手动课占据则不再更新/新增第二条，避免重复
+                if _crawler_source and (data.get('week_day', 1), period_idx,
+                                        data.get('week_number')) in _admin_slots:
+                    continue
                 # 已存在：比对更新（只更新有变化的字段）
                 if data.get('course_name') and data['course_name'] != existing.course_name:
                     existing.course_name = data['course_name']
@@ -447,6 +471,10 @@ class CourseRepository:
                 existing.last_verified_at = datetime.utcnow()
                 existing.updated_at = datetime.utcnow()
             else:
+                # v6.11.2：同槽已被手动课占据则爬虫不插入第二条，避免重复展示
+                if _crawler_source and (data.get('week_day', 1), period_idx,
+                                        data.get('week_number')) in _admin_slots:
+                    continue
                 # 不存在：创建新记录（补全所有 NOT NULL 字段）
                 course = Course(
                     course_code=course_code,

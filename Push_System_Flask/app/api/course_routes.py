@@ -733,6 +733,7 @@ def create_or_update_course():
                     c.weeks = weeks_list
                     c.week_number = data.get('week_number')
                     c.push_enabled = push_enabled
+                    c.data_source = 'admin'  # v6.11.2：后台编辑标记为手动课，爬虫不覆盖
                     c.updated_at = datetime.utcnow()
                     updated_courses.append(c)
             
@@ -752,6 +753,7 @@ def create_or_update_course():
                     weeks=weeks_list,
                     week_number=data.get('week_number'),
                     push_enabled=push_enabled,
+                    data_source='admin',  # v6.11.2：后台新增节次标记为手动课
                 semester_id=old_course.semester_id,
                 semester_name=old_course.semester_name,
                 academic_year=old_course.academic_year,
@@ -814,6 +816,7 @@ def create_or_update_course():
                 weeks=weeks_list,
                 week_number=data.get('week_number'),
                 push_enabled=push_enabled,
+                data_source='admin',  # v6.11.2：后台自建课程标记为手动课，爬虫不覆盖
                 semester_id=_sem['semester_id'],
                 semester_name=_sem['semester_name'],
                 academic_year=_sem['academic_year'],
@@ -895,6 +898,8 @@ def update_course(course_id: int):
         if 'week_number' in data:
             course.week_number = data['week_number']
         
+        # v6.11.2：后台编辑标记为手动课，使爬虫后续不再覆盖本次人工修正
+        course.data_source = 'admin'
         course.updated_at = datetime.utcnow()
         session.commit()
         
