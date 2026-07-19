@@ -23,8 +23,8 @@ class User(Base):
     username = Column(String(50), nullable=False, unique=True, comment='用户名')
     password_hash = Column(String(128), nullable=False, comment='bcrypt 密码哈希')
     role = Column(String(20), default='admin', comment='用户角色')
-    is_active = Column(Boolean, default=True, comment='是否启用')
-    is_primary = Column(Boolean, default=False, comment='是否为主管理员')
+    is_active = Column(Boolean, default=True, nullable=False, comment='是否启用')
+    is_primary = Column(Boolean, default=False, nullable=False, comment='是否为主管理员')
     
     # 个人信息扩展字段
     email = Column(String(100), nullable=True, comment='邮箱')

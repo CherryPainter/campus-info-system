@@ -575,8 +575,10 @@ def _seed_data(interactive: bool = False):
 
     session = get_db()
     try:
-        # ── admin 用户 ──────────────────────────────────────
-        admin = session.query(User).filter_by(username='admin').first()
+        # 初始化默认管理员账号（用户名与 JWT_ADMIN_USERNAME / 指纹比对一致）
+        from app.core.db_fingerprint import default_admin_username
+        admin_username = default_admin_username()
+        admin = session.query(User).filter_by(username=admin_username).first()
         if not admin:
             import bcrypt
 
@@ -592,7 +594,7 @@ def _seed_data(interactive: bool = False):
             ).decode('utf-8')
 
             admin = User(
-                username='admin',
+                username=admin_username,
                 password_hash=password_hash,
                 role='admin',
                 is_active=True,
@@ -600,14 +602,14 @@ def _seed_data(interactive: bool = False):
             )
             session.add(admin)
             session.flush()
-            print(f'  {Style.ok("✓")} 创建管理员: admin')
+            print(f'  {Style.ok("✓")} 创建管理员: {admin_username}')
 
             if password == 'admin':
                 print(f'  {Style.warn("⚠ 使用默认密码 admin，请尽快修改！")}')
             elif password == os.environ.get('ADMIN_TOKEN', '').strip():
                 print(f'  {Style.info("ℹ 管理员密码使用 ADMIN_TOKEN，建议登录后修改")}')
         else:
-            print(f'  {Style.dim("✓ 管理员已存在: admin")}')
+            print(f'  {Style.dim(f"✓ 管理员已存在: {admin_username}")}')
 
         # ── 模块配置 ────────────────────────────────────────
         init_default_configs(session)
@@ -748,6 +750,13 @@ def cmd_fingerprint():
                 print(f'    {Style.warn(t)} 类型变更:')
                 for c, v in cols.items():
                     print(f'      {c}: 定义={v[0]} → 实例={v[1]}')
+        if d.get('null_changed'):
+            for t, cols in d['null_changed'].items():
+                print(f'    {Style.warn(t)} 可空性变更:')
+                for c, v in cols.items():
+                    def_null = v[0].split('|')[1] if '|' in v[0] else '?'
+                    inst_null = v[1].split('|')[1] if '|' in v[1] else '?'
+                    print(f'      {c}: 定义={def_null} → 实例={inst_null}')
         if d.get('missing_config_keys'):
             print(f'    缺失配置键 ({len(d["missing_config_keys"])}):')
             for m, k, vt, *_ in d['missing_config_keys']:
@@ -778,7 +787,7 @@ def _parse_yes_flag() -> bool:
     return any(a in ('--yes', '-y') for a in sys.argv)
 
 
-def cmd_cleanup(auto: bool = False):
+def cmd_cleanup(auto: bool = False, quiet: bool = False):
     """清理数据库多余内容：额外表、多余列、多余配置键、类型差异。
 
     基于指纹 diff 的 extra_tables / extra_columns / extra_config_keys / type_changed。
@@ -790,47 +799,70 @@ def cmd_cleanup(auto: bool = False):
     extra_tables = result.get('extra_tables', [])
     extra_cols = result.get('extra_columns', {})
     extra_cfgs = result.get('extra_config_keys', [])
-    type_changed = result.get('type_changed', {})
+    type_changed = _filter_actionable_type_changes(result.get('type_changed', {}))
+    null_changed = result.get('null_changed', {})
 
-    no_items = not any([extra_tables, extra_cols, extra_cfgs, type_changed])
+    no_items = not any([extra_tables, extra_cols, extra_cfgs, type_changed, null_changed])
     if no_items:
-        print()
-        print(Style.ok('═══ 数据库已整洁，没有多余字段/表/配置键/类型差异 ═══'))
-        print()
+        if not quiet:
+            print()
+            print(Style.ok('═══ 数据库已整洁，没有多余字段/表/配置键/类型差异 ═══'))
+            print()
         return
 
     # ═══════════════════ 展示 ═══════════════════
-    print()
-    print(Style.bold('═══ 数据库清理 ═══'))
-    print()
+    if not quiet:
+        print()
+        print(Style.bold('═══ 数据库清理 ═══'))
+        print()
 
     if extra_tables:
-        print(Style.warn(f'  发现 {len(extra_tables)} 个多余表（模型中未定义）:'))
+        if not quiet:
+            print(Style.warn(f'  发现 {len(extra_tables)} 个多余表（模型中未定义）:'))
         for t in extra_tables:
-            print(f'    {Style.err("DROP TABLE")} {t}')
+            if not quiet:
+                print(f'    {Style.err("DROP TABLE")} {t}')
     if extra_cols:
-        print(Style.warn(f'  发现 {sum(len(v) for v in extra_cols.values())} 个多余列（模型中未定义）:'))
+        if not quiet:
+            print(Style.warn(f'  发现 {sum(len(v) for v in extra_cols.values())} 个多余列（模型中未定义）:'))
         for t, cols in extra_cols.items():
             for c in cols:
-                print(f'    {Style.err("DROP COLUMN")} {t}.{c}')
+                if not quiet:
+                    print(f'    {Style.err("DROP COLUMN")} {t}.{c}')
     if extra_cfgs:
-        print(Style.warn(f'  发现 {len(extra_cfgs)} 个多余配置键:'))
+        if not quiet:
+            print(Style.warn(f'  发现 {len(extra_cfgs)} 个多余配置键:'))
         for m, k, vt, *_ in extra_cfgs:
-            print(f'    {Style.err("DELETE")} module_configs.{m}.{k} ({vt})')
+            if not quiet:
+                print(f'    {Style.err("DELETE")} module_configs.{m}.{k} ({vt})')
     if type_changed:
         # 区分安全变更与需手动的变更
         safe_text_types = {'varchar', 'text', 'longtext', 'mediumtext', 'char'}
-        print(Style.warn(f'  发现 {sum(len(v) for v in type_changed.values())} 个类型差异:'))
+        if not quiet:
+            print(Style.warn(f'  发现 {sum(len(v) for v in type_changed.values())} 个类型差异:'))
         for t, cols in type_changed.items():
             for c, (def_type, inst_type) in cols.items():
                 def_base = def_type.split('|')[0] if def_type else ''
                 inst_base = inst_type.split('|')[0] if inst_type else ''
                 if def_base in safe_text_types and inst_base in safe_text_types:
-                    print(f'    {Style.warn("MODIFY")} {t}.{c}: {inst_base}→{def_base} {Style.dim("(安全，仅文本类型调整)")}')
+                    if not quiet:
+                        print(f'    {Style.warn("MODIFY")} {t}.{c}: {inst_base}→{def_base} {Style.dim("(安全，仅文本类型调整)")}')
                 elif def_base == 'int' and inst_base == 'int':
-                    print(f'    {Style.warn("MODIFY")} {t}.{c}: {inst_base}→{def_base} {Style.dim("(安全，整数族调整)")}')
+                    if not quiet:
+                        print(f'    {Style.warn("MODIFY")} {t}.{c}: {inst_base}→{def_base} {Style.dim("(安全，整数族调整)")}')
                 else:
-                    print(f'    {Style.err("⚠ SKIP")} {t}.{c}: {inst_base}→{def_base} {Style.dim("(需手动评估后再 ALTER)")}')
+                    if not quiet:
+                        print(f'    {Style.err("⚠ SKIP")} {t}.{c}: {inst_base}→{def_base} {Style.dim("(需手动评估后再 ALTER)")}')
+    if null_changed:
+        if not quiet:
+            print(Style.warn(f'  发现 {sum(len(v) for v in null_changed.values())} 个可空性变更:'))
+        for t, cols in null_changed.items():
+            for c, (def_type, inst_type) in cols.items():
+                def_null = def_type.split('|')[1] if '|' in def_type else ''
+                inst_null = inst_type.split('|')[1] if '|' in inst_type else ''
+                target = 'NOT NULL' if def_null == 'null=0' else 'NULL'
+                if not quiet:
+                    print(f'    {Style.warn("MODIFY")} {t}.{c}: {inst_null}→{def_null} {Style.dim(f"(自动修正为 {target})")}')
 
     # ═══════════════════ 确认 ═══════════════════
     if not auto_confirm:
@@ -914,12 +946,132 @@ def cmd_cleanup(auto: bool = False):
             except Exception as e:
                 print(f'  {Style.err(f"✗ MODIFY {tbl_name}.{col_name} 失败")}: {e}')
 
+    # 5) 修正可空性变更（NULL ↔ NOT NULL）
+    for tbl_name, cols in null_changed.items():
+        for col_name, (def_type, inst_type) in cols.items():
+            ok, detail = _fix_nullability(engine, tbl_name, col_name)
+            if ok:
+                print(f'  {Style.ok("✓")} MODIFY {tbl_name}.{col_name} 可空性 → {detail}')
+                cleaned += 1
+            else:
+                print(f'  {Style.err(f"✗ MODIFY {tbl_name}.{col_name} 可空性失败")}: {detail}')
+
     print()
     if cleaned > 0:
-        print(Style.ok(f'═══ 清理完成，共 {cleaned} 项 ═══'))
+        msg = Style.ok(f'═══ 清理完成，共 {cleaned} 项 ═══')
     else:
-        print(Style.info('═══ 没有可自动修复的项 ═══'))
-    print()
+        msg = Style.info('═══ 没有可自动修复的项 ═══')
+    if not quiet:
+        print(msg)
+        print()
+
+
+def _filter_actionable_type_changes(type_changed: dict) -> dict:
+    """过滤出可安全自动修正的同族类型变更（文本↔文本、整数↔整数）。
+
+    注意：可空性差异已移至指纹 diff 的 null_changed 并由 _fix_nullability 处理，
+    此处 type_changed 仅含逻辑类型族真正不同的项；跨类型（如 varchar↔int）
+    不在此自动处理，避免丢数据。
+    """
+    safe_text_types = {'varchar', 'text', 'longtext', 'mediumtext', 'char'}
+    filtered = {}
+    for tbl, cols in type_changed.items():
+        actionable = {}
+        for col, (def_type, inst_type) in cols.items():
+            def_base = def_type.split('|')[0] if def_type else ''
+            inst_base = inst_type.split('|')[0] if inst_type else ''
+            if def_base in safe_text_types and inst_base in safe_text_types:
+                actionable[col] = (def_type, inst_type)
+            elif def_base == 'int' and inst_base == 'int':
+                actionable[col] = (def_type, inst_type)
+            # 其余（跨类型）保持原样字符串，由执行阶段按 is_safe 跳过并提示手动
+            else:
+                actionable[col] = (def_type, inst_type)
+        if actionable:
+            filtered[tbl] = actionable
+    return filtered
+
+
+def _null_fill_value(col):
+    """取模型列的标量默认值，用于 NOT NULL 化前填充现存 NULL 行。
+
+    仅支持标量默认（如 Boolean default=True）；可调用默认 / 无默认返回 None。
+    bool 归一为 0/1 以适配 MySQL TINYINT 存储。
+    """
+    d = getattr(col, 'default', None)
+    if d is not None:
+        arg = getattr(d, 'arg', None)
+        if isinstance(arg, bool):
+            return 1 if arg else 0
+        if arg is not None:
+            return arg
+    return None
+
+
+def _fix_nullability(engine, table_name: str, column_name: str):
+    """依据模型重新 ALTER 单列可空性（NULL ↔ NOT NULL）。返回 (成功, 说明)。
+
+    - 目标为 NOT NULL 且存在 NULL 行：先用模型标量默认值填充，避免 ALTER 失败 / 丢数据；
+      无可用默认值时返回失败，交由人工处理。
+    - 目标为 NULL，或 NOT NULL 但无非空数据时，均为元数据操作，可安全即时执行。
+    """
+    from sqlalchemy.dialects.mysql import dialect as _md
+    from sqlalchemy import text as sql_text
+
+    _import_all_models()
+    from app.core.database import Base
+    tbl = Base.metadata.tables.get(table_name)
+    if tbl is None:
+        return False, '模型无该表定义'
+    col = tbl.columns.get(column_name)
+    if col is None:
+        return False, '模型无该列定义'
+
+    new_type = col.type.compile(dialect=_md())
+    target_not_null = not col.nullable
+
+    # 探测现存 NULL 行数
+    null_count = 0
+    try:
+        with engine.connect() as conn:
+            null_count = conn.execute(
+                sql_text(f'SELECT COUNT(*) FROM `{table_name}` WHERE `{column_name}` IS NULL')
+            ).scalar() or 0
+    except Exception:
+        null_count = 0
+
+    # NOT NULL 化前，若已有 NULL 行，用模型默认值填充
+    if target_not_null and null_count > 0:
+        fill = _null_fill_value(col)
+        if fill is None:
+            return False, f'存在 {null_count} 条 NULL 且无模型标量默认值，需手动处理'
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    sql_text(
+                        f'UPDATE `{table_name}` SET `{column_name}` = :v '
+                        f'WHERE `{column_name}` IS NULL'
+                    ),
+                    {'v': fill},
+                )
+                conn.commit()
+        except Exception as e:
+            return False, f'填充 NULL 失败: {e}'
+
+    modifier = 'NOT NULL' if target_not_null else 'NULL'
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                sql_text(
+                    f'ALTER TABLE `{table_name}` MODIFY COLUMN '
+                    f'`{column_name}` {new_type} {modifier}'
+                )
+            )
+            conn.commit()
+        return True, modifier
+    except Exception as e:
+        return False, f'MODIFY 失败: {e}'
+
 
 
 # ══════════════════════════════════════════════════════════════

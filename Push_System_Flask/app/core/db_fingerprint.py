@@ -32,6 +32,13 @@ from sqlalchemy.dialects.mysql import dialect as _mysql_dialect
 
 # 整数族统一为 int（MySQL 显示宽度 int(11) 是装饰性的，与定义侧 INTEGER 不可比，故抹平）
 _INT_FAMILY = {'int', 'integer', 'bigint', 'smallint', 'tinyint', 'mediumint'}
+# Boolean 族：SQLAlchemy 编译为 BOOL，MySQL 实例侧为 tinyint(1)，需归一为同一族
+_BOOL_FAMILY = {'bool', 'bit'}
+
+
+def default_admin_username() -> str:
+    """默认管理员用户名（与 JWT_ADMIN_USERNAME 环境变量一致）。"""
+    return os.getenv('JWT_ADMIN_USERNAME', 'admin')
 
 
 def _normalize_type(raw: str) -> str:
@@ -48,6 +55,12 @@ def _normalize_type(raw: str) -> str:
     if not m:
         return s
     base = m.group(1)
+    size = m.group(2)
+    # Boolean 必须在 _INT_FAMILY 之前判定：tinyint(1) 是 MySQL 布尔列的存储形式
+    if base in _BOOL_FAMILY:
+        return 'bool'
+    if base == 'tinyint' and size == '1':
+        return 'bool'
     if base in _INT_FAMILY:
         return 'int'
     if base in ('varchar', 'char'):
@@ -181,8 +194,7 @@ def _instance_configs(session) -> List[Tuple[str, str, str, bool, bool]]:
 
 def _instance_admin(session) -> bool:
     from app.model.user import User
-    username = os.getenv('JWT_ADMIN_USERNAME', 'admin')
-    return session.query(User).filter_by(username=username).first() is not None
+    return session.query(User).filter_by(username=default_admin_username()).first() is not None
 
 
 def compute_instance_fingerprint(session) -> Tuple[str, dict]:
@@ -202,7 +214,7 @@ def compute_instance_fingerprint(session) -> Tuple[str, dict]:
 #  比对
 # ──────────────────────────────────────────────────────────
 def diff_fingerprints(def_struct: dict, inst_struct: dict) -> dict:
-    """结构化 diff：逐项列出缺失/多余的表、列、类型变更、配置键，以及管理员一致性。"""
+    """结构化 diff：逐项列出缺失/多余的表、列、类型变更、可空性变更、配置键，以及管理员一致性。"""
     ds = def_struct['schema']
     isc = inst_struct['schema']
 
@@ -210,20 +222,42 @@ def diff_fingerprints(def_struct: dict, inst_struct: dict) -> dict:
     extra_tables = sorted(set(isc) - set(ds))
     missing_columns: Dict[str, List[str]] = {}
     extra_columns: Dict[str, List[str]] = {}
+    # 类型变更（逻辑类型族不同，如 varchar↔int）与可空性变更分开统计：
+    # 否则把 nullable 微调误报成「类型变更」，且清理脚本无法区分、只能跳过。
     type_changed: Dict[str, Dict[str, List[str]]] = {}
+    null_changed: Dict[str, Dict[str, List[str]]] = {}
 
     for t in sorted(set(ds) & set(isc)):
         dc = ds[t]
         ic = isc[t]
         miss = sorted(set(dc) - set(ic))
         extra = sorted(set(ic) - set(dc))
-        changed = {c: [dc[c], ic[c]] for c in dc if c in ic and dc[c] != ic[c]}
+        t_changed: Dict[str, List[str]] = {}
+        n_changed: Dict[str, List[str]] = {}
+        for c in dc:
+            if c not in ic or dc[c] == ic[c]:
+                continue
+            d_parts = dc[c].split('|')
+            i_parts = ic[c].split('|')
+            d_base = d_parts[0]
+            i_base = i_parts[0]
+            if d_base != i_base:
+                # 逻辑类型族不同 → 真正的类型变更（跨类型，清理时谨慎处理）
+                t_changed[c] = [dc[c], ic[c]]
+            elif len(d_parts) > 1 and len(i_parts) > 1 and d_parts[1] != i_parts[1]:
+                # 类型相同、仅可空性不同 → 可空性变更（可安全自动修正）
+                n_changed[c] = [dc[c], ic[c]]
+            else:
+                # 兜底：整串不等但无法归类（含主键差异），按类型变更处理，交由人工
+                t_changed[c] = [dc[c], ic[c]]
         if miss:
             missing_columns[t] = miss
         if extra:
             extra_columns[t] = extra
-        if changed:
-            type_changed[t] = changed
+        if t_changed:
+            type_changed[t] = t_changed
+        if n_changed:
+            null_changed[t] = n_changed
 
     dk = set(def_struct['configs'])
     ik = set(inst_struct['configs'])
@@ -238,6 +272,7 @@ def diff_fingerprints(def_struct: dict, inst_struct: dict) -> dict:
         'missing_columns': missing_columns,
         'extra_columns': extra_columns,
         'type_changed': type_changed,
+        'null_changed': null_changed,
         'missing_config_keys': missing_config_keys,
         'extra_config_keys': extra_config_keys,
         'admin': {
@@ -248,7 +283,7 @@ def diff_fingerprints(def_struct: dict, inst_struct: dict) -> dict:
     }
     diff['match'] = not any([
         missing_tables, extra_tables, missing_columns, extra_columns,
-        type_changed, missing_config_keys, extra_config_keys, not admin_match,
+        type_changed, null_changed, missing_config_keys, extra_config_keys, not admin_match,
     ])
     return diff
 
@@ -279,6 +314,8 @@ def summarize_diff(diff: dict) -> str:
         parts.append('多余列:' + ';'.join(f"{t}({','.join(c)})" for t, c in diff['extra_columns'].items()))
     if diff.get('type_changed'):
         parts.append('类型变更:' + ';'.join(f"{t}:{len(v)}列" for t, v in diff['type_changed'].items()))
+    if diff.get('null_changed'):
+        parts.append('可空性变更:' + ';'.join(f"{t}:{len(v)}列" for t, v in diff['null_changed'].items()))
     if diff.get('missing_config_keys'):
         parts.append(f"缺失配置键:{len(diff['missing_config_keys'])}个")
     if diff.get('extra_config_keys'):

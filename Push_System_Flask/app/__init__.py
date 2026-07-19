@@ -295,10 +295,6 @@ def create_app(config_class=None):
     from app.api.task_routes import task_bp
     app.register_blueprint(task_bp, url_prefix='/api/tasks')
 
-    # 初始化服务
-    from app.services import init_services
-    init_services(app)
-    
     # 清理僵尸进程（服务器重启后遗留的 running 状态进程）
     from app.core.database import get_db
     from app.model.task_process import TaskProcess
@@ -319,14 +315,16 @@ def create_app(config_class=None):
         # 初始化默认配置
         init_default_configs(session)
         
-        # 初始化默认管理员账号
-        admin_user = session.query(User).filter_by(username='admin').first()
+        # 初始化默认管理员账号（用户名与 JWT_ADMIN_USERNAME / 指纹比对一致）
+        from app.core.db_fingerprint import default_admin_username
+        admin_username = app.config.get('JWT_ADMIN_USERNAME') or default_admin_username()
+        admin_user = session.query(User).filter_by(username=admin_username).first()
         if not admin_user:
             # 从 .env 读取初始密码
             initial_password = app.config.get('JWT_ADMIN_PASSWORD', '') or app.config.get('ADMIN_TOKEN', 'admin')
             password_hash = bcrypt.hashpw(initial_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             admin_user = User(
-                username='admin',
+                username=admin_username,
                 password_hash=password_hash,
                 role='admin',
                 is_active=True,
@@ -334,9 +332,9 @@ def create_app(config_class=None):
             )
             session.add(admin_user)
             session.commit()
-            logger.info('[启动] 已创建默认管理员账号 admin')
+            logger.info(f'[启动] 已创建默认管理员账号 {admin_username}')
         else:
-            logger.info(f'[启动] 管理员账号已存在: admin')
+            logger.info(f'[启动] 管理员账号已存在: {admin_username}')
         
         # 数据库指纹比对（种子数据已写入后，检测实例是否与代码初始化定义一致）
         try:
@@ -353,7 +351,8 @@ def create_app(config_class=None):
                     cmd_migrate(quiet=True)
                 except Exception as me:
                     logger.error(f'[数据库指纹] 自动迁移执行异常: {me}')
-                # 迁移后重检
+                # 迁移后重检（expire 避免 ORM 缓存干扰 INFORMATION_SCHEMA 读取）
+                session.expire_all()
                 fp2 = check_db_fingerprint(session)
                 if fp2['match']:
                     logger.info(f'[数据库指纹] 自动迁移后一致 (码={fp2["definition_hash"][:12]}…)')
@@ -365,9 +364,10 @@ def create_app(config_class=None):
                     )
                     try:
                         from init_db import cmd_cleanup
-                        cmd_cleanup(auto=True)
+                        cmd_cleanup(auto=True, quiet=True)
                     except Exception as ce:
                         logger.error(f'[数据库指纹] 自动清理执行异常: {ce}')
+                    session.expire_all()
                     fp3 = check_db_fingerprint(session)
                     if fp3['match']:
                         logger.info(f'[数据库指纹] 自动清理后一致 (码={fp3["definition_hash"][:12]}…)')
@@ -382,7 +382,12 @@ def create_app(config_class=None):
             logger.warning(f'[数据库指纹] 比对失败（不影响启动）: {e}')
     finally:
         session.close()
-    
+
+    # 初始化服务（置于种子数据与指纹检查之后：此时 schema 已对齐、默认配置与管理员已就绪，
+    # 指纹日志也能紧贴建库时机，尽早暴露并自动修复漂移）
+    from app.services import init_services
+    init_services(app)
+
     # 启动定时任务
     from app.tasks.scheduler import start_scheduler
     start_scheduler(app)

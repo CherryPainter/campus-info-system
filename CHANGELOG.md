@@ -6,6 +6,29 @@
 
 ---
 
+## v6.12.1 (2026-07-19)
+
+> 发版类型：**缺陷修复（patch）**。修复数据库指纹自动清理无法修正"可空性变更（NULL↔NOT NULL）"的问题，消除 users 表 is_active/is_primary 由 NULL 改为 NOT NULL 后需手动 cleanup 的兜底告警。
+
+### 数据库指纹：可空性变更拆分与自动修正（app/core/db_fingerprint.py / init_db.py / tests/test_db_fingerprint.py）
+- **问题**：`user.py` 将 `is_active`/`is_primary` 由 `nullable=True` 改为 `nullable=False` 后，实例库仍是旧的 NULL 状态。指纹描述符为 `类型|null|pk` 拼串，`bool|null=1`→`bool|null=0` 仅可空性变化，却被 `diff_fingerprints` 整串不等判为 `type_changed`，`summarize_diff` 误报"类型变更"。而 `cmd_cleanup` 的 `_filter_actionable_type_changes` 对 `bool↔bool` 直接跳过，清理逻辑也缺少改可空性的 ALTER，于是自动迁移+自动清理都修不掉，最终兜底提示手动 `python init_db.py cleanup`。
+- **修复**：
+  1. `db_fingerprint.py`：`diff_fingerprints` 将变更拆为 `type_changed`（逻辑类型族真不同）与 `null_changed`（类型相同、仅可空性不同），两者均计入 `match`；`summarize_diff` 单独输出"可空性变更"，不再误报"类型变更"。
+  2. `init_db.py` `cmd_cleanup`：新增 `null_changed` 展示与执行阶段，自动 `ALTER MODIFY` 修正 NULL/NOT NULL。配套辅助函数——`_fix_nullability`：要改为 NOT NULL 且表内已有 NULL 行时，先用模型标量默认值填充（如 `Boolean default=True`→`1`）再 ALTER，避免失败/丢数据；无可用默认则跳过并告警；`_null_fill_value` 将 `True/False` 归一为 `1/0` 适配 MySQL `TINYINT`。启动流程已自动调用 `cmd_cleanup(auto=True)`，现可自动修掉，不再喊手动。
+  3. `cmd_fingerprint` 详情展示新增可空性变更小节。
+  4. 新增 `tests/test_db_fingerprint.py`：5 例覆盖变更归属拆分、`summarize_diff` 文案、NULL 行默认值填充。
+- **验证**：`pytest tests/` 38/38 绿色无回归；`py_compile` 通过。
+
+### 启动顺序优化：指纹检查前移紧贴建库时机（app/__init__.py）
+- **问题**：指纹比对原本排在 `init_services`（课表/规则/模板/适配器加载等）之后，服务初始化的耗时（数秒）把指纹日志推到启动流程末尾，漂移告警来得太晚，用户期望它紧贴"数据库已存在"的建库时机。
+- **修复**：将 `create_app` 中"僵尸清理 → `init_default_configs` → 默认管理员创建/检查 → 指纹比对+自动修复"整段前移至 `init_services` 之前；服务初始化改为在指纹段之后执行。指纹依赖配置键结构与管理员存在性，故必须排在这两项写入之后，但两步骤本身毫秒级，不再被服务初始化阻塞。
+- **附带收益**：服务初始化在 schema 已对齐、默认配置与管理员已就绪的前提下运行，启动前提更充分。
+- **验证**：`python -c "import run"`（触发 `create_app` 完整初始化、不进入 `app.run` 常驻）实测——指纹日志由原先滞后约 6 秒提前至紧贴管理员检查之后、服务初始化之前；`py_compile` 通过。
+
+- **版本**：本次为缺陷修复，按约定 bump patch（6.12.0→6.12.1），四处版本号（config.py / version.ts / package.json / .env）已同步。
+
+---
+
 ## v6.12.0 (2026-07-19)
 
 > 发版类型：**新功能（minor）**。数据库指纹漂移检测（定义码 vs 实例码）。
