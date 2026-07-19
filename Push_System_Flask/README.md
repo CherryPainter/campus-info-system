@@ -87,76 +87,63 @@
 
 ## 系统架构
 
-```
-+-------------------------------------------------------------+
-|                  管理后台 (React + TypeScript)               |
-|  Ant Design 5 + ProComponents + ECharts + Axios             |
-|  Vite 8 构建 | JWT httpOnly Cookie 自动刷新 | 路由守卫         |
-+----------------------------+--------------------------------+
-                             | JWT Bearer Token (Authorization Header)
-                             v
-+-------------------------------------------------------------+
-|                       Flask 后端 (API)                        |
-|                                                              |
-|  +----------------+  +----------------+  +-----------------+ |
-|  | 认证模块       |  | 安全中间件     |  | 管理后台 API    | |
-|  | (JWT + MFA)    |  | (路径/SQL/XSS) |  | (admin_bp)     | |
-|  | auth_bp        |  |                |  | /api/admin     | |
-|  +----------------+  +----------------+  +-----------------+ |
-|                                                              |
-|  +----------------+  +----------------+  +-----------------+ |
-|  | 课表 API       |  | 天气 API       |  | 电量 API        | |
-|  | (api_bp)       |  | (weather_bp)   |  | (electricity_bp)| |
-|  | /api           |  | /api/weather   |  | /api/electricity| |
-|  +----------------+  +----------------+  +-----------------+ |
-|                                                              |
-|  +----------------+  +----------------+  +-----------------+ |
-|  | 课程管理 API   |  | 自定义推送 API |  | Webhook API     | |
-|  | (course_bp)    |  | (push_bp)      |  | (webhook_bp)    | |
-|  +----------------+  +----------------+  +-----------------+ |
-|                                                              |
-|  +------------------------------------------------------+   |
-|  |                   服务层 (Services)                    |   |
-|  |  ScheduleService | RuleService | TaskService          |   |
-|  |  DeliveryService | TemplateService | AdapterService   |   |
-|  +------------------------------------------------------+   |
-|                                                              |
-|  +------------------------------------------------------+   |
-|  |              任务调度 (APScheduler)                    |   |
-|  |  爬虫任务 | 规则检查(60s) | 天气任务(5个) | 电量任务(5个)|   |
-|  +------------------------------------------------------+   |
-+----------------------+-------------------+------------------+
-                       |                   |
-          +------------v-----+   +---------v----------+
-          | 教务系统          |   | 和风天气 API       |
-          | (Playwright 爬虫) |   | (REST + Ed25519)   |
-          +-------------------+   +--------------------+
-                       |
-          +------------v-----+
-          | 企业微信           |
-          | (Webhook 推送)     |
-          +-------------------+
+```mermaid
+flowchart TB
+    subgraph FE[管理后台 React + TypeScript]
+        direction LR
+        FE1[Ant Design 5 + ProComponents + ECharts]
+        FE2[Axios + JWT httpOnly Cookie 自动刷新]
+        FE3[路由守卫]
+    end
+
+    FE -->|JWT Bearer Token<br/>Authorization Header| BE
+
+    subgraph BE[Flask 后端 API]
+        direction TB
+        subgraph API[API 路由层]
+            A1[认证模块 auth_bp<br/>JWT + MFA]
+            A2[安全中间件<br/>路径/SQL/XSS]
+            A3[管理后台 API /api/admin]
+            A4[课表 API /api]
+            A5[天气 API /api/weather]
+            A6[电量 API /api/electricity]
+            A7[课程管理 /api/course]
+            A8[自定义推送 /api/admin/push]
+            A9[Webhook /api/admin/webhooks]
+        end
+        subgraph SVC[服务层 Services]
+            S1[ScheduleService / RuleService]
+            S2[TaskService / DeliveryService]
+            S3[TemplateService / AdapterService]
+        end
+        subgraph SCH[任务调度 APScheduler]
+            T1[爬虫任务]
+            T2[规则检查 60s]
+            T3[天气任务 ×5]
+            T4[电量任务 ×5]
+        end
+    end
+
+    BE -->|Playwright 爬虫| JW[教务系统<br/>重庆工程学院 CAS]
+    BE -->|REST + Ed25519| WX[和风天气 API]
+    BE -->|Webhook 推送| WECOM[企业微信]
+
+
 ```
 
 ### 后端分层架构
 
-```
-API 路由层 (app/api/)
-  |  -- HTTP 请求/响应处理，认证/权限校验
-  v
-服务层 (app/services/)
-  |  -- 业务逻辑编排，推送流水线
-  |  -- ScheduleService -> RuleService -> TaskService
-  |  --                -> DeliveryService -> AdapterService
-  v
-模块层 (app/modules/)
-  |  -- 功能实现：爬虫、统计、格式化、图表、分析、缓存
-  v
-仓库层 (app/repository/)
-  |  -- 数据库 CRUD 封装，不含业务逻辑
-  v
-数据模型层 (app/model/)
-     -- ORM 模型定义，13 个数据表
+```mermaid
+flowchart TD
+    L1["API 路由层 app/api/<br/>HTTP 请求/响应处理，认证/权限校验"]
+    L2["服务层 app/services/<br/>业务逻辑编排，推送流水线<br/>ScheduleService → RuleService → TaskService<br/>→ DeliveryService → AdapterService"]
+    L3["模块层 app/modules/<br/>功能实现：爬虫/统计/格式化/图表/分析/缓存"]
+    L4["仓库层 app/repository/<br/>数据库 CRUD 封装，不含业务逻辑"]
+    L5["数据模型层 app/model/<br/>ORM 模型定义"]
+
+    L1 --> L2 --> L3 --> L4 --> L5
+
+
 ```
 
 ---
@@ -998,34 +985,20 @@ ServerStatusProvider 组件监听 Axios 派发的 `server-offline` / `server-onl
 
 课表推送的完整数据流：
 
-```
-课表数据 (MySQL)
-    |
-    v
-ScheduleService (加载/转换/缓存，60秒自动刷新)
-    |
-    v
-RuleService (每60秒检查5种推送规则，时间窗口防重复)
-    |  - before_class: 课前15分钟提醒
-    |  - daily_schedule: 每日07:00课表推送
-    |  - before_end_class: 下课前10分钟提醒
-    |  - weekly_schedule: 每周一08:00周课表
-    |  - after_class: 上课后5分钟确认 (默认禁用)
-    v
-TaskService (创建任务，幂等+每日去重，优先级排序)
-    |
-    v
-DeliveryService (10秒轮询待处理任务，模板渲染，重试3次)
-    |
-    v
-TemplateService (6套Markdown模板，{{占位符}}替换，4096字节截断保护)
-    |
-    v
-AdapterService (推送渠道适配)
-    |  - WeComAdapter: 企业微信单Webhook
-    |  - MultiWeComAdapter: 多Webhook (至少一个成功即整体成功)
-    v
-企业微信 Webhook
+```mermaid
+flowchart TD
+    D[(课表数据 MySQL)] --> SCH["ScheduleService<br/>加载/转换/缓存 · 60秒自动刷新"]
+    SCH --> RULE["RuleService<br/>每60秒检查5种推送规则<br/>时间窗口防重复"]
+    RULE --> TASK["TaskService<br/>创建任务 · 幂等+每日去重 · 优先级排序"]
+    TASK --> DELIV["DeliveryService<br/>10秒轮询待处理任务<br/>模板渲染 · 重试3次"]
+    DELIV --> TPL["TemplateService<br/>6套 Markdown 模板 · 占位符替换<br/>4096字节截断保护"]
+    TPL --> ADP["AdapterService · 推送渠道适配"]
+    ADP -->|WeComAdapter 单 Webhook| W1[企业微信 Webhook]
+    ADP -->|MultiWeComAdapter 多 Webhook<br/>至少一个成功即整体成功| W2[企业微信 Webhook]
+
+    RULE -. 规则类型 .- R["before_class 课前15分钟<br/>daily_schedule 每日07:00<br/>before_end_class 下课前10分钟<br/>weekly_schedule 每周一08:00<br/>after_class 上课后5分钟(默认禁用)"]
+
+
 ```
 
 ### 天气分析规则引擎
@@ -1102,6 +1075,32 @@ AdapterService (推送渠道适配)
 
 **数据可信度设计（v6.11.1）**：
 
+**课表爬虫端到端流程**：
+
+```mermaid
+flowchart TD
+    TRIG[定时 / 手动触发] --> TYPE{触发类型}
+    TYPE -->|每日爬虫<br/>scheduler.run_spider| D[爬取当前周]
+    TYPE -->|全量 / 指定学期<br/>crawl_task_service --all-weeks| F[爬取整学期]
+
+    D --> LOGIN[CAS 登录<br/>Playwright 无头 Chromium]
+    F --> LOGIN
+    LOGIN --> OCR[验证码识别<br/>OpenCV 预处理 + Tesseract]
+    OCR --> PARSE[BeautifulSoup 解析 HTML<br/>处理 rowspan 跨行合并]
+    PARSE --> RAW[保存 raw HTML + JSON<br/>output/course-data/raw]
+
+    D --> IMG[生成课程表图片<br/>DPI 250 + 背景图 + 星期着色]
+    D --> PUSH_EVENT[触发企业微信推送]
+    IMG --> PUSH_EVENT
+
+    D --> DDB[save_to_database<br/>data_source=daily<br/>create_task_process=False]
+    F --> FDB[pipeline.save_to_database<br/>data_source=full]
+    DDB --> BATCH[CourseRepository.create_batch<br/>upsert]
+    FDB --> BATCH
+    BATCH --> DB[(courses 表)]
+```
+
+
 - `courses` 表每条记录带 `data_source`（`full`=全量/指定学期爬虫、`daily`=每日爬虫、`admin`=后台手动）与 `last_verified_at`（最后被爬虫写入/校验时间），便于追溯数据来源与新鲜度。
 - **每日校验**：每日爬虫（`scheduler.run_spider`）成功后额外把"当前周"数据 upsert 入库（`data_source='daily'`），用每日爬取的当前周正确数据修正全量爬取的当前周错误。注意 `create_batch` 是 upsert 且只更新不删除，**非当前周的历史数据仍只由全量爬取维护**——每日爬虫按设计只爬当前周、碰不到历史周，因此历史周若全量写入了错误数据，仍需一次正确的全量/指定学期爬取覆盖。
 - **空结果护栏**：`save_to_database` 在爬虫产出 0 条课程时**拒绝入库（不会清空库）**；若数据库该周已有历史课程则判定"疑似解析退化"，升级 `logger.error` 并经由 `WECOM_STATUS_WEBHOOK` 发送企业微信告警，否则仅 `logger.warning`。
@@ -1163,6 +1162,20 @@ flowchart TD
 
 ---
 
+**模板渲染与分发流程**：
+
+```mermaid
+flowchart LR
+    R[RuleService 命中规则] --> SEL[选择模板]
+    SEL --> T["course_reminder_before_class<br/>course_reminder_before_end_class<br/>course_reminder_after_class"]
+    SEL --> S["schedule_summary_daily<br/>schedule_summary_weekly<br/>schedule_summary_daily_no_class"]
+    T --> REND["TemplateService 渲染<br/>占位符替换 · 最大3900字节截断"]
+    S --> REND
+    REND --> RELOAD["支持热重载<br/>POST /api/templates/reload"]
+    REND --> ADP[AdapterService 推送]
+```
+
+
 ## 数据库模型
 
 系统共定义 13 个数据模型，对应数据库中的 13 张表：
@@ -1203,40 +1216,32 @@ flowchart TD
 
 ### JWT 双 Token 认证流程
 
-```
-+----------+     POST /api/auth/login      +-----------------------------------+
-|  前端     | ---------------------------> |  后端                              |
-|          |  {username, password}         |                                  |
-|          |                               | 1. bcrypt 验证密码                 |
-|          |                               | 2. 检查 MFA 是否启用                |
-|          |                               | 3. 生成 access_token (1h, HS256)  |
-|          | <---------------------------  | 4. 生成 refresh_token (7d)        |
-|          |  Set-Cookie: access_token     | 5. 设置 httpOnly Cookie           |
-|          |  Set-Cookie: refresh_token    | 6. 记录 LoginLog                  |
-+----------+                               +----------------------------------+
+```mermaid
+sequenceDiagram
+    participant FE as 前端
+    participant BE as 后端
 
-+----------+     GET /api/weather/now      +-----------------------------------+
-|  前端     | --------------------------->  |  后端                              |
-|          |  Cookie: access_token=xxx     |                                   |
-|          |                               | 1. @jwt_required 提取 Token        |
-|          |                               | 2. JWTManager.verify_token()      |
-|          |                               |    - 验证 HS256 签名               |
-|          |                               |    - 检查过期时间                   |
-|          |                               |    - 检查黑名单 (jti)               |
-|          |                               |    - 检查 token 类型为 access       |
-|          | <---------------------------  | 3. g.current_user = payload       |
-|          |  {weather data}               | 4. 返回数据                        |
-+----------+                               +-----------------------------------+
+    Note over FE,BE: 登录
+    FE->>BE: POST /api/auth/login {username, password}
+    BE->>BE: bcrypt 验证密码
+    BE->>BE: 检查 MFA 是否启用
+    BE->>BE: 生成 access_token (1h, HS256)
+    BE->>BE: 生成 refresh_token (7d)
+    BE-->>FE: Set-Cookie: access_token / refresh_token (httpOnly)
+    BE->>BE: 记录 LoginLog
 
-+----------+     POST /api/auth/refresh     +-------------------------------------+
-|  前端     | ---------------------------> |  后端                                  |
-|          |  Cookie: refresh_token=xxx    |                                      |
-|          |                               | 1. 验证 refresh_token                 |
-|          |                               | 2. 撤销旧 refresh_token (一次性使用)    |
-|          |                               | 3. 安全获取 role (防权限提升)           |
-|          | <---------------------------  | 4. 生成新 access_token                |
-|          |  Set-Cookie: new_access_token | 5. 设置新 Cookie                      |
-+----------+                               +--------------------------------------+
+    Note over FE,BE: 业务请求
+    FE->>BE: GET /api/weather/now (Cookie: access_token)
+    BE->>BE: @jwt_required 提取 Token
+    BE->>BE: 验证 HS256 签名 / 过期 / 黑名单 jti / 类型=access
+    BE-->>FE: {weather data} + g.current_user
+
+    Note over FE,BE: 刷新
+    FE->>BE: POST /api/auth/refresh (Cookie: refresh_token)
+    BE->>BE: 验证 refresh_token
+    BE->>BE: 撤销旧 refresh_token (一次性)
+    BE->>BE: 安全获取 role (防权限提升)
+    BE-->>FE: Set-Cookie: new_access_token
 ```
 
 ### MFA 多因素认证
@@ -1285,6 +1290,32 @@ Flask-Limiter 提供 4 种限流级别，支持身份感知：
 - **安全 Cookie**：Token 通过 httpOnly + Secure + SameSite=Lax Cookie 传递，防止 XSS 窃取
 
 ### 安全响应头
+
+**登录失败信号感知处置（v6.10.1+，已对照 `ip_blacklist_service.py` 核实）**：
+
+```mermaid
+flowchart TD
+    REQ[登录请求] --> WHITE{security_before_request<br/>白名单跳过全局检查}
+    WHITE --> IPCHK{登录入口显式<br/>检查 IP 黑名单?}
+    IPCHK -->|被封禁 IP| DENY[403 拒绝访问<br/>保留正确凭据自助解封通道]
+    IPCHK -->|放行| PWD{密码正确?}
+    PWD -->|正确 + 管理员未开MFA| MFA[强制 MFA 挑战 / 首次引导]
+    PWD -->|正确 + 已开MFA| OK[登录成功]
+    PWD -->|错误| EVAL["evaluate_login_failure<br/>5分钟滑动窗口 · 五维度"]
+
+    EVAL --> D1["维度一 账号级 (IP,账号) ≥5<br/>→ 限流该IP 30分钟 · 不锁账号"]
+    EVAL --> D2["维度二 IP跨账号 ≥3 限流 / ≥5 临时封1h<br/>(login_brute_tier2)"]
+    EVAL --> D3["维度三 IP枚举 ≥8 限流<br/>(login_enum)"]
+    EVAL --> D4["维度四 IP总量 ≥30 限流<br/>(login_rate_limit)"]
+    EVAL --> D5["维度五 账号遭多IP围攻 ≥5<br/>→ 账号风险升级 HIGH · 不封IP<br/>(login_account_target)"]
+
+    D1 & D2 & D3 & D4 & D5 --> OUT[返回 429 / 403 / 账号风险]
+    OUT --> RED[红线：仅手动封禁可永久<br/>自动处置均限时]
+
+    classDef crit fill:#fff1f0,stroke:#cf1322,color:#000;
+    class D2,D5 crit;
+```
+
 
 | 响应头                      | 值                                        | 说明                  |
 | --------------------------- | ----------------------------------------- | --------------------- |
