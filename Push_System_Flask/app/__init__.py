@@ -358,10 +358,24 @@ def create_app(config_class=None):
                 if fp2['match']:
                     logger.info(f'[数据库指纹] 自动迁移后一致 (码={fp2["definition_hash"][:12]}…)')
                 else:
+                    # migrate 只补不删：尝试自动 cleanup 清除多余表/列/配置键/类型差异
                     logger.warning(
-                        f'[数据库指纹] 自动迁移后仍有差异 ({summarize_diff(fp2)})，'
-                        f'请手动执行 python init_db.py cleanup --yes'
+                        f'[数据库指纹] 自动迁移后仍有差异，正在自动清理… '
+                        f'({summarize_diff(fp2)})'
                     )
+                    try:
+                        from init_db import cmd_cleanup
+                        cmd_cleanup(auto=True)
+                    except Exception as ce:
+                        logger.error(f'[数据库指纹] 自动清理执行异常: {ce}')
+                    fp3 = check_db_fingerprint(session)
+                    if fp3['match']:
+                        logger.info(f'[数据库指纹] 自动清理后一致 (码={fp3["definition_hash"][:12]}…)')
+                    else:
+                        logger.warning(
+                            f'[数据库指纹] 自动清理后仍有差异 ({summarize_diff(fp3)})，'
+                            f'请手动检查后执行 python init_db.py cleanup'
+                        )
             else:
                 logger.info(f'[数据库指纹] 实例与定义一致，跳过迁移 (码={fp["definition_hash"][:12]}…)')
         except Exception as e:

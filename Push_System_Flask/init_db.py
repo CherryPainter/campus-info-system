@@ -778,14 +778,14 @@ def _parse_yes_flag() -> bool:
     return any(a in ('--yes', '-y') for a in sys.argv)
 
 
-def cmd_cleanup():
+def cmd_cleanup(auto: bool = False):
     """清理数据库多余内容：额外表、多余列、多余配置键、类型差异。
 
     基于指纹 diff 的 extra_tables / extra_columns / extra_config_keys / type_changed。
     缺失项（missing_*）不在清理范围内，请用 migrate 补。
-    默认需要确认；传 --yes 可直接执行。
+    默认需要确认；传 --yes 或 auto=True 可直接执行。
     """
-    auto_confirm = _parse_yes_flag()
+    auto_confirm = auto or _parse_yes_flag()
     result, summary = _fingerprint_common()
     extra_tables = result.get('extra_tables', [])
     extra_cols = result.get('extra_columns', {})
