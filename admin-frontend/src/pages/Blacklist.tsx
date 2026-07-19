@@ -629,7 +629,7 @@ export default function Blacklist() {
               </Card>
             ))
           )}
-          {records.length > 0 && (
+          {records.length > 0 && total > perPage && (
             <div style={{ textAlign: 'center', marginTop: 8 }}>
               <Pagination
                 size="small"
@@ -765,7 +765,7 @@ export default function Blacklist() {
               </Card>
             ))
           )}
-          {events.length > 0 && (
+          {events.length > 0 && eventTotal > perPage && (
             <div style={{ textAlign: 'center', marginTop: 8 }}>
               <Pagination
                 size="small"
