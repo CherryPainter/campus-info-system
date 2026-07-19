@@ -31,6 +31,26 @@ logger = get_logger(__name__)
 push_bp = Blueprint('push', __name__)
 
 
+def _resolve_safe_image_path(image_path):
+    """将图片路径解析为 BASE_DIR 内的安全绝对路径。
+
+    拒绝绝对路径与包含 '..' 的路径穿越，防止读取服务器任意文件
+    （如 .env、/etc/passwd）后再经企业微信 webhook 外带。
+    合法返回绝对路径；非法返回 None。
+    """
+    if not image_path:
+        return None
+    if os.path.isabs(image_path):
+        return None
+    if '..' in image_path.replace('\\', '/').split('/'):
+        return None
+    full = os.path.normpath(os.path.join(Config.BASE_DIR, image_path))
+    base = os.path.normpath(Config.BASE_DIR)
+    if full != base and not full.startswith(base + os.sep):
+        return None
+    return full
+
+
 # 内置消息模板
 BUILTIN_TEMPLATES = [
     {
@@ -164,11 +184,11 @@ def create_push():
     if push_type == 'recurring' and not cron_expression:
         return api_error(message='周期推送必须指定cron表达式', http_status=400)
 
-    # 验证图片路径是否存在
+    # 验证图片路径是否存在（同时防路径穿越：仅允许 BASE_DIR 内相对路径）
     if image_path:
-        full_path = os.path.join(Config.BASE_DIR, image_path) if not os.path.isabs(image_path) else image_path
-        if not os.path.exists(full_path):
-            return api_error(message=f'图片文件不存在: {image_path}', http_status=400)
+        safe_path = _resolve_safe_image_path(image_path)
+        if not safe_path or not os.path.exists(safe_path):
+            return api_error(message=f'图片文件不存在或路径非法: {image_path}', http_status=400)
 
     # 解析定时时间
     scheduled_dt = None
@@ -364,13 +384,11 @@ def _send_push(push: CustomPush) -> bool:
             result = adapter.send({'msgtype': 'markdown', 'markdown': {'content': content}})
 
         elif push.msg_type == 'image':
-            # 图片消息
-            image_path = push.image_path
-            if not os.path.isabs(image_path):
-                image_path = os.path.join(Config.BASE_DIR, image_path)
-
-            if not os.path.exists(image_path):
-                raise Exception(f'图片文件不存在: {push.image_path}')
+            # 图片消息（创建时已校验，这里再做一次纵深防御）
+            safe_path = _resolve_safe_image_path(push.image_path)
+            if not safe_path or not os.path.exists(safe_path):
+                raise Exception(f'图片文件不存在或路径非法: {push.image_path}')
+            image_path = safe_path
 
             # 读取图片并转为base64
             import base64

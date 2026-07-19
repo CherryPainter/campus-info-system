@@ -183,6 +183,17 @@ def is_private_ip(ip):
     return any(p.match(ip) for p in PRIVATE_IP_PATTERNS)
 
 
+def _strip_crlf(value):
+    """去除日志字段中的回车/换行，防止日志注入（伪造日志行）。
+
+    User-Agent / IP / Path 等来自请求头或客户端的字段若包含 \\r\\n，
+    直接写入日志会伪造出额外的“假日志行”，干扰审计与攻击溯源。
+    """
+    if not value:
+        return value
+    return str(value).replace('\r', '').replace('\n', '')
+
+
 def is_sensitive_path(path):
     """检查是否为敏感路径
 
@@ -340,8 +351,8 @@ def _run_security_checks():
     不含认证（认证由 JWT 中间件负责）。
     """
     path = request.path
-    client_ip = get_client_ip()
-    user_agent = request.headers.get('User-Agent', '')
+    client_ip = _strip_crlf(get_client_ip())
+    user_agent = _strip_crlf(request.headers.get('User-Agent', ''))
 
     # 健康检查路径跳过所有安全检查
     if path == '/health':
@@ -444,6 +455,14 @@ def security_before_request():
 
 
 
+# 高频轮询/健康检查类路径：每次请求都打审计会刷屏且无实质安全价值，默认静默
+SILENT_AUDIT_PATHS = {
+    '/api/auth/session/status',  # 前端会话心跳，约每数秒一次
+    '/api/auth/me',              # 前端当前用户轮询
+    '/api/auth/mfa/status',      # 前端 MFA 状态轮询
+}
+
+
 def log_request_audit(client_ip, path):
     """
     记录请求审计日志
@@ -453,10 +472,12 @@ def log_request_audit(client_ip, path):
         path: 请求路径
     """
     method = request.method
-    user_agent = request.headers.get('User-Agent', '')[:100]
+    user_agent = _strip_crlf(request.headers.get('User-Agent', ''))[:100]
     
-    # 仅记录非健康检查和非静态文件的请求
-    if path != '/health' and not path.startswith('/static/'):
+    # 过滤掉无审计价值的请求：健康检查、静态文件、前端高频轮询路径
+    if (path != '/health'
+            and not path.startswith('/static/')
+            and path not in SILENT_AUDIT_PATHS):
         logger.info(
             f'AUDIT_REQUEST - IP={client_ip}, METHOD={method}, PATH={path}, '
             f'UA={user_agent}'

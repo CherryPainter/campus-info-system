@@ -235,8 +235,6 @@ def _get_jwt_manager():
     return current_app.extensions.get('jwt_manager')
 
 
-@auth_bp.route('/login', methods=['POST'])
-@limiter.limit(RATE_LIMITS['strict'])
 def _login_failure_response(client_ip, username, kind, user_id, user_agent):
     """评估登录失败信号并返回对应响应；返回 None 表示按普通'密码错误'处理。
 
@@ -314,6 +312,8 @@ def _login_failure_response(client_ip, username, kind, user_id, user_agent):
     return None
 
 
+@auth_bp.route('/login', methods=['POST'])
+@limiter.limit(RATE_LIMITS['strict'])
 def login():
     """
     管理员登录接口
@@ -982,8 +982,6 @@ def login_mfa():
     cookie_secure = is_https
     cookie_samesite = 'Lax' if is_https else None
 
-    logger.info(f'[DEBUG] 设置 Cookie: secure={cookie_secure}, samesite={cookie_samesite}, expires_in={tokens["expires_in"]}')
-
     response.set_cookie(
         'access_token',
         tokens['access_token'],
@@ -1015,8 +1013,6 @@ def login_mfa():
             max_age=30 * 24 * 3600,
             path='/'
         )
-
-    logger.info('[DEBUG] Cookie 设置完成')
 
     return response
 

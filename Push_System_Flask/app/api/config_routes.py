@@ -113,6 +113,11 @@ def update_config(module: str, key: str):
     if new_value is None:
         return api_error(message='缺少 value 参数', http_status=400)
 
+    # 防 .env 注入：配置值不允许包含换行/回车，否则会被当成额外的 .env 行写入，
+    # 从而持久化篡改 SECRET_KEY / DEBUG 等启动级配置（重启后仍生效）。
+    if '\r' in str(new_value) or '\n' in str(new_value):
+        return api_error(message='配置值不能包含换行符', http_status=400)
+
     session = get_db()
     try:
         config = session.query(ModuleConfig).filter(
@@ -197,6 +202,20 @@ def update_config(module: str, key: str):
                 ('electricity', 'full_crawl_time'):          'ELECTRICITY_FULL_CRAWL_TIME',
             }
             env_key = ENV_KEY_MAP.get((module, key), f"{module.upper()}_{key.upper()}")
+
+            # 安全关键配置禁止通过接口写入（纵深防御：即便 DB 侧 is_sensitive 标记被改，
+            # 也绝不允许接口越权篡改 SECRET_KEY / 数据库凭据 / 私钥等启动级机密）。
+            _ENV_WRITE_DENYLIST = {
+                'SECRET_KEY', 'ADMIN_TOKEN', 'JWT_ADMIN_PASSWORD',
+                'DATABASE_HOST', 'DATABASE_PORT', 'DATABASE_USER',
+                'DATABASE_PASSWORD', 'DATABASE_NAME', 'REDIS_URL',
+                'QWEATHER_PRIVATE_KEY_PATH', 'QWEATHER_SECRET',
+                'QWEATHER_CREDENTIAL_ID', 'QWEATHER_PROJECT_ID', 'QWEATHER_API_KEY',
+                'JWXT_PASSWORD', 'ELECTRICITY_CRAWLER_COOKIE',
+            }
+            if env_key in _ENV_WRITE_DENYLIST:
+                logger.warning(f'[配置管理] 拒绝写入安全关键配置: {env_key}')
+                return api_error(message='该配置项不允许通过接口修改', http_status=403)
             
             # 读取现有 .env 内容
             env_vars = {}

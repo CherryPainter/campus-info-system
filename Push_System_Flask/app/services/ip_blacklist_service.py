@@ -6,6 +6,7 @@ IP黑名单管理服务
 """
 
 import json
+import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
@@ -131,14 +132,14 @@ _IENUM_PREFIX = 'login_ienum:'       # ZSET member=username（不同不存在用
 _IVOL_PREFIX = 'login_ivol:'         # ZSET member=timestamp（总量），按 IP
 _ARISK_PREFIX = 'login_arisk:'      # 账号高风险标记（member='risk'），按账号，窗口到期自动清除
 
-
 def log_redis_status() -> None:
     """
     启动时主动探测 Redis 连接状态并打印明确日志，避免静默降级导致无从判断。
     - REDIS_URL 为空：明确提示使用进程内存（开发/单机）
     - 配置但连不上：WARNING 提示降级内存（限流/登录爆破跨进程不生效）
     - 连接成功：INFO 提示已连接
-    仅用于日志可见性，不改变限流器/登录爆破的实际存储策略。
+    仅用于日志可见性，不改变限流器/登录爆破的实际存储策略（实际可用性由
+    _get_redis_client 的冷却期机制决定，Redis 恢复后可自动重连）。
     """
     from app.core.config import Config
     url = getattr(Config, 'REDIS_URL', '') or ''
@@ -147,32 +148,66 @@ def log_redis_status() -> None:
         return
     try:
         import redis as redis_lib
-        client = redis_lib.Redis.from_url(url, decode_responses=True, socket_connect_timeout=3)
+        import socket
+        client = redis_lib.Redis.from_url(
+            url, decode_responses=True,
+            socket_family=socket.AF_INET, socket_connect_timeout=2
+        )
         client.ping()
         logger.info(f'[Redis] 已连接: {url}（限流与登录爆破计数持久化）')
     except Exception as exc:
         logger.warning(f'[Redis] 连接失败（{exc}），限流与登录爆破降级为进程内存（仅本进程生效，多 worker 不共享）')
 
 
+# Redis 不可用冷却期（秒）：探测/连接失败后在此期间直接降级为内存、不再建连，
+# 避免每次请求阻塞；冷却期过后允许重试一次，从而实现"启动期无 Redis / 运行期
+# Redis 挂掉"在 Redis 恢复后自动重连（无需重启进程）。
+REDIS_UNAVAILABLE_COOLDOWN = 60
+
+
 def _get_redis_client():
-    """获取 Redis 客户端（单例缓存）；不可用时返回 None 降级为内存"""
-    if not hasattr(_get_redis_client, '_client'):
-        _get_redis_client._client = None
-        try:
-            from app.core.config import Config
-            url = getattr(Config, 'REDIS_URL', '') or ''
-            if url:
-                import redis as redis_lib
-                _get_redis_client._client = redis_lib.Redis.from_url(
-                    url, decode_responses=True, health_check_interval=30
-                )
-                _get_redis_client._client.ping()  # 验证连接
-                logger.info('[IP黑名单] Redis 已连接 (登录爆破计数)')
-            else:
-                logger.warning('[IP黑名单] REDIS_URL 未配置，登录爆破降级为内存字典')
-        except Exception as exc:
-            logger.warning(f'[IP黑名单] Redis 连接失败 ({exc})，降级为内存字典')
-            _get_redis_client._client = False  # 标记"已尝试但失败"
+    """获取 Redis 客户端（单例缓存）；不可用时返回 None 降级为内存。
+
+    可用性采用"冷却期"策略：探测/连接失败后进入冷却期（REDIS_UNAVAILABLE_COOLDOWN），
+    冷却期内直接返回 None（零阻塞降级）；冷却期过后重新探测一次。这样：
+    - 启动期无 Redis、运行期 Redis 挂掉 → 冷却期降级，Redis 恢复后自动重连（无需重启）
+    - 已建立的有效 client 实例由 redis-py 连接池在运行期连接断开时自动重连
+    """
+    cached = getattr(_get_redis_client, '_client', None)
+    # 已有有效 client：直接返回（连接池自动重连处理运行期断开）
+    if cached is not False and cached is not None:
+        return cached
+    # 上次失败仍在冷却期内：直接降级，不重连（零阻塞）
+    if getattr(_get_redis_client, '_unavailable_until', 0) > time.time():
+        return None
+    # 需要（重新）探测
+    now = time.time()
+    try:
+        from app.core.config import Config
+        url = getattr(Config, 'REDIS_URL', '') or ''
+        if not url:
+            logger.warning('[IP黑名单] REDIS_URL 未配置，登录爆破降级为内存字典')
+            _get_redis_client._client = False
+            _get_redis_client._unavailable_until = now + REDIS_UNAVAILABLE_COOLDOWN
+        else:
+            import redis as redis_lib
+            import socket
+            client = redis_lib.Redis.from_url(
+                url, decode_responses=True, health_check_interval=30,
+                socket_family=socket.AF_INET,
+                socket_connect_timeout=2, socket_timeout=2
+            )
+            client.ping()  # 验证连接（带 2s 超时，避免无限制阻塞）
+            _get_redis_client._client = client
+            _get_redis_client._unavailable_until = 0
+            logger.info('[IP黑名单] Redis 已连接 (登录爆破计数)')
+    except Exception as exc:
+        logger.warning(
+            f'[IP黑名单] Redis 连接失败 ({exc})，降级为内存字典'
+            f'（{REDIS_UNAVAILABLE_COOLDOWN}s 内不再重试）'
+        )
+        _get_redis_client._client = False
+        _get_redis_client._unavailable_until = time.time() + REDIS_UNAVAILABLE_COOLDOWN
     return _get_redis_client._client or None
 
 
@@ -398,10 +433,14 @@ class IPBlacklistService:
         """
         if not username:
             return False
-        rc = _get_redis_client()
-        now_ts = datetime.now().timestamp()
-        # 标记以 member='risk' 写入 _ARISK_PREFIX:<username>，窗口内存在即高风险
-        return bool(_win_members(rc, _ARISK_PREFIX, username, now_ts))
+        try:
+            rc = _get_redis_client()
+            now_ts = datetime.now().timestamp()
+            # 标记以 member='risk' 写入 _ARISK_PREFIX:<username>，窗口内存在即高风险
+            return bool(_win_members(rc, _ARISK_PREFIX, username, now_ts))
+        except Exception as exc:
+            logger.warning(f'[IP黑名单] 查询账号高风险失败（降级为否）: {exc}')
+            return False
 
     @staticmethod
     def block_ip(
