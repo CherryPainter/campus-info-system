@@ -4,6 +4,21 @@
 
 ---
 
+## v6.11.5 (2026-07-19)
+
+> 发版类型：**缺陷修复（patch）**。课程全量爬取入库日志口径修正 + 课表错周锚点修复（Fix A + Fix B，均来自生产日志排查，提交 `e31b5dd`）。
+
+### Fix A：课程入库日志区分"新增 / 更新"（course_repository.py / pipeline.py / course_routes.py / reimport_with_teacher.py）
+- **问题**：`CourseRepository.create_batch` 仅返回"新建数"。库内已有课程时全部命中 update 分支、新建数为 0，日志显示"成功保存 0 条"，与"实际入库条数"严重不符，排查时易被误读为丢数据。
+- **修复**：`create_batch` 改返回 `(新建数, 更新数)` 元组，命中既有记录计为更新；`pipeline.save_to_database` 日志与任务进程消息改为"新增 X / 更新 Y"；`course_routes.py`、`reimport_with_teacher.py` 及测试同步解包。`save_to_database` 对外仍返回新建数，`crawl_task_service` 的 `<0`/`==0` 判断行为不变。
+
+### Fix B：补全第 1 周锚点，修复课表错周（pipeline.py）
+- **问题**：`save_to_database` 仅 upsert `CourseWeek(week_number=top-level)`。当爬取数据最早周次 > 1（如本批数据从第 2 周开始、无第 1 周课程）时，`CourseWeek.week_number==1` 不存在，`get_week_number` 回退 `MAX(week_number)` 导致课表加载错周、报"0 条课表数据"。
+- **修复**：入库时按日历反推并 upsert 第 1 周锚点：`week1_start = 当前周周一 − 7×(N−1)`、`week1_end = week1_start + 6 天`。恢复后 `get_week_number` 周日前返 1、周一（2026-07-20）起正确返 2；当 top-level `week_number==1` 时推导值与原逻辑完全一致（幂等，无 schema 改动）。
+- **验证**：改动文件 `py_compile` 全过；`pytest tests/test_course_admin_protection.py` 4 例全绿（sqlite 内存库，新建/更新计数断言正确）。
+
+---
+
 ## v6.11.4 (2026-07-19)
 
 > 发版类型：**缺陷修复（patch）**。Redis 写入探针的动态冷却恢复 + 边缘兜底，并完成一次后端安全代码审查，修复若干中低风险隐患。
