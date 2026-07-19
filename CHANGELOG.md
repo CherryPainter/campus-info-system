@@ -4,6 +4,30 @@
 
 ---
 
+---
+
+## v6.12.0 (2026-07-19)
+
+> 发版类型：**新功能（minor）**。数据库指纹漂移检测（定义码 vs 实例码）。
+
+### 数据库指纹漂移检测（app/core/db_fingerprint.py / init_db.py / app/__init__.py / admin_routes.py）
+- **动机**：数据库初始化定义（模型 schema + 种子配置键 + 默认管理员）随代码更新而变化，缺乏快速判断"实例是否跟上定义"的手段。
+- **实现**：
+  - **定义码**：`compute_definition_fingerprint()` 纯代码推导，哈希 SQLAlchemy 全部 20 张表的列/类型/nullable/主键 + `DEFAULT_CONFIGS` 37 个配置项的 (module,key,value_type,is_editable,is_sensitive) 结构 + 默认管理员存在性标志。无需数据库连接。
+  - **实例码**：`compute_instance_fingerprint(session)` 读取 `INFORMATION_SCHEMA` 实际表/列 + `module_configs` 实际配置键 + 判断 `username='admin'` 是否存在。
+  - **比对**：`diff_fingerprints` 输出结构化差异（缺失/多余表、列、类型变更、配置键增减、管理员状态）；`check_db_fingerprint` 高层入口返回 `{definition_hash, instance_hash, match, ...diff}`。
+- **设计原则（避免误报）**：
+  - 仅哈希结构与键名，**不哈希配置值**——管理员自定义 `class_name`/`spider_interval_hours` 等不会触发漂移告警。
+  - 类型归一化：整数族 (`int(11)`/`INTEGER`/`BIGINT`) 统一为 `int`，消除 SQLAlchemy 模型定义与 MySQL INFORMATION_SCHEMA 之间的格式差异。
+  - 模型导入复用 `_import_all_models` 显式清单（20 表），确保 `from app import model` 未覆盖的电量/天气等子模块也被纳入。
+- **交付三面**：
+  1. **CLI**：`python init_db.py fingerprint`（打印定义码+实例码+差异明细）、`check`（静默模式，一致 exit 0 否则 1，供 CI/脚本用）。
+  2. **启动告警**：`create_app` 在种子数据写入后自动调用 `check_db_fingerprint`；一致打印 INFO，不一致打印 WARNING 并提示运行 `python init_db.py migrate`。
+  3. **管理端接口**：`GET /api/admin/db/fingerprint`（需 admin JWT），返回两码与结构化 diff。
+- **验证**：定义码运行期确认含 20 表/37 配置键/64 位 sha256；`py_compile` 4 文件全过；`pytest tests/` 33/33 绿色无回归。
+
+---
+
 ## v6.11.6 (2026-07-19)
 
 > 发版类型：**缺陷修复（patch）**。修复学期切换的两处隐患（提交 `6d21ee9`）。
