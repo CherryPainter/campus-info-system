@@ -1,6 +1,6 @@
 # Linux 部署检查报告与部署方案
 
-> 检查日期：2026-06-25 | 项目版本：v6.7.0
+> 检查日期：2026-06-25 | 项目版本：v6.11.2
 
 ---
 
@@ -37,10 +37,10 @@
 | `DEBUG` | `false` | 无风险 | 保持关闭 |
 | `FORCE_HTTPS` | `false`（.env 中有此变量） | 中 | 生产环境设为 `true`，或由 Nginx 处理 HTTPS |
 | `AUTH_ENABLED` | `true` | 无风险 | 保持开启 |
-| `DATABASE_TYPE` | `sqlite`（默认） | 低 | 单机部署可用 SQLite；高并发建议 MySQL |
+| 数据库 | MySQL（仅支持） | 低 | 代码仅支持 MySQL，无 SQLite 回退；`DATABASE_TYPE` 非有效环境变量，无需设置；生产务必改强 `DATABASE_PASSWORD` |
 | `DATABASE_PASSWORD` 默认值 | `123456` | **高** | config.py:267 的默认值，必须在 .env 中设置强密码 |
 | `JWT_ADMIN_PASSWORD` | 空（回退到 ADMIN_TOKEN） | 中 | 建议在 .env 中显式设置管理员密码 |
-| `SECRET_KEY` 自动生成 | 未设置时随机生成 | 中 | 每次重启变化导致 Token 失效，必须固定设置 |
+| `SECRET_KEY` 自动生成 | 未设置时随机生成 | 中 | 每次重启变化导致 Token 失效，必须固定设置（v6.11.0 起：生产环境缺失即启动失败） |
 
 ---
 
@@ -51,7 +51,7 @@
 ```ini
 # ========== 应用配置 ==========
 APP_NAME=校园智能通知系统
-APP_VERSION=6.7.0
+APP_VERSION=6.11.2
 DEBUG=false
 HOST=127.0.0.1
 PORT=29528
@@ -127,12 +127,13 @@ QWEATHER_LATITUDE=29.56
 QWEATHER_LONGITUDE=106.55
 QWEATHER_SCHEDULE_DAILY=07:00
 
-# ========== 数据库（可选，默认 SQLite） ==========
-# 如使用 MySQL 则取消注释并修改
-# DATABASE_TYPE=mysql
+# ========== 数据库（必填，仅支持 MySQL） ==========
+# 取消注释并修改为你的 MySQL 配置
 # DATABASE_HOST=localhost
 # DATABASE_PORT=3306
 # DATABASE_USER=push_system
+# DATABASE_PASSWORD=你的强密码
+# DATABASE_NAME=push_system
 # DATABASE_PASSWORD=<强密码>
 # DATABASE_NAME=push_system
 ```
@@ -218,7 +219,7 @@ server {
 # /etc/systemd/system/push-system.service
 
 [Unit]
-Description=Campus Push System v6.7.0
+Description=Campus Push System v6.11.2
 After=network-online.target
 Wants=network-online.target
 

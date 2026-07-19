@@ -4,6 +4,9 @@ flask-cors==5.0.1
 Flask-Limiter==3.12
 python-dotenv==1.0.1
 
+# 缓存 / 限流存储（Flask-Limiter 限流计数 + 登录爆破滑动窗口；不配 REDIS_URL 则降级进程内存）
+redis==8.0.1
+
 # 定时任务
 APScheduler==3.10.4
 

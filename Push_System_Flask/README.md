@@ -178,7 +178,7 @@ flowchart TD
 | 跨域支持     | flask-cors               | 5.0.1              | 可配置 CORS 白名单               |
 | API 限流     | Flask-Limiter            | 3.12               | 4 级限流策略                     |
 | ORM          | SQLAlchemy               | 2.0.35             | 连接池 + 自动建库建表            |
-| 数据库驱动   | pymysql                  | 1.1.1              | MySQL 生产 / SQLite 开发         |
+| 数据库驱动   | pymysql                  | 1.1.1              | MySQL（代码仅支持 MySQL，无 SQLite 回退） |
 | 定时任务     | APScheduler              | 3.10.4             | 13+ 个定时任务                   |
 | 浏览器自动化 | Playwright               | >=1.40.0           | 教务系统爬虫                     |
 | OCR 识别     | Tesseract + pytesseract  | 0.3.13             | 验证码识别                       |
@@ -194,6 +194,7 @@ flowchart TD
 | 日志         | loguru                   | 0.7.2              | 结构化日志（控制台 + 文件轮转）  |
 | 加密         | cryptography             | 44.0.0             | Ed25519 JWT 签名（和风天气认证） |
 | 二维码       | qrcode                   | 8.0                | MFA 设置二维码生成               |
+| 缓存/限流存储 | Redis                    | 8.0.1              | Flask-Limiter 限流计数 + 登录爆破滑动窗口；未配 REDIS_URL 时降级进程内存 |
 
 ### 前端（管理后台）
 
@@ -255,15 +256,15 @@ Push_System_Flask/
 |   |
 |   |-- core/                             # 核心基础模块
 |   |   |-- config.py                     # 配置管理中心
-|   |   |                                 #   - 从 .env 加载 47+ 环境变量
+|   |   |                                 #   - 从 .env 加载环境变量（详见「环境变量配置」章节）
 |   |   |                                 #   - 启动时验证 SECRET_KEY/ADMIN_TOKEN
 |   |   |                                 #   - 支持 reload() 动态重载
 |   |   |                                 #   - 自动检测 Tesseract 路径
-|   |   |                                 #   - 支持 SQLite/MySQL 双数据库后端
+|   |   |                                 #   - 仅支持 MySQL 数据库后端（无 SQLite）
 |   |   |-- database.py                   # 数据库管理 (SQLAlchemy ORM)
 |   |   |                                 #   - DatabaseManager 单例模式
 |   |   |                                 #   - MySQL 自动建库 + 连接池
-|   |   |                                 #   - SQLite 多线程 + 外键支持
+|   |   |                                 #   - MySQL 连接池 + 自动建库
 |   |   |                                 #   - get_db_session() 依赖注入
 |   |   |-- logger.py                     # 日志系统 (loguru)
 |   |   |                                 #   - GlobalLogger 单例
@@ -428,8 +429,8 @@ Push_System_Flask/
 |           |-- token.ts                  # Token 工具 (兼容 httpOnly Cookie 迁移)
 |
 |-- data/                                 # 运行时数据 (自动创建)
-|   |-- push_system.db                    # SQLite 数据库 (开发环境)
-|   |-- jwt_blacklist.db                  # SQLite Token 黑名单 (开发环境)
+|   |-- (MySQL 实例)                      # 运行时数据库为 MySQL（由 DATABASE_* 配置，无本地 SQLite 文件）
+|   |-- (无本地 db 文件)                   # 代码仅支持 MySQL，不生成 SQLite 文件
 |   |-- auth/
 |   |   |-- password.hash                 # bcrypt 密码哈希
 |   |-- electricity/
@@ -441,16 +442,20 @@ Push_System_Flask/
 |   |-- app.log                           # 主日志 (10MB 轮转 x 5)
 |
 |-- .env                                  # 实际环境变量 (不入库)
-|-- .env.example                          # 环境变量模板 (47 个变量)
-|-- .env.bak                              # 环境变量备份
+|-- .env.example                          # 环境变量模板（详见「环境变量配置」章节）
 |-- .env.linux                            # Linux 生产环境模板
 |-- .gitignore                            # Git 忽略规则
-|-- requirements.txt                      # Python 依赖 (18 个包)
+|-- requirements.txt                      # Python 依赖 (23 个包)
 |-- run.py                                # 应用入口
-|-- migrate_db.py                         # 数据库迁移脚本
-|-- DEPLOY_LINUX.md                       # Linux 部署指南
-|-- ed25519-private.pem                   # 和风天气 Ed25519 私钥
-|-- ed25519-public.pem                    # 和风天气 Ed25519 公钥
+|-- init_db.py                           # 数据库初始化/迁移脚本 (自动建表 + 补列)
+|-- docs/                                # 部署与安全文档
+|   |-- DEPLOY_LINUX.md                   #   Linux 部署指南
+|   |-- DEPLOY_CHECKLIST.md               #   部署检查清单
+|   |-- UV_DEPLOY.md                      #   uv 部署方式
+|   |-- 安全配置指南.md                    #   安全配置指南
+|   `-- 安全配置审计_2026-07-18.md         #   安全配置审计
+|-- ed25519-private.pem                   # 和风天气 Ed25519 私钥 (不入库, 用户自生成)
+|-- ed25519-public.pem                    # 和风天气 Ed25519 公钥 (不入库)
 |-- README.md                             # 本文档
 ```
 
@@ -464,7 +469,8 @@ Push_System_Flask/
 | ------------- | ----------- | ---------------------------- |
 | Python        | 3.10+       | 后端运行时                   |
 | Node.js       | 18+         | 管理后台开发/构建            |
-| MySQL         | 5.7+ / 8.0+ | 生产数据库 (开发可用 SQLite) |
+| MySQL         | 5.7+ / 8.0+ | 生产数据库（仅支持 MySQL，无 SQLite 回退） |
+| Redis         | 可选/生产推荐 | Flask-Limiter 限流存储 + 登录爆破滑动窗口；未配置则降级内存（仅单机/开发） |
 | Tesseract OCR | 4.x+        | 课表验证码识别               |
 | Chromium      | 最新版      | Playwright 浏览器自动化      |
 
@@ -500,9 +506,9 @@ sudo apt install -y tesseract-ocr tesseract-ocr-chi-sim
 # macOS:
 brew install tesseract tesseract-lang
 
-# 6. (可选) 配置 MySQL 数据库
-# 在 .env 中设置 DATABASE_URL=mysql+pymysql://user:password@host:3306/dbname
-# 不配置则默认使用 SQLite (data/push_system.db)
+# 6. 配置 MySQL 数据库（必填）
+# 在 .env 中设置 DATABASE_HOST / DATABASE_USER / DATABASE_PASSWORD / DATABASE_NAME（默认值见环境变量配置）
+# 不配置则使用默认 MySQL 连接（localhost:3306/push_system，账号 root/123456）
 
 # 7. 启动后端
 python run.py
@@ -530,7 +536,7 @@ npm run dev
 
 ## 环境变量配置
 
-所有配置通过项目根目录 `.env` 文件管理，参考 `.env.example`（47 个变量）。系统支持通过管理后台在线修改大部分配置，修改后自动写入 `.env` 文件并热重载。
+所有配置通过项目根目录 `.env` 文件管理，参考 `.env.example`（详见「环境变量配置」章节）。系统支持通过管理后台在线修改大部分配置，修改后自动写入 `.env` 文件并热重载。
 
 ### 必须配置
 
@@ -549,16 +555,22 @@ npm run dev
 | 变量          | 默认值                       | 说明                             |
 | ------------- | ---------------------------- | -------------------------------- |
 | `APP_NAME`    | `校园信息聚合与智能推送系统` | 应用名称                         |
-| `APP_VERSION` | `6.7.0`                      | 应用版本                         |
+| `APP_VERSION` | `6.11.2`                     | 应用版本                         |
 | `DEBUG`       | `false`                      | 调试模式（生产环境必须为 false） |
 | `HOST`        | `0.0.0.0`                    | 监听地址                         |
 | `PORT`        | `29528`                      | 监听端口                         |
 
 ### 数据库配置
 
-| 变量           | 默认值                          | 说明                                                                                 |
-| -------------- | ------------------------------- | ------------------------------------------------------------------------------------ |
-| `DATABASE_URL` | `sqlite:///data/push_system.db` | 数据库连接 URL。生产环境建议使用 MySQL: `mysql+pymysql://user:pass@host:3306/dbname` |
+> 代码仅支持 MySQL（`config.py` 读 `DATABASE_*` 而非 `DATABASE_URL`，无 SQLite 回退）。
+
+| 变量                | 默认值         | 说明                          |
+| ------------------- | -------------- | ----------------------------- |
+| `DATABASE_HOST`     | `localhost`    | MySQL 主机                    |
+| `DATABASE_PORT`     | `3306`         | MySQL 端口                    |
+| `DATABASE_USER`     | `root`         | MySQL 用户名                  |
+| `DATABASE_PASSWORD` | `123456`       | MySQL 密码（生产务必改强密码）|
+| `DATABASE_NAME`     | `push_system`  | 数据库名                      |
 
 ### JWT 认证配置
 
@@ -622,6 +634,7 @@ npm run dev
 | `AUTH_ENABLED`    | `true`                                         | 是否启用认证                                                             |
 | `ALLOWED_ORIGINS` | `http://localhost:29528,http://localhost:5173` | 允许的跨域域名（逗号分隔；生产务必改为真实域名，兼容旧名 `CORS_ORIGINS`） |
 | `FORCE_ADMIN_MFA` | `true`                                         | 强制管理员启用多因素认证(MFA)；首次引导（系统内尚无任何 MFA 用户）时放行 |
+| `REDIS_URL`       | （空）                                         | 限流计数与登录爆破滑动窗口的存储；为空则使用进程内内存（仅单机/开发，多 worker 或重启会丢失限流状态） |
 
 ### 企业微信配置
 
@@ -1370,7 +1383,7 @@ python run.py
 
 ### Linux 生产环境
 
-详见 [DEPLOY_LINUX.md](DEPLOY_LINUX.md)，包含：
+详见 [docs/DEPLOY_LINUX.md](docs/DEPLOY_LINUX.md)，包含：
 
 - 系统要求（Ubuntu 20.04+ / Debian 11+ / CentOS 8+，1GB 内存，5GB 磁盘）
 - 系统依赖安装（Ubuntu/Debian 和 CentOS 分别给出命令）
@@ -1420,7 +1433,7 @@ npm run build
 当数据库结构发生变更时，运行迁移脚本：
 
 ```bash
-python migrate_db.py
+python init_db.py
 ```
 
 该脚本会：

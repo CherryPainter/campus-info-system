@@ -1,6 +1,6 @@
 # Linux 部署指南
 
-> 校园信息聚合与智能推送系统 v6.7.0 — Linux 生产环境完整部署文档
+> 校园信息聚合与智能推送系统 v6.11.2 — Linux 生产环境完整部署文档
 
 ---
 
@@ -48,6 +48,7 @@ sudo apt install -y python3 python3-pip python3-venv tesseract-ocr tesseract-ocr
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+# 生产环境建议额外部署 Redis：v6.11.0 起 Flask-Limiter 限流与登录爆破防护使用 REDIS_URL，未配置则降级为内存
 
 # 5. 安装 Playwright（课表爬虫需要）
 playwright install chromium
@@ -58,7 +59,7 @@ mkdir -p data/auth data/electricity/charts data/weather logs output
 
 # 7. 启动测试
 python3 run.py
-# 看到 "校园信息聚合与智能推送系统 v6.7.0 启动完成" 表示成功
+# 看到 "校园信息聚合与智能推送系统 v6.11.2 启动完成" 表示成功
 ```
 
 ---
@@ -214,7 +215,7 @@ python3 run.py
 看到以下日志表示启动成功：
 
 ```
-校园信息聚合与智能推送系统 v6.7.0 启动完成
+校园信息聚合与智能推送系统 v6.11.2 启动完成
  * Running on http://0.0.0.0:29528
 ```
 
@@ -235,7 +236,7 @@ curl http://localhost:29528/api/health
 
 ```ini
 [Unit]
-Description=Campus Push System v6.7.0
+Description=Campus Push System v6.11.2
 Documentation=https://github.com/your-repo/Push_System_Flask
 After=network-online.target
 Wants=network-online.target
@@ -629,8 +630,8 @@ find logs/ -name "*.log.*" -mtime +30 -delete
 |-----------|------|
 | `.env.linux` | Linux 环境配置模板 |
 | `.env` | 实际配置文件（从 .env.linux 复制修改） |
-| `.env.example` | 完整环境变量参考（47 个变量） |
-| `requirements.txt` | Python 依赖（18 个包） |
+| `.env.example` | 完整环境变量参考（详见后端 README「环境变量配置」章节） |
+| `requirements.txt` | Python 依赖（23 个包，含 Redis） |
 | `run.py` | 应用入口 |
 | `data/auth/` | JWT 密码哈希存储（自动生成） |
 | `data/weather/` | 天气冷却状态（自动生成） |
