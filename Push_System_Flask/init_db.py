@@ -480,6 +480,8 @@ def _add_column(engine, table_name: str, column) -> bool:
     sql = ' '.join(parts)
     try:
         with engine.connect() as conn:
+            conn.execute(text('SET SESSION lock_wait_timeout = 3'))
+            conn.execute(text('SET SESSION innodb_lock_wait_timeout = 3'))
             conn.execute(text(sql))
             conn.commit()
         print(f'      → {Style.ok("添加")} {col_name} ({col_type})')
@@ -510,6 +512,8 @@ def _add_index(engine, table_name: str, index_name: str, model_indexes) -> bool:
 
     try:
         with engine.connect() as conn:
+            conn.execute(text('SET SESSION lock_wait_timeout = 3'))
+            conn.execute(text('SET SESSION innodb_lock_wait_timeout = 3'))
             conn.execute(text(sql))
             conn.commit()
         print(f'      → {Style.ok("创建索引")} {index_name}')
@@ -911,6 +915,8 @@ def cmd_cleanup(auto: bool = False, quiet: bool = False):
         for col_name in col_names:
             try:
                 with engine.connect() as conn:
+                    conn.execute(sql_text('SET SESSION lock_wait_timeout = 3'))
+                    conn.execute(sql_text('SET SESSION innodb_lock_wait_timeout = 3'))
                     conn.execute(sql_text(f'ALTER TABLE `{tbl_name}` DROP COLUMN `{col_name}`'))
                     conn.commit()
                 print(f'  {Style.ok("✓")} DROP COLUMN {tbl_name}.{col_name}')
@@ -922,6 +928,8 @@ def cmd_cleanup(auto: bool = False, quiet: bool = False):
     for m, k, vt, *_ in extra_cfgs:
         try:
             with engine.connect() as conn:
+                conn.execute(sql_text('SET SESSION lock_wait_timeout = 3'))
+                conn.execute(sql_text('SET SESSION innodb_lock_wait_timeout = 3'))
                 conn.execute(sql_text(
                     'DELETE FROM module_configs WHERE module = :m AND `key` = :k'
                 ), {'m': m, 'k': k})
@@ -935,6 +943,8 @@ def cmd_cleanup(auto: bool = False, quiet: bool = False):
     for tbl_name in extra_tables:
         try:
             with engine.connect() as conn:
+                conn.execute(sql_text('SET SESSION lock_wait_timeout = 3'))
+                conn.execute(sql_text('SET SESSION innodb_lock_wait_timeout = 3'))
                 conn.execute(sql_text(f'DROP TABLE IF EXISTS `{tbl_name}`'))
                 conn.commit()
             print(f'  {Style.ok("✓")} DROP TABLE {tbl_name}')
@@ -966,6 +976,8 @@ def cmd_cleanup(auto: bool = False, quiet: bool = False):
                 from sqlalchemy.dialects.mysql import dialect as _md
                 new_type = col.type.compile(dialect=_md())
                 with engine.connect() as conn:
+                    conn.execute(sql_text('SET SESSION lock_wait_timeout = 3'))
+                    conn.execute(sql_text('SET SESSION innodb_lock_wait_timeout = 3'))
                     conn.execute(sql_text(f'ALTER TABLE `{tbl_name}` MODIFY COLUMN `{col_name}` {new_type}'))
                     conn.commit()
                 print(f'  {Style.ok("✓")} MODIFY {tbl_name}.{col_name} → {new_type}')
@@ -1088,6 +1100,8 @@ def _fix_nullability(engine, table_name: str, column_name: str):
     modifier = 'NOT NULL' if target_not_null else 'NULL'
     try:
         with engine.connect() as conn:
+            conn.execute(sql_text('SET SESSION lock_wait_timeout = 3'))
+            conn.execute(sql_text('SET SESSION innodb_lock_wait_timeout = 3'))
             conn.execute(
                 sql_text(
                     f'ALTER TABLE `{table_name}` MODIFY COLUMN '
