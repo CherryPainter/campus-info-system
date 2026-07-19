@@ -6,6 +6,20 @@
 
 ---
 
+## v6.13.1 (2026-07-20)
+
+> 发版类型：**缺陷修复（patch）**。修复数据库初始化工具与生产启动期因元数据锁（MDL）导致的卡死/报错，并加 Redis 分布式锁防多 worker 并发 ALTER。
+
+### 数据库初始化工具与生产启动稳定性修复（init_db.py / app/__init__.py）
+- **问题**：生产机 `python3 init_db.py status` 在逐表 `SELECT COUNT(*)` 处无限挂起（Ctrl+C 才退出）；`create_app` 启动期指纹自动迁移/清理在 `ALTER TABLE users` 处永久卡死，gunicorn 无法就绪。根因为 MySQL `lock_wait_timeout` 默认约 1 年，遇 MDL 锁等待即无限挂起；且指纹检查位于 `create_app` 内、每个 worker 启动都跑，多 worker 并发 ALTER 同一表加剧锁竞争。
+- **修复**：
+  - `init_db.py`：`cmd_status` 逐表 `COUNT` 与列检查改用函数内独立连接并设 `lock_wait_timeout=3 + innodb_lock_wait_timeout=3`，超时即跳过（不再无限挂起）；`cmd_migrate`/`cmd_cleanup`/`_fix_nullability` 共 7 处 DDL 连接同样加 3 秒锁超时。
+  - `app/__init__.py`：启动期指纹自动迁移/清理外包 Redis 分布式锁（`SET key token NX EX 600`，Lua 仅释放自己持有的锁；Redis 不可用时降级本地执行），确保仅单进程执行，杜绝多 worker 并发 ALTER。
+- **验证**：生产机 `git pull` 后 `systemctl restart gunicorn` 正常就绪（监听 29528、4 workers），日志显示指纹「实例与定义一致，跳过迁移」；`init_db.py status` 完整输出无 Traceback；`[Redis] 已连接` 限流探活成功。
+- **版本**：按约定 bump patch（6.13.0→6.13.1），四处版本号（config.py / version.ts / package.json / .env）与两份 README 徽标已同步。
+
+---
+
 ## v6.13.0 (2026-07-19)
 
 > 发版类型：**新功能（minor）**。新增「境外 IP 拦截」防火墙：仅允许中国 IP 访问，其余请求在请求最前端直接 403 断开。
