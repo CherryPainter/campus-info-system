@@ -460,6 +460,11 @@ SILENT_AUDIT_PATHS = {
     '/api/auth/session/status',  # 前端会话心跳，约每数秒一次
     '/api/auth/me',              # 前端当前用户轮询
     '/api/auth/mfa/status',      # 前端 MFA 状态轮询
+    '/api/admin/user/users',     # 用户管理列表轮询（POLL_NORMAL=5s）
+    '/api/auth/sessions',        # 会话管理列表轮询（SessionManager，POLL_NORMAL=5s）
+    '/api/admin/processes',      # 进程/爬虫任务列表轮询（Processes，POLL_NORMAL=5s）
+    '/api/admin/processes/running',  # 运行中进程轮询（Processes，POLL_NORMAL=5s）
+    '/api/course/crawl-tasks',   # 课表爬取任务列表轮询（Course，POLL_FAST=2s）
 }
 
 
