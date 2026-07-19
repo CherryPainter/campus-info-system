@@ -26,8 +26,12 @@
 - 同步更新 `scheduler.py` 每日爬虫入库日志（新增/更新分列）与 README 文档中 `return 0` 的旧描述。
 
 ### 审计请求日志静默名单扩充（security.py）
-- **问题**：`log_request_audit` 的 `SILENT_AUDIT_PATHS` 已覆盖一批高频轮询列表接口，但后台仍频繁打印 `AUDIT_REQUEST` INFO：`/api/admin/user/profile`、`/api/admin/user/login-logs`、`/api/course/semesters`、`/api/admin/tasks/spider/status` 在页面挂载/轮询时被重复拉取，刷屏且无实质安全价值。
-- **修复**：将以上 4 个高频读取/轮询路径加入 `SILENT_AUDIT_PATHS`。仅抑制该 INFO 日志行；登录日志本身仍照常入库、登录事件仍由登录流程单独记录，审计链路不丢失关键证据。
+- **问题**：`log_request_audit` 的 `SILENT_AUDIT_PATHS` 已覆盖一批高频轮询列表接口，但后台仍频繁打印 `AUDIT_REQUEST` INFO。用户要求"整个项目扫一遍，轮询类非错误日志全部压下去"。
+- **排查范围（2026-07-19）**：
+  - 前端：遍历全部轮询 hook（`useIntervalPolling` / `useSessionHeartbeat` / `useRunningTasksPolling` / `useTaskPolling`）与轮询页（Course / Dashboard / Tasks / Processes / SessionManager / UserManagement / ServerStatusProvider），逐一映射其实际请求的 `/api/...` 路径。
+  - 后端：确认唯一每请求日志来自 `security_before_request → log_request_audit`（`after_request` 仅加响应头、不写日志）；APScheduler 定时任务的 `logger.info` 均为**启动时注册一次**，真正的任务执行日志（爬虫跑完、推送发出等）属有用运维记录予以保留。
+- **修复**：将全部"常驻轮询"端点加入 `SILENT_AUDIT_PATHS`，最终覆盖：`/api/auth/session/status`、`/api/auth/me`、`/api/auth/mfa/status`、`/api/auth/sessions`、`/api/admin/user/users`、`/api/admin/user/profile`、`/api/admin/user/login-logs`、`/api/admin/processes`、`/api/admin/processes/running`、`/api/course/crawl-tasks`、`/api/course/semesters`、`/api/admin/tasks/spider/status`、`/api/ping`、`/api/admin/dashboard`。
+- **说明**：按任务 ID 的临时轮询（`/api/admin/processes/{id}`、`/api/course/crawl-tasks/{id}`）命中终态即停、非常驻噪音，且路径动态无法精确名单匹配，故未纳入；按页面导航触发的一次性读取（如课表/规则/调度列表）非轮询、未纳入。仅抑制该 INFO 日志行；登录日志与登录事件记录不受影响，审计链路不丢关键证据。
 
 ---
 

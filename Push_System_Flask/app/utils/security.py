@@ -470,6 +470,8 @@ SILENT_AUDIT_PATHS = {
     '/api/admin/user/login-logs',    # 登录日志列表，后台重复拉取
     '/api/course/semesters',         # 学期元数据，加载时重复拉取
     '/api/admin/tasks/spider/status', # 爬虫状态轮询
+    '/api/ping',                      # 全局服务存活探测，每 2s 一次
+    '/api/admin/dashboard',           # 仪表盘数据，每 30s 轮询
 }
 
 
