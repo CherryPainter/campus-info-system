@@ -465,6 +465,11 @@ SILENT_AUDIT_PATHS = {
     '/api/admin/processes',      # 进程/爬虫任务列表轮询（Processes，POLL_NORMAL=5s）
     '/api/admin/processes/running',  # 运行中进程轮询（Processes，POLL_NORMAL=5s）
     '/api/course/crawl-tasks',   # 课表爬取任务列表轮询（Course，POLL_FAST=2s）
+    # --- 以下为后台高频读取/轮询，性质同上，避免刷屏（2026-07-19 补充）---
+    '/api/admin/user/profile',       # 当前管理员自身资料，页面挂载时重复拉取
+    '/api/admin/user/login-logs',    # 登录日志列表，后台重复拉取
+    '/api/course/semesters',         # 学期元数据，加载时重复拉取
+    '/api/admin/tasks/spider/status', # 爬虫状态轮询
 }
 
 

@@ -25,6 +25,10 @@
   - 单次/指定学期爬取的任务消息同步修正：有更新时状态为 `COMPLETED`、消息「重爬刷新 N 门课程（新增 0 条），属正常」，不再误报空。
 - 同步更新 `scheduler.py` 每日爬虫入库日志（新增/更新分列）与 README 文档中 `return 0` 的旧描述。
 
+### 审计请求日志静默名单扩充（security.py）
+- **问题**：`log_request_audit` 的 `SILENT_AUDIT_PATHS` 已覆盖一批高频轮询列表接口，但后台仍频繁打印 `AUDIT_REQUEST` INFO：`/api/admin/user/profile`、`/api/admin/user/login-logs`、`/api/course/semesters`、`/api/admin/tasks/spider/status` 在页面挂载/轮询时被重复拉取，刷屏且无实质安全价值。
+- **修复**：将以上 4 个高频读取/轮询路径加入 `SILENT_AUDIT_PATHS`。仅抑制该 INFO 日志行；登录日志本身仍照常入库、登录事件仍由登录流程单独记录，审计链路不丢失关键证据。
+
 ---
 
 ## v6.11.5 (2026-07-19)
