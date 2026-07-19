@@ -4,6 +4,24 @@
 
 ---
 
+## v6.11.4 (2026-07-19)
+
+> 发版类型：**缺陷修复（patch）**。Redis 写入探针的动态冷却恢复 + 边缘兜底，并完成一次后端安全代码审查，修复若干中低风险隐患。
+
+### Redis 冷却期自动恢复 + 边缘兜底（ip_blacklist_service.py）
+- **非阻塞探针**：为 Redis 连接设置 `socket_family=AF_INET`、`socket_connect_timeout=2`、`socket_timeout=2`，避免连接卡死拖垮请求。
+- **冷却自动恢复**：新增 `REDIS_UNAVAILABLE_COOLDOWN=60` 秒冷却窗口；Redis 探测失败后进入冷却，期间复用上次结果，冷却结束自动重试，无需重启服务即可恢复。
+- **边缘兜底**：`is_account_high_risk` 等判断在 Redis 异常时走 try/except 兜底分支（退化为宽松/保守默认），杜绝因缓存层抖动导致的请求级崩溃。
+
+### 安全代码审查修复（详见 `docs/安全代码审查报告_v6.11.4.md`）
+- **F1 配置注入防护**：`config_routes.update_config` 拒绝含 `\r`/`\n` 的配置值，并将 `SECRET_KEY`、数据库口令、Redis 地址等安全关键项列入写入黑名单（403），杜绝通过接口篡改 `.env`  poisoning。
+- **F2 日志注入防护**：`security.py` 新增 `_strip_crlf()`，在记录客户端 IP / User-Agent 前剥离回车换行，防止伪造日志行。
+- **F3 路径穿越防护**：`push_routes` 新增 `_resolve_safe_image_path()`，自定义推送图片路径强制限定在 `BASE_DIR` 内，拒绝绝对路径与 `..`，消除后台可达的路径遍历。
+- **F4 调试日志清理**：移除 `login_mfa` 中两处打印 Cookie 的 `[DEBUG]` 日志，避免凭证痕迹落盘。
+- **结论**：未发现可直接利用的高危漏洞；鉴权（JWT 签名 + admin_required 分层）、SQL 注入（全参数化/ORM）、命令注入（列表式 subprocess、无 shell）、反序列化（无 pickle/yaml.load）、密钥管理（v6.11.0 已强制 env 必填）均确认安全。
+
+---
+
 ## v6.11.2 (2026-07-19)
 
 > 发版类型：**缺陷修复（patch）**。补 6.11.1 课程数据来源标记的缺口：手动课（`admin`）此前无任何保护，会被每日/全量爬虫覆盖或挤占。
