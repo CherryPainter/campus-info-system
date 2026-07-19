@@ -234,20 +234,24 @@ class CourseRepository:
     """
     
     @staticmethod
-    def get_all(session: Session, week_number: Optional[int] = None) -> List[Course]:
+    def get_all(session: Session, week_number: Optional[int] = None,
+                semester_id: Optional[int] = None) -> List[Course]:
         """
         获取所有未删除的课程
-        
+
         Args:
             session: 数据库会话
             week_number: 可选，按周次筛选
-            
+            semester_id: 可选，按学期筛选（默认 None = 不过滤，兼容旧调用方）
+
         Returns:
             List[Course]: 课程列表
         """
         query = session.query(Course).filter(Course.is_deleted == False)
         if week_number is not None:
             query = query.filter(Course.week_number == week_number)
+        if semester_id is not None:
+            query = query.filter(Course.semester_id == semester_id)
         return query.order_by(Course.week_day, Course.period_idx).all()
     
     @staticmethod

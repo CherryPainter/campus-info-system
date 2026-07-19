@@ -107,7 +107,7 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
     # 学期元信息（若提供 semester_id 则按其推导，否则交给 create_batch 按当前日期推导）
     sem_info = None
     if semester_id:
-        from app.repository.course_repository import semester_info_from_id
+        from app.repository.course_repository import semester_info_from_id, derive_current_semester
         sem_info = semester_info_from_id(semester_id)
     
     from app.api.process_routes import create_task_process, update_task_progress, complete_task_process
@@ -241,6 +241,14 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
         try:
             created_count, updated_count = CourseRepository.create_batch(session, transformed_data, data_source=data_source)
 
+            # 仅"当前学期"维护 CourseWeek 锚点（隐患2修复）：CourseWeek.week_number 全局唯一，
+            # 爬虫 _calculate_date 把日期盖成"本周"，重爬旧学期会据此把 week1 锚点覆盖成错误
+            # 基准，破坏正在用的当前学期周次。故只在 semester_id 命中当前学期（或每日爬虫
+            # 未指定学期，即当前周）时才写锚点；旧学期爬取跳过，避免污染。
+            _is_current_semester = (semester_id is None) or (
+                semester_id == derive_current_semester()['semester_id']
+            )
+
             # 计算并存储周日期范围
             all_dates = [cd.get('date', '') for cd in courses_data if cd.get('date')]
             if all_dates:
@@ -257,40 +265,42 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
                     from datetime import timedelta
                     week_end = week_start + timedelta(days=6)
 
-                    # ---- Fix B (v6.11.5)：补全第 1 周锚点 ----
+                    # ---- Fix B (v6.11.5)：补全第 1 周锚点（仅当前学期，见 _is_current_semester 闸门）----
                     # 若数据最早周次 > 1（如用户数据从第 2 周开始），原逻辑只 upsert 当前周
                     # (top-level week_number) 的 CourseWeek，CourseWeek.week_number==1 不存在，
                     # get_week_number 会回退 MAX(week_number) 造成课表错周（"0 条课表数据"）。
                     # 用日历反推第 1 周起始日并 upsert 以恢复锚点；当 week_number==1 时
                     # week1_start == week_start，行为与原逻辑完全一致（幂等）。
-                    week1_start = week_start - timedelta(days=7 * (week_number - 1))
-                    week1_end = week1_start + timedelta(days=6)
-                    _week1 = session.query(CourseWeek).filter(CourseWeek.week_number == 1).first()
-                    if _week1:
-                        _week1.start_date = week1_start
-                        _week1.end_date = week1_end
-                    else:
-                        session.add(CourseWeek(
-                            week_number=1,
-                            start_date=week1_start,
-                            end_date=week1_end,
-                        ))
+                    # 非当前学期（重爬旧学期）整段跳过，避免污染全局 week1 锚点。
+                    if _is_current_semester:
+                        week1_start = week_start - timedelta(days=7 * (week_number - 1))
+                        week1_end = week1_start + timedelta(days=6)
+                        _week1 = session.query(CourseWeek).filter(CourseWeek.week_number == 1).first()
+                        if _week1:
+                            _week1.start_date = week1_start
+                            _week1.end_date = week1_end
+                        else:
+                            session.add(CourseWeek(
+                                week_number=1,
+                                start_date=week1_start,
+                                end_date=week1_end,
+                            ))
 
-                    # 更新或创建当前周次记录（保留原行为）
-                    existing_week = session.query(CourseWeek).filter(
-                        CourseWeek.week_number == week_number
-                    ).first()
+                        # 更新或创建当前周次记录（保留原行为，限当前学期）
+                        existing_week = session.query(CourseWeek).filter(
+                            CourseWeek.week_number == week_number
+                        ).first()
 
-                    if existing_week:
-                        existing_week.start_date = week_start
-                        existing_week.end_date = week_end
-                    else:
-                        week_record = CourseWeek(
-                            week_number=week_number,
-                            start_date=week_start,
-                            end_date=week_end,
-                        )
-                        session.add(week_record)
+                        if existing_week:
+                            existing_week.start_date = week_start
+                            existing_week.end_date = week_end
+                        else:
+                            week_record = CourseWeek(
+                                week_number=week_number,
+                                start_date=week_start,
+                                end_date=week_end,
+                            )
+                            session.add(week_record)
 
             session.commit()
             _range = f' (第{week_number}周: {week_start} ~ {week_end})' if (week_start and week_end) else f' (第{week_number}周)'

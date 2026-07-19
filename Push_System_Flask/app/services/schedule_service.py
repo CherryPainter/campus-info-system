@@ -19,7 +19,7 @@ from typing import List, Dict, Any, Optional
 
 from app.core.logger import get_logger
 from app.core.database import get_db
-from app.repository.course_repository import CourseRepository
+from app.repository.course_repository import CourseRepository, derive_current_semester
 
 # 使用统一日志系统
 logger = get_logger(__name__)
@@ -79,8 +79,13 @@ class ScheduleService:
         try:
             session = get_db()
             try:
-                # 从数据库获取所有课程
-                courses = CourseRepository.get_all(session)
+                # 从数据库获取当前学期的课程
+                # 隐患修复：get_all 原本不过滤学期，会把所有学期课程一并加载并按
+                # week_number 排到本周日期推送，导致新旧学期同周次课程重复推送。
+                # 这里只加载"当前学期"（按日期推导的 semester_id），与前端默认学期一致。
+                courses = CourseRepository.get_all(
+                    session, semester_id=derive_current_semester()['semester_id']
+                )
                 
                 # 转换为推送服务需要的格式
                 transformed = self._transform(courses)
