@@ -1,6 +1,6 @@
 /**
  * 用户与权限（整合页）
- * 将「用户管理」「会话管理」「黑名单管理」三个模块整合到一个页面，使用 Tabs 切换
+ * 将「用户管理」「会话管理」「访问控制（IP 黑名单）」三个模块整合到一个页面，使用 Tabs 切换
  * 路由：/access（仅管理员可访问）
  */
 import { Tabs } from 'antd';
@@ -44,7 +44,7 @@ export default function AccessControl() {
           label: (
             <span>
               <StopOutlined />
-              黑名单
+              访问控制
             </span>
           ),
           children: <Blacklist />,
