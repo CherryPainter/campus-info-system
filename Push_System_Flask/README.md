@@ -89,27 +89,26 @@
 
 ```mermaid
 flowchart TB
-    subgraph FE[管理后台 React + TypeScript]
-        direction LR
-        FE1[Ant Design 5 + ProComponents + ECharts]
-        FE2[Axios + JWT httpOnly Cookie 自动刷新]
-        FE3[路由守卫]
-    end
+    %% ===== 配色：外部数据源 / 后端 / 存储 / 前端 / 触达 =====
+    classDef cExt fill:#E8F0FE,stroke:#4285F4,stroke-width:1.5px,color:#0B3D91;
+    classDef cBE  fill:#E6F4EA,stroke:#34A853,stroke-width:1.5px,color:#0D652D;
+    classDef cDB  fill:#FCE8E6,stroke:#EA4335,stroke-width:1.5px,color:#7A231C;
+    classDef cFE  fill:#FEF7E0,stroke:#F9AB00,stroke-width:1.5px,color:#5C4500;
+    classDef cOUT fill:#F3E8FD,stroke:#A142F4,stroke-width:1.5px,color:#3D1068;
 
-    FE -->|JWT Bearer Token<br/>Authorization Header| BE
+    subgraph EXT[外部数据源]
+        direction LR
+        JW[教务系统<br/>重庆工程学院 CAS]
+        WX[和风天气 API]
+        DZ[宿舍电量系统]
+    end
 
     subgraph BE[Flask 后端 API]
         direction TB
         subgraph API[API 路由层]
-            A1[认证模块 auth_bp<br/>JWT + MFA]
-            A2[安全中间件<br/>路径/SQL/XSS]
-            A3[管理后台 API /api/admin]
-            A4[课表 API /api]
-            A5[天气 API /api/weather]
-            A6[电量 API /api/electricity]
-            A7[课程管理 /api/course]
-            A8[自定义推送 /api/admin/push]
-            A9[Webhook /api/admin/webhooks]
+            A1[认证 auth_bp · JWT + MFA]
+            A2[安全中间件 · 路径/SQL/XSS 过滤]
+            A3[管理 / 课程 / 天气 / 电量 / 推送 API]
         end
         subgraph SVC[服务层 Services]
             S1[ScheduleService / RuleService]
@@ -119,16 +118,37 @@ flowchart TB
         subgraph SCH[任务调度 APScheduler]
             T1[爬虫任务]
             T2[规则检查 60s]
-            T3[天气任务 ×5]
-            T4[电量任务 ×5]
+            T3[天气 ×5 / 电量 ×5]
         end
     end
 
-    BE -->|Playwright 爬虫| JW[教务系统<br/>重庆工程学院 CAS]
-    BE -->|REST + Ed25519| WX[和风天气 API]
-    BE -->|Webhook 推送| WECOM[企业微信]
+    subgraph STORE[数据存储 MySQL 8]
+        DB[(课程 / 天气 / 电量 / 用户 / Webhook 等 20 张表)]
+    end
 
+    subgraph FE[管理后台 React + TypeScript]
+        direction LR
+        F1[Ant Design 5 + ProComponents]
+        F2[Axios + JWT httpOnly Cookie 自动刷新]
+        F3[路由守卫]
+    end
 
+    subgraph OUT[触达渠道]
+        WECOM[企业微信机器人]
+    end
+
+    FE -->|JWT Bearer Token<br/>Authorization| BE
+    BE -->|Playwright 爬虫| JW
+    BE -->|REST API| WX
+    BE -->|HTTP 采集| DZ
+    BE -->|CRUD / 查询| DB
+    BE -->|Webhook 主动推送| WECOM
+
+    class JW,WX,DZ cExt;
+    class A1,A2,A3,S1,S2,S3,T1,T2,T3 cBE;
+    class DB cDB;
+    class F1,F2,F3 cFE;
+    class WECOM cOUT;
 ```
 
 ### 后端分层架构
