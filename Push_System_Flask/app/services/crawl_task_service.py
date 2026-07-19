@@ -194,6 +194,7 @@ def _run_scheduled_crawl(task_id: int):
     """执行单个预约爬取任务，更新其状态。"""
     from app.core.database import get_db
     from app.model.scheduled_crawl_task import ScheduledCrawlTask
+    from app.api.process_routes import create_task_process, complete_task_process
 
     session = get_db()
     try:
@@ -210,6 +211,20 @@ def _run_scheduled_crawl(task_id: int):
         task.message = '爬取任务执行中...'
         session.commit()
 
+        # 统一「伞进程」：与「进程管理」页面同一套机制，前端任务卡片（full_crawl）
+        # 据此感知真实的「运行中 / 成功 / 失败」终态，不再依赖 spider_status 的
+        # running_tasks.course_full_crawl 或 crawlTasks.list 轮询。
+        # 注：pipeline.save_to_database 仍会按学期各生成一条带后缀的明细进程
+        # （课程全量爬取·学期X），本伞进程代表整次爬取任务，二者互补，互不冲突。
+        process_id = None
+        try:
+            process_id = create_task_process(
+                '课程全量爬取', 'course_full_crawl', total_items=1,
+                created_by=task.created_by or 'admin',
+            )
+        except Exception as pe:
+            logger.warning(f'[爬取任务] 创建伞进程失败（不影响爬取）: {pe}')
+
         try:
             if task.scope == 'all':
                 total = _crawl_all_semesters()
@@ -223,13 +238,19 @@ def _run_scheduled_crawl(task_id: int):
             if total and total > 0:
                 task.status = TaskStatus.COMPLETED
                 task.message = f'爬取完成，成功导入 {total} 门课程'
+                if process_id is not None:
+                    complete_task_process(process_id, TaskStatus.COMPLETED, task.message)
             else:
                 task.status = TaskStatus.COMPLETED_EMPTY
                 task.message = '爬取流程已正常完成，但未获取到任何课程数据（该学期可能尚未排课，或爬虫未能匹配到数据，请确认后重试）'
+                if process_id is not None:
+                    complete_task_process(process_id, TaskStatus.COMPLETED_EMPTY, task.message)
         except Exception as e:
             logger.error(f'[爬取任务] 任务 {task_id} 执行失败: {e}')
             task.status = TaskStatus.FAILED
             task.error_message = str(e)[:500]
+            if process_id is not None:
+                complete_task_process(process_id, TaskStatus.FAILED, error=str(e)[:500])
         finally:
             task.completed_at = datetime.now()
             session.commit()
@@ -255,6 +276,8 @@ def reap_stale_crawl_tasks(session=None) -> int:
     """
     from app.core.database import get_db
     from app.model.scheduled_crawl_task import ScheduledCrawlTask
+    from app.model.task_process import TaskProcess
+    from app.api.process_routes import complete_task_process
 
     own_session = session is None
     if own_session:
@@ -278,6 +301,20 @@ def reap_stale_crawl_tasks(session=None) -> int:
                 t.completed_at = now
                 reaped += 1
                 logger.warning(f'[爬取任务] 僵尸自愈：任务 id={t.id} 运行超时，自动翻 failed')
+                # 同步结束对应的伞进程（课程全量爬取），避免前端「运行中」横幅永不熄灭。
+                # 因 ScheduledCrawlTask 未持有 process_id（避免改表），按
+                # 名称+类型+运行时长匹配仍 running/pending 的伞进程一并翻 failed。
+                try:
+                    running_procs = session.query(TaskProcess).filter(
+                        TaskProcess.name == '课程全量爬取',
+                        TaskProcess.task_type == 'course_full_crawl',
+                        TaskProcess.status.in_(['running', 'pending']),
+                    ).all()
+                    for p in running_procs:
+                        if p.started_at and p.started_at < deadline:
+                            complete_task_process(p.id, TaskStatus.FAILED, error=t.error_message)
+                except Exception as pe:
+                    logger.warning(f'[爬取任务] 僵尸自愈：同步结束伞进程失败: {pe}')
         if reaped:
             session.commit()
     except Exception as e:
