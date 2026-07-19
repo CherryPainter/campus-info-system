@@ -807,6 +807,34 @@ def check_push_rules():
             logger.info(f'规则检查创建 {len(created)} 个推送任务')
 
 
+def _is_in_teaching_week():
+    """判断今天是否落在某个教学周内（course_weeks.start_date ~ end_date）。
+
+    用于假期/暑假自动停发课表：不在任何教学周内即视为「这一周没课」，
+    跳过周课表推送。基于真实日期范围，不依赖易错的 week_number 推算
+    （_calculate_date 在假期会把 week_number=1 误算成本周日期）。
+
+    异常时回退 True（继续推送），避免 course_weeks 数据缺失时静默漏推。
+    """
+    try:
+        from datetime import date
+        from app.core.database import get_db
+        from app.model.course_week import CourseWeek
+        today = date.today()
+        session = get_db()
+        try:
+            cw = session.query(CourseWeek).filter(
+                CourseWeek.start_date <= today,
+                CourseWeek.end_date >= today
+            ).first()
+            return cw is not None
+        finally:
+            session.close()
+    except Exception as e:
+        logger.warning(f'[周课表] 教学周判断异常，默认视为在教学周内（继续推送）: {e}')
+        return True
+
+
 def generate_weekly_course():
     """生成每周课表"""
     logger.info("开始生成每周课表...")
@@ -823,6 +851,10 @@ def generate_weekly_course():
             if not success:
                 logger.error('[周课表] 爬虫执行失败，跳过发送课表图片')
                 _notify_weekly_failure('爬虫执行失败，未产生新数据')
+                return
+            # 假期/暑假自动停发：当前不在任何教学周内即视为「这一周没课」，跳过推送
+            if not _is_in_teaching_week():
+                logger.info('[周课表] 当前不在教学周内（假期/暑假），跳过周课表推送')
                 return
             _send_weekly_image(_run_timestamp)
         
