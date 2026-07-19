@@ -82,6 +82,7 @@
 - **CORS 白名单**：可配置允许的跨域域名列表
 - **敏感信息脱敏**：管理后台 API 返回的 API Key、Cookie 均做脱敏处理
 - **登录安全**：完整登录日志审计（IP、User-Agent、成功/失败/登出时间），密码修改需验证旧密码
+- **境外 IP 防火墙（v6.13.0）**：基于本地 ip2region 离线库判定客户端 IP 所属国家，仅允许中国 IP 访问（含登录入口）；命中境外立即返回 403，不进入任何业务逻辑。支持开关与例外 IP/CIDR 白名单（防自锁）
 
 ---
 
@@ -309,6 +310,8 @@ Push_System_Flask/
 |   |   |                                 #   MultiWeComAdapter (多 Webhook)
 |   |   |                                 #   数据库优先加载, .env 回退
 |   |   |-- templates.json                # 6 个消息模板配置
+|   |   |-- geo_service.py                # IP 地理解析（境外防火墙用，基于 ip2region 离线库）
+|   |   |-- ip_blacklist_service.py        # IP 黑名单 / 登录爆破滑动窗口（Redis 或内存降级）
 |   |
 |   |-- modules/                          # 功能模块
 |   |   |-- weather/                      # 天气监控子模块
@@ -635,6 +638,8 @@ npm run dev
 | `ALLOWED_ORIGINS` | `http://localhost:29528,http://localhost:5173` | 允许的跨域域名（逗号分隔；生产务必改为真实域名，兼容旧名 `CORS_ORIGINS`） |
 | `FORCE_ADMIN_MFA` | `true`                                         | 强制管理员启用多因素认证(MFA)；首次引导（系统内尚无任何 MFA 用户）时放行 |
 | `REDIS_URL`       | （空）                                         | 限流计数与登录爆破滑动窗口的存储；为空则使用进程内内存（仅单机/开发，多 worker 或重启会丢失限流状态） |
+| `ENABLE_FOREIGN_IP_BLOCK` | `true`                              | 境外 IP 防火墙开关；开启后仅允许中国 IP 访问（含登录入口），命中境外返回 403 |
+| `REGION_BLOCK_EXCEPTIONS` | （空）                              | 例外 IP/CIDR 白名单（逗号分隔），命中的 IP 不受境外拦截限制（防自锁，如管理出口或 VPN） |
 
 ### 企业微信配置
 
@@ -1360,6 +1365,32 @@ flowchart TD
 | Referrer-Policy             | `strict-origin-when-cross-origin`         | 引用来源策略          |
 | Permissions-Policy          | `geolocation=(), microphone=(), camera=()`| 权限策略              |
 
+### 境外 IP 防火墙（v6.13.0）
+
+基于本地 ip2region 离线库，在请求最前端拦截境外 IP，仅允许中国 IP（含登录入口）访问：
+
+```mermaid
+flowchart TD
+    REQ[请求到达] --> SKIP{/health 或 /static/?}
+    SKIP -->|是| PASS[放行]
+    SKIP -->|否| FRN{_check_foreign_ip}
+    FRN -->|开关关闭| PASS
+    FRN -->|IP 在例外名单| PASS
+    FRN -->|is_china_ip = true| PASS
+    FRN -->|is_china_ip = false 境外| DENY[403 Access Denied<br/>不进入任何业务逻辑]
+```
+
+实现要点（已对照 `geo_service.py` / `security.py` 核实）：
+
+- **拦截位置**：`security_before_request` 全局钩子，在 `/health`、`/static/` 跳过之后、登录白名单之前插入，因此**连 `/api/auth/login` 也一并拦截**——境外 IP 连登录页都进不来
+- **地理判定**：`app/services/geo_service.py` 基于项目根 `ip2region.xdb`（ip2region_v4 离线库）判定国家；整库载入内存、线程安全、零外部网络依赖
+- **判定策略（fail-closed）**：仅"明确为中国 IP"才放行；境外、未知、IPv6（v4 库无法判定）、非法 IP 一律按境外拦截；私有 / 本地 / 回环地址强制放行
+- **防自锁**：离线库缺失或损坏时降级放行（记 critical 日志），避免把全站打死；`REGION_BLOCK_EXCEPTIONS` 可配置例外 IP/CIDR 白名单（如管理出口 / VPN）；`ENABLE_FOREIGN_IP_BLOCK=false` 可一键关停
+- **性能**：IP→国家结果进程内缓存（上限 2 万条），不重复查库
+- **数据来源**：官方 Python 绑定 vendoring 进仓库 `ip2region/`（含 LICENSE），离线库 `ip2region.xdb`（约 11MB）纳入版本控制；PyPI 未上架此包，故不依赖 pip
+
+配置项见「环境变量配置 → 安全与跨域配置」：`ENABLE_FOREIGN_IP_BLOCK`、`REGION_BLOCK_EXCEPTIONS`。
+
 ---
 
 ## 部署指南
@@ -1443,6 +1474,7 @@ python init_db.py
 3. 如果表已存在，执行增量迁移（添加新字段、修改字段类型）
 4. 迁移 `custom_pushes` 表（添加 msg_type、image_path、template_id、template_params 字段）
 5. 补全 `task_processes` 表可能缺失的字段
+6. 启动期自动执行数据库指纹漂移检测：比对「代码定义指纹」与「实例实际指纹」，差异（多余表 / 列 / 类型变更 / 可空性）自动尝试 ALTER 修复，修复后仍不一致才提示人工处理
 
 ---
 
@@ -1452,6 +1484,11 @@ python init_db.py
 
 最近版本速览：
 
+- **v6.13.0** 境外 IP 防火墙：仅允许中国 IP 访问（基于 ip2region 离线库），连登录入口一并拦截
+- **v6.12.3** 天气预警历史分页折叠（后端分页 + 前端"加载更多"）
+- **v6.12.2** 补充审计请求日志静默名单遗漏的轮询端点
+- **v6.12.1** 修复数据库指纹可空性误判与启动顺序前移
+- **v6.12.0** 数据库指纹漂移检测与启动期自动修复（多余表 / 列 / 类型 / 可空性）
 - **v6.11.2** 手动课保护：爬虫不可覆盖/挤占 `data_source='admin'` 课程
 - **v6.11.1** 课程数据来源标记 + 每日爬虫入库当前周 + 空结果护栏
 - **v6.11.0** 安全加固（SECRET_KEY 必填 / Redis 限流 / 强制管理员 MFA / 账号风险升级 / CORS 收口）
