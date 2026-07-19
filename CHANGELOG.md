@@ -4,6 +4,20 @@
 
 ---
 
+## v6.11.6 (2026-07-19)
+
+> 发版类型：**缺陷修复（patch）**。修复学期切换的两处隐患（提交 `6d21ee9`）。
+
+### 隐患1：课表推送跨学期串扰（schedule_service.py / course_repository.py）
+- **问题**：`ScheduleService.load_schedules` 经 `CourseRepository.get_all` 加载课程时**不过滤学期**，会把库里所有学期的课程按 `week_number` 排到本周日期推送。新学期开始后，新旧学期 `week_number` 均 1..20、共用同一全局锚点，锚点重置后两学期同周次课程被排到同一天、一起推送，用户每天收到重复课表。
+- **修复**：`get_all` 新增可选 `semester_id` 参数（默认不过滤，兼容旧调用方）；`load_schedules` 仅加载 `derive_current_semester()` 的当前学期，与前端默认学期一致。
+
+### 隐患2：重爬旧学期污染第1周锚点（pipeline.py）
+- **问题**：`CourseWeek.week_number` 全局唯一，而爬虫 `_calculate_date` 把每门课日期盖成"本周"，不反映真实学期日历；`get_week_number` 只能正确表示单一学期时间线。重爬旧学期会据此覆盖 `CourseWeek.week_number==1` 起始日，破坏正在用的当前学期周次。v6.11.5 的 Fix B 把此隐患波及面从"重爬 N=1"扩大到"重爬任意 N≥1"。
+- **修复**：`pipeline.save_to_database` 增加 `_is_current_semester` 闸门——仅当 `semester_id` 命中当前学期（或每日爬虫未指定学期、即当前周）才写/维护 `CourseWeek` 锚点，旧学期爬取整段跳过，避免污染全局 week1 锚点。当前学期的锚点维护行为不变（Fix B 仍生效）。
+
+---
+
 ## v6.11.5 (2026-07-19)
 
 > 发版类型：**缺陷修复（patch）**。课程全量爬取入库日志口径修正 + 课表错周锚点修复（Fix A + Fix B，均来自生产日志排查，提交 `e31b5dd`）。
