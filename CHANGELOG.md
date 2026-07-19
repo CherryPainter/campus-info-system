@@ -26,7 +26,8 @@
   3. **管理端接口**：`GET /api/admin/db/fingerprint`（需 admin JWT），返回两码与结构化 diff。
 - **验证**：定义码运行期确认含 20 表/37 配置键/64 位 sha256；`py_compile` 4 文件全过；`pytest tests/` 33/33 绿色无回归。
 - **启动优化**：`cmd_migrate` 新增 `quiet` 参数，应用启动时传 `quiet=True`——无迁移时跳过逐表 checklist 与"无需迁移"横幅，仅在有实际变更（补表/补列/补索引）或类型不兼容时打印。配合指纹比对（仅一行 INFO/WARNING），启动日志大幅精简。
-- **启动流程改为指纹先行**：`create_app` 在种子数据写入后先跑 `check_db_fingerprint`；一致则跳过 `cmd_migrate`（省去 inspector 全部查询，仅一行 INFO）；不一致则自动 `cmd_migrate(quiet=True)` 修复 schema 漂移后重检。进一步压缩无漂移场景的启动时间。
+- **启动流程改为指纹先行**：`create_app` 在种子数据写入后先跑 `check_db_fingerprint`；一致则跳过 `cmd_migrate`（省去 inspector 全部查询，仅一行 INFO）；不一致则自动 `cmd_migrate(quiet=True)` 修复 schema 漂移后重检。
+- **指纹比对逻辑修正**：类型归一化放宽（`varchar(100)` 与 `varchar(255)` 均归一为 `varchar`），消除历史库长度微调引发的类型变更误报；match 判定改为仅看**缺失项**（缺失表/列/配置键、管理员缺失），实例多出的列/配置键（手工添加/历史遗留）仅通知不阻断。确保指纹在"定义需要的都有了"时即判一致，不再因手工增补误报。进一步压缩无漂移场景的启动时间。
 
 ---
 
