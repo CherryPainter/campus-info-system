@@ -6,6 +6,22 @@
 
 ---
 
+## v6.13.0 (2026-07-19)
+
+> 发版类型：**新功能（minor）**。新增「境外 IP 拦截」防火墙：仅允许中国 IP 访问，其余请求在请求最前端直接 403 断开。
+
+### 境外 IP 拦截（防火墙）
+- **需求**：作为纵深防御，仅放行国内 IP，阻断海外扫描/爆破流量。用户明确要求「只对国外 IP 进行拦截、直接断开连接」，本期收窄为仅国家级（不做省份级，避免误伤移动/外省用户）。
+- **实现**：
+  - 新增 `app/services/geo_service.py`：基于本地 ip2region 离线库（`ip2region_v4.xdb`，官方 Python 绑定已 vendoring 进仓库 `Push_System_Flask/ip2region/`，含 LICENSE）判断 IP 所属国家。整库载入内存（线程安全、零外部网络依赖）；私有/本地地址直接放行；IPv6 与未识别地址按「境外」fail-closed 处理；数据库缺失或加载失败时降级为放行，避免误杀全站；IP→国家结果带内存缓存。
+  - `app/utils/security.py`：在 `security_before_request` 的 `/health`、`/static/` 跳过之后、登录白名单跳过之前插入 `_check_foreign_ip`，连 `/api/auth/login` 一并拦截；命中条件为「开关开启 且 非例外 IP 且 非中国 IP」，返回 403。
+  - `app/core/config.py`：新增 `ENABLE_FOREIGN_IP_BLOCK`（默认 `true`）与 `REGION_BLOCK_EXCEPTIONS`（逗号分隔的例外 IP/CIDR，作管理员白名单防自锁）。
+- **数据来源说明**：PyPI 上无 `ip2region` 包、且本机 pip 无法连接 PyPI，因此将官方 Python 绑定源码 vendoring 进仓库（非 pip 依赖）；离线库 `ip2region.xdb`（约 11MB）一并纳入版本控制，置于 `Push_System_Flask/` 根目录（避开被 `.gitignore` 的 `data/` 目录，且 git 不允许在已忽略目录内用 `!` 重新包含文件）。
+- **验证**：`geo_service` 国家判断经多组 IP 抽样核对（国内地址/私有地址放行，海外地址拦截）；`py_compile` 通过。
+- **版本**：按约定 bump minor（6.12.3→6.13.0），四处版本号（config.py / version.ts / package.json / .env）与两份 README 徽标已同步。
+
+---
+
 ## v6.12.3 (2026-07-19)
 
 > 发版类型：**缺陷修复（patch）**。天气管理「预警历史」改为后端分页 + 前端「加载更多」折叠，与个人设置页登录日志保持一致，避免长列表一次性渲染。

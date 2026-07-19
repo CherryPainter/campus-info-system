@@ -15,6 +15,7 @@
 import re
 import functools
 import secrets
+import ipaddress
 from flask import request, jsonify, g, current_app
 from app.core.logger import get_logger
 
@@ -424,6 +425,46 @@ def _run_security_checks():
     return None
 
 
+def _ip_in_exceptions(ip: str, exceptions: list) -> bool:
+    """判断 IP 是否命中例外名单（支持单 IP 与 CIDR）。"""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    for ex in exceptions:
+        ex = ex.strip()
+        if not ex:
+            continue
+        try:
+            if '/' in ex:
+                if addr in ipaddress.ip_network(ex, strict=False):
+                    return True
+            else:
+                if addr == ipaddress.ip_address(ex):
+                    return True
+        except ValueError:
+            continue
+    return False
+
+
+def _check_foreign_ip(client_ip: str):
+    """境外 IP 拦截。
+
+    返回 403 响应（元组）表示拦截；返回 None 表示放行。
+    命中条件：开关开启 且 非例外 IP 且 非中国 IP。
+    """
+    if not current_app.config.get('ENABLE_FOREIGN_IP_BLOCK', False):
+        return None
+    exceptions = current_app.config.get('REGION_BLOCK_EXCEPTIONS') or []
+    if _ip_in_exceptions(client_ip, exceptions):
+        return None
+    from app.services.geo_service import is_china_ip
+    if is_china_ip(client_ip):
+        return None
+    logger.warning('境外 IP 拦截: %s 访问 %s', client_ip, request.path)
+    return jsonify({'status': 'error', 'message': 'Access Denied'}), 403
+
+
 # 登录接口白名单：黑名单/攻击检测不拦截登录，避免误封管理员 IP 后无法进入后台
 _SECURITY_BEFORE_REQUEST_WHITELIST = {
     '/api/auth/login',
@@ -441,6 +482,10 @@ def security_before_request():
     # 健康检查与静态资源跳过
     if path == '/health' or path.startswith('/static/'):
         return None
+    # 境外 IP 拦截（kill-switch 默认开启，例外 IP 见配置）；置于登录白名单之前，连登录入口也一并拦截
+    region_resp = _check_foreign_ip(_strip_crlf(get_client_ip()))
+    if region_resp is not None:
+        return region_resp
     # 登录接口不拦截（避免误封自己 IP 后无法登录），仅记录审计
     if path in _SECURITY_BEFORE_REQUEST_WHITELIST:
         log_request_audit(get_client_ip(), path)

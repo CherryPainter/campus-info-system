@@ -113,7 +113,7 @@ class Config:
         
         # 应用
         cls.APP_NAME = os.getenv('APP_NAME', '校园信息聚合与智能推送系统')
-        cls.APP_VERSION = os.getenv('APP_VERSION', '6.12.3')
+        cls.APP_VERSION = os.getenv('APP_VERSION', '6.13.0')
         cls.DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
         cls.HOST = os.getenv('HOST', '0.0.0.0')
         cls.PORT = int(os.getenv('PORT', '29528'))
@@ -146,6 +146,11 @@ class Config:
 
         # 是否强制管理员启用 MFA（默认开启；设为 false 可关闭，便于特殊场景）
         cls.FORCE_ADMIN_MFA = os.getenv('FORCE_ADMIN_MFA', 'true').lower() == 'true'
+
+        # 境外 IP 拦截（防火墙）：仅允许中国 IP 访问，其余请求在请求最前端直接 403 断开
+        # 默认开启；REGION_BLOCK_EXCEPTIONS 为逗号分隔的例外 IP/CIDR（管理员白名单，防止误锁自己）
+        cls.ENABLE_FOREIGN_IP_BLOCK = os.getenv('ENABLE_FOREIGN_IP_BLOCK', 'true').lower() in ('1', 'true', 'yes', 'on')
+        cls.REGION_BLOCK_EXCEPTIONS = [x.strip() for x in os.getenv('REGION_BLOCK_EXCEPTIONS', '').split(',') if x.strip()]
         
         # 教务系统
         cls.JWXT_USERNAME = os.getenv('JWXT_USERNAME', '')
