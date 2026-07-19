@@ -247,12 +247,9 @@ def diff_fingerprints(def_struct: dict, inst_struct: dict) -> dict:
         },
     }
     diff['match'] = not any([
-        # 仅缺失项判定"不一致"（定义需要但实例没有 = 需修复）
-        missing_tables, missing_columns, missing_config_keys,
-        # 管理员缺失
-        not admin_match,
+        missing_tables, extra_tables, missing_columns, extra_columns,
+        type_changed, missing_config_keys, extra_config_keys, not admin_match,
     ])
-    # 多余项/类型变更仅通知不阻断（实例比定义多 = 手工添加/历史遗留/长度微调，无害）
     return diff
 
 
@@ -263,32 +260,29 @@ def check_db_fingerprint(session) -> dict:
     diff = diff_fingerprints(def_struct, inst_struct)
     diff['definition_hash'] = def_hash
     diff['instance_hash'] = inst_hash
-    # 保留哈希原值便于溯源；match 由 diff 逻辑判定（仅缺失项断一致）
-    diff['match'] = diff['match']  # 已在 diff_fingerprints 中设定
     return diff
 
 
 def summarize_diff(diff: dict) -> str:
     """把 diff 渲染成一行人话摘要（用于启动告警 / CLI）。"""
     if diff['match']:
-        extras = []
-        if diff.get('extra_tables'):
-            extras.append(f"多余表:{','.join(diff['extra_tables'])}")
-        if diff.get('extra_columns'):
-            extras.append(';'.join(f"{t}({','.join(c)})" for t, c in diff['extra_columns'].items()))
-        if diff.get('extra_config_keys'):
-            extras.append(f"多余配置键:{len(diff['extra_config_keys'])}个")
-        if extras:
-            return f'实例与定义一致（实例多出: {"|".join(extras)}，属手工添加/历史遗留，无害）'
         return '实例与初始化定义一致'
-    # 不一致：列出缺失项
+    # 不一致：逐项列出
     parts: List[str] = []
     if diff.get('missing_tables'):
         parts.append(f"缺失表:{','.join(diff['missing_tables'])}")
+    if diff.get('extra_tables'):
+        parts.append(f"多余表:{','.join(diff['extra_tables'])}")
     if diff.get('missing_columns'):
         parts.append('缺失列:' + ';'.join(f"{t}({','.join(c)})" for t, c in diff['missing_columns'].items()))
+    if diff.get('extra_columns'):
+        parts.append('多余列:' + ';'.join(f"{t}({','.join(c)})" for t, c in diff['extra_columns'].items()))
+    if diff.get('type_changed'):
+        parts.append('类型变更:' + ';'.join(f"{t}:{len(v)}列" for t, v in diff['type_changed'].items()))
     if diff.get('missing_config_keys'):
         parts.append(f"缺失配置键:{len(diff['missing_config_keys'])}个")
+    if diff.get('extra_config_keys'):
+        parts.append(f"多余配置键:{len(diff['extra_config_keys'])}个")
     if not diff.get('admin', {}).get('match', True):
-        parts.append('默认管理员缺失')
+        parts.append('默认管理员缺失' if not diff['admin'].get('instance_admin_present') else '默认管理员状态不符')
     return '实例与初始化定义不一致 → ' + (' | '.join(parts) if parts else '未知差异')

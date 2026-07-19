@@ -27,7 +27,7 @@
 - **验证**：定义码运行期确认含 20 表/37 配置键/64 位 sha256；`py_compile` 4 文件全过；`pytest tests/` 33/33 绿色无回归。
 - **启动优化**：`cmd_migrate` 新增 `quiet` 参数，应用启动时传 `quiet=True`——无迁移时跳过逐表 checklist 与"无需迁移"横幅，仅在有实际变更（补表/补列/补索引）或类型不兼容时打印。配合指纹比对（仅一行 INFO/WARNING），启动日志大幅精简。
 - **启动流程改为指纹先行**：`create_app` 在种子数据写入后先跑 `check_db_fingerprint`；一致则跳过 `cmd_migrate`（省去 inspector 全部查询，仅一行 INFO）；不一致则自动 `cmd_migrate(quiet=True)` 修复 schema 漂移后重检。进一步压缩无漂移场景的启动时间。
-- **指纹比对逻辑修正**：类型归一化放宽（`varchar(100)` 与 `varchar(255)` 均归一为 `varchar`），消除历史库长度微调引发的类型变更误报；match 判定改为仅看**缺失项**（缺失表/列/配置键、管理员缺失），实例多出的列/配置键（手工添加/历史遗留）仅通知不阻断。
+- **指纹比对逻辑修正**：类型归一化放宽（`varchar(100)` 与 `varchar(255)` 均归一为 `varchar`），消除历史库长度微调引发的类型变更误报；match 采用严格模式——全部项（含多余表/列/配置键/类型变更）一致才算一致，不因"只是多出来"而放行。有差异用 `cleanup` 或 `migrate` 修到干净为止。
 - **init_db.py cleanup 全貌清理**：基于指纹 diff 的全量差异，一键处理：多余表（`DROP TABLE`）、多余列（`DROP COLUMN`）、多余配置键（`DELETE`）、安全类型变更（同族 `varchar↔text`、`int↔int` 自动 `MODIFY COLUMN`）。跨类型差异（如 `varchar↔int`）标记需手动处理，避免丢数据。`_instance_schema` 改为查全部用户表以检测额外表。默认需确认，传 `--yes` 跳过。
 
 ---
