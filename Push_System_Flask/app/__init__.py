@@ -215,15 +215,6 @@ def create_app(config_class=None):
     db_manager.init_database()
     logger.info('数据库初始化完成')
 
-    # 自动增量迁移：比对模型定义，补建缺失的表/列/索引（根治字段漂移，幂等可重复安全）
-    # 覆盖全部 20 张表（含 courses.data_source 等），避免升级后读数据报 Unknown column
-    try:
-        from init_db import cmd_migrate
-        logger.info('开始数据库自动迁移（比对模型字段，补建缺失表/列/索引）')
-        cmd_migrate(quiet=True)
-    except Exception as e:
-        logger.error(f'数据库自动迁移执行异常（不影响启动，请手动执行 python init_db.py migrate）: {e}')
-
     # 补齐 server_sessions 撤销相关列（老库兼容，幂等；与上面迁移互补，保留无害）
     from app.services.session_service import ensure_session_columns, ensure_user_columns
     ensure_session_columns()
@@ -347,19 +338,32 @@ def create_app(config_class=None):
         else:
             logger.info(f'[启动] 管理员账号已存在: admin')
         
-        # 数据库指纹比对（启动时检测实例是否与代码初始化定义一致）
+        # 数据库指纹比对（种子数据已写入后，检测实例是否与代码初始化定义一致）
         try:
             from app.core.db_fingerprint import check_db_fingerprint, summarize_diff
             fp = check_db_fingerprint(session)
             if not fp['match']:
+                # 不一致：先跑自动迁移修复 schema 漂移（补表/补列/补索引）
                 logger.warning(
-                    f'[数据库指纹] {summarize_diff(fp)} '
-                    f'| 定义码={fp["definition_hash"][:12]}… '
-                    f'实例码={fp["instance_hash"][:12]}… '
-                    f'| 请运行 python init_db.py migrate 同步'
+                    f'[数据库指纹] 实例与定义不一致，正在自动迁移… '
+                    f'({summarize_diff(fp)})'
                 )
+                try:
+                    from init_db import cmd_migrate
+                    cmd_migrate(quiet=True)
+                except Exception as me:
+                    logger.error(f'[数据库指纹] 自动迁移执行异常: {me}')
+                # 迁移后重检
+                fp2 = check_db_fingerprint(session)
+                if fp2['match']:
+                    logger.info(f'[数据库指纹] 自动迁移后一致 (码={fp2["definition_hash"][:12]}…)')
+                else:
+                    logger.warning(
+                        f'[数据库指纹] 自动迁移后仍有差异 ({summarize_diff(fp2)})，'
+                        f'请手动执行 python init_db.py migrate / init_db.py seed'
+                    )
             else:
-                logger.info(f'[数据库指纹] 实例与初始化定义一致 (码={fp["definition_hash"][:12]}…)')
+                logger.info(f'[数据库指纹] 实例与定义一致，跳过迁移 (码={fp["definition_hash"][:12]}…)')
         except Exception as e:
             logger.warning(f'[数据库指纹] 比对失败（不影响启动）: {e}')
     finally:
