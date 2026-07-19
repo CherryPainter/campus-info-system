@@ -208,6 +208,7 @@ def _check_columns_brief(engine, model_tables, existing_tables):
     common = model_tables & existing_tables
     total_missing_cols = 0
     with engine.connect() as conn:
+        from sqlalchemy import inspect
         try:
             conn.execute(text('SET SESSION lock_wait_timeout = 3'))
             conn.execute(text('SET SESSION innodb_lock_wait_timeout = 3'))
