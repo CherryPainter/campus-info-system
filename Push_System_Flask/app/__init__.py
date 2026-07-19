@@ -344,7 +344,7 @@ def create_app(config_class=None):
             fp = check_db_fingerprint(session)
             if not fp['match']:
                 # 不一致：先跑自动迁移修复 schema 漂移（补表/补列/补索引）
-                logger.warning(
+                logger.info(
                     f'[数据库指纹] 实例与定义不一致，正在自动迁移… '
                     f'({summarize_diff(fp)})'
                 )
@@ -360,7 +360,7 @@ def create_app(config_class=None):
                 else:
                     logger.warning(
                         f'[数据库指纹] 自动迁移后仍有差异 ({summarize_diff(fp2)})，'
-                        f'请手动执行 python init_db.py migrate / init_db.py seed'
+                        f'请手动执行 python init_db.py cleanup --yes'
                     )
             else:
                 logger.info(f'[数据库指纹] 实例与定义一致，跳过迁移 (码={fp["definition_hash"][:12]}…)')
