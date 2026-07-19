@@ -39,6 +39,10 @@ limiter = Limiter(
     # 限流计数存储：生产使用 Redis（多 worker 生效、重启不丢状态）；
     # REDIS_URL 未配置时回退内存（兼容单机开发 / 测试）
     storage_uri=os.getenv("REDIS_URL") or "memory://",
+    # 容错降级：配置了 REDIS_URL 但 Redis 连不上时（宕机 / 未启动 / 网络抖动），
+    # 自动回退到进程内内存限流，而不是让整个请求 500。
+    # 与 ip_blacklist_service 的 Redis 降级策略保持一致，避免限流存储故障拖垮登录等接口。
+    in_memory_fallback_enabled=True,
     # 启用全局限流统计（限流响应头）
     headers_enabled=True,
 )

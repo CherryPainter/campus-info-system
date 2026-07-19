@@ -55,6 +55,10 @@ def create_app(config_class=None):
     allowed_origins = app.config.get('ALLOWED_ORIGINS')
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
     limiter.init_app(app)
+
+    # 启动时主动探测 Redis 连接状态并打印明确日志（避免静默降级无从判断）
+    from app.services.ip_blacklist_service import log_redis_status
+    log_redis_status()
     
     # HTTPS 强制跳转（生产环境）
     @app.before_request
@@ -211,7 +215,16 @@ def create_app(config_class=None):
     db_manager.init_database()
     logger.info('数据库初始化完成')
 
-    # 补齐 server_sessions 撤销相关列（老库兼容，幂等）
+    # 自动增量迁移：比对模型定义，补建缺失的表/列/索引（根治字段漂移，幂等可重复安全）
+    # 覆盖全部 20 张表（含 courses.data_source 等），避免升级后读数据报 Unknown column
+    try:
+        from init_db import cmd_migrate
+        logger.info('开始数据库自动迁移（比对模型字段，补建缺失表/列/索引）')
+        cmd_migrate()
+    except Exception as e:
+        logger.error(f'数据库自动迁移执行异常（不影响启动，请手动执行 python init_db.py migrate）: {e}')
+
+    # 补齐 server_sessions 撤销相关列（老库兼容，幂等；与上面迁移互补，保留无害）
     from app.services.session_service import ensure_session_columns, ensure_user_columns
     ensure_session_columns()
     ensure_user_columns()

@@ -132,6 +132,28 @@ _IVOL_PREFIX = 'login_ivol:'         # ZSET member=timestamp（总量），按 I
 _ARISK_PREFIX = 'login_arisk:'      # 账号高风险标记（member='risk'），按账号，窗口到期自动清除
 
 
+def log_redis_status() -> None:
+    """
+    启动时主动探测 Redis 连接状态并打印明确日志，避免静默降级导致无从判断。
+    - REDIS_URL 为空：明确提示使用进程内存（开发/单机）
+    - 配置但连不上：WARNING 提示降级内存（限流/登录爆破跨进程不生效）
+    - 连接成功：INFO 提示已连接
+    仅用于日志可见性，不改变限流器/登录爆破的实际存储策略。
+    """
+    from app.core.config import Config
+    url = getattr(Config, 'REDIS_URL', '') or ''
+    if not url:
+        logger.info('[Redis] 未配置 REDIS_URL，限流与登录爆破使用进程内存（开发/单机，重启会丢失计数）')
+        return
+    try:
+        import redis as redis_lib
+        client = redis_lib.Redis.from_url(url, decode_responses=True, socket_connect_timeout=3)
+        client.ping()
+        logger.info(f'[Redis] 已连接: {url}（限流与登录爆破计数持久化）')
+    except Exception as exc:
+        logger.warning(f'[Redis] 连接失败（{exc}），限流与登录爆破降级为进程内存（仅本进程生效，多 worker 不共享）')
+
+
 def _get_redis_client():
     """获取 Redis 客户端（单例缓存）；不可用时返回 None 降级为内存"""
     if not hasattr(_get_redis_client, '_client'):
