@@ -141,6 +141,9 @@ push_system/
 
 ## 文档
 
+按阅读深度，建议从本文件（概览）→ 后端 README（后端实现细节）→ 技术文档（设计文档）→ CHANGELOG（版本演进）：
+
+- 后端详细技术文档 —— 后端分层架构、推送流水线、JWT 双 Token 认证、课表爬虫端到端、消息模板分发、登录安全信号感知（均含 mermaid 图）、数据入库管道与手动课保护等：[Push_System_Flask/README.md](Push_System_Flask/README.md)
 - 项目技术文档 —— 系统架构设计、功能模块设计、数据库设计（表结构 + 索引）、核心业务流程（含时序图）、约 110 个 API 接口说明、完整部署说明、已知问题与后续规划：[docs/技术文档.md](docs/技术文档.md)
 - 变更记录 CHANGELOG —— 版本迭代与功能变更（单一真相源）：[CHANGELOG.md](CHANGELOG.md)
 
