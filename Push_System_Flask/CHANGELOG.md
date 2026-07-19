@@ -4,6 +4,30 @@
 
 ---
 
+## v6.11.1 (2026-07-18)
+
+> 发版类型：**功能增强（minor）**。课程数据来源标记 + 每日爬虫入库当前周 + 空结果护栏，缓解"解析非 100% 时数据可信度"问题。
+
+### 数据来源标记（data_source / last_verified_at）
+- `courses` 表新增两列：`data_source`（`full`=全量/指定学期爬虫写入、`daily`=每日爬虫写入当前周、`admin`=后台手动新增/编辑）、`last_verified_at`（最后被爬虫写入/校验的时间）。`init_db.py migrate` 阶段 B 自动补列（无需手写迁移）。
+- `CourseRepository.create_batch`：命中已有记录时刷新 `data_source` 与 `last_verified_at`；新建记录写入来源标记。前端 `to_dict` 输出这两字段（供后续"来源标签/最后校验时间"展示使用）。
+
+### 每日爬虫入库当前周（实现每日校验）
+- `scheduler.run_spider` 每日爬虫成功后，额外调用 `pipeline.save_to_database(..., data_source='daily', create_task_process=False)`，把"当前周"数据 upsert 入库。
+- 用每日爬取的当前周正确数据修正全量爬取的当前周错误，达成"每日校验"。因 `create_batch` 是 upsert 且只更新不删除，**非当前周的历史数据仍只由全量爬取维护**（每日爬虫按设计只爬当前周，碰不到历史周）。
+- `create_task_process=False`：每日爬虫已有自己的 `spider` 进程记录，避免再生成冗余的 `course_full_crawl` 进程记录污染执行历史。
+
+### 空结果护栏
+- `save_to_database` 在 `courses` 为空时**拒绝入库**（`return 0`，不会清空库——upsert 本就不删除），并区分：
+  - 数据库该周已有历史课程 → 判定"疑似解析退化"，`logger.error` 升级告警 + 经 `WECOM_STATUS_WEBHOOK` 发送企业微信告警；
+  - 否则 `logger.warning` 提示。
+- 顺带修复潜在 `NameError`：原成功日志引用 `week_start/week_end`，但二者仅在课程含 `date` 字段时才定义；现已初始化并在无日期时降级为不带日期范围的日志。
+
+### 重要边界
+- 历史周（非当前周）若全量爬取写入了错误数据，仍需一次正确的"全量/指定学期爬取"覆盖；每日爬虫只覆盖当前周。
+
+---
+
 ## v6.11.0 (2026-07-19)
 
 > 发版类型：**安全加固（minor）**。五项生产级安全配置加固，对应安全审计中标注的高风险项。

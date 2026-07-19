@@ -19,6 +19,31 @@ except ImportError:
     CsvToImage = None
 
 
+def _send_status_alert(content: str):
+    """通过状态 Webhook 发送告警（env-only，失败静默，不依赖 Flask 上下文）。
+
+    复用后端配置的 WECOM_STATUS_WEBHOOK（Config.get_status_webhooks），
+    用于课程数据空结果护栏等运维告警。任何异常都被吞掉，绝不影响主流程。
+    """
+    try:
+        from app.core.config import Config
+        import requests
+        webhooks = Config.get_status_webhooks()
+        if not webhooks:
+            return
+        for url in webhooks:
+            try:
+                requests.post(
+                    url,
+                    json={'msgtype': 'markdown', 'markdown': {'content': content}},
+                    timeout=10,
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def extract_course_data_from_json(course_table_json):
     """
     从 course_table.json 结构中提取课程表数据
@@ -53,7 +78,7 @@ def extract_course_data_from_json(course_table_json):
     }
 
 
-def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_label: str = None) -> int:
+def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_label: str = None, data_source: str = 'full', create_task_process: bool = True) -> int:
     """
     将处理后的课程数据保存到数据库
 
@@ -88,67 +113,98 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
     from app.api.process_routes import create_task_process, update_task_progress, complete_task_process
     
     # 创建任务进程记录
-    # 注意：此路径仅服务于「全量爬取 / 指定学期爬取」（crawl_task_service 调用），
+    # 注意：此路径服务于「全量爬取 / 指定学期爬取」（crawl_task_service 调用），
     # 使用独立 task_type='course_full_crawl'，与课表爬虫（scheduler.run_spider，task_type='spider'）区分，
     # 避免两者在「进程管理-执行历史」里类型标签撞型都显示「爬虫」。
     # 名称按 scope_label 区分：全量→「课程全量爬取·全部学期」，指定学期→「课程全量爬取·学期{id}」。
-    if scope_label:
-        _crawl_name = f'课程全量爬取·{scope_label}'
-    elif semester_id:
-        _crawl_name = f'课程全量爬取·学期{semester_id}'
-    else:
-        _crawl_name = '课程全量爬取（未指定学期）'
-    process_id = create_task_process(
-        name=_crawl_name,
-        task_type='course_full_crawl',
-        total_items=0,  # 稍后更新
-        created_by='system'
-    )
-    
+    # create_task_process=False 时（每日爬虫入库）不创建独立进程记录——每日爬虫已有自己的
+    # 'spider' 进程，再生成 'course_full_crawl' 会污染执行历史。
+    process_id = None
+    if create_task_process:
+        if scope_label:
+            _crawl_name = f'课程全量爬取·{scope_label}'
+        elif semester_id:
+            _crawl_name = f'课程全量爬取·学期{semester_id}'
+        else:
+            _crawl_name = '课程全量爬取（未指定学期）'
+        process_id = create_task_process(
+            name=_crawl_name,
+            task_type='course_full_crawl',
+            total_items=0,  # 稍后更新
+            created_by='system'
+        )
+
     try:
         # 导入数据库相关模块 - 设置正确的 Python 路径
         from app.core.database import get_db
         from app.repository.course_repository import CourseRepository
         from app.model.course_week import CourseWeek
-        
+
         # 读取处理后的数据
         processed_file = os.path.join(processed_dir, 'processed_course_table.json')
         if not os.path.exists(processed_file):
             logger.warning(f"未找到处理后的数据文件: {processed_file}")
             return 0
-        
+
         with open(processed_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        
+
         courses_data = data.get('courses', [])
         week_number = data.get('week_number', 1)
-        
+
+        # ---- 空结果护栏（v6.11.1）----
+        # 文件存在但 courses 为空：可能是解析退化（教务系统渲染/选择器变化）。
+        # create_batch 为 upsert 模式、只更新不删除，因此此处 return 0 不会清空库；
+        # 这里仅「拒绝可疑入库」并发出告警，提示管理员关注解析是否异常。
         if not courses_data:
-            logger.warning("没有课程数据需要保存")
-            complete_task_process(process_id, 'completed', '没有课程数据需要保存')
+            from datetime import datetime as _dt
+            _alert = (
+                f'**课程数据空结果护栏**\n\n'
+                f'来源：{data_source}\n\n'
+                f'时间：{_dt.now().strftime("%Y-%m-%d %H:%M")}\n\n'
+                f'说明：爬虫产出 0 条课程（week={week_number}），已拒绝入库，未覆盖现有数据。'
+            )
+            _existing = 0
+            try:
+                _chk_session = get_db()
+                try:
+                    _existing = CourseRepository.count(_chk_session, week_number)
+                finally:
+                    _chk_session.close()
+            except Exception:
+                _existing = -1
+            if _existing and _existing > 0:
+                _alert += f'\n\n注意：数据库该周已有 {_existing} 条历史课程，疑似解析退化，请检查爬虫。'
+                logger.error(f'[空结果护栏] {data_source} 产出 0 条课程，但数据库该周已有 {_existing} 条，疑似解析退化，已拒绝入库。')
+            else:
+                logger.warning(f'[空结果护栏] {data_source} 产出 0 条课程，已拒绝入库（不覆盖现有数据）。')
+            _send_status_alert(_alert)
+            if process_id is not None:
+                complete_task_process(process_id, 'completed', '空结果护栏：拒绝入库')
             return 0
-        
+
         # 更新总项目数
         total_courses = len(courses_data)
-        update_task_progress(process_id, 0, total_courses, '开始处理课程数据...')
-        
+        if process_id is not None:
+            update_task_progress(process_id, 0, total_courses, '开始处理课程数据...')
+
         # 星期映射
         week_day_map = {
             '星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4,
             '星期五': 5, '星期六': 6, '星期日': 7, '星期天': 7,
         }
-        
+
         # 转换数据格式 - 直接使用爬虫处理好的时间
         transformed_data = []
         for idx, course_data in enumerate(courses_data):
             week_day_str = course_data.get('week_day', '')
             week_day = week_day_map.get(week_day_str, 1)
-            
+
             # 解析 period_name 获取所有节次（用于前端合并显示）
             period_name = course_data.get('period_name', '')
             period_idx = course_data.get('period_idx', 1)
             periods = parse_period_name(period_name, period_idx)
-            
+
             # 直接使用爬虫处理好的时间（课表规定的时间，不再做减10分钟调整）
             start_time = course_data.get('start_time', '')
             end_time = course_data.get('end_time', '')
@@ -172,17 +228,19 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
                 'academic_year': sem_info['academic_year'] if sem_info else None,
                 'term': sem_info['term'] if sem_info else None,
             })
-            
+
             # 每处理10条更新一次进度
-            if (idx + 1) % 10 == 0 or idx == total_courses - 1:
+            if process_id is not None and ((idx + 1) % 10 == 0 or idx == total_courses - 1):
                 update_task_progress(process_id, idx + 1, total_courses, f'已处理 {idx + 1}/{total_courses} 条课程...')
-        
+
         # 保存到数据库
-        update_task_progress(process_id, total_courses, total_courses, '正在保存到数据库...')
+        if process_id is not None:
+            update_task_progress(process_id, total_courses, total_courses, '正在保存到数据库...')
         session = get_db()
+        week_start = week_end = None
         try:
-            imported_count = CourseRepository.create_batch(session, transformed_data)
-            
+            imported_count = CourseRepository.create_batch(session, transformed_data, data_source=data_source)
+
             # 计算并存储周日期范围
             all_dates = [cd.get('date', '') for cd in courses_data if cd.get('date')]
             if all_dates:
@@ -191,19 +249,19 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
                 for d in all_dates:
                     try:
                         parsed_dates.append(dt.strptime(d, '%Y-%m-%d').date())
-                    except:
+                    except Exception:
                         pass
                 if parsed_dates:
                     week_start = min(parsed_dates)  # 周一
                     # 计算周日（周一 + 6天）
                     from datetime import timedelta
                     week_end = week_start + timedelta(days=6)
-                    
+
                     # 更新或创建周次记录
                     existing_week = session.query(CourseWeek).filter(
                         CourseWeek.week_number == week_number
                     ).first()
-                    
+
                     if existing_week:
                         existing_week.start_date = week_start
                         existing_week.end_date = week_end
@@ -214,20 +272,23 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
                             end_date=week_end,
                         )
                         session.add(week_record)
-            
+
             session.commit()
-            logger.info(f"[数据库] 成功保存 {imported_count} 条课程记录到数据库 (第{week_number}周: {week_start} ~ {week_end})")
-            
+            _range = f' (第{week_number}周: {week_start} ~ {week_end})' if (week_start and week_end) else f' (第{week_number}周)'
+            logger.info(f"[数据库] 成功保存 {imported_count} 条课程记录到数据库{_range}")
+
             # 完成任务进程
-            complete_task_process(process_id, 'completed', f'成功导入 {imported_count} 条课程记录')
+            if process_id is not None:
+                complete_task_process(process_id, 'completed', f'成功导入 {imported_count} 条课程记录')
             return imported_count
         finally:
             session.close()
-            
+
     except Exception as e:
         logger.error(f"[数据库] 保存课程数据失败: {e}")
         # 标记任务失败
-        complete_task_process(process_id, 'failed', error=str(e))
+        if process_id is not None:
+            complete_task_process(process_id, 'failed', error=str(e))
         return -1
 
 

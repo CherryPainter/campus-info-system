@@ -1100,6 +1100,12 @@ AdapterService (推送渠道适配)
 5. 计算并存储周次日期范围
 6. 生成课程表图片（DPI 250，支持背景图和按星期着色）
 
+**数据可信度设计（v6.11.1）**：
+
+- `courses` 表每条记录带 `data_source`（`full`=全量/指定学期爬虫、`daily`=每日爬虫、`admin`=后台手动）与 `last_verified_at`（最后被爬虫写入/校验时间），便于追溯数据来源与新鲜度。
+- **每日校验**：每日爬虫（`scheduler.run_spider`）成功后额外把"当前周"数据 upsert 入库（`data_source='daily'`），用每日爬取的当前周正确数据修正全量爬取的当前周错误。注意 `create_batch` 是 upsert 且只更新不删除，**非当前周的历史数据仍只由全量爬取维护**——每日爬虫按设计只爬当前周、碰不到历史周，因此历史周若全量写入了错误数据，仍需一次正确的全量/指定学期爬取覆盖。
+- **空结果护栏**：`save_to_database` 在爬虫产出 0 条课程时**拒绝入库（不会清空库）**；若数据库该周已有历史课程则判定"疑似解析退化"，升级 `logger.error` 并经由 `WECOM_STATUS_WEBHOOK` 发送企业微信告警，否则仅 `logger.warning`。
+
 **教学楼时间表**：系统内置两套上课时间方案，根据楼栋自动选择：
 
 - 第一套：启智楼、雏鹰楼、明德楼、博学楼、知行楼、创新楼等 6 栋 + 4 个代号
@@ -1139,7 +1145,7 @@ AdapterService (推送渠道适配)
 
 | 模型                       | 表名                         | 说明           | 关键字段                                                                                                                                     |
 | -------------------------- | ---------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Course`                   | `courses`                    | 课程表         | course_name, teacher, classroom, building, week_day, period_idx, periods, start_time, end_time, weeks, week_number, is_deleted, push_enabled |
+| `Course`                   | `courses`                    | 课程表         | course_name, teacher, classroom, building, week_day, period_idx, periods, start_time, end_time, weeks, week_number, is_deleted, push_enabled, data_source, last_verified_at |
 | `CourseWeek`               | `course_weeks`               | 周次日期范围表 | week_number(唯一), start_date, end_date                                                                                                      |
 | `WeatherRecord`            | `weather_records`            | 天气记录表     | record_type(now/hourly), city_name, temp, feels_like, text, humidity, wind_dir, wind_scale, precip, pop, pressure, vis, cloud, fx_time       |
 | `WeatherAlert`             | `weather_alerts`             | 天气预警表     | alert_id(唯一), city_name, headline, event_type, severity, color_code, description, start_time, end_time, is_active                          |

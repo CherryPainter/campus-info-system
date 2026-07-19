@@ -365,12 +365,13 @@ class CourseRepository:
         return course
     
     @staticmethod
-    def create_batch(session: Session, courses_data: List[Dict[str, Any]]) -> int:
+    def create_batch(session: Session, courses_data: List[Dict[str, Any]],
+                      data_source: str = 'full') -> int:
         """
         批量创建课程（按课程代码去重，智能合并）
 
         去重策略：course_code + week_day + period_idx + week_number
-        - 已存在 → 更新有变化的字段（教师/教室/楼栋/时间/周次/学期）
+        - 已存在 → 更新有变化的字段（教师/教室/楼栋/时间/周次/学期），并刷新来源/校验时间
         - 不存在 → 创建新记录，并补全所有 NOT NULL 字段
           （course_code / semester_id / semester_name / academic_year / term）
 
@@ -381,6 +382,7 @@ class CourseRepository:
         Args:
             session: 数据库会话
             courses_data: 课程数据列表
+            data_source: 数据来源标记（'full'=全量/指定学期爬虫, 'daily'=每日爬虫, 'admin'=手动）
 
         Returns:
             int: 实际创建的数量
@@ -440,6 +442,9 @@ class CourseRepository:
                 existing.semester_name = data.get('semester_name') or sem['semester_name']
                 existing.academic_year = data.get('academic_year') or sem['academic_year']
                 existing.term = data.get('term') or sem['term']
+                # 刷新来源与校验时间（v6.11.1）
+                existing.data_source = data_source
+                existing.last_verified_at = datetime.utcnow()
                 existing.updated_at = datetime.utcnow()
             else:
                 # 不存在：创建新记录（补全所有 NOT NULL 字段）
@@ -463,6 +468,9 @@ class CourseRepository:
                     week_number=data.get('week_number'),
                     course_type=data.get('course_type'),
                     credit=data.get('credit'),
+                    # 来源与校验时间（v6.11.1）
+                    data_source=data_source,
+                    last_verified_at=datetime.utcnow(),
                 )
                 session.add(course)
                 created_count += 1

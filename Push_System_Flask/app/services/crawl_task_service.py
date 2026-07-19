@@ -145,7 +145,8 @@ def _crawl_one_semester(eams_id: str, semester_id: int, week: int = None, timeou
     import importlib
     pipeline = importlib.import_module('pipeline')
     imported = pipeline.save_to_database(
-        processed_subdir, logger, semester_id=semester_id, scope_label=scope_label
+        processed_subdir, logger, semester_id=semester_id, scope_label=scope_label,
+        data_source='full'
     )
     if imported < 0:
         raise RuntimeError(f'学期 {eams_id} 数据导入失败')

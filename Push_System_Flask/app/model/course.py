@@ -107,7 +107,12 @@ class Course(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment='创建时间')
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
     crawled_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment='爬取时间')
-    
+
+    # 数据来源与校验（v6.11.1 新增）
+    # full=全量/指定学期爬虫写入；daily=每日爬虫写入当前周；admin=后台手动新增/编辑
+    data_source = Column(String(20), nullable=True, default='full', comment='数据来源')
+    last_verified_at = Column(DateTime, nullable=True, comment='最后被爬虫校验/写入的时间')
+
     # 唯一约束：同一学期、同一课程代码、同一时间，只能有一条记录
     __table_args__ = (
         Index('idx_course_semester', 'semester_id'),
@@ -147,4 +152,6 @@ class Course(Base):
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None,
             'crawled_at': self.crawled_at.strftime('%Y-%m-%d %H:%M:%S') if self.crawled_at else None,
+            'data_source': self.data_source,
+            'last_verified_at': self.last_verified_at.strftime('%Y-%m-%d %H:%M:%S') if self.last_verified_at else None,
         }
