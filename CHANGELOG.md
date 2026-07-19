@@ -6,6 +6,21 @@
 
 ---
 
+## v6.12.3 (2026-07-19)
+
+> 发版类型：**缺陷修复（patch）**。天气管理「预警历史」改为后端分页 + 前端「加载更多」折叠，与个人设置页登录日志保持一致，避免长列表一次性渲染。
+
+### 天气预警历史分页折叠（weather_routes.py / weather.ts / Weather.tsx）
+- **问题**：天气管理「预警历史」此前一次性返回全部已失效预警并完整渲染，历史较多时列表冗长、无折叠。用户希望与「个人设置 → 登录日志」一致的「加载更多（已显示 XX / XX）」折叠交互。
+- **后端**：`/weather/alert/history` 由固定 `.limit(50)` 改为支持 `page` / `page_size`（最大 100）分页，返回结构与登录日志一致：`api_success(data=[...], pagination={'page','page_size','total','total_pages'})`。不再有 50 条硬上限。
+- **前端**：
+  - `weather.ts` 的 `getAlertHistory(page, page_size)` 透传分页参数，并采用与登录日志相同的 `ApiResponse<T> & { pagination }` 交叉类型，确保 `res.pagination.total` 类型正确。
+  - `Weather.tsx` 新增 `alertHistoryPage` / `alertHistoryTotal` / `alertHistoryLoading` 状态；`fetchAlertHistory(page)` 在 `page>1` 时累积追加、`page===1` 时替换；渲染区在列表下方增加「加载更多（已显示 XX / XX）」按钮（仅在 `alertHistoryTotal > alertHistory.length` 时显示），首次加载用 Spin 占位。
+- **验证**：`npm run build` 通过（tsc + vite build，exit 0）。
+- **版本**：按约定 bump patch（6.12.2→6.12.3），四处版本号（config.py / version.ts / package.json / .env）与两份 README 徽标已同步。
+
+---
+
 ## v6.12.2 (2026-07-19)
 
 > 发版类型：**缺陷修复（patch）**。补充审计请求日志静默名单遗漏的常驻轮询端点。

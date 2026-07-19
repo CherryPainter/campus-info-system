@@ -100,21 +100,45 @@ def get_alert():
 @weather_bp.route('/alert/history')
 @jwt_required
 def get_alert_history():
-    """获取预警历史记录（已过期的预警）"""
+    """获取预警历史记录（已过期的预警），支持分页
+
+    可选查询参数:
+        page: 页码，默认为 1
+        page_size: 每页数量，默认为 20，最大 100
+
+    成功响应 (200):
+        {
+            "status": "success",
+            "data": [...],
+            "pagination": {"page": 1, "page_size": 20, "total": 100, "total_pages": 5}
+        }
+    """
     from app.core.database import get_db
     from app.model.weather import WeatherAlert
     from sqlalchemy import desc
 
+    page = int(request.args.get('page', 1))
+    page_size = int(request.args.get('page_size', 20))
+    page_size = min(page_size, 100)
+
     session = get_db()
     try:
-        # 查询已失效的预警，按创建时间倒序
-        history = session.query(WeatherAlert)\
+        query = session.query(WeatherAlert)\
             .filter(WeatherAlert.is_active == False)\
-            .order_by(desc(WeatherAlert.created_at))\
-            .limit(50)\
+            .order_by(desc(WeatherAlert.created_at))
+
+        total = query.count()
+        total_pages = (total + page_size - 1) // page_size
+
+        history = query\
+            .limit(page_size)\
+            .offset((page - 1) * page_size)\
             .all()
-        
-        return api_success(data={'history': [alert.to_dict() for alert in history]})
+
+        return api_success(
+            data=[alert.to_dict() for alert in history],
+            pagination={'page': page, 'page_size': page_size, 'total': total, 'total_pages': total_pages}
+        )
     finally:
         session.close()
 

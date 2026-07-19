@@ -51,6 +51,9 @@ export default function Weather() {
   const [hourlyData, setHourlyData] = useState<HourlyForecast[]>([]);
   const [alertData, setAlertData] = useState<WeatherAlert[]>([]);
   const [alertHistory, setAlertHistory] = useState<WeatherAlert[]>([]);
+  const [alertHistoryPage, setAlertHistoryPage] = useState(1);
+  const [alertHistoryTotal, setAlertHistoryTotal] = useState(0);
+  const [alertHistoryLoading, setAlertHistoryLoading] = useState(false);
   const [config, setConfig] = useState<WeatherConfig>({});
   const [form] = Form.useForm();
   // 列表轮询开关（触发天气任务时开启）
@@ -110,11 +113,16 @@ export default function Weather() {
     finally { setLoading(false); }
   };
 
-  const fetchAlertHistory = async () => {
-    setLoading(true);
+  const fetchAlertHistory = async (page = 1) => {
+    setAlertHistoryLoading(true);
     try {
-      const res = await weatherApi.getAlertHistory();
-      if (res.status === 'success' && res.data) setAlertHistory(res.data.history || []);
+      const res = await weatherApi.getAlertHistory(page);
+      if (res.status === 'success' && res.data) {
+        const list = res.data || [];
+        setAlertHistory((prev) => (page === 1 ? list : [...prev, ...list]));
+        setAlertHistoryTotal(res.pagination?.total ?? list.length);
+        setAlertHistoryPage(page);
+      }
     } catch (error: any) {
       console.error('加载预警历史失败:', error);
       if (error.isAxiosError && error.code === 'ECONNABORTED') {
@@ -125,7 +133,7 @@ export default function Weather() {
         message.error('加载预警历史失败，请稍后重试');
       }
     }
-    finally { setLoading(false); }
+    finally { setAlertHistoryLoading(false); }
   };
 
   const fetchConfig = async () => {
@@ -388,24 +396,37 @@ export default function Weather() {
           </div>
           <div>
             <h3 style={{ marginBottom: 12 }}>预警历史</h3>
-            {alertHistory.length > 0 ? (
-              alertHistory.map((alert) => (
-                <Alert
-                  key={alert.id}
-                  message={
-                    <Space>
-                      {alert.headline}
-                      <Tag color={alert.is_pushed ? 'green' : 'default'}>
-                        {alert.is_pushed ? '已推送' : '未推送'}
-                      </Tag>
-                    </Space>
-                  }
-                  description={alert.description}
-                  type="info"
-                  showIcon
-                  style={{ marginBottom: 16 }}
-                />
-              ))
+            {alertHistoryLoading && alertHistoryPage === 1 ? (
+              <Spin />
+            ) : alertHistory.length > 0 ? (
+              <>
+                {alertHistory.map((alert) => (
+                  <Alert
+                    key={alert.id}
+                    message={
+                      <Space>
+                        {alert.headline}
+                        <Tag color={alert.is_pushed ? 'green' : 'default'}>
+                          {alert.is_pushed ? '已推送' : '未推送'}
+                        </Tag>
+                      </Space>
+                    }
+                    description={alert.description}
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                  />
+                ))}
+                {alertHistoryTotal > alertHistory.length && (
+                  <Button
+                    onClick={() => fetchAlertHistory(alertHistoryPage + 1)}
+                    loading={alertHistoryLoading}
+                    style={{ marginTop: 8 }}
+                  >
+                    加载更多（已显示 {alertHistory.length} / {alertHistoryTotal}）
+                  </Button>
+                )}
+              </>
             ) : (
               <Alert message="暂无预警历史记录" type="info" showIcon />
             )}

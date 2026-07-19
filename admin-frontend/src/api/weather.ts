@@ -82,8 +82,11 @@ export const weatherApi = {
   /** 获取预警信息 */
   getAlert: () => request.get<any, ApiResponse<{ warnings: WeatherAlert[] }>>('/weather/alert'),
 
-  /** 获取预警历史 */
-  getAlertHistory: () => request.get<any, ApiResponse<{ history: WeatherAlert[] }>>('/weather/alert/history'),
+  /** 获取预警历史（分页加载） */
+  getAlertHistory: (page = 1, page_size = 20) =>
+    request.get<any, ApiResponse<WeatherAlert[]> & {
+      pagination: { page: number; page_size: number; total: number; total_pages: number };
+    }>('/weather/alert/history', { params: { page, page_size } }),
 
   /** 获取天气统计数据（实时 + 24h 预报） */
   getStatistics: () => request.get<any, ApiResponse<WeatherStatistics>>('/weather/statistics'),
