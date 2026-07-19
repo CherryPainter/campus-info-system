@@ -1241,3 +1241,37 @@ def reload_system():
     logger.info(f'[管理后台] 系统配置热重载: {details}')
 
     return api_success(message='配置重载完成', details=details)
+
+
+# ============================================================
+# 数据库指纹（定义码 vs 实例码 漂移检测）
+# ============================================================
+
+@admin_bp.route('/db/fingerprint', methods=['GET'])
+@admin_required
+def db_fingerprint():
+    """数据库指纹比对：返回定义码、实例码与结构化差异明细。"""
+    from app.core.database import get_db
+    from app.core.db_fingerprint import check_db_fingerprint, summarize_diff
+    session = get_db()
+    try:
+        result = check_db_fingerprint(session)
+        resp = {
+            'definition_hash': result['definition_hash'],
+            'instance_hash': result['instance_hash'],
+            'match': result['match'],
+            'summary': summarize_diff(result),
+            'diff': {
+                'missing_tables': result['missing_tables'],
+                'extra_tables': result['extra_tables'],
+                'missing_columns': result['missing_columns'],
+                'extra_columns': result['extra_columns'],
+                'type_changed': result['type_changed'],
+                'missing_config_keys': result['missing_config_keys'],
+                'extra_config_keys': result['extra_config_keys'],
+                'admin': result['admin'],
+            },
+        }
+        return jsonify({'status': 'success', 'data': resp})
+    finally:
+        session.close()

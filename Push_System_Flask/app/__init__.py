@@ -346,6 +346,22 @@ def create_app(config_class=None):
             logger.info('[启动] 已创建默认管理员账号 admin')
         else:
             logger.info(f'[启动] 管理员账号已存在: admin')
+        
+        # 数据库指纹比对（启动时检测实例是否与代码初始化定义一致）
+        try:
+            from app.core.db_fingerprint import check_db_fingerprint, summarize_diff
+            fp = check_db_fingerprint(session)
+            if not fp['match']:
+                logger.warning(
+                    f'[数据库指纹] {summarize_diff(fp)} '
+                    f'| 定义码={fp["definition_hash"][:12]}… '
+                    f'实例码={fp["instance_hash"][:12]}… '
+                    f'| 请运行 python init_db.py migrate 同步'
+                )
+            else:
+                logger.info(f'[数据库指纹] 实例与初始化定义一致 (码={fp["definition_hash"][:12]}…)')
+        except Exception as e:
+            logger.warning(f'[数据库指纹] 比对失败（不影响启动）: {e}')
     finally:
         session.close()
     
