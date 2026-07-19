@@ -239,7 +239,7 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
         session = get_db()
         week_start = week_end = None
         try:
-            imported_count = CourseRepository.create_batch(session, transformed_data, data_source=data_source)
+            created_count, updated_count = CourseRepository.create_batch(session, transformed_data, data_source=data_source)
 
             # 计算并存储周日期范围
             all_dates = [cd.get('date', '') for cd in courses_data if cd.get('date')]
@@ -257,7 +257,26 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
                     from datetime import timedelta
                     week_end = week_start + timedelta(days=6)
 
-                    # 更新或创建周次记录
+                    # ---- Fix B (v6.11.5)：补全第 1 周锚点 ----
+                    # 若数据最早周次 > 1（如用户数据从第 2 周开始），原逻辑只 upsert 当前周
+                    # (top-level week_number) 的 CourseWeek，CourseWeek.week_number==1 不存在，
+                    # get_week_number 会回退 MAX(week_number) 造成课表错周（"0 条课表数据"）。
+                    # 用日历反推第 1 周起始日并 upsert 以恢复锚点；当 week_number==1 时
+                    # week1_start == week_start，行为与原逻辑完全一致（幂等）。
+                    week1_start = week_start - timedelta(days=7 * (week_number - 1))
+                    week1_end = week1_start + timedelta(days=6)
+                    _week1 = session.query(CourseWeek).filter(CourseWeek.week_number == 1).first()
+                    if _week1:
+                        _week1.start_date = week1_start
+                        _week1.end_date = week1_end
+                    else:
+                        session.add(CourseWeek(
+                            week_number=1,
+                            start_date=week1_start,
+                            end_date=week1_end,
+                        ))
+
+                    # 更新或创建当前周次记录（保留原行为）
                     existing_week = session.query(CourseWeek).filter(
                         CourseWeek.week_number == week_number
                     ).first()
@@ -275,12 +294,15 @@ def save_to_database(processed_dir: str, logger, semester_id: int = None, scope_
 
             session.commit()
             _range = f' (第{week_number}周: {week_start} ~ {week_end})' if (week_start and week_end) else f' (第{week_number}周)'
-            logger.info(f"[数据库] 成功保存 {imported_count} 条课程记录到数据库{_range}")
+            logger.info(f"[数据库] 成功保存课程记录到数据库（新增 {created_count} / 更新 {updated_count}）{_range}")
 
             # 完成任务进程
             if process_id is not None:
-                complete_task_process(process_id, 'completed', f'成功导入 {imported_count} 条课程记录')
-            return imported_count
+                complete_task_process(
+                    process_id, 'completed',
+                    f'成功导入 {created_count} 条课程记录（新增 {created_count} / 更新 {updated_count}）',
+                )
+            return created_count
         finally:
             session.close()
 

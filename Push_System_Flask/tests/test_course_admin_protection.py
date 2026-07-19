@@ -75,7 +75,7 @@ def test_crawler_does_not_overwrite_admin_course(session):
     # 已存在一门手动课（爬虫也会产出相同的去重键）
     _admin_course(session, course_code='CRAWL-11111', course_name='手动英语')
     # 全量爬虫爬到同去重键的课程，应跳过、不覆盖
-    n = CourseRepository.create_batch(session, [{
+    created, updated = CourseRepository.create_batch(session, [{
         'course_code': 'CRAWL-11111',
         'course_name': '英语(爬虫)',
         'week_day': 1, 'period_idx': 1, 'periods': [1],
@@ -83,7 +83,7 @@ def test_crawler_does_not_overwrite_admin_course(session):
         'start_time': '08:00', 'end_time': '08:45',
         'weeks': [1, 2, 3], 'week_number': 1,
     }], data_source='full')
-    assert n == 0  # 没新建
+    assert created == 0  # 没新建
     kept = session.query(Course).filter(Course.course_code == 'CRAWL-11111').one()
     assert kept.data_source == 'admin'
     assert kept.course_name == '手动英语'  # 人工修正未被覆盖
@@ -93,7 +93,7 @@ def test_crawler_does_not_dup_into_admin_slot(session):
     # 手动课占据 (wd=2, pidx=1, wn=1)，但爬虫给的 course_code 不同
     _admin_course(session, course_code='ADMIN-X', course_name='手动课2',
                   week_day=2, period_idx=1, periods=[1])
-    n = CourseRepository.create_batch(session, [{
+    created, updated = CourseRepository.create_batch(session, [{
         'course_code': 'CRAWL-99999',
         'course_name': '爬虫撞槽课',
         'week_day': 2, 'period_idx': 1, 'periods': [1],
@@ -101,7 +101,7 @@ def test_crawler_does_not_dup_into_admin_slot(session):
         'start_time': '10:00', 'end_time': '10:45',
         'weeks': [1], 'week_number': 1,
     }], data_source='daily')
-    assert n == 0
+    assert created == 0
     # 库里只有那门手动课，没有爬虫插入的第二条
     assert session.query(Course).count() == 1
     assert session.query(Course).one().data_source == 'admin'
@@ -109,7 +109,7 @@ def test_crawler_does_not_dup_into_admin_slot(session):
 
 def test_crawler_updates_non_admin_course(session):
     # 全量爬虫写入的课，后续爬虫可正常更新（回归：保护不影响正常 upsert）
-    n1 = CourseRepository.create_batch(session, [{
+    created1, updated1 = CourseRepository.create_batch(session, [{
         'course_code': 'CRAWL-55555',
         'course_name': '数学',
         'week_day': 3, 'period_idx': 2, 'periods': [2],
@@ -117,8 +117,8 @@ def test_crawler_updates_non_admin_course(session):
         'start_time': '14:00', 'end_time': '14:45',
         'weeks': [1, 2], 'week_number': 1,
     }], data_source='full')
-    assert n1 == 1
-    n2 = CourseRepository.create_batch(session, [{
+    assert created1 == 1
+    created2, updated2 = CourseRepository.create_batch(session, [{
         'course_code': 'CRAWL-55555',
         'course_name': '数学',
         'week_day': 3, 'period_idx': 2, 'periods': [2],
@@ -126,7 +126,7 @@ def test_crawler_updates_non_admin_course(session):
         'start_time': '14:00', 'end_time': '14:45',
         'weeks': [1, 2], 'week_number': 1,
     }], data_source='daily')
-    assert n2 == 0  # 命中已存在，更新不新建
+    assert created2 == 0  # 命中已存在，更新不新建
     upd = session.query(Course).one()
     assert upd.teacher == '乙(更正)'
     assert upd.data_source == 'daily'
@@ -136,7 +136,7 @@ def test_admin_source_can_manage_admin(session):
     # 手动来源（admin）调用 create_batch 时不受保护限制，可正常 upsert 手动课
     _admin_course(session, course_code='ADMIN-Y', course_name='课A',
                   week_day=4, period_idx=1, periods=[1])
-    n = CourseRepository.create_batch(session, [{
+    created, updated = CourseRepository.create_batch(session, [{
         'course_code': 'ADMIN-Y',
         'course_name': '课A(改)',
         'week_day': 4, 'period_idx': 1, 'periods': [1],
@@ -144,5 +144,5 @@ def test_admin_source_can_manage_admin(session):
         'start_time': '08:00', 'end_time': '08:45',
         'weeks': [1], 'week_number': 1,
     }], data_source='admin')
-    assert n == 0  # 命中已存在，更新不新建
+    assert created == 0  # 命中已存在，更新不新建
     assert session.query(Course).one().course_name == '课A(改)'

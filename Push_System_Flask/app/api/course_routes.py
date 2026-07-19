@@ -1076,11 +1076,14 @@ def import_courses():
         
         session = get_db()
         try:
-            imported_count = CourseRepository.create_batch(session, transformed_data)
+            created_count, updated_count = CourseRepository.create_batch(session, transformed_data)
             session.commit()
-            
-            logger.info(f'[课程] 导入 {imported_count} 门课程')
-            return api_success(message=f'成功导入 {imported_count} 门课程', data={'imported_count': imported_count})
+
+            logger.info(f'[课程] 导入 {created_count} 门（新增 {created_count} / 更新 {updated_count}）')
+            return api_success(
+                message=f'成功导入 {created_count} 门课程（新增 {created_count} / 更新 {updated_count}）',
+                data={'imported_count': created_count, 'created_count': created_count, 'updated_count': updated_count},
+            )
         finally:
             session.close()
     except Exception as e:

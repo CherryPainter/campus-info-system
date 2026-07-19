@@ -171,11 +171,11 @@ with app.app_context():
             'week_number': c.get('week_number'),
         })
 
-    count = CourseRepository.create_batch(session, transformed)
+    created_count, updated_count = CourseRepository.create_batch(session, transformed)
     session.commit()
 
     new_total = session.query(Course).filter(Course.is_deleted == False).count()
-    print(f'[5] 入库完成: 新增 {count} 门, 当前有效 {new_total} 门')
+    print(f'[5] 入库完成: 新增 {created_count} 门 / 更新 {updated_count} 门, 当前有效 {new_total} 门')
 
     # 验证教师填充
     with_t = session.query(Course).filter(

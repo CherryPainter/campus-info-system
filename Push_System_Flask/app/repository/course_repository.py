@@ -10,7 +10,7 @@ import re
 import json
 import hashlib
 from datetime import datetime, date
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
@@ -366,7 +366,7 @@ class CourseRepository:
     
     @staticmethod
     def create_batch(session: Session, courses_data: List[Dict[str, Any]],
-                      data_source: str = 'full') -> int:
+                      data_source: str = 'full') -> Tuple[int, int]:
         """
         批量创建课程（按课程代码去重，智能合并）
 
@@ -385,9 +385,13 @@ class CourseRepository:
             data_source: 数据来源标记（'full'=全量/指定学期爬虫, 'daily'=每日爬虫, 'admin'=手动）
 
         Returns:
-            int: 实际创建的数量
+            Tuple[int, int]: (实际新建数量, 已更新数量)
+                新建 = 本次新插入的行；更新 = 命中既有记录并刷新来源/校验时间的行
+                （含字段无变化的刷新，因 data_source/last_verified_at 等会被强制刷新）。
+                注意：不要把返回值当作"库内课程总数"，重爬时新建可能为 0 而更新 > 0。
         """
         created_count = 0
+        updated_count = 0
         sem = derive_current_semester()
 
         # 手动课保护（v6.11.2）：爬虫来源（full/daily）不得覆盖或挤占
@@ -443,6 +447,8 @@ class CourseRepository:
                 if _crawler_source and (data.get('week_day', 1), period_idx,
                                         data.get('week_number')) in _admin_slots:
                     continue
+                # 计入"已更新"：命中既有记录即刷新来源/校验时间（无论字段是否变化）
+                updated_count += 1
                 # 已存在：比对更新（只更新有变化的字段）
                 if data.get('course_name') and data['course_name'] != existing.course_name:
                     existing.course_name = data['course_name']
@@ -504,7 +510,7 @@ class CourseRepository:
                 created_count += 1
 
         session.flush()
-        return created_count
+        return created_count, updated_count
     
     @staticmethod
     def update(
