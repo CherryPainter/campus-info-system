@@ -13,6 +13,7 @@
     python init_db.py reset         删除所有表 → 重建 → 种子数据（危险，需确认）
     python init_db.py fingerprint   数据库指纹比对：打印定义码、实例码与差异
     python init_db.py check         静默比对（CI/脚本用），一致 exit 0 否则 1
+    python init_db.py cleanup       清理多余字段（模型中未定义的列和配置键）
 
 环境变量:
     DATABASE_HOST / DATABASE_PORT / DATABASE_USER
@@ -772,6 +773,89 @@ def cmd_check():
         exit(1)
 
 
+def _parse_yes_flag() -> bool:
+    """检测命令行是否含 --yes 或 -y 标志。"""
+    return any(a in ('--yes', '-y') for a in sys.argv)
+
+
+def cmd_cleanup():
+    """清理数据库多余字段：删除实例中有但模型中未定义的列和配置键。
+
+    基于指纹 diff 的 extra_columns / extra_config_keys 列表。
+    仅删除"多出来"的项，不算"缺失/类型差异"的项（缺失需 migrate，类型差异暂需手动）。
+    默认需要确认；传 --yes 可直接执行。
+    """
+    auto_confirm = _parse_yes_flag()
+    result, summary = _fingerprint_common()
+    extra_cols = result.get('extra_columns', {})
+    extra_cfgs = result.get('extra_config_keys', [])
+
+    if not extra_cols and not extra_cfgs:
+        print()
+        print(Style.ok('═══ 数据库已整洁，没有多余字段或配置 ═══'))
+        print()
+        return
+
+    # 展示待清理项
+    print()
+    print(Style.bold('═══ 数据库清理 ═══'))
+    print()
+    if extra_cols:
+        print(Style.warn(f'  发现 {sum(len(v) for v in extra_cols.values())} 个多余列（模型中未定义）:'))
+        for t, cols in extra_cols.items():
+            for c in cols:
+                print(f'    {Style.err("DROP")} {t}.{c}')
+    if extra_cfgs:
+        print(Style.warn(f'  发现 {len(extra_cfgs)} 个多余配置键:'))
+        for m, k, vt, *_ in extra_cfgs:
+            print(f'    {Style.err("DELETE")} module_configs.{m}.{k} ({vt})')
+
+    # 确认
+    if not auto_confirm:
+        print()
+        confirm = input(f'  {Style.warn("输入 YES 确认清理（或 ctrl+C 取消 / 传 --yes 跳过确认）: ")}')
+        if confirm.strip() != 'YES':
+            print(f'  {Style.info("已取消")}')
+            print()
+            return
+
+    # 执行清理
+    dbm = _ensure_db()
+    engine = dbm.engine
+    from sqlalchemy import text as sql_text
+    cleaned = 0
+
+    for tbl_name, col_names in extra_cols.items():
+        for col_name in col_names:
+            try:
+                with engine.connect() as conn:
+                    conn.execute(sql_text(f'ALTER TABLE `{tbl_name}` DROP COLUMN `{col_name}`'))
+                    conn.commit()
+                print(f'  {Style.ok("✓")} 删除列 {tbl_name}.{col_name}')
+                cleaned += 1
+            except Exception as e:
+                print(f'  {Style.err(f"✗ 删除列 {tbl_name}.{col_name} 失败")}: {e}')
+
+    for m, k, vt, *_ in extra_cfgs:
+        try:
+            with engine.connect() as conn:
+                conn.execute(sql_text(
+                    'DELETE FROM module_configs WHERE module = :m AND `key` = :k'
+                ), {'m': m, 'k': k})
+                conn.commit()
+            print(f'  {Style.ok("✓")} 删除配置 {m}.{k}')
+            cleaned += 1
+        except Exception as e:
+            print(f'  {Style.err(f"✗ 删除配置 {m}.{k} 失败")}: {e}')
+
+    print()
+    if cleaned > 0:
+        print(Style.ok(f'═══ 清理完成，共 {cleaned} 项 ═══'))
+    else:
+        print(Style.info('═══ 没有需要清理的项 ═══'))
+    print()
+
+
 # ══════════════════════════════════════════════════════════════
 #  入口
 # ══════════════════════════════════════════════════════════════
@@ -784,6 +868,7 @@ COMMANDS = {
     'reset':   cmd_reset,
     'fingerprint': cmd_fingerprint,
     'check':   cmd_check,
+    'cleanup': cmd_cleanup,
 }
 
 HELP_TEXT = f"""
@@ -799,6 +884,7 @@ HELP_TEXT = f"""
   {Style.info('reset')}       删除所有表 → 重建 → 种子数据（{Style.err('危险，需确认')}）
   {Style.info('fingerprint')} 数据库指纹比对：打印定义码、实例码与结构化差异
   {Style.info('check')}       静默比对模式：一致 exit 0，不一致 exit 1（CI/脚本用）
+  {Style.info('cleanup')}     清理数据库多余字段：删除实例中模型未定义的列和配置键
 
 覆盖 20 张表:
   users, token_blacklist, user_mfa, login_logs, module_configs,
