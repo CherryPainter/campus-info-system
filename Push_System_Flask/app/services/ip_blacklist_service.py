@@ -151,7 +151,7 @@ def log_redis_status() -> None:
         import socket
         client = redis_lib.Redis.from_url(
             url, decode_responses=True,
-            socket_family=socket.AF_INET, socket_connect_timeout=2
+            socket_connect_timeout=2
         )
         client.ping()
         logger.info(f'[Redis] 已连接: {url}（限流与登录爆破计数持久化）')
@@ -194,7 +194,6 @@ def _get_redis_client():
             import socket
             client = redis_lib.Redis.from_url(
                 url, decode_responses=True, health_check_interval=30,
-                socket_family=socket.AF_INET,
                 socket_connect_timeout=2, socket_timeout=2
             )
             client.ping()  # 验证连接（带 2s 超时，避免无限制阻塞）
