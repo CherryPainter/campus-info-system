@@ -254,16 +254,23 @@ def cmd_init():
 #  migrate - 增量迁移
 # ══════════════════════════════════════════════════════════════
 
-def cmd_migrate():
-    """增量迁移：对比模型定义，补建缺失的表、列、索引"""
-    print()
-    print(Style.bold('═══ 数据库迁移 (MySQL) ═══'))
+def cmd_migrate(quiet: bool = False):
+    """增量迁移：对比模型定义，补建缺失的表、列、索引。
+
+    Args:
+        quiet: True 时仅打印实际变更（表/列/索引被补建时）和错误，
+               跳过"全部正常"的逐表 checklist。用于应用启动时静默调用。
+    """
+    if not quiet:
+        print()
+        print(Style.bold('═══ 数据库迁移 (MySQL) ═══'))
 
     dbm = _ensure_db()
     engine = dbm.engine
 
-    print(f'  数据库: {Style.info("MySQL")}')
-    print()
+    if not quiet:
+        print(f'  数据库: {Style.info("MySQL")}')
+        print()
 
     Base = _import_all_models()
     from sqlalchemy import inspect
@@ -285,7 +292,8 @@ def cmd_migrate():
         changes_made += len(missing)
         print(f'  {Style.ok(f"✓ 已创建 {len(missing)} 张表")}')
     else:
-        print(f'  {Style.ok("✓ 所有表已存在")}')
+        if not quiet:
+            print(f'  {Style.ok("✓ 所有表已存在")}')
 
     # 刷新 inspector
     inspector = inspect(engine)
@@ -293,8 +301,9 @@ def cmd_migrate():
     existing_after_create = model_tables & existing_tables
 
     # ── 阶段 B：补建缺失的列 ────────────────────────────────
-    print()
-    print('  [检查各表字段...]')
+    if not quiet:
+        print()
+        print('  [检查各表字段...]')
 
     for tbl_name in sorted(existing_after_create):
         model_table = Base.metadata.tables[tbl_name]
@@ -325,11 +334,13 @@ def cmd_migrate():
                     print(f'      {col_name}: 模型={model_type} vs 数据库={actual_type}')
                 print(f'      {Style.dim("(类型差异需手动处理，ALTER MODIFY 可能丢数据)")}')
             else:
-                print(f'    {Style.dim(tbl_name)}: {Style.ok("✓")}')
+                if not quiet:
+                    print(f'    {Style.dim(tbl_name)}: {Style.ok("✓")}')
 
     # ── 阶段 C：补建缺失的索引 ──────────────────────────────
-    print()
-    print('  [检查索引...]')
+    if not quiet:
+        print()
+        print('  [检查索引...]')
     inspector = inspect(engine)
 
     for tbl_name in sorted(existing_after_create):
@@ -369,12 +380,15 @@ def cmd_migrate():
             if success:
                 changes_made += 1
 
-    print()
+    if not quiet:
+        print()
     if changes_made > 0:
         print(Style.ok(f'═══ 迁移完成，共 {changes_made} 处变更 ═══'))
     else:
-        print(Style.ok('═══ 无需迁移，数据库已是最新 ═══'))
-    print()
+        if not quiet:
+            print(Style.ok('═══ 无需迁移，数据库已是最新 ═══'))
+    if not quiet:
+        print()
 
 
 def _types_compatible(model_type: str, actual_type: str) -> bool:

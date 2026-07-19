@@ -25,6 +25,7 @@
   2. **启动告警**：`create_app` 在种子数据写入后自动调用 `check_db_fingerprint`；一致打印 INFO，不一致打印 WARNING 并提示运行 `python init_db.py migrate`。
   3. **管理端接口**：`GET /api/admin/db/fingerprint`（需 admin JWT），返回两码与结构化 diff。
 - **验证**：定义码运行期确认含 20 表/37 配置键/64 位 sha256；`py_compile` 4 文件全过；`pytest tests/` 33/33 绿色无回归。
+- **启动优化**：`cmd_migrate` 新增 `quiet` 参数，应用启动时传 `quiet=True`——无迁移时跳过逐表 checklist 与"无需迁移"横幅，仅在有实际变更（补表/补列/补索引）或类型不兼容时打印。配合指纹比对（仅一行 INFO/WARNING），启动日志大幅精简。
 
 ---
 

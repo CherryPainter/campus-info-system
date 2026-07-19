@@ -220,7 +220,7 @@ def create_app(config_class=None):
     try:
         from init_db import cmd_migrate
         logger.info('开始数据库自动迁移（比对模型字段，补建缺失表/列/索引）')
-        cmd_migrate()
+        cmd_migrate(quiet=True)
     except Exception as e:
         logger.error(f'数据库自动迁移执行异常（不影响启动，请手动执行 python init_db.py migrate）: {e}')
 
