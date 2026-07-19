@@ -1,7 +1,7 @@
 /**
  * 网站介绍页面
  * 校园信息聚合与智能推送系统
- * 内容基于项目真实结构与技术栈撰写
+ * 面向用户的系统介绍，仅描述功能与形态，不暴露内部技术实现细节
  */
 import { APP_VERSION } from '@/version';
 import {
@@ -21,9 +21,7 @@ import {
   SendOutlined,
   ScheduleOutlined,
   DashboardOutlined,
-  ApiOutlined,
   SafetyOutlined,
-  DatabaseOutlined,
   AppstoreOutlined,
 } from '@ant-design/icons';
 
@@ -70,28 +68,10 @@ const features = [
 
 const structureItems = [
   {
-    key: 'backend',
-    icon: <ApiOutlined style={{ fontSize: 20, color: '#1890ff' }} />,
-    title: '后端服务',
-    desc: 'Python + Flask 3.1 提供 RESTful API；SQLAlchemy 2.0 + MySQL（PyMySQL）持久化；APScheduler 负责定时调度；Playwright 无头浏览器自动爬取教务系统，Tesseract OCR 识别验证码。',
-  },
-  {
     key: 'frontend',
     icon: <AppstoreOutlined style={{ fontSize: 20, color: '#722ed1' }} />,
     title: '前端管理后台',
-    desc: 'React 19 + TypeScript + Vite 8 构建，Ant Design 5 组件库与 ECharts 6 可视化；采用 ProLayout 侧边栏与路由守卫，需登录后使用。',
-  },
-  {
-    key: 'security',
-    icon: <SafetyOutlined style={{ fontSize: 20, color: '#52c41a' }} />,
-    title: '安全与认证',
-    desc: 'JWT 双 Token 认证（access_token 1 小时 / refresh_token 7 天，存于 httpOnly Cookie）；TOTP 多因素认证（MFA，兼容 Google Authenticator）；IP 黑名单、服务端会话管理、请求路径 / SQL / XSS 安全检测与 API 限流。',
-  },
-  {
-    key: 'data',
-    icon: <DatabaseOutlined style={{ fontSize: 20, color: '#faad14' }} />,
-    title: '数据与推送通道',
-    desc: '推送统一经企业微信 Webhook（Markdown / 图片消息）；数据来源于和风天气 API、校园电表系统、教务系统（重庆工程学院）三类外部数据源。',
+    desc: '基于现代前端技术构建的响应式管理后台，采用组件化界面与数据可视化，需登录授权后使用，集中管理课程、天气、电量与推送等模块。',
   },
 ];
 
@@ -110,7 +90,7 @@ const moduleGroups = [
   },
   {
     title: '运维与安全',
-    items: '用户管理、访问控制、IP 黑名单、会话管理、任务进程、系统设置',
+    items: '用户管理、访问控制、任务进程、系统设置',
   },
 ];
 
@@ -136,7 +116,7 @@ export default function About() {
         </Paragraph>
         <Paragraph style={{ fontSize: 15, lineHeight: 2, textIndent: '2em' }}>
           系统围绕「课表推送、天气监控、电量管理」三大核心模块构建，并持续完善推送链路可靠性
-          （推送任务持久化、失败重试）与账户安全（IP 黑名单、会话管理、MFA 二次验证），
+          （推送任务持久化、失败重试），
           致力于成为校园日常信息传递的可靠桥梁。
         </Paragraph>
       </Card>
@@ -237,7 +217,7 @@ export default function About() {
               <div>
                 <Title level={5} style={{ margin: 0, fontSize: 15 }}>可靠且安全</Title>
                 <Paragraph type="secondary" style={{ margin: '4px 0 0', fontSize: 13, lineHeight: 1.7 }}>
-                  在扩展功能的同时，持续加固账户与系统安全（MFA、IP 黑名单、会话管理），让每一条信息都恰到好处、每一份数据都更安心。
+                  在扩展功能的同时，持续加固账户与系统安全，让每一条信息都恰到好处、每一份数据都更安心。
                 </Paragraph>
               </div>
             </div>

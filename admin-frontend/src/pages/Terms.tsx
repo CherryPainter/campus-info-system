@@ -35,7 +35,7 @@ export default function Terms() {
             <li><Text strong>宿舍电量监控</Text>：自动获取宿舍电表数据，提供用电量统计与查询，并在电量不足时发出预警提醒。</li>
             <li><Text strong>课程管理提醒</Text>：支持课程表导入与管理，在课程开始前自动推送上课提醒通知。</li>
             <li><Text strong>信息聚合展示</Text>：通过统一的管理后台，集中展示天气、电量、课程等校园信息。</li>
-            <li><Text strong>安全与访问控制</Text>：提供 IP 黑名单、会话管理与 MFA 二次验证（TOTP），全方位保障账户与系统安全。</li>
+            <li><Text strong>安全与访问控制</Text>：采用多因素认证与访问控制等安全措施，全方位保障账户与系统安全。</li>
           </ul>
         </Paragraph>
 

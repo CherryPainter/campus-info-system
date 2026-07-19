@@ -30,12 +30,12 @@ export default function Privacy() {
         <Paragraph>
           <ul>
             <li><Text strong>登录凭证</Text>：用户名和加密后的密码哈希值，仅用于身份认证；</li>
-            <li><Text strong>会话令牌（双 Token）</Text>：采用 JWT 双 Token 机制，<Text strong>access_token</Text>（约 1 小时）用于接口鉴权，<Text strong>refresh_token</Text>（最长 7 天）用于静默续期。会话整体保留时长取决于登录时是否勾选「记住我」，详见下方 Cookie 政策；</li>
+            <li>会话采用带时效的身份令牌机制，令牌具有有效期限制，会话整体保留时长取决于登录时是否勾选「记住我」，详见下方 Cookie 政策；</li>
             <li><Text strong>系统业务数据</Text>：课程信息（从教务系统爬取）、电量使用数据、天气信息等，均为系统自动化功能所需的结构化数据，不涉及个人隐私。</li>
           </ul>
         </Paragraph>
         <Paragraph type="secondary" style={{ fontSize: 12 }}>
-          注：本系统无邮箱绑定、无手机号收集等个人身份信息采集功能。用户可选择上传头像用于个性化展示，头像仅接受 JPG / PNG / GIF / WEBP 格式、单张不超过 2MB，且为安全起见<Text strong>每自然年仅允许修改 3 次</Text>，上传内容会经过文件头（Magic Bytes）校验以防伪造或注入。
+          注：本系统无邮箱绑定、无手机号收集等个人身份信息采集功能。用户可选择上传头像用于个性化展示，头像上传进行类型与大小校验，且为安全起见<Text strong>每自然年仅允许修改 3 次</Text>。
         </Paragraph>
 
         <Title level={4}>二、数据用途</Title>
@@ -59,11 +59,11 @@ export default function Privacy() {
           3.2 <Text strong>安全措施</Text>：
           <ul>
             <li>密码使用哈希算法加密存储，不以明文形式保存；</li>
-            <li>使用 JWT 双 Token 机制进行身份认证，令牌具有时效性，刷新受闲置与绝对上限双重约束；</li>
-            <li><Text strong>强制 MFA 多因素认证</Text>（TOTP 动态验证码），登录需二次验证，进一步提升账户安全性；</li>
-            <li>头像上传进行严格的类型白名单、大小（≤2MB）与文件头（Magic Bytes）校验，拒绝 SVG 等可能携带脚本的危险格式；</li>
-            <li>提供「记住我」选项：勾选后会话最长保留 30 天，未勾选则为较短的临时会话，降低公共设备被冒用风险；</li>
-            <li>系统仅向通过身份认证的管理员开放，并通过访问控制、会话管理与安全检测限制暴露面。</li>
+            <li>使用带时效的身份令牌进行身份认证，令牌具有有效期限制；</li>
+            <li><Text strong>启用多因素认证</Text>（MFA）进行登录二次验证，进一步提升账户安全性；</li>
+            <li>头像上传进行类型与大小校验，拒绝危险文件格式；</li>
+            <li>提供「记住我」选项以延长会话有效期，降低公共设备被冒用风险；</li>
+            <li>系统仅向通过身份认证的管理员开放，并采取访问控制等安全措施限制暴露面。</li>
           </ul>
         </Paragraph>
 

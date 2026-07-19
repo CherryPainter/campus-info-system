@@ -15,7 +15,7 @@ export default function Cookies() {
       name: 'access_token',
       type: '必要',
       provider: '本系统',
-      purpose: 'JWT 访问令牌，用于身份认证和接口鉴权（httpOnly，JS 不可读取）',
+      purpose: '身份令牌，用于身份认证和接口鉴权（httpOnly，JS 不可读取）',
       duration: '约 1 小时',
     },
     {
@@ -31,8 +31,8 @@ export default function Cookies() {
       name: 'session_id',
       type: '必要',
       provider: '本系统',
-      purpose: '服务端会话标识，用于会话管理、单点登录与异常设备踢出（httpOnly，JS 不可读取）',
-      duration: '与"记住我"联动（不勾 24 小时 / 勾选 30 天）',
+      purpose: '服务端会话标识，用于维持登录状态与会话安全（httpOnly，JS 不可读取）',
+      duration: '与登录时是否勾选"记住我"联动',
     },
   ];
 
@@ -86,14 +86,14 @@ export default function Cookies() {
         <Paragraph>本系统中的 Cookie 仅用于以下目的：</Paragraph>
         <Paragraph style={{ fontSize: 15, lineHeight: 2, textIndent: '2em' }}>
           关于<Text strong>"记住我"</Text>：登录页的「记住我」复选框决定会话时长。
-          <Text strong>未勾选</Text>时为临时会话，服务端 Session 有效期约 24 小时，JWT 闲置 2 小时 / 绝对 1 天；
-          <Text strong>勾选</Text>时为长期会话，服务端 Session 有效期约 30 天，JWT 闲置 7 天 / 绝对 30 天。
+          <Text strong>未勾选</Text>时为较短的临时会话；
+          <Text strong>勾选</Text>时为较长的长期会话。
           无论哪种情况，关闭浏览器本身不会清空 httpOnly Cookie，但会话仍会按上述时长到期，到期后将自动退出登录。
         </Paragraph>
         <Paragraph>
           <ul>
             <li>
-              <Text strong>身份认证</Text>：httpOnly Cookie 存储 JWT 令牌，
+              <Text strong>身份认证</Text>：httpOnly Cookie 存储身份令牌，
               使您在浏览不同页面时无需重复登录，确保您的身份被正确识别。
             </li>
             <li>
@@ -150,7 +150,7 @@ export default function Cookies() {
 
         <Title level={4}>七、数据安全</Title>
         <Paragraph>
-          存储在 Cookie 中的 JWT 令牌经过签名保护，可防止被篡改。
+          存储在 Cookie 中的身份令牌经过签名保护，可防止被篡改。
           我们建议您：
         </Paragraph>
         <Paragraph>
