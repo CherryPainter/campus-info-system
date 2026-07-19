@@ -517,7 +517,7 @@ npm run dev
    - `ADMIN_TOKEN`（作为初始登录密码）
    - 首次启动会自动将密码 bcrypt 哈希存储到 `data/auth/password.hash`
 
-> 启动时要求 `SECRET_KEY`（32 位以上）和 `ADMIN_TOKEN`（16 位以上）必须配置，否则应用拒绝启动。
+> 生产环境（`DEBUG=false`）启动时要求 `SECRET_KEY`（32 位以上）必须配置，否则应用拒绝启动；`ADMIN_TOKEN`（16 位以上）同样必填。敏感配置均通过环境变量管理，不硬编码。
 
 ---
 
@@ -530,6 +530,10 @@ npm run dev
 | 变量            | 说明                                             | 示例                                                       |
 | --------------- | ------------------------------------------------ | ---------------------------------------------------------- |
 | `SECRET_KEY`    | JWT 签名密钥（32 位以上随机字符串）              | `my-super-secret-key-32chars!!`                            |
+
+> **安全约定**：敏感配置（密钥、令牌、Cookie 等）一律通过环境变量管理，**不硬编码**到源码。
+> `SECRET_KEY` 必须来自 `.env`（`python -c "import secrets;print(secrets.token_hex(48))"` 生成）。
+> 生产环境（`DEBUG=false`）若未配置 `SECRET_KEY`，应用**启动即失败**（避免重启即全员下线、多实例密钥不一致）。
 | `ADMIN_TOKEN`   | 管理令牌（16 位以上，也作为初始登录密码）        | `my-admin-token-16chars!`                                  |
 | `WECOM_WEBHOOK` | 企业微信机器人 Webhook URL（支持多个，逗号分隔） | `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx` |
 
@@ -606,10 +610,11 @@ npm run dev
 
 ### 安全与跨域配置
 
-| 变量           | 默认值                                         | 说明                       |
-| -------------- | ---------------------------------------------- | -------------------------- |
-| `AUTH_ENABLED` | `true`                                         | 是否启用认证               |
-| `CORS_ORIGINS` | `http://localhost:29528,http://localhost:5173` | 允许的跨域域名（逗号分隔） |
+| 变量              | 默认值                                         | 说明                                                                     |
+| ----------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| `AUTH_ENABLED`    | `true`                                         | 是否启用认证                                                             |
+| `ALLOWED_ORIGINS` | `http://localhost:29528,http://localhost:5173` | 允许的跨域域名（逗号分隔；生产务必改为真实域名，兼容旧名 `CORS_ORIGINS`） |
+| `FORCE_ADMIN_MFA` | `true`                                         | 强制管理员启用多因素认证(MFA)；首次引导（系统内尚无任何 MFA 用户）时放行 |
 
 ### 企业微信配置
 

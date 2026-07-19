@@ -95,6 +95,13 @@ export default function Login() {
         if (res.user) {
           loginSuccess(res.user);
         }
+        // 首次引导：管理员尚未启用 MFA 但被放行 → 强制引导至个人中心完成 MFA 设置
+        if (res.mfa_setup_required) {
+          message.warning('为保障账户安全，请先在个人中心完成多因素认证(MFA)设置');
+          navigate('/profile');
+          setLoading(false);
+          return;
+        }
         // 根据角色决定跳转目标：管理员到仪表盘，普通用户到首页
         const targetPath = res.user?.role === 'admin' ? '/dashboard' : '/welcome';
         navigate(targetPath);

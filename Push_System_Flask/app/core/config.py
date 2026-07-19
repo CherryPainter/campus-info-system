@@ -86,11 +86,8 @@ def validate_required_config():
     elif len(admin_token) < 16:
         errors.append("ADMIN_TOKEN: Token长度不足16位，安全性过低")
     
-    # 检查Secret Key
-    secret_key = os.getenv('SECRET_KEY', '')
-    if not secret_key or secret_key == 'dev-secret-key':
-        errors.append("SECRET_KEY: 请在生产环境设置强密钥")
-    
+    # 注：SECRET_KEY 的强制校验已在 Config.reload() 中按「生产失败 / 开发告警」处理，此处不再重复
+
     if errors:
         print("=" * 60)
         print("配置错误：以下必要配置缺失或无效")
@@ -116,27 +113,39 @@ class Config:
         
         # 应用
         cls.APP_NAME = os.getenv('APP_NAME', '校园信息聚合与智能推送系统')
-        cls.APP_VERSION = os.getenv('APP_VERSION', '6.10.2')
+        cls.APP_VERSION = os.getenv('APP_VERSION', '6.11.0')
         cls.DEBUG = os.getenv('DEBUG', 'false').lower() == 'true'
         cls.HOST = os.getenv('HOST', '0.0.0.0')
         cls.PORT = int(os.getenv('PORT', '29528'))
         
-        # 安全
-        import secrets
-        cls.SECRET_KEY = os.getenv('SECRET_KEY', '')
+        # 安全：SECRET_KEY 必须来自环境变量（敏感配置不硬编码）
+        # 生产环境缺失则直接启动失败（避免重启即全员下线 / 多实例密钥不一致）；
+        # 开发环境允许不安全默认值并告警，便于本地联调。
+        cls.SECRET_KEY = (os.getenv('SECRET_KEY') or '').strip()
         if not cls.SECRET_KEY or cls.SECRET_KEY == 'dev-secret-key':
-            # 自动生成随机密钥防止 JWT 伪造攻击
-            cls.SECRET_KEY = secrets.token_hex(32)
-            import warnings
-            warnings.warn(
-                f'[安全警告] SECRET_KEY 未设置或使用默认值，已自动生成随机密钥: {cls.SECRET_KEY[:8]}...'
-                f'（每次重启会变化，token 将全部失效，请尽快在 .env 中设置固定 SECRET_KEY）'
-            )
+            if cls.DEBUG:
+                import warnings
+                warnings.warn(
+                    '[安全警告] SECRET_KEY 未配置，使用不安全的开发默认值；'
+                    '生产环境必须在 .env 中设置固定强密钥（生成：python -c "import secrets;print(secrets.token_hex(48))"），'
+                    '否则重启后所有 JWT/Session 失效且多实例密钥不一致'
+                )
+                cls.SECRET_KEY = 'dev-insecure-secret-key-change-me'
+            else:
+                raise RuntimeError(
+                    '环境变量 SECRET_KEY 未配置：生产环境必须设置固定强随机值，'
+                    '否则重启即全员下线且多实例密钥不一致。详见 .env.example'
+                )
         cls.ADMIN_TOKEN = os.getenv('ADMIN_TOKEN', '')
         cls.AUTH_ENABLED = os.getenv('AUTH_ENABLED', 'true').lower() == 'true'
 
-        # CORS 允许的域名（逗号分隔，留空则仅允许 localhost）
-        cls.CORS_ORIGINS = [o.strip() for o in os.getenv('CORS_ORIGINS', f'http://localhost:{cls.PORT},http://localhost:5173,http://localhost:5174').split(',') if o.strip()]
+        # CORS 允许的域名（生产务必用 ALLOWED_ORIGINS 环境变量指定真实域名，勿写死 localhost）
+        _origins_raw = os.getenv('ALLOWED_ORIGINS') or os.getenv('CORS_ORIGINS') or f'http://localhost:{cls.PORT},http://localhost:5173,http://localhost:5174'
+        cls.ALLOWED_ORIGINS = [o.strip() for o in _origins_raw.split(',') if o.strip()]
+        cls.CORS_ORIGINS = cls.ALLOWED_ORIGINS  # 兼容别名
+
+        # 是否强制管理员启用 MFA（默认开启；设为 false 可关闭，便于特殊场景）
+        cls.FORCE_ADMIN_MFA = os.getenv('FORCE_ADMIN_MFA', 'true').lower() == 'true'
         
         # 教务系统
         cls.JWXT_USERNAME = os.getenv('JWXT_USERNAME', '')

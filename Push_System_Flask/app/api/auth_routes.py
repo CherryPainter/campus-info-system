@@ -242,7 +242,8 @@ def _login_failure_response(client_ip, username, kind, user_id, user_agent):
 
     kind: 'password'（密码错/账号存在）| 'notfound'（用户名不存在）| 'empty'（空参数）
     信号感知：账号级(按IP+账号)失败→限流该IP(429)；IP跨账号/枚举/总量→限流(429)或临时封禁(403)；
-    账号遭多IP围攻→临时封禁攻击源IP(403)。账号本身永不锁，避免攻击源自锁 admin。
+    账号遭多IP围攻→提升账号风险等级(不封IP，避免NAT/校园网误伤)，由 login() 在密码正确时强制 MFA 挑战。
+    账号本身永不锁，避免攻击源自锁 admin。
     """
     from app.services.ip_blacklist_service import (
         evaluate_login_failure, IPBlacklistService,
@@ -302,6 +303,12 @@ def _login_failure_response(client_ip, username, kind, user_id, user_agent):
             _bs.commit()
             _record_login_log(user_id or 0, username, client_ip, user_agent, 'blocked', label)
             return api_error(message='拒绝访问', http_status=403)
+
+        if action == 'account_risk':
+            # 账号风险升级（不封 IP）：仅告警，不阻断登录；密码正确后将强制 MFA 挑战
+            IPBlacklistService.send_login_security_alert(client_ip, dec, blocked=False)
+            _bs.commit()
+            return None
     finally:
         _bs.close()
     return None
@@ -435,6 +442,27 @@ def login():
     finally:
         session.close()
 
+    # 强制管理员 MFA（v6.11.0）：管理员必须启用 MFA 才能完整登录；
+    # 首次引导——系统内尚无任何已启用 MFA 的用户时放行，但要求先完成 MFA 设置，避免永久锁死。
+    _require_mfa_setup = False
+    if user.role == 'admin' and not mfa_enabled and current_app.config.get('FORCE_ADMIN_MFA', True):
+        from app.core.database import get_db as _gdb2
+        from app.model.user_mfa import UserMFA as _UMFA
+        _s2 = _gdb2()
+        try:
+            _any_mfa_enabled = _s2.query(_UMFA).filter_by(enabled=True).first() is not None
+        finally:
+            _s2.close()
+        if _any_mfa_enabled:
+            logger.warning(f'管理员 {username} 未启用 MFA，已拒绝登录（强制 MFA 策略）')
+            _record_login_log(user.id, username, client_ip, user_agent, 'failed', '管理员未启用 MFA')
+            return api_error(
+                message='管理员账户已强制启用多因素认证(MFA)。请先在个人中心完成 MFA 设置后再登录；若无法自助设置，请联系已有 MFA 权限的管理员协助。',
+                http_status=423,
+            )
+        # 首次引导：系统内尚无任何已启用 MFA 的用户 → 放行但要求完成 MFA 设置
+        _require_mfa_setup = True
+
     if mfa_enabled:
         # 生成临时 MFA token（10分钟有效期）
         jwt_manager = _get_jwt_manager()
@@ -530,7 +558,10 @@ def login():
     logger.info(f'{role_display}登录成功: user={username}')
 
     # 创建响应
-    response, _ = api_success(user=user.to_dict())
+    resp_kwargs = {}
+    if _require_mfa_setup:
+        resp_kwargs['mfa_setup_required'] = True
+    response, _ = api_success(user=user.to_dict(), **resp_kwargs)
 
     # 设置 httpOnly cookie（防止 XSS）
     from datetime import timedelta

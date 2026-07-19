@@ -52,7 +52,7 @@ def create_app(config_class=None):
     setup_logger(app)
     
     # 初始化扩展
-    allowed_origins = app.config.get('CORS_ORIGINS')
+    allowed_origins = app.config.get('ALLOWED_ORIGINS')
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
     limiter.init_app(app)
     

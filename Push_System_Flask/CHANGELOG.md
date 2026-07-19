@@ -4,6 +4,24 @@
 
 ---
 
+## v6.11.0 (2026-07-19)
+
+> 发版类型：**安全加固（minor）**。五项生产级安全配置加固，对应安全审计中标注的高风险项。
+
+### 安全加固
+- **① SECRET_KEY 改为环境变量必填（最高优先级）**：`config.py` 改为 `os.getenv('SECRET_KEY')`；生产环境（`DEBUG=false`）缺失时启动即 `RuntimeError` 失败，杜绝"每次重启所有 JWT/Session 失效 / 多实例密钥不一致"。开发环境允许不安全默认并告警。`.env` 已写入强随机值（gitignored，不入库）。
+- **② Flask-Limiter 存储改为 Redis**：`extensions.py` 的 `storage_uri` 改为 `os.getenv("REDIS_URL") or "memory://"`。多 worker 与重启后限流状态不丢失，与已有的 IP 封禁 / 登录限流 / 安全事件体系一致；`REDIS_URL` 为空时回退内存（兼容测试与单机开发）。
+- **③ 强制管理员 MFA（含首次引导）**：`auth_routes.py` 登录逻辑在密码校验通过后判断——`role=='admin'` 且未启用 MFA 时，若系统内已有其他 MFA 用户则**拒绝登录并要求先完成 MFA 设置**（423 + 明确提示）；若系统内尚无任何 MFA 用户（首次部署），放行但响应 `mfa_setup_required=true` 引导去个人中心绑定，避免永久锁死。文档可写"管理员账户强制启用多因素认证"。
+- **④ 登录风险策略：多 IP 围攻改为账号风险升级（不再封攻击源 IP）**：维度五"账号遭多 IP 围攻"处置由"临时封攻击源 IP"改为"提升账号风险等级 HIGH"（`account_risk`，不封 IP），避免 NAT / 公司出口 / 校园网等共享出口被误封。若账号已启用 MFA，则密码正确时照常强制 MFA 挑战（攻击者无 TOTP 被拦，正常用户不受影响）；未启用 MFA 的账号依赖其他维度限流。新增 `IPBlacklistService.is_account_high_risk()` 读取风险标记。前端标签由"账号遭多IP围攻(临时封禁)"改为"账号遭多IP围攻(风险升级)"。
+- **⑤ CORS 生产配置**：跨域来源变量由写死 `CORS_ORIGINS` 改为 `ALLOWED_ORIGINS`（逗号分隔，支持多个真实域名），兼容旧名 `CORS_ORIGINS`；开发默认含 localhost 端口便于联调，生产由 env 收口。
+
+### 测试 / 文档
+- 单元测试更新：维度五用例改为断言 `account_risk` + `risk_level='HIGH'` + `is_account_high_risk` 行为（不再有 `target_ips` / `temp_block`）；新增 `test_is_account_high_risk_false_by_default`。总计 29 例全绿。
+- README「环境变量配置」补充 SECRET_KEY 不硬编码说明、新增 `FORCE_ADMIN_MFA`、CORS 改为 `ALLOWED_ORIGINS`。
+- `.env.example` 同步：版本号、SECRET_KEY 说明、CORS 改名、新增 `FORCE_ADMIN_MFA`。
+
+---
+
 ## v6.10.2 (2026-07-18)
 
 > 发版类型：**缺陷修复（patch）**。修复安全事件自动封禁「配置了封禁时长却没生效、一律永久」的隐患。

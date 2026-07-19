@@ -163,7 +163,7 @@ def update_config(module: str, key: str):
             ENV_KEY_MAP = {
                 # 系统模块（此前因默认命名 SYSTEM_* 与实际 Config 属性名不一致而失效，已修正）
                 ('system', 'app_name'):                'APP_NAME',
-                ('system', 'cors_origins'):            'CORS_ORIGINS',
+                ('system', 'cors_origins'):            'ALLOWED_ORIGINS',
                 # 课程模块
                 ('course', 'schedule_daily'):          'DAILY_PUSH_TIME',
                 ('course', 'before_class_minutes'):    'BEFORE_CLASS_MINUTES',

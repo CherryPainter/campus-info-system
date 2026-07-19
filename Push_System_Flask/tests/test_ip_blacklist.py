@@ -210,22 +210,40 @@ def test_evaluate_volume_rate_limit(fake_clock):
 
 def test_evaluate_account_targeted_by_many_ips(fake_clock):
     # admin 为重点账号：5 个不同来源 IP 各试一次 => 触发"账号遭多IP围攻"
-    # 仅临时封那些攻击源 IP，账号本身永不锁；新 IP 登录不受影响
+    # v6.11.0 起：处置改为【提升账号风险等级】(不封攻击源IP，避免NAT/校园网误伤)；
+    # 账号本身永不锁，由 login() 在密码正确时若已启用 MFA 则强制 MFA 挑战。
     dec = None
     ips = [f'10.0.0.{i}' for i in range(1, 6)]
     for ip in ips:
         fake_clock.advance(1)
         dec = svc.evaluate_login_failure(ip, 'admin', 'password')
     assert dec['scope'] == 'account_target'
-    assert dec['action'] == 'temp_block'
+    assert dec['action'] == 'account_risk'
     assert dec['source'] == 'login_account_target'
-    assert set(dec['target_ips']) == set(ips)
-    # 第 6 个全新攻击 IP 试 admin：窗口内已有 >=5 个不同来源 IP，理应继续临时封禁该攻击源
-    # （这正是"多IP围攻"要做的；账号本身永不锁，故成功登录不受阻，仅攻击源 IP 被封）
+    assert dec.get('risk_level') == 'HIGH'
+    # 不再封禁攻击源 IP：决策中不应带 target_ips / temp_block
+    assert 'target_ips' not in dec
+    # 账号应标记为高风险
+    assert svc.IPBlacklistService.is_account_high_risk('admin') is True
+    # 第 6 个全新攻击 IP 试 admin：窗口内已有 >=5 个不同来源 IP，仍标记账号高风险
+    # （不封 IP，故该 IP 不会被阻断，仅账号风险升级）
     dec2 = svc.evaluate_login_failure('10.0.0.99', 'admin', 'password')
     assert dec2['scope'] == 'account_target'
-    assert dec2['action'] == 'temp_block'
-    assert '10.0.0.99' in dec2['target_ips']
+    assert dec2['action'] == 'account_risk'
+    assert svc.IPBlacklistService.is_account_high_risk('admin') is True
+    # 重置后账号高风险标记应被清除
+    assert svc.reset_login_counters('3.3.3.3', 'admin') is True
+    assert svc.IPBlacklistService.is_account_high_risk('admin') is False
+
+
+def test_is_account_high_risk_false_by_default(fake_clock):
+    # 无围攻信号时，账号不应处于高风险
+    assert svc.IPBlacklistService.is_account_high_risk('nobody') is False
+    # 单 IP 失败 5 次只触发 per-(IP,账号) 限流，不会升级账号风险
+    for _ in range(5):
+        fake_clock.advance(1)
+        svc.evaluate_login_failure('7.7.7.7', 'dave', 'password')
+    assert svc.IPBlacklistService.is_account_high_risk('dave') is False
 
 
 def test_evaluate_returns_none_when_quiet():

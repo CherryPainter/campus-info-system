@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Flask 扩展实例"""
+import os
 import time
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -35,7 +36,9 @@ limiter = Limiter(
         "10 per second",      # 每秒最多 10 次请求（防止突发攻击）
         "500 per hour",       # 每小时最多 500 次请求
     ],
-    storage_uri="memory://",
+    # 限流计数存储：生产使用 Redis（多 worker 生效、重启不丢状态）；
+    # REDIS_URL 未配置时回退内存（兼容单机开发 / 测试）
+    storage_uri=os.getenv("REDIS_URL") or "memory://",
     # 启用全局限流统计（限流响应头）
     headers_enabled=True,
 )
