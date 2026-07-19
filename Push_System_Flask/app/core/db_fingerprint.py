@@ -141,15 +141,21 @@ def compute_definition_fingerprint() -> Tuple[str, dict]:
 #  实例码（来自当前数据库）
 # ──────────────────────────────────────────────────────────
 def _instance_schema(session, table_names: List[str]) -> Dict[str, Dict[str, str]]:
+    """查询当前数据库的全部用户表 schema，用于跟定义侧做全量 diff。
+
+    table_names 来自 Base.metadata（定义侧知道的表名列表），
+    同时额外查 INFORMATION_SCHEMA 中所有 BASE TABLE，把定义未知的也纳入，
+    以便 diff_fingerprints 检出 extra_tables（实例有但定义没有的表）。
+    """
     db_name = session.bind.url.database
     rows = session.execute(
         text(
             "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY "
             "FROM information_schema.columns "
-            "WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN :tables "
+            "WHERE TABLE_SCHEMA = :db "
             "ORDER BY TABLE_NAME, COLUMN_NAME"
         ),
-        {'db': db_name, 'tables': table_names},
+        {'db': db_name},
     ).fetchall()
     schema: Dict[str, Dict[str, str]] = {}
     for r in rows:
@@ -181,11 +187,10 @@ def _instance_admin(session) -> bool:
 
 def compute_instance_fingerprint(session) -> Tuple[str, dict]:
     """返回 (sha256_hex, 结构化明细)。需要数据库会话。"""
-    Base = _ensure_all_models()
+    _ensure_all_models()
 
-    table_names = sorted(Base.metadata.tables.keys())
     struct = {
-        'schema': _instance_schema(session, table_names),
+        'schema': _instance_schema(session, table_names=[]),
         'configs': _instance_configs(session),
         'admin': _instance_admin(session),
     }

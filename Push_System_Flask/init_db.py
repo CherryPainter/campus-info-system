@@ -779,38 +779,60 @@ def _parse_yes_flag() -> bool:
 
 
 def cmd_cleanup():
-    """清理数据库多余字段：删除实例中有但模型中未定义的列和配置键。
+    """清理数据库多余内容：额外表、多余列、多余配置键、类型差异。
 
-    基于指纹 diff 的 extra_columns / extra_config_keys 列表。
-    仅删除"多出来"的项，不算"缺失/类型差异"的项（缺失需 migrate，类型差异暂需手动）。
+    基于指纹 diff 的 extra_tables / extra_columns / extra_config_keys / type_changed。
+    缺失项（missing_*）不在清理范围内，请用 migrate 补。
     默认需要确认；传 --yes 可直接执行。
     """
     auto_confirm = _parse_yes_flag()
     result, summary = _fingerprint_common()
+    extra_tables = result.get('extra_tables', [])
     extra_cols = result.get('extra_columns', {})
     extra_cfgs = result.get('extra_config_keys', [])
+    type_changed = result.get('type_changed', {})
 
-    if not extra_cols and not extra_cfgs:
+    no_items = not any([extra_tables, extra_cols, extra_cfgs, type_changed])
+    if no_items:
         print()
-        print(Style.ok('═══ 数据库已整洁，没有多余字段或配置 ═══'))
+        print(Style.ok('═══ 数据库已整洁，没有多余字段/表/配置键/类型差异 ═══'))
         print()
         return
 
-    # 展示待清理项
+    # ═══════════════════ 展示 ═══════════════════
     print()
     print(Style.bold('═══ 数据库清理 ═══'))
     print()
+
+    if extra_tables:
+        print(Style.warn(f'  发现 {len(extra_tables)} 个多余表（模型中未定义）:'))
+        for t in extra_tables:
+            print(f'    {Style.err("DROP TABLE")} {t}')
     if extra_cols:
         print(Style.warn(f'  发现 {sum(len(v) for v in extra_cols.values())} 个多余列（模型中未定义）:'))
         for t, cols in extra_cols.items():
             for c in cols:
-                print(f'    {Style.err("DROP")} {t}.{c}')
+                print(f'    {Style.err("DROP COLUMN")} {t}.{c}')
     if extra_cfgs:
         print(Style.warn(f'  发现 {len(extra_cfgs)} 个多余配置键:'))
         for m, k, vt, *_ in extra_cfgs:
             print(f'    {Style.err("DELETE")} module_configs.{m}.{k} ({vt})')
+    if type_changed:
+        # 区分安全变更与需手动的变更
+        safe_text_types = {'varchar', 'text', 'longtext', 'mediumtext', 'char'}
+        print(Style.warn(f'  发现 {sum(len(v) for v in type_changed.values())} 个类型差异:'))
+        for t, cols in type_changed.items():
+            for c, (def_type, inst_type) in cols.items():
+                def_base = def_type.split('|')[0] if def_type else ''
+                inst_base = inst_type.split('|')[0] if inst_type else ''
+                if def_base in safe_text_types and inst_base in safe_text_types:
+                    print(f'    {Style.warn("MODIFY")} {t}.{c}: {inst_base}→{def_base} {Style.dim("(安全，仅文本类型调整)")}')
+                elif def_base == 'int' and inst_base == 'int':
+                    print(f'    {Style.warn("MODIFY")} {t}.{c}: {inst_base}→{def_base} {Style.dim("(安全，整数族调整)")}')
+                else:
+                    print(f'    {Style.err("⚠ SKIP")} {t}.{c}: {inst_base}→{def_base} {Style.dim("(需手动评估后再 ALTER)")}')
 
-    # 确认
+    # ═══════════════════ 确认 ═══════════════════
     if not auto_confirm:
         print()
         confirm = input(f'  {Style.warn("输入 YES 确认清理（或 ctrl+C 取消 / 传 --yes 跳过确认）: ")}')
@@ -819,23 +841,25 @@ def cmd_cleanup():
             print()
             return
 
-    # 执行清理
+    # ═══════════════════ 执行 ═══════════════════
     dbm = _ensure_db()
     engine = dbm.engine
     from sqlalchemy import text as sql_text
     cleaned = 0
 
+    # 1) 删除多余列
     for tbl_name, col_names in extra_cols.items():
         for col_name in col_names:
             try:
                 with engine.connect() as conn:
                     conn.execute(sql_text(f'ALTER TABLE `{tbl_name}` DROP COLUMN `{col_name}`'))
                     conn.commit()
-                print(f'  {Style.ok("✓")} 删除列 {tbl_name}.{col_name}')
+                print(f'  {Style.ok("✓")} DROP COLUMN {tbl_name}.{col_name}')
                 cleaned += 1
             except Exception as e:
-                print(f'  {Style.err(f"✗ 删除列 {tbl_name}.{col_name} 失败")}: {e}')
+                print(f'  {Style.err(f"✗ DROP COLUMN {tbl_name}.{col_name} 失败")}: {e}')
 
+    # 2) 删除多余配置键
     for m, k, vt, *_ in extra_cfgs:
         try:
             with engine.connect() as conn:
@@ -843,16 +867,58 @@ def cmd_cleanup():
                     'DELETE FROM module_configs WHERE module = :m AND `key` = :k'
                 ), {'m': m, 'k': k})
                 conn.commit()
-            print(f'  {Style.ok("✓")} 删除配置 {m}.{k}')
+            print(f'  {Style.ok("✓")} DELETE config {m}.{k}')
             cleaned += 1
         except Exception as e:
-            print(f'  {Style.err(f"✗ 删除配置 {m}.{k} 失败")}: {e}')
+            print(f'  {Style.err(f"✗ DELETE config {m}.{k} 失败")}: {e}')
+
+    # 3) 删除多余表
+    for tbl_name in extra_tables:
+        try:
+            with engine.connect() as conn:
+                conn.execute(sql_text(f'DROP TABLE IF EXISTS `{tbl_name}`'))
+                conn.commit()
+            print(f'  {Style.ok("✓")} DROP TABLE {tbl_name}')
+            cleaned += 1
+        except Exception as e:
+            print(f'  {Style.err(f"✗ DROP TABLE {tbl_name} 失败")}: {e}')
+
+    # 4) 修正安全类型变更
+    safe_text_types = {'varchar', 'text', 'longtext', 'mediumtext', 'char'}
+    for tbl_name, cols in type_changed.items():
+        for col_name, (def_type, inst_type) in cols.items():
+            def_base = def_type.split('|')[0] if def_type else ''
+            inst_base = inst_type.split('|')[0] if inst_type else ''
+            # 仅自动处理同族调整
+            is_safe = (def_base in safe_text_types and inst_base in safe_text_types) or \
+                      (def_base == 'int' and inst_base == 'int')
+            if not is_safe:
+                continue
+            try:
+                # 从模型获取准确列类型
+                _import_all_models()
+                from app.core.database import Base
+                tbl = Base.metadata.tables.get(tbl_name)
+                if tbl is None:
+                    continue
+                col = tbl.columns.get(col_name)
+                if col is None:
+                    continue
+                from sqlalchemy.dialects.mysql import dialect as _md
+                new_type = col.type.compile(dialect=_md())
+                with engine.connect() as conn:
+                    conn.execute(sql_text(f'ALTER TABLE `{tbl_name}` MODIFY COLUMN `{col_name}` {new_type}'))
+                    conn.commit()
+                print(f'  {Style.ok("✓")} MODIFY {tbl_name}.{col_name} → {new_type}')
+                cleaned += 1
+            except Exception as e:
+                print(f'  {Style.err(f"✗ MODIFY {tbl_name}.{col_name} 失败")}: {e}')
 
     print()
     if cleaned > 0:
         print(Style.ok(f'═══ 清理完成，共 {cleaned} 项 ═══'))
     else:
-        print(Style.info('═══ 没有需要清理的项 ═══'))
+        print(Style.info('═══ 没有可自动修复的项 ═══'))
     print()
 
 
@@ -884,7 +950,7 @@ HELP_TEXT = f"""
   {Style.info('reset')}       删除所有表 → 重建 → 种子数据（{Style.err('危险，需确认')}）
   {Style.info('fingerprint')} 数据库指纹比对：打印定义码、实例码与结构化差异
   {Style.info('check')}       静默比对模式：一致 exit 0，不一致 exit 1（CI/脚本用）
-  {Style.info('cleanup')}     清理数据库多余字段：删除实例中模型未定义的列和配置键
+  {Style.info('cleanup')}     清理数据库多余项：额外表/列/配置键 + 安全类型变更自动修正
 
 覆盖 20 张表:
   users, token_blacklist, user_mfa, login_logs, module_configs,
