@@ -149,6 +149,16 @@ def cmd_status():
     print('  ' + '-' * 70)
 
     with engine.connect() as conn:
+        # 防御：若某张表被其他会话持有元数据锁（如正在运行的后端连接、
+        # 未提交的长时间事务、或卡住的迁移），默认 lock_wait_timeout 长达
+        # 一年，会导致本命令无限挂起。这里把本会话的等待超时压到 3 秒，
+        # 超时即被 except 捕获并报告 '?'，单张表锁住不会拖垮整条命令。
+        try:
+            conn.execute(text('SET SESSION lock_wait_timeout = 3'))
+            conn.execute(text('SET SESSION innodb_lock_wait_timeout = 3'))
+        except Exception:
+            pass
+
         for table_name, description, _ in ALL_TABLES:
             if table_name in existing:
                 try:
@@ -180,26 +190,42 @@ def cmd_status():
     else:
         print(Style.ok('  ✓ 所有模型表已就绪'))
 
-    # 检查列差异（简要）
-    _check_columns_brief(engine, inspector, model_tables, existing)
+    # 检查列差异（简要）—— 函数内部自建带超时连接派生 inspector，
+    # 避免列检查卡在 MDL 上，也不依赖上方已关闭的会话连接。
+    _check_columns_brief(engine, model_tables, existing)
 
     print()
 
 
-def _check_columns_brief(engine, inspector, model_tables, existing_tables):
-    """简要检查列差异（不修改，仅报告）"""
+def _check_columns_brief(engine, model_tables, existing_tables):
+    """简要检查列差异（不修改，仅报告）。
+
+    内部自建一条带 MDL 锁超时（3 秒）的连接派生 inspector，避免列检查
+    因元数据锁挂起；该连接在函数内独立开闭，不依赖调用方的会话连接。
+    """
     Base = _import_all_models()
     from app.core.database import Base as Base2
     common = model_tables & existing_tables
     total_missing_cols = 0
-    for tbl_name in sorted(common):
-        model_table = Base2.metadata.tables[tbl_name]
-        model_columns = {c.name: c for c in model_table.columns}
-        actual_columns = {c['name']: c for c in inspector.get_columns(tbl_name)}
-        missing_cols = set(model_columns.keys()) - set(actual_columns.keys())
-        if missing_cols:
-            total_missing_cols += len(missing_cols)
-            print(f'  {Style.warn("⚠ " + tbl_name)}: 缺失字段 {", ".join(sorted(missing_cols))}')
+    with engine.connect() as conn:
+        try:
+            conn.execute(text('SET SESSION lock_wait_timeout = 3'))
+            conn.execute(text('SET SESSION innodb_lock_wait_timeout = 3'))
+        except Exception:
+            pass
+        inspector = inspect(conn)
+        for tbl_name in sorted(common):
+            model_table = Base2.metadata.tables[tbl_name]
+            model_columns = {c.name: c for c in model_table.columns}
+            try:
+                actual_columns = {c['name']: c for c in inspector.get_columns(tbl_name)}
+            except Exception:
+                # 锁超时等异常：跳过该表的列检查，不影响其他表
+                actual_columns = {}
+            missing_cols = set(model_columns.keys()) - set(actual_columns.keys())
+            if missing_cols:
+                total_missing_cols += len(missing_cols)
+                print(f'  {Style.warn("⚠ " + tbl_name)}: 缺失字段 {", ".join(sorted(missing_cols))}')
     if total_missing_cols == 0 and common:
         print(Style.ok('  ✓ 所有表字段一致'))
 
