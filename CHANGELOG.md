@@ -6,6 +6,18 @@
 
 ---
 
+## v6.12.2 (2026-07-19)
+
+> 发版类型：**缺陷修复（patch）**。补充审计请求日志静默名单遗漏的常驻轮询端点。
+
+### 审计请求日志静默名单补充（app/utils/security.py）
+- **问题**：运行期频繁打印 `AUDIT_REQUEST ... PATH=/api/admin/processes/scheduled`。v6.11.6 的 `SILENT_AUDIT_PATHS` 已收录 `/api/admin/processes`、`/api/admin/processes/running`，但漏了同为 Processes 页常驻轮询（POLL_NORMAL=5s）的 `/api/admin/processes/scheduled`（固定列表端点，非带 `{id}` 的临时轮询）。
+- **修复**：`security.py` 的 `SILENT_AUDIT_PATHS` 新增 `/api/admin/processes/scheduled`；匹配为精确 `path not in SILENT_AUDIT_PATHS`。`log_request_audit` 仅抑制该 INFO 行，登录日志与登录事件等审计证据不受影响。
+- **验证**：`py_compile` 通过；当前静默名单共 15 个路径（精确匹配，不含带 `{id}` 的动态路径）。
+- **版本**：纯日志治理，按约定 bump patch（6.12.1→6.12.2），四处版本号（config.py / version.ts / package.json / .env）与两份 README 徽标已同步。
+
+---
+
 ## v6.12.1 (2026-07-19)
 
 > 发版类型：**缺陷修复（patch）**。修复数据库指纹自动清理无法修正"可空性变更（NULL↔NOT NULL）"的问题，消除 users 表 is_active/is_primary 由 NULL 改为 NOT NULL 后需手动 cleanup 的兜底告警。
