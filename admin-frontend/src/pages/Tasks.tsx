@@ -6,13 +6,13 @@
  * - 天气任务管理
  * - 电量任务管理
  */
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, Row, Col, Button, Tag, Typography, Badge, App } from 'antd';
 import { 
   CloudOutlined, ThunderboltOutlined, BookOutlined, SyncOutlined, PlayCircleOutlined, 
   ClockCircleOutlined, WarningOutlined, CheckCircleOutlined, SunOutlined
 } from '@ant-design/icons';
-import { adminApi, type SpiderStatus } from '@/api/admin';
+import { adminApi, processApi, type SpiderStatus, type TaskProcess } from '@/api/admin';
 import { electricityApi } from '@/api/electricity';
 import { courseApi, type CrawlTask } from '@/api/course';
 import CrawlScheduler from './CrawlScheduler';
@@ -78,7 +78,58 @@ export default function Tasks() {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [spiderStatus, setSpiderStatus] = useState<SpiderStatus | null>(null);
-  const [triggering, setTriggering] = useState<string | null>(null);
+  // 运行中视觉态（真实感知，不再用伪超时）：
+  // - spider/全量爬取类由后端 spider_status 轮询（isBackendRunning）驱动；
+  // - 天气/电量/课表推送类任务后端会落 TaskProcess，前端按「进程名」轮询 task_processes
+  //   拿到真实 running/completed/failed 终态（与「进程管理」页面同一套机制）。
+  // - clickFlash：点击瞬间点亮，待真实进程出现或 8s 安全超时后接管/清除。
+  const [clickFlash, setClickFlash] = useState<Set<string>>(new Set());
+  const [triggerTimeByKey, setTriggerTimeByKey] = useState<Record<string, number>>({});
+  const [processStatus, setProcessStatus] = useState<Record<string, TaskProcess | null>>({});
+  const [reportedKeys, setReportedKeys] = useState<Set<string>>(new Set());
+  const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // 任务 key → 后端 TaskProcess 进程名（与 tasks.py / scheduler.py 中 create_task_process 的 name 严格对应）
+  const PROCESS_NAME_BY_TASK: Record<string, string> = {
+    update_weather_now: '更新实时天气',
+    update_weather_hourly: '更新逐小时预报',
+    update_weather_alert: '更新天气预警',
+    push_weather_daily: '每日天气晨报',
+    push_weather_analysis: '天气分析推送',
+    push_electricity_daily: '每日用电报告',
+    push_electricity_weekly: '每周用电报告',
+    push_electricity_monthly: '每月用电报告',
+    check_cookie_validity: 'Cookie有效性检测',
+    fetch_all: '电量全量爬取',
+    push_daily_schedule: '今日课表推送',
+    push_weekly_image: '周课表图片推送',
+  };
+
+  const removeClickFlash = (key: string) => {
+    if (flashTimers.current[key]) {
+      clearTimeout(flashTimers.current[key]);
+      delete flashTimers.current[key];
+    }
+    setClickFlash((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  };
+  const addClickFlash = (key: string) => {
+    setClickFlash((prev) => new Set(prev).add(key));
+    setTriggerTimeByKey((prev) => ({ ...prev, [key]: Date.now() }));
+    // 新一轮触发：重置上报标记，允许本次终态再次提示
+    setReportedKeys((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    if (flashTimers.current[key]) clearTimeout(flashTimers.current[key]);
+    flashTimers.current[key] = setTimeout(() => removeClickFlash(key), 8000);
+  };
   const [crawlSchedulerVisible, setCrawlSchedulerVisible] = useState(false);
   // 爬取任务按 id 轮询（统一任务模型 Hook），完成即刷新爬虫状态卡
   const [tasksCrawlId, setTasksCrawlId] = useState<number | null>(null);
@@ -108,6 +159,69 @@ export default function Tasks() {
     }
   }, POLL_FAST);
 
+  // 后端真实运行信号（spider_status 轮询）：仅覆盖课表爬虫与全量爬取类任务
+  const isBackendRunning = (key: string): boolean => {
+    if (key === 'spider') return !!spiderStatus?.running;
+    if (key === 'full_crawl') return !!(spiderStatus?.running_tasks?.course_full_crawl || crawlTaskActive);
+    if (key === 'fetch_all') return !!spiderStatus?.running_tasks?.electricity_full_crawl;
+    return false;
+  };
+
+  // 轮询真实进程状态（task_processes）：覆盖天气/电量/课表推送类任务的成功失败感知
+  useIntervalPolling(async () => {
+    // 仅跟踪「刚点击」或「仍在运行」的任务，空闲不发起请求
+    const tracked = new Set<string>([
+      ...clickFlash,
+      ...Object.entries(processStatus)
+        .filter(([, v]) => v && (v.status === 'running' || (v.status as string) === 'pending'))
+        .map(([k]) => k),
+    ]);
+    if (tracked.size === 0) return;
+    try {
+      const { data: list } = await processApi.getList({ per_page: 30 });
+      // 同名进程取最近一条（started_at 最大）
+      const byName: Record<string, TaskProcess> = {};
+      for (const p of list) {
+        const cur = byName[p.name];
+        if (!cur || (p.started_at && cur.started_at && p.started_at > cur.started_at)) {
+          byName[p.name] = p;
+        }
+      }
+      for (const key of tracked) {
+        const name = PROCESS_NAME_BY_TASK[key];
+        if (!name) continue;
+        const t = triggerTimeByKey[key];
+        const proc = byName[name];
+        if (!proc) continue;
+        const started = proc.started_at ? new Date(proc.started_at).getTime() : 0;
+        if (t != null && started < t) continue; // 忽略本次点击之前的旧进程
+        setProcessStatus((prev) => ({ ...prev, [key]: proc }));
+        const st = proc.status as string;
+        if (st === 'running' || st === 'pending') {
+          if (clickFlash.has(key)) removeClickFlash(key); // 真实进程已接管
+        } else {
+          // 终态：反馈一次成功/失败
+          if (!reportedKeys.has(key)) {
+            if (st === 'failed' || st === 'cancelled') {
+              message.error(proc.error_message || proc.message || `${name} 执行失败`);
+            } else {
+              message.success(proc.message || `${name} 执行完成`);
+            }
+            setReportedKeys((prev) => new Set(prev).add(key));
+          }
+          if (clickFlash.has(key)) removeClickFlash(key);
+        }
+      }
+    } catch {
+      /* 忽略单次查询失败 */
+    }
+  }, POLL_FAST);
+
+  // 组件卸载时清理所有 clickFlash 定时器，避免内存泄漏/告警
+  useEffect(() => () => {
+    Object.values(flashTimers.current).forEach(clearTimeout);
+  }, []);
+
   const fetchSpiderStatus = async () => {
     setLoading(true);
     try {
@@ -121,7 +235,7 @@ export default function Tasks() {
   useIntervalPolling(fetchSpiderStatus, POLL_SLOW);
 
   const handleTrigger = async (taskType: string, module: 'weather' | 'electricity' | 'spider' | 'course') => {
-    setTriggering(taskType);
+    addClickFlash(taskType); // 点击立即点亮「运行中」样式，待真实进程接管
     try {
       let response;
       if (module === 'spider') response = await adminApi.triggerSpider();
@@ -132,28 +246,28 @@ export default function Tasks() {
         else response = await adminApi.triggerElectricity(taskType);
       }
       else if (module === 'course') response = await adminApi.triggerCourse(taskType);
-      
+
       if (response?.status === 'success') {
         message.success(response.message || '任务触发成功');
       } else if (response?.status === 'error') {
         message.error(response.message || '任务触发失败');
       }
-      
+
       fetchSpiderStatus();
     } catch (error: any) {
       console.error('触发任务失败:', error);
       message.error(error?.response?.data?.message || error?.message || '网络错误，无法触发任务');
-    } finally {
-      setTriggering(null);
+      removeClickFlash(taskType); // 触发失败，立即取消运行中样式
     }
   };
 
   // 渲染任务卡片（统一样式）
   const renderTaskCard = (task: typeof taskCategories[0]['tasks'][0], module: string) => {
     const priority = priorityConfig[task.priority as keyof typeof priorityConfig];
-    const isRunning = (task.key === 'spider' && spiderStatus?.running)
-      || (task.key === 'full_crawl' && (spiderStatus?.running_tasks?.course_full_crawl || crawlTaskActive))
-      || (task.key === 'fetch_all' && spiderStatus?.running_tasks?.electricity_full_crawl);
+    const isRunning = isBackendRunning(task.key);
+    const proc = processStatus[task.key];
+    const procRunning = !!proc && (proc.status === 'running' || (proc.status as string) === 'pending');
+    const visualRunning = isRunning || procRunning || clickFlash.has(task.key);
     // 优先使用任务自身的 moduleOverride（如课程分类下的爬虫任务需走 spider 分支）
     const effectiveModule = ('moduleOverride' in task && task.moduleOverride) ? task.moduleOverride : module;
 
@@ -207,10 +321,10 @@ export default function Tasks() {
         hoverable
         style={{
           borderRadius: 12,
-          border: isRunning ? '1px solid #ffccc7' : '1px solid #e8e8e8',
-          boxShadow: isRunning ? '0 2px 12px rgba(255, 77, 79, 0.15)' : '0 2px 8px rgba(0,0,0,0.04)',
+          border: visualRunning ? '1px solid #ffccc7' : '1px solid #e8e8e8',
+          boxShadow: visualRunning ? '0 2px 12px rgba(255, 77, 79, 0.15)' : '0 2px 8px rgba(0,0,0,0.04)',
           transition: 'all 0.3s ease',
-          background: isRunning ? '#fff5f5' : undefined,
+          background: visualRunning ? '#fff5f5' : undefined,
         }}
         styles={{ body: { padding: 16 } }}
       >
@@ -230,8 +344,8 @@ export default function Tasks() {
             <Title level={5} style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{task.label}</Title>
             <Text type="secondary" style={{ fontSize: 12 }}>{task.desc}</Text>
           </div>
-          {isRunning && (
-            <Badge status="error" text="运行中" style={{ fontSize: 11 }} />
+          {visualRunning && (
+            <Badge status="processing" text="运行中" style={{ fontSize: 11 }} />
           )}
         </div>
 
@@ -239,14 +353,14 @@ export default function Tasks() {
           type="primary"
           ghost
           icon={<PlayCircleOutlined />}
-          loading={triggering === task.key}
+          loading={visualRunning}
           onClick={() => handleTrigger(task.key, effectiveModule as any)}
           block
           size="small"
-          disabled={isRunning}
+          disabled={visualRunning}
           className="task-action-btn"
         >
-          {isRunning ? '运行中...' : '立即执行'}
+          {visualRunning ? '运行中...' : '立即执行'}
         </Button>
       </Card>
     );
