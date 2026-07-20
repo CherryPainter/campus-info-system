@@ -48,6 +48,7 @@ export const PROCESS_STATUS_MAP: Record<string, StatusMetaWithIcon> = {
   completed_empty: { color: 'warning', icon: createElement(ExclamationCircleOutlined), text: '完成·无数据' },
   failed: { color: 'error', icon: createElement(CloseCircleOutlined), text: '失败' },
   cancelled: { color: 'default', icon: createElement(CloseCircleOutlined), text: '已取消' },
+  skipped: { color: 'default', icon: createElement(StopOutlined), text: '已静音' },
 };
 
 /** 爬取预约任务状态（来源 Processes.tsx crawlStatusMap） */
@@ -67,6 +68,7 @@ export const TASK_STATUS_MAP: Record<string, StatusMetaWithIcon> = {
   running: { color: 'processing', icon: createElement(ClockCircleFilled), text: '运行中' },
   cancelled: { color: 'default', icon: createElement(StopOutlined), text: '已取消' },
   pending: { color: 'warning', icon: createElement(ClockCircleFilled), text: '待执行' },
+  skipped: { color: 'default', icon: createElement(StopOutlined), text: '已静音' },
 };
 
 /** Webhook 测试状态（来源 Webhooks.tsx TEST_STATUS_MAP） */

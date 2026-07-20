@@ -22,12 +22,14 @@
   - 新增 `app/services/holiday_service.py` 单例 `holiday_service`：`is_active()` 返回 `(是否静音, 命中期)`；`get_status()` 供前端横幅；`list/create/update/delete_period`、`set_enabled`、`set_master`（写 `module_configs`）。
   - 新增蓝图 `app/api/holiday_routes.py`（`/api/holiday`，全部 `@admin_required`）：`GET /status`、`PUT /master`、`GET/POST/PUT/DELETE /periods`。
   - `app/modules/electricity/tasks.py`、`app/modules/weather/tasks.py`、`app/tasks/scheduler.py`（含 `check_push_rules`/`generate_weekly_course`/`run_spider`）、`app/services/delivery_service.py`、`app/api/push_routes.py` 增加假期闸口。
-  - 推送任务新增 `skipped` 状态：假期静默任务标记 skipped（区别于 failed/processing）。
+  - **闸口分层（入口早退 + 发送点兜底）**：课程定时任务（`run_spider`/`check_push_rules`/`generate_weekly_course`）与天气、电量**面向用户的推送函数**均在函数**入口**提前 `return`——假期里被调度器调用即立刻返回，不拉取 API、不分析、不渲染（与「各定时 job 顶部提前 return」设计原则一致）。具体落点：天气 `push_weather_daily`/`push_weather_analysis`；电量 `push_electricity_daily`/`push_electricity_weekly`/`push_electricity_monthly`/`push_electricity_full_crawl`/`check_low_power`。发送点闸口（`weather/electricity._send_markdown`/`_send_image`、`delivery_service._process_pending_tasks`、`push_routes._send_push`）保留为最终兜底（防其他路径漏网）。**数据更新类 job 也静默**：天气 `update_weather_now`/`update_weather_hourly`/`update_weather_alert` 在假期里同样入口早退（不拉取/不持久化），避免误标 `completed`；因高频（10/30/60 分钟）故走 `skip_if_active(record=False)` 按天聚合为 1 条 skipped 汇总记录（见下方「调整」），既保留历史又防止刷屏进程表。电量 `check_cookie_validity`（Cookie 有效性系统运维检测）仍**不拦截**，保持假期照常运行（属系统运维检测，非面向用户推送）。
+  - 推送任务新增 `skipped` 状态：假期静默的**面向用户推送**在入口调用 `holiday_service.skip_if_active(name, task_type)` 建 `skipped` 进程记录（原因「假期模式静默（<假期名>）」），进程管理可见、区别于 `completed`/`failed`；高频数据更新 job 静默早退，按天聚合为 1 条 skipped 汇总记录（见下方「调整」）。统一助手方法 `skip_if_active` 定义在 `holiday_service.py`（fail-open：建记录失败仍静音）。
 - **前端实现**：
   - 新增 `src/api/holiday.ts`（`holidayApi`：status/master/list/create/update/remove）。
   - 新增 `src/pages/HolidayMode.tsx`：总开关 Switch + 实时状态横幅（未开启/静默中/非假期）+ 说明 Alert + 区间表格（名称/类型 Tag/起止/状态 Switch/备注/操作）+ 新增/编辑 Modal 表单。
   - `src/App.tsx` 增加 `/holiday` 路由，`src/layouts/AdminLayout.tsx` 侧边栏增加「假期模式」入口（仿 Webhooks 范式）。
 - **验证**：后端导入校验通过；前端 `npm run build`（tsc 无类型错误）通过；`init_db` 自动建表 + 播种 `holiday_mode_enabled`。
+- **单元测试**：新增 `Push_System_Flask/tests/test_holiday_mute.py`（共 35 用例，全部通过），覆盖 `is_active()` 决策单元（总开关关闭/开启命中/开启无命中/区间禁用/配置异常 fail-open）、`skip_if_active()` 统一助手（不活跃不记录、活跃 record=True 建 skipped 记录且 reason 含假期名、活跃 record=False 不建记录、is_active 异常 fail-open 回退静音、建记录异常仍静音），以及 10 个定时 job 入口闸口契约（运行时：假期激活时早退不调用 `create_task_process`；结构：闸口为首个 if；并断言 `check_cookie_validity` 刻意不静音）。隔离方案：SQLite 内存库（StaticPool 保活连接）+ 桩 `get_config_service`/`holiday_service.get_db`；注意 `holiday_service` 在模块顶层 `from app.core.database import get_db`，patch 须打在 `app.services.holiday_service.get_db` 而非 `app.core.database.get_db`，否则会落到真实 MySQL。
 
 ### 周课表教学周修复（并入本期，原拟 v6.13.2）
 - **问题**（提交 `22c2a7d`）：`generate_weekly_course` 每周一 00:00 直接 `run_spider` + `_send_weekly_image` 发图，绕过 `rule_service` 推送规则引擎，且无「无课」判断，导致暑假仍发整周课表长图。
@@ -35,6 +37,10 @@
 
 ### 调整（并入本期，未单独升版）
 - **停用进程记录自动清理（保留历史）**：`app/tasks/scheduler.py` 中每日 02:00 的 `clean_old_processes` 定时任务不再注册。用户 2026-07-20 决定保留历史进程记录、不做自动清理；`clean_old_processes` 函数体保留（此前 `datetime` 导入 bug 已修正，仅不再被定时触发），必要时可手动调用。
+- **课程爬虫联动假期/教学周（自动停爬）**：此前每日课表爬虫 `run_spider`（7:00/13:00 各一次）只被假期模式总开关拦截，默认（总开关关）会在暑假照常爬取学校教务系统、空耗资源。`run_spider` 在假期闸口之后新增 `_is_in_teaching_week()` 判断——**不在任何教学周（暑假/寒假/任意假期）即跳过爬取**，与周课表推送同源逻辑，无需手动开假期模式即可自动停爬；异常时 fail-open 回退「继续爬」。同时把 `generate_weekly_course` 的 teaching-week 判断提前到 `run_spider()` 调用之前，避免假期里爬到空数据后被误判为「爬虫执行失败」发告警。新增 `tests/test_course_spider_skip.py`（4 用例）覆盖：不在教学周跳过、假期模式开启跳过、在教学周且未放假则真正爬取、周课表路径不在教学周时不调 run_spider。
+- **课程推送联动假期/教学周（自动停推）**：`check_push_rules`（每日课表推送规则引擎，含 daily_schedule / weekly_schedule / daily_no_class 等）此前同样只被假期模式总开关拦截，默认（总开关关）暑假仍照常跑规则、推送「无课」类消息。在假期闸口之后新增 `_is_in_teaching_week()` 判断——**不在教学周即跳过规则检查、不创建推送任务**，与课程爬虫同源同规则（是假期/不在教学周就跳过）。异常 fail-open 回退「继续检查」。新增 `tests/test_course_push_skip.py`（3 用例）覆盖：不在教学周跳过、假期模式开启跳过、在教学周且未放假则正常调用规则引擎。至此课程「爬 + 推」在假期均自动停，无需手动开假期模式。
+- **前端「已静音」状态可见 + 假期生效横幅**：`src/constants/statusMaps.ts` 的 `PROCESS_STATUS_MAP` 与 `TASK_STATUS_MAP` 补充 `skipped` 映射（`{ color:'default', icon:StopOutlined, text:'已静音' }`），修复此前假期静默的 skipped 进程记录在前端无文案/颜色（显示为空白或未知状态）的问题。`src/pages/Processes.tsx` 与 `src/pages/Dashboard.tsx` 顶部接入 `holidayApi.getStatus()`，假期模式生效时渲染 Alert 横幅「假期模式生效中（<假期名>）·推送已静音」，让静默不再只能从日志看出。
+- **高频静默每日汇总记录（历史可见且不刷屏）**：天气 `update_weather_now`/`update_weather_hourly`/`update_weather_alert` 等高频 job 走 `skip_if_active(record=False)`，此前假期里完全不建进程记录、前端无痕。现改为按「天 + task_type」聚合为 1 条 `skipped` 汇总进程记录（名称「假期高频静默汇总」，message 含累计次数，如「假期模式静默（2026年暑假）·天气高频任务已静音 3 次」），跨天自动新建；既保留历史可见性，又避免每 10/30/60 分钟刷一条记录撑爆进程表。对应 `app/core/task_state.py` 新增 `TaskStatus.SKIPPED='skipped'` 并纳入 `TERMINAL_STATUSES`；`holiday_service.skip_if_active` 新增 `_record_daily_summary()` 聚合逻辑。新增单测 4 例（`test_holiday_mute.py` 的 `TestHolidayDailySummary`）：同日同类型累加、不同类型各自独立、record=True 不写汇总、跨天新建，单测总数 31→35。
 
 ### 课程管理假期视图（联动假期模式）
 - **问题**：课程管理页表头日期由前端写死学期开学日（3/2）推算；后端 `get_current_week_number()` 在暑假（7/19 之后）写死返回最后一周=20，导致页面冻结在最后教学周（7/13–7/19），表头显示 13 号而非今天，且无假期提示。

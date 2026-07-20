@@ -211,6 +211,10 @@ def _maybe_push(content: str) -> bool:
 
 def update_weather_now() -> None:
     """每 30 分钟更新实时天气（更新缓存 + 保存数据库）。"""
+    # 假期模式：静默期间不刷新天气缓存（提前返回，避免刷屏进程表）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.skip_if_active('更新实时天气', 'weather', record=False):
+        return
     from app.api.process_routes import create_task_process, complete_task_process
     pid = create_task_process('更新实时天气', 'weather', total_items=1)
     logger.info('[天气] 开始更新实时天气')
@@ -239,6 +243,10 @@ update_now_weather = update_weather_now
 
 def update_weather_hourly() -> None:
     """每 60 分钟更新逐小时天气预报（更新缓存 + 保存数据库）。"""
+    # 假期模式：静默期间不刷新天气缓存（提前返回，避免刷屏进程表）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.skip_if_active('更新逐小时预报', 'weather', record=False):
+        return
     from app.api.process_routes import create_task_process, complete_task_process
     pid = create_task_process('更新逐小时预报', 'weather', total_items=1)
     logger.info('[天气] 开始更新逐小时预报')
@@ -270,6 +278,10 @@ _alert_update_lock = threading.Lock()
 
 def update_weather_alert() -> None:
     """每 10 分钟更新天气预警（有新预警时触发推送）。"""
+    # 假期模式：静默期间不更新天气预警缓存（提前返回，避免刷屏进程表）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.skip_if_active('更新天气预警', 'weather', record=False):
+        return
     # 防止并发执行：如果上一次还在跑，直接跳过
     if not _alert_update_lock.acquire(blocking=False):
         logger.warning('[天气] 天气预警更新任务已在执行中，跳过本次调用')
@@ -479,6 +491,10 @@ def _check_and_push_new_alerts(alerts: list, cache) -> None:
 
 def push_weather_daily() -> None:
     """每日晨报推送任务。"""
+    # 假期模式：静默全体面向用户的天气推送（入口建 skipped 记录后跳过）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.skip_if_active('每日天气晨报', 'weather'):
+        return
     # 夜间静默检查
     if _is_in_quiet_hours():
         logger.info('[天气] 每日晨报跳过：当前处于夜间免打扰时段')
@@ -542,6 +558,10 @@ send_daily_report = push_weather_daily
 
 def push_weather_analysis() -> None:
     """分析+条件推送任务。"""
+    # 假期模式：静默全体面向用户的天气推送（入口建 skipped 记录后跳过）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.skip_if_active('天气分析推送', 'weather'):
+        return
     # 夜间静默检查：静默时段内不推送分析消息（数据更新照常进行）
     if _is_in_quiet_hours():
         logger.info('[天气] 分析推送跳过：当前处于夜间免打扰时段')

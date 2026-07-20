@@ -11,17 +11,30 @@
 安全原则（fail-open）：任何异常都回退为「不静音」，避免配置读取异常导致永久失声。
 """
 
-from datetime import date
+from datetime import date, datetime
+import os
 from typing import Optional, Tuple
 
 from app.core.logger import get_logger
 from app.core.database import get_db
+from app.core.task_state import TaskStatus
 from app.model.holiday_period import HolidayPeriod
 from app.model.module_config import ModuleConfig
 
 logger = get_logger(__name__)
 
 _HOLIDAY_TYPE_VALUES = ('winter', 'summer', 'custom')
+
+# 高频静默按天汇总的进程名称（与 skip_if_active record=False 分支配套）
+_HOLIDAY_SUMMARY_NAME = '假期高频静默汇总'
+# task_type -> 前端友好标签（用于汇总记录的文案）
+_TASK_TYPE_LABELS = {
+    'weather': '天气',
+    'electricity': '电量',
+    'course': '课表',
+    'spider': '课表爬虫',
+    'system': '系统',
+}
 
 
 class HolidayService:
@@ -57,6 +70,86 @@ class HolidayService:
         except Exception as e:
             logger.warning(f'[假期模式] 状态判断异常，回退为不静音: {e}')
             return False, None
+
+    def skip_if_active(self, name: str, task_type: str = 'generic', record: bool = True) -> bool:
+        """假期模式静默时，建 skipped 进程记录并跳过；否则返回 False（不跳过）。
+
+        供各定时 job 入口调用：
+            if holiday_service.skip_if_active('每日天气晨报', 'weather'):
+                return
+        - record=True（默认）：创建单条 skipped 进程记录，进程管理可见
+          （适合低频面向用户的推送，如每日/每周/每月报告）。
+        - record=False：仅静默早退，不打独立记录，而是按天聚合进一条
+          「假期高频静默汇总」记录（适合高频缓存刷新类 job，避免刷屏进程表，
+          同时保留历史可见性）。
+        fail-open：任何异常仍按静音处理（返回 True），避免误发。
+        """
+        try:
+            active, period = self.is_active()
+            if not active:
+                return False
+            reason = f'假期模式静默（{period.name}）' if period else '假期模式静默'
+            if record:
+                try:
+                    from app.api.process_routes import create_task_process, complete_task_process
+                    pid = create_task_process(name, task_type, total_items=1)
+                    complete_task_process(pid, TaskStatus.SKIPPED, reason)
+                except Exception as e:
+                    logger.warning(f'[假期模式] 跳过进程记录创建失败（仍静音）: {e}')
+            else:
+                # 高频 job：按天合并为一条汇总记录，历史可见且不刷屏
+                try:
+                    self._record_daily_summary(task_type, reason)
+                except Exception as e:
+                    logger.warning(f'[假期模式] 高频静默汇总记录失败（仍静音）: {e}')
+            logger.info(f'[假期模式] {name} 静默跳过')
+            return True
+        except Exception as e:
+            logger.warning(f'[假期模式] 状态判断异常，回退为静音: {e}')
+            return True
+
+    def _record_daily_summary(self, task_type: str, reason: str):
+        """假期高频静默按天汇总成 1 条 skipped 记录。
+
+        同一天、同一 task_type 的多次高频静默合并为一条记录，累计次数体现在
+        total_items 与 message 中；跨天自动新建一条。跨 worker 安全：
+        每次先按「今天 + task_type」查重，已存在则累加，不存在则新建。
+        """
+        from sqlalchemy import func
+        from app.model.task_process import TaskProcess
+
+        label = _TASK_TYPE_LABELS.get(task_type, task_type)
+        today = date.today()
+        session = get_db()
+        try:
+            existing = session.query(TaskProcess).filter(
+                TaskProcess.name == _HOLIDAY_SUMMARY_NAME,
+                TaskProcess.task_type == task_type,
+                func.date(TaskProcess.started_at) == today.isoformat(),
+            ).first()
+            if existing:
+                existing.total_items += 1
+                existing.processed_items = existing.total_items
+                existing.message = f'{reason}·{label}高频任务已静音 {existing.total_items} 次'
+                existing.completed_at = datetime.now()
+                session.commit()
+                return
+            process = TaskProcess(
+                name=_HOLIDAY_SUMMARY_NAME,
+                task_type=task_type,
+                status=TaskStatus.SKIPPED,
+                pid=os.getpid(),
+                progress=100,
+                total_items=1,
+                processed_items=1,
+                message=f'{reason}·{label}高频任务已静音 1 次',
+                created_by='system',
+            )
+            process.completed_at = datetime.now()
+            session.add(process)
+            session.commit()
+        finally:
+            session.close()
 
     def get_status(self) -> dict:
         """返回当前假期模式状态，供前端横幅展示。"""

@@ -17,10 +17,11 @@ import {
   CheckCircleOutlined, CloseCircleOutlined, CloudOutlined, ThunderboltOutlined, 
   ScheduleOutlined, ReloadOutlined, PlayCircleOutlined, ClockCircleOutlined, 
   ToolOutlined, SendOutlined, DatabaseOutlined, SyncOutlined, WarningOutlined,
-  DisconnectOutlined,
+  DisconnectOutlined, StopOutlined,
   PieChartOutlined, LineChartOutlined,
 } from '@ant-design/icons';
 import { adminApi, type DashboardData } from '@/api/admin';
+import { holidayApi, type HolidayStatus } from '@/api/holiday';
 import dayjs from 'dayjs';
 import { formatDate, formatTimeShort } from '@/utils/datetime';
 import ReactECharts from 'echarts-for-react';
@@ -57,6 +58,7 @@ export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [timeLabel, setTimeLabel] = useState<string>('');
   const { isOffline } = useServerStatus();
+  const [holidayStatus, setHolidayStatus] = useState<HolidayStatus | null>(null);
 
   // 时间筛选
   const [timeRange, setTimeRange] = useState('this_month');
@@ -89,6 +91,12 @@ export default function Dashboard() {
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
+  // 假期模式生效状态（用于顶部静音横幅）
+  useEffect(() => {
+    holidayApi.getStatus()
+      .then((res) => { if (res.status === 'success' && res.data) setHolidayStatus(res.data); })
+      .catch(() => {});
+  }, []);
   // 每 30s 周期自动刷新（统一轮询 Hook）；immediate=false 避免与上面挂载时双拉
   useIntervalPolling(fetchDashboard, POLL_SLOW, true, false);
 
@@ -205,6 +213,16 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard-container">
+      {holidayStatus?.active && (
+        <Alert
+          type="warning"
+          showIcon
+          icon={<StopOutlined />}
+          style={{ marginBottom: 16 }}
+          message={`假期模式生效中${holidayStatus.period ? `（${holidayStatus.period.name}）` : ''}·推送已静音`}
+          description="当前处于假期区间内，全体面向用户的推送已自动静音；进程历史中的「已静音」记录即由此产生。系统/安全告警不受影响。"
+        />
+      )}
       {/* 页面标题 */}
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <Title level={4} style={{ margin: 0 }}>系统概览</Title>

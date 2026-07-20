@@ -524,7 +524,14 @@ def run_spider(trigger_source='cron'):
     if holiday_service.is_active()[0]:
         logger.info('[爬虫] 假期模式静默中，跳过课表爬取')
         return False
-    
+
+    # 不在教学周内（暑假/寒假/其他假期）无需同步课表，跳过爬取。
+    # 与周课表推送同源逻辑：基于 course_weeks 真实日期范围自动判断，
+    # 无需手动开假期模式即可在假期自动停爬；异常时回退为继续爬（fail-open）。
+    if not _is_in_teaching_week():
+        logger.info('[爬虫] 当前不在教学周内（假期/暑假），跳过课表爬取')
+        return False
+
     source_label = '定时' if trigger_source == 'cron' else '手动'
     _spider_running = True
     logger.info(f"{source_label}触发爬虫执行...")
@@ -779,6 +786,14 @@ def check_push_rules():
     if holiday_service.is_active()[0]:
         logger.debug('[推送规则] 假期模式静默中，跳过本次规则检查')
         return
+
+    # 不在教学周内（暑假/寒假/假期）无课可推，跳过课程推送规则检查。
+    # 与课程爬虫同源规则：基于 course_weeks 真实日期范围自动判断，
+    # 无需手动开假期模式即可在假期自动停推；异常时回退为继续检查（fail-open）。
+    if not _is_in_teaching_week():
+        logger.debug('[推送规则] 当前不在教学周内（假期/暑假），跳过课程推送规则检查')
+        return
+
     schedules = schedule_service.get_schedules()
     
     # 从未成功加载过数据时，跳过所有推送规则（避免在系统刚部署无数据时误触发）
@@ -860,14 +875,15 @@ def generate_weekly_course():
         _run_timestamp = datetime.now().timestamp()
 
         def _run():
+            # 假期/暑假自动停发：当前不在任何教学周内即视为「这一周没课」，
+            # 跳过爬取与推送（避免爬空数据 + 被误判为爬虫失败发告警）
+            if not _is_in_teaching_week():
+                logger.info('[周课表] 当前不在教学周内（假期/暑假），跳过周课表推送')
+                return
             success = run_spider()
             if not success:
                 logger.error('[周课表] 爬虫执行失败，跳过发送课表图片')
                 _notify_weekly_failure('爬虫执行失败，未产生新数据')
-                return
-            # 假期/暑假自动停发：当前不在任何教学周内即视为「这一周没课」，跳过推送
-            if not _is_in_teaching_week():
-                logger.info('[周课表] 当前不在教学周内（假期/暑假），跳过周课表推送')
                 return
             _send_weekly_image(_run_timestamp)
         

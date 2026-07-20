@@ -23,9 +23,19 @@ class TaskStatus:
     COMPLETED_EMPTY = 'completed_empty'
     FAILED = 'failed'
     CANCELLED = 'cancelled'
+    SKIPPED = 'skipped'                      # 被假期模式静默跳过（未实际执行）
 
 
-# ============ 任务类型 ============
+# 终态集合：进入后状态不再变化
+TERMINAL_STATUSES = frozenset({
+    TaskStatus.COMPLETED,
+    TaskStatus.COMPLETED_EMPTY,
+    TaskStatus.FAILED,
+    TaskStatus.CANCELLED,
+    TaskStatus.SKIPPED,
+})
+
+
 class TaskType:
     SPIDER = 'spider'                       # 课表爬虫（单实例，内存并发锁）
     COURSE_FULL_CRAWL = 'course_full_crawl' # 全量爬取
@@ -35,15 +45,6 @@ class TaskType:
     CRAWL = 'crawl'                         # 预约爬取任务（scheduled_crawl_task）
     CUSTOM = 'custom'                       # 自定义推送
     SYSTEM = 'system'                       # 系统任务
-
-
-# 终态集合：进入后状态不再变化
-TERMINAL_STATUSES = frozenset({
-    TaskStatus.COMPLETED,
-    TaskStatus.COMPLETED_EMPTY,
-    TaskStatus.FAILED,
-    TaskStatus.CANCELLED,
-})
 
 
 def is_terminal(status: str) -> bool:

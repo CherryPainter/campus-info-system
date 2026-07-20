@@ -4,8 +4,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { Card, Button, Space, Tag, Progress, Badge, Popconfirm, Select, Tooltip, Modal, Descriptions, Statistic, Row, Col, Timeline, Alert, Divider, App, Tabs, Form, Radio, Input, DatePicker } from 'antd';
 import ResponsiveTable from '@/components/ResponsiveTable';
-import { ThunderboltOutlined, ReloadOutlined, PauseCircleOutlined, DeleteOutlined, ClockCircleOutlined, ScheduleOutlined, HistoryOutlined, EyeOutlined, ExclamationCircleOutlined, CheckCircleFilled, CloseCircleFilled, ClockCircleFilled, NotificationOutlined, BookOutlined, PlusOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { ThunderboltOutlined, ReloadOutlined, PauseCircleOutlined, DeleteOutlined, ClockCircleOutlined, ScheduleOutlined, HistoryOutlined, EyeOutlined, ExclamationCircleOutlined, CheckCircleFilled, CloseCircleFilled, ClockCircleFilled, NotificationOutlined, BookOutlined, PlusOutlined, PlayCircleOutlined, StopOutlined } from '@ant-design/icons';
 import { processApi, type TaskProcess, type ScheduledJob, type DynamicRule } from '@/api/admin';
+import { holidayApi, type HolidayStatus } from '@/api/holiday';
 import { PROCESS_STATUS_MAP, CRAWL_TASK_STATUS_MAP } from '@/constants/statusMaps';
 import { courseApi, type CrawlTask } from '@/api/course';
 import CrawlScheduler from './CrawlScheduler';
@@ -39,6 +40,7 @@ export default function Processes() {
     running: 0,
     avgDuration: 0,
   });
+  const [holidayStatus, setHolidayStatus] = useState<HolidayStatus | null>(null);
 
   // ===== 课程爬取预约任务（增删改查） =====
   const [crawlTasks, setCrawlTasks] = useState<CrawlTask[]>([]);
@@ -218,6 +220,10 @@ export default function Processes() {
     fetchScheduledJobs();
     fetchDynamicRules();
     fetchCrawlTasks();
+    // 假期模式生效状态（用于顶部静音横幅）
+    holidayApi.getStatus()
+      .then((res) => { if (res.status === 'success' && res.data) setHolidayStatus(res.data); })
+      .catch(() => {});
   }, []);
 
   // 爬取预约任务自动刷新（5秒，统一轮询 Hook；immediate=false 保持原「先等一个周期」行为）
@@ -630,6 +636,16 @@ export default function Processes() {
 
   return (
     <div>
+      {holidayStatus?.active && (
+        <Alert
+          type="warning"
+          showIcon
+          icon={<StopOutlined />}
+          style={{ marginBottom: 16 }}
+          message={`假期模式生效中${holidayStatus.period ? `（${holidayStatus.period.name}）` : ''}·推送已静音`}
+          description="当前处于假期区间内，全体面向用户的推送已自动静音；进程历史中的「已静音」记录即由此产生。系统/安全告警不受影响。"
+        />
+      )}
       <Tabs defaultActiveKey="history" items={[
         {
           key: 'history',

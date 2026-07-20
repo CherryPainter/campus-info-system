@@ -324,6 +324,10 @@ def _save_last_low_power_time(dt: datetime) -> None:
 
 def push_electricity_daily() -> None:
     """每日用电报告定时任务"""
+    # 假期模式：静默面向用户的电量推送（入口建 skipped 记录后跳过）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.skip_if_active('每日用电报告', 'electricity'):
+        return
     from app.api.process_routes import create_task_process, complete_task_process
     pid = create_task_process('每日用电报告', 'electricity', total_items=1)
     logger.info('[电量] 开始执行每日推送任务')
@@ -365,6 +369,10 @@ def push_electricity_daily() -> None:
 
 def push_electricity_weekly() -> None:
     """每周用电报告定时任务"""
+    # 假期模式：静默面向用户的电量推送（入口建 skipped 记录后跳过）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.skip_if_active('每周用电报告', 'electricity'):
+        return
     from app.api.process_routes import create_task_process, complete_task_process
     pid = create_task_process('每周用电报告', 'electricity', total_items=1)
     logger.info('[电量] 开始执行每周推送任务')
@@ -418,6 +426,10 @@ def push_electricity_weekly() -> None:
 
 def push_electricity_monthly() -> None:
     """每月用电报告定时任务"""
+    # 假期模式：静默面向用户的电量推送（入口建 skipped 记录后跳过）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.skip_if_active('每月用电报告', 'electricity'):
+        return
     from app.api.process_routes import create_task_process, complete_task_process
     pid = create_task_process('每月用电报告', 'electricity', total_items=1)
     logger.info('[电量] 开始执行每月推送任务')
@@ -488,6 +500,10 @@ def check_cookie_validity() -> None:
 
 def check_low_power() -> None:
     """低电量检测任务（独立触发，每 4 小时一次）"""
+    # 假期模式：低电量提醒属面向用户推送，假期静默（建 skipped 记录后跳过）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.skip_if_active('低电量检测', 'electricity'):
+        return
     logger.info('[电量] 开始低电量检测')
     stats_obj = _make_stats()
     remaining = stats_obj.get_remaining_power()
@@ -496,6 +512,10 @@ def check_low_power() -> None:
 
 def push_electricity_full_crawl() -> None:
     """全量爬取定时任务（每周执行一次，获取完整历史数据）"""
+    # 假期模式：静默面向用户的电量推送（入口建 skipped 记录后跳过）
+    from app.services.holiday_service import holiday_service
+    if holiday_service.skip_if_active('电量全量爬取', 'electricity'):
+        return
     from app.api.process_routes import create_task_process, complete_task_process
     pid = create_task_process('电量全量爬取', 'electricity', total_items=1)
     logger.info('[电量] 开始执行全量爬取任务')
