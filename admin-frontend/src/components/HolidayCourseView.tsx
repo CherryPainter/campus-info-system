@@ -65,7 +65,7 @@ export default function HolidayCourseView({
       </div>
 
       <div style={{ fontSize: 24, fontWeight: 600, color: "#1f1f1f", letterSpacing: 1 }}>
-        {isHolidayMode ? "假期模式" : "非教学周"}
+        {isHolidayMode ? "推送静默" : "非教学周"}
       </div>
 
       <div style={{ marginTop: 10, color: "#595959", fontSize: 15 }}>

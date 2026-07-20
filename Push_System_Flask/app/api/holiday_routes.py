@@ -3,8 +3,8 @@
 假期模式管理 API 蓝图
 
 端点（全部 @admin_required）：
-- GET   /api/holiday/status       — 当前假期模式状态（总开关 / 是否静默中 / 命中区间）
-- PUT   /api/holiday/master       — 切换总开关 { enabled: bool }
+- GET   /api/holiday/status       — 当前假期模式状态（紧急静默 / 是否静默中 / 命中区间）
+- PUT   /api/holiday/master       — 切换紧急静默开关 { enabled: bool }
 - GET   /api/holiday/periods      — 假期区间列表
 - POST  /api/holiday/periods      — 新建区间 { name, holiday_type, start_date, end_date, enabled, note }
 - PUT   /api/holiday/periods/<id> — 修改区间
@@ -33,13 +33,13 @@ def status():
 @holiday_bp.route("/master", methods=["PUT"])
 @admin_required
 def set_master():
-    """切换假期模式总开关。"""
+    """切换紧急静默开关。"""
     data = request.get_json(silent=True) or {}
     enabled = data.get("enabled")
     if not isinstance(enabled, bool):
         return api_error(message="enabled 必须为布尔值")
     holiday_service.set_master(enabled)
-    return api_success(message="总开关已更新", data={"enabled": enabled})
+    return api_success(message="紧急静默已更新", data={"enabled": enabled})
 
 
 @holiday_bp.route("/periods", methods=["GET"])

@@ -2,10 +2,10 @@
 假期模式静音逻辑单元测试（v6.14.0）
 
 覆盖假期模式「静音闸口」的底层决策逻辑，免去逐个手动验证：
-1) HolidayService.is_active() 决策单元
-   - 总开关关闭 → (False, None)
-   - 开关开 + 今天命中 enabled 区间 → (True, period)
-   - 开关开但无命中 / 命中区间被禁用 → (False, None)
+1) HolidayService.is_active() 决策单元（静默由两个独立来源触发）
+   - 总开关开启 → (True, period)（强制静默，不论有无假期条目；无命中条目 period=None）
+   - 总开关关闭 + 今天命中 enabled 区间 → (True, period)（条目自身开关按日期自动静默）
+   - 总开关关闭 + 无命中 / 命中区间被禁用 → (False, None)
    - 配置读取异常 → fail-open 回退 (False, None)（不静音、避免永久失声）
 2) HolidayService.skip_if_active() 统一跳过助手
    - 不活跃 → 返回 False，不建记录
@@ -135,14 +135,31 @@ def _process_routes():
 # 1) is_active 决策单元
 # ----------------------------------------------------------------------
 class TestHolidayServiceIsActive:
-    def test_master_off_blocks_even_with_matching_period(self, holiday):
+    def test_master_off_but_matching_entry_still_silent(self, holiday):
+        """总开关关 + 命中启用假期条目 → 条目自身开关按日期自动静默（active=True）。"""
         holiday._set_config(False)
-        holiday._add_period()
+        p = holiday._add_period()
         active, period = holiday.is_active()
+        assert active is True
+        assert period is not None
+        assert period.id == p.id
+
+    def test_entry_switch_off_means_no_silence(self, holiday):
+        """总开关关 + 命中但条目自身 enabled=False → 不静默（条目开关是静默前提）。"""
+        holiday._set_config(False)
+        holiday._add_period(enabled=False)
+        active, _ = holiday.is_active()
         assert active is False
+
+    def test_master_on_forces_silence_without_holiday(self, holiday):
+        """总开关开 + 无任何假期条目 → 强制静默（active=True, period=None）。"""
+        holiday._set_config(True)
+        active, period = holiday.is_active()
+        assert active is True
         assert period is None
 
-    def test_enabled_and_matching_period_returns_active(self, holiday):
+    def test_master_on_and_matching_entry(self, holiday):
+        """总开关开 + 命中启用条目 → 静默且带条目信息。"""
         holiday._set_config(True)
         p = holiday._add_period()
         active, period = holiday.is_active()
@@ -151,17 +168,10 @@ class TestHolidayServiceIsActive:
         assert period.id == p.id
         assert period.name == "2026年暑假"
 
-    def test_enabled_but_no_matching_period(self, holiday):
-        holiday._set_config(True)
-        # 区间在未来，今天不命中
-        holiday._add_period(start_offset=10, end_offset=20)
-        active, period = holiday.is_active()
-        assert active is False
-        assert period is None
-
-    def test_enabled_but_period_disabled(self, holiday):
-        holiday._set_config(True)
-        holiday._add_period(enabled=False)
+    def test_master_off_no_matching_no_silence(self, holiday):
+        """总开关关 + 今天不命中任何区间 → 不静默。"""
+        holiday._set_config(False)
+        holiday._add_period(start_offset=10, end_offset=20)  # 未来区间，今天不命中
         active, period = holiday.is_active()
         assert active is False
         assert period is None
@@ -174,7 +184,7 @@ class TestHolidayServiceIsActive:
             raise RuntimeError("config db down")
 
         monkeypatch.setattr(cfg_mod, "get_config_service", boom)
-        holiday._add_period()  # 即便有命中区间，异常也应被捕获
+        holiday._add_period()  # 即便有命中区间，异常也应被捕获并 fail-open
         active, period = holiday.is_active()
         assert active is False
         assert period is None
@@ -480,3 +490,54 @@ def _contains_skip_if_active(node):
             if isinstance(f, ast.Name) and f.id == "skip_if_active":
                 return True
     return False
+
+
+# ----------------------------------------------------------------------
+# 4) get_status 卡片展示与静默来源解耦（v6.15.1）
+# ----------------------------------------------------------------------
+# 静默(active) 与 卡片显示(period) 解耦：
+#  - 卡片显示(period)：只由「假期条目自身 enabled 开关 + 当前日期命中区间」决定，
+#    与总开关无关——条目开关开了就显示卡片，即便总开关关闭。
+#  - 静默(active)：两个独立来源任一为真即静默：
+#      1) 总开关(holiday_mode_enabled)开启 → 手动全局强制静默，不论有无假期；
+#      2) 命中启用假期条目 → 条目自身开关按日期自动开启/结束静默。
+# 即 get_status().period 必须忽略总开关；get_status().active 由「总开关 或 条目命中」决定。
+class TestHolidayServiceGetStatusDecoupled:
+    def test_card_period_ignores_master_switch_off(self, holiday):
+        """总开关关，但启用假期条目命中今天 → period 仍返回（卡片显示），
+        active=True（条目自身开关按日期自动静默）。"""
+        holiday._set_config(False)
+        p = holiday._add_period(name="2026年暑假")
+        status = holiday.get_status()
+        assert status["enabled"] is False
+        assert status["active"] is True, "条目自身开关应能在总开关关闭时按日期自动静默"
+        assert status["period"] is not None, "总开关关不应隐藏假期卡片"
+        assert status["period"]["id"] == p.id
+
+    def test_card_period_absent_when_no_matching(self, holiday):
+        """总开关开，但今天不命中任何区间 → period 为 None（无卡片），
+        active=True（总开关强制静默，不论有无假期）。"""
+        holiday._set_config(True)
+        holiday._add_period(start_offset=10, end_offset=20)  # 未来区间，今天不命中
+        status = holiday.get_status()
+        assert status["active"] is True, "总开关开应强制静默，即便无命中条目"
+        assert status["period"] is None
+
+    def test_card_period_absent_when_period_disabled(self, holiday):
+        """总开关开，但命中的假期条目自身 enabled=False → period 为 None（无卡片）。
+        active=True（总开关强制静默，与条目开关无关）。"""
+        holiday._set_config(True)
+        holiday._add_period(enabled=False)
+        status = holiday.get_status()
+        assert status["active"] is True, "总开关开应强制静默"
+        assert status["period"] is None
+
+    def test_card_period_present_when_master_on(self, holiday):
+        """总开关开 + 命中启用条目 → period 返回且 active=True（卡片显示 + 静默）。"""
+        holiday._set_config(True)
+        p = holiday._add_period(name="2026年寒假")
+        status = holiday.get_status()
+        assert status["enabled"] is True
+        assert status["active"] is True
+        assert status["period"] is not None
+        assert status["period"]["id"] == p.id

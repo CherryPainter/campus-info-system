@@ -2,10 +2,10 @@
 """假期模式服务
 
 提供「寒暑假假期模式」的核心判断与区间管理：
-- is_active()：总开关开启 且 今天命中某 enabled 区间 → (True, period)，否则 (False, None)
+- is_active()：紧急静默开启即永久静默（不论有无假期）；命中启用假期区间也按日期自动静默
 - get_status()：供前端横幅展示当前状态
 - list/create/update/delete/set_enabled：假期区间 CRUD
-- set_master(enabled)：切换总开关（写入 module_configs）
+- set_master(enabled)：切换紧急静默开关（写入 module_configs）
 
 安全原则（fail-open）：任何异常都回退为「不静音」，避免配置读取异常导致永久失声。
 """
@@ -41,24 +41,18 @@ class HolidayService:
     # ------------------------------------------------------------------
     # 核心判断
     # ------------------------------------------------------------------
-    def is_active(self) -> tuple[bool, HolidayPeriod | None]:
-        """当前是否处于假期静默中。
+    def _hit_enabled_period(self) -> "HolidayPeriod | None":
+        """今天是否命中某条「启用」的假期区间（忽略系统级紧急静默开关）。
 
-        Returns:
-            (True, period) —— 总开关开启且今天命中某启用区间，应当静默
-            (False, None)  —— 不静默（开关关 / 无命中 / 异常）
+        用于卡片 / 横幅展示：只要条目 ``enabled`` 且今天落在区间内即命中，
+        与 ``system.holiday_mode_enabled`` 紧急静默开关无关——假期条目自身
+        开关开启了就应当显示卡片，即便紧急静默开关是关闭的。
         """
         try:
-            from app.services.config_service import get_config_service
-
-            enabled = get_config_service().get("system", "holiday_mode_enabled", False)
-            if not enabled:
-                return False, None
-
             today = date.today()
             session = get_db()
             try:
-                period = (
+                return (
                     session.query(HolidayPeriod)
                     .filter(
                         HolidayPeriod.enabled.is_(True),
@@ -67,9 +61,48 @@ class HolidayService:
                     )
                     .first()
                 )
-                return (period is not None, period)
             finally:
                 session.close()
+        except Exception as e:
+            logger.warning(f"[假期模式] 命中区间查询异常: {e}")
+            return None
+
+    def is_active(self) -> tuple[bool, HolidayPeriod | None]:
+        """当前是否处于假期静默中。
+
+        静默由两个**独立**来源触发，任一为真即静默（二者皆只控制推送 / 爬取
+        是否跳过，与卡片展示解耦——卡片见 ``_hit_enabled_period``）：
+
+        1. 系统级紧急静默开关（``system.holiday_mode_enabled``）开启：手动全局
+           强制静默，**不依赖任何假期条目**（即使没配假期也要静默）。
+        2. 命中某条「启用」的假期区间：假期条目自身的开关按日期自动开启 / 结束
+           静默——今天落在区间内即静默，离开区间自动恢复（与紧急静默开关无关）。
+
+        Returns:
+            (True, period)  —— 处于静默；period 为命中的假期条目（无条目时为 None）
+            (False, None)   —— 不静默（紧急静默关 且 无命中条目 / 配置或 DB 异常）
+        """
+        try:
+            from app.services.config_service import get_config_service
+
+            master_on = bool(get_config_service().get("system", "holiday_mode_enabled", False))
+        except Exception:
+            # 配置读取异常：fail-open 回退为不静音（避免误静音 / 永久失声），
+            # 且不再继续走条目命中分支。
+            return False, None
+
+        # 来源 1：紧急静默手动全局强制静默（不依赖假期条目）
+        if master_on:
+            try:
+                period = self._hit_enabled_period()
+            except Exception:
+                period = None
+            return True, period
+
+        # 来源 2：假期条目自身开关按日期自动静默
+        try:
+            period = self._hit_enabled_period()
+            return (period is not None, period)
         except Exception as e:
             logger.warning(f"[假期模式] 状态判断异常，回退为不静音: {e}")
             return False, None
@@ -164,18 +197,27 @@ class HolidayService:
             session.close()
 
     def get_status(self) -> dict:
-        """返回当前假期模式状态，供前端横幅展示。"""
-        active, period = self.is_active()
+        """返回当前假期模式状态，供前端横幅 / 卡片展示。
+
+        - ``enabled``：系统级紧急静默开关（``system.holiday_mode_enabled``）。
+        - ``active``：是否处于静默中（紧急静默开【强制静默，不论有无假期】 或
+          命中启用假期【条目自身开关按日期自动静默】）。
+        - ``period``：当前命中的启用假期条目（**忽略紧急静默开关**，供卡片 / 横幅
+          展示——假期条目自身开关开了就显示，与紧急静默开关无关）。
+        - ``now``：今天（ISO 日期）。
+        """
         try:
             from app.services.config_service import get_config_service
 
             enabled = bool(get_config_service().get("system", "holiday_mode_enabled", False))
         except Exception:
             enabled = False
+        active, _ = self.is_active()
+        card_period = self._hit_enabled_period()
         return {
             "enabled": enabled,
             "active": active,
-            "period": period.to_dict() if period else None,
+            "period": card_period.to_dict() if card_period else None,
             "now": date.today().isoformat(),
         }
 
@@ -260,10 +302,10 @@ class HolidayService:
         return self.update_period(period_id, {"enabled": enabled})
 
     # ------------------------------------------------------------------
-    # 总开关
+    # 紧急静默
     # ------------------------------------------------------------------
     def set_master(self, enabled: bool) -> bool:
-        """切换假期模式总开关，写入 module_configs。"""
+        """切换紧急静默开关，写入 module_configs。"""
         session = get_db()
         try:
             cfg = (
@@ -279,12 +321,12 @@ class HolidayService:
                     module="system",
                     key="holiday_mode_enabled",
                     value_type="boolean",
-                    description="假期模式总开关",
+                    description="推送静默·紧急静默开关",
                 )
                 session.add(cfg)
             cfg.value = "true" if enabled else "false"
             session.commit()
-            logger.info(f"[假期模式] 总开关已切换为: {enabled}")
+            logger.info(f"[假期模式] 紧急静默已切换为: {enabled}")
             return True
         finally:
             session.close()

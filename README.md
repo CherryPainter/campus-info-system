@@ -1,13 +1,13 @@
 # 校园信息聚合与智能推送系统
 
-[![version](https://img.shields.io/badge/version-v6.15.0-blue)](https://github.com/CherryPainter/campus-info-system)
+[![version](https://img.shields.io/badge/version-v6.15.1-blue)](https://github.com/CherryPainter/campus-info-system)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![deploy](https://img.shields.io/badge/deploy-生产环境-success)](https://github.com/CherryPainter/campus-info-system)
 [![stack](https://img.shields.io/badge/stack-Flask%20%7C%20React%20%7C%20MySQL-blue)](https://github.com/CherryPainter/campus-info-system)
 
 > 一套「采集 → 聚合 → 主动推送」的校园信息中台：自动获取课表、天气、宿舍电量，并通过企业微信机器人主动推送到群，配套 React 管理后台统一展示与配置。
 >
-> 毕业设计项目 · 当前版本 `v6.15.0` · 已部署上线
+> 毕业设计项目 · 当前版本 `v6.15.1` · 已部署上线
 
 ---
 

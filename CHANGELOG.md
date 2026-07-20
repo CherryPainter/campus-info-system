@@ -4,6 +4,39 @@
 
 ---
 
+## v6.15.1 (2026-07-20)
+
+> 发版类型：**功能修正（patch）**。假期静默语义重构与前端命名统一：将「假期模式」拆分为「紧急静默（永久/手动）」与「假期条目短期静默（按日期自动）」两个独立来源；假期卡片展示与静默开关解耦；学期下拉/全量爬取补全所有学期；前端侧边栏与页面文案统一为「推送静默」，系统级开关更名为「紧急静默」；假期条目开关增加 hover 描述。
+
+### 假期静默语义重构（紧急静默 + 假期条目短期静默）
+- 原「假期模式总开关」语义歧义（开关关则假期区间完全不生效），重构为两个独立静默来源，任一为真即静默：
+  - **紧急静默**（系统级 `system.holiday_mode_enabled`）：开启即全体面向用户推送永久静默，不依赖任何假期区间，直到手动关闭（用于紧急情况或长期静默）。
+  - **假期条目短期静默**：某条假期条目自身 `enabled` 且今天落在其区间内时，按日期自动静默、离开区间自动恢复（短期）。
+- `holiday_service.is_active()` 改为「来源1 或 来源2」决策；配置读取异常仍 fail-open 回退不静默。
+- 安全告警（系统/IP 安全事件）与电量运维状态告警仍不受静默影响（不变）。
+
+### 假期卡片展示与静默开关解耦
+- 课程页假期卡片「是否显示」只由「假期条目自身 enabled + 当前日期命中区间」决定，与紧急静默开关无关——只要条目开关开了、日期在区间内、且看当前学期，即显示假期卡片；紧急静默开关仅控制推送/爬取是否静默。
+- 后端 `holiday_service.get_status()` 的 `period`（卡片/横幅用）忽略总开关；`active`（各页面静默禁用按钮用）仍为「紧急静默开关开 + 命中」语义。
+- 新增回归锁定测试 `TestHolidayServiceGetStatusDecoupled` 与 `is_active` 新语义测试（共 4 例），防止被未来重构改回。
+
+### 学期选项补全（教学周 / 全量爬取）
+- 新增 `course_repository.candidate_semester_pairs(years_back=3)`：基于当前日期生成候选学期（eams_id = DB id 末三位）。
+- `course_routes.get_semesters` 改为「course_meta 精确 eams_id 优先 + 候选学期补全」，不再只取最近 6 个；`crawl_task_service._all_semester_pairs()` union course_meta + 候选学期，全量爬取覆盖所有学期（修复此前只剩 `25-26-2` 一个选项的问题）。
+
+### 前端命名统一 + 假期条目 hover 描述
+- 侧边栏菜单「假期模式」→「推送静默」（与页面标题同源）。
+- 系统级开关「总开关」→「紧急静默」；页面所有用户可见「假期模式」文案统一为「推送静默」（横幅、tooltip、加载/开关反馈、帮助文），后端配置描述与注释同步刷新。
+- 假期区间表格中每条假期的启用开关增加 Tooltip 描述（短期静默语义）。
+- 接口契约保留：`set_master` / `/api/holiday/master` / 前端 `setMaster` 不变。
+
+### 验证
+- 后端 pytest **118 passed** 零回归；ruff 全过。
+- 前端 `npm run build` 通过（tsc 无类型错误）。
+- 生产机升级：整目录覆盖 + `systemctl restart push-system.service`（顺带 `DROP TABLE IF EXISTS course_weeks;`）；`.env` 的 `APP_VERSION` 须手动改为 6.15.1（不入库）。
+
+---
+
 ## v6.15.0 (2026-07-20)
 
 > 发版类型：**架构整理 + 功能修正（minor）**。后端启动/初始化与任务调度职责拆分收口（新增 schema 包、bootstrap、process_service、executors、scheduler_state、parser_utils、course_helpers、teaching_week_service、notification_service）；剔除 `course_weeks` 表，教学周改为基于开学日推算（修正第21周 / 周次下拉默认选中）；全仓库 ruff-format + prettier 格式化，补齐 CI / 格式化 / 测试脚手架。

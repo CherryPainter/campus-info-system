@@ -449,7 +449,7 @@ export default function Tasks() {
             loading={visualRunning}
             disabled={visualRunning || isHolidayDisabled}
             style={isHolidayDisabled ? { cursor: "not-allowed", opacity: 0.5 } : undefined}
-            title={isHolidayDisabled ? "假期模式已启用，该任务已被静默" : undefined}
+            title={isHolidayDisabled ? "推送静默已启用，该任务已被静默" : undefined}
           >
             {visualRunning ? "运行中..." : "立即执行"}
           </Button>
@@ -506,7 +506,7 @@ export default function Tasks() {
           size="small"
           disabled={visualRunning || isHolidayDisabled}
           style={isHolidayDisabled ? { cursor: "not-allowed", opacity: 0.5 } : undefined}
-          title={isHolidayDisabled ? "假期模式已启用，该任务已被静默" : undefined}
+          title={isHolidayDisabled ? "推送静默已启用，该任务已被静默" : undefined}
           className="task-action-btn"
         >
           {visualRunning ? "运行中..." : "立即执行"}

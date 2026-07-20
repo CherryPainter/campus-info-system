@@ -84,6 +84,28 @@ def semester_info_from_id(semester_id: int) -> dict[str, Any]:
     }
 
 
+def candidate_semester_pairs(years_back: int = 3, years_forward: int = 0) -> list[tuple[str, int]]:
+    """生成候选学期 (eams_id, db_semester_id) 列表，供学期下拉与全量爬取使用。
+
+    不再依赖 course_meta.json 的快照（可能只含当前学期，导致下拉/全量爬取
+    选项缺失）。基于当前日期推导的当前学年，向前 years_back 年、向后
+    years_forward 年，覆盖每学期（term=1 秋 / term=2 春），按 db_id 降序
+    （新→旧）返回。
+
+    eams_id 按 DB id 末三位推算（与 crawl_task_service._resolve_eams_id 的
+    兜底规则一致）：20252 -> '252'。教务系统学期下拉通常即为此编号。
+    """
+    cur = derive_current_semester()["semester_id"]
+    start_year = cur // 10
+    pairs: list[tuple[str, int]] = []
+    for y in range(start_year - years_back, start_year + years_forward + 1):
+        for term in (1, 2):
+            db_id = y * 10 + term
+            pairs.append((str(db_id)[-3:], db_id))
+    pairs.sort(key=lambda p: p[1], reverse=True)
+    return pairs
+
+
 def generate_course_code(data: dict[str, Any]) -> str:
     """
     在没有真实课程代码时，生成稳定的兜底课程代码。

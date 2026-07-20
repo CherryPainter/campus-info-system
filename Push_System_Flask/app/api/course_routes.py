@@ -835,85 +835,92 @@ def get_semesters():
     """
     获取可选学期列表
 
-    从爬虫保存的 course_meta.json 中读取学期列表
-    如果文件不存在或读取失败，返回空列表
+    学期下拉不再依赖 course_meta.json 的快照（可能只含当前学期，导致
+    全量爬取/指定学期下拉选项缺失）。改为基于当前日期生成候选学期范围
+    （当前学年往前 years_back 年、往后 years_forward 年，每学期），保证
+    用户始终能选择任意学期进行爬取。eams_id 按 DB id 末三位推算，与
+    _resolve_eams_id 兜底规则一致。
     """
     try:
-        import json
-        import os
+        # course_meta.json 仍作为「真实周次」与「精确 eams_id」的增强来源
+        weeks = list(range(1, 21))
+        meta_eams = {}
+        try:
+            import json
+            import os
 
-        # 读取 course_meta.json
-        meta_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "..",
-            "cqie-course-timetable",
-            "output",
-            "course-data",
-            "raw",
-            "course_meta.json",
-        )
-
-        if not os.path.exists(meta_path):
-            # course_meta.json 缺失（首次部署/爬虫未成功）：用日期推导当前学期兜底，
-            # 保证前端学期下拉至少有"本学期"可选，不至于完全空白。
-            inferred = derive_current_semester()
-            db_id = inferred["semester_id"]
-            return api_success(
-                data={
-                    "semesters": [
-                        {
-                            "id": db_id,
-                            "eams_id": str(db_id)[-3:],
-                            "name": inferred["semester_name"],
-                            "is_current": True,
-                        }
-                    ],
-                    "current_semester_id": db_id,
-                    "current_semester_name": inferred["semester_name"],
-                    "weeks": list(range(1, 21)),
-                    "message": "学期信息由系统按当前日期推断（爬虫尚未成功运行，course_meta.json 缺失）",
-                },
-                http_status=200,
+            meta_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "..",
+                "cqie-course-timetable",
+                "output",
+                "course-data",
+                "raw",
+                "course_meta.json",
             )
+            if os.path.exists(meta_path):
+                with open(meta_path, encoding="utf-8") as f:
+                    _meta = json.load(f)
+                if _meta.get("weeks"):
+                    weeks = _meta["weeks"]
+                for s in _meta.get("semesters", []):
+                    _db = _semester_name_to_id(s.get("name", ""))
+                    if _db:
+                        meta_eams[_db] = str(s.get("id"))
+        except Exception:
+            pass
 
-        with open(meta_path, encoding="utf-8") as f:
-            meta = json.load(f)
+        # 当前学期（权威）
+        inferred = derive_current_semester()
+        cur_db_id = inferred["semester_id"]
 
-        # 只保留最近6个学期
-        all_semesters = meta.get("semesters", [])
-        semesters_raw = all_semesters[:6] if len(all_semesters) > 6 else all_semesters
+        # 候选学期（保证下拉有完整选项）
+        from app.repository.course_repository import candidate_semester_pairs
 
-        # 转换为前端需要的结构：id 使用 DB 格式（YYYYT），并附带 eams_id 供爬虫使用
-        current_semester_id = meta.get("current_semester_id")
-        current_semester_name = meta.get("current_semester_name")
-        weeks = meta.get("weeks", [])
+        pairs = candidate_semester_pairs(years_back=3, years_forward=0)
 
         semesters = []
-        for s in semesters_raw:
-            s_name = s.get("name", "")
-            s_eams_id = s.get("id")
-            s_db_id = _semester_name_to_id(s_name)
+        for eams_id, db_id in pairs:
+            # 优先用 course_meta 中记录的精确 eams_id，否则按末三位推算
+            _eid = meta_eams.get(db_id, eams_id)
             semesters.append(
                 {
-                    "id": s_db_id,
-                    "eams_id": s_eams_id,
-                    "name": s_name,
-                    "is_current": str(s_eams_id) == str(current_semester_id),
+                    "id": db_id,
+                    "eams_id": _eid,
+                    "name": semester_info_from_id(db_id)["semester_name"],
+                    "is_current": db_id == cur_db_id,
                 }
             )
 
         return api_success(
             data={
                 "semesters": semesters,
-                "current_semester_id": _semester_name_to_id(current_semester_name),
-                "current_semester_name": current_semester_name,
+                "current_semester_id": cur_db_id,
+                "current_semester_name": inferred["semester_name"],
                 "weeks": weeks,
             },
             http_status=200,
         )
     except Exception as e:
         logger.error(f"[课程] 获取学期列表失败: {e}")
-        return api_error(message=f"获取学期列表失败: {e}", http_status=500)
+        inferred = derive_current_semester()
+        db_id = inferred["semester_id"]
+        return api_success(
+            data={
+                "semesters": [
+                    {
+                        "id": db_id,
+                        "eams_id": str(db_id)[-3:],
+                        "name": inferred["semester_name"],
+                        "is_current": True,
+                    }
+                ],
+                "current_semester_id": db_id,
+                "current_semester_name": inferred["semester_name"],
+                "weeks": list(range(1, 21)),
+            },
+            http_status=200,
+        )
 
 
 @course_bp.route("/crawl-tasks", methods=["POST"])

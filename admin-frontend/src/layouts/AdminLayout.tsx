@@ -73,7 +73,7 @@ export default function AdminLayout() {
         { path: "/push", name: "自定义推送", icon: <SendOutlined /> },
         { path: "/processes", name: "进程管理", icon: <PlayCircleOutlined /> },
         { path: "/webhooks", name: "Webhook 管理", icon: <LinkOutlined /> },
-        { path: "/holiday", name: "假期模式", icon: <CalendarOutlined /> },
+        { path: "/holiday", name: "推送静默", icon: <CalendarOutlined /> },
         { path: "/settings", name: "系统设置", icon: <SettingOutlined /> },
         { path: "/profile", name: "个人设置", icon: <ProfileOutlined /> },
       ]

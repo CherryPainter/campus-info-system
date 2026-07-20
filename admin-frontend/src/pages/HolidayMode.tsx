@@ -2,7 +2,7 @@
  * 假期模式页面
  *
  * 功能：
- * - 总开关：开启后，落在「假期静默区间」内的日期全体面向用户的推送自动静默
+ * - 紧急静默：开启后，全体面向用户的推送立即永久静默（不论有无假期区间）
  * - 实时状态横幅：未开启 / 已开启·非假期 / 静默中
  * - 假期区间表格：新增 / 编辑 / 删除 / 启用停用
  */
@@ -17,6 +17,7 @@ import {
   Input,
   Select,
   Switch,
+  Tooltip,
   Popconfirm,
   Alert,
   Typography,
@@ -63,7 +64,7 @@ export default function HolidayMode() {
       if (sRes.status === "success" && sRes.data) setStatus(sRes.data);
       if (pRes.status === "success" && pRes.data) setPeriods(pRes.data as any);
     } catch (error) {
-      message.error("加载假期模式数据失败");
+      message.error("加载推送静默数据失败");
     } finally {
       setLoading(false);
     }
@@ -78,11 +79,11 @@ export default function HolidayMode() {
     try {
       const res = await holidayApi.setMaster(checked);
       if (res.status === "success") {
-        message.success(checked ? "假期模式已开启" : "假期模式已关闭");
+        message.success(checked ? "推送静默已开启" : "推送静默已关闭");
         setStatus((prev) => (prev ? { ...prev, enabled: checked } : prev));
       }
     } catch (error) {
-      message.error("切换总开关失败");
+      message.error("切换紧急静默失败");
     } finally {
       setMasterLoading(false);
     }
@@ -192,7 +193,12 @@ export default function HolidayMode() {
       width: 90,
       render: (enabled: boolean, record: HolidayPeriod) => (
         <Space>
+          <Tooltip
+          title="假期条目开关（短期静默）：开启后，今天落在该假期区间内时，全体面向用户的推送自动静默；离开区间自动恢复。与上方『紧急静默』的永久静默互不干扰。"
+          placement="top"
+        >
           <Switch size="small" checked={enabled} onChange={() => handleToggleEnabled(record)} />
+        </Tooltip>
           <span style={{ color: enabled ? "#52c41a" : "#999" }}>{enabled ? "启用" : "停用"}</span>
         </Space>
       ),
@@ -238,8 +244,8 @@ export default function HolidayMode() {
           type="info"
           showIcon
           icon={<InfoCircleOutlined />}
-          message="假期模式未开启"
-          description="开启后，落在假期区间内的日期将自动静默全体面向用户的推送。"
+          message="推送静默未开启"
+          description="开启后，全体面向用户的推送将立即永久静默（紧急/长期，直到手动关闭）；假期区间内的短期静默由下方区间条目单独控制。"
         />
       );
     } else if (status.active && status.period) {
@@ -258,7 +264,7 @@ export default function HolidayMode() {
           type="success"
           showIcon
           icon={<CheckCircleOutlined />}
-          message="假期模式已开启 · 当前非假期"
+          message="推送静默已开启 · 当前非假期"
           description="未命中任何假期区间，推送照常进行。"
         />
       );
@@ -271,12 +277,12 @@ export default function HolidayMode() {
         title={
           <Space>
             <CalendarOutlined />
-            <span>假期模式</span>
+            <span>推送静默</span>
           </Space>
         }
         extra={
           <Space>
-            <Text type="secondary">总开关</Text>
+            <Text type="secondary">紧急静默</Text>
             <Switch
               loading={masterLoading}
               checked={status?.enabled || false}
@@ -303,9 +309,9 @@ export default function HolidayMode() {
           message="说明"
           description={
             <div>
-              <p>• 总开关关闭时，假期区间完全不生效（避免误配导致永久失声）。</p>
-              <p>• 总开关开启且今天落在某「启用」区间内时，全体面向用户的推送自动静默。</p>
-              <p>• 系统/安全告警（如爬虫失败、IP 安全事件）不受假期模式影响，仍会发送。</p>
+              <p>• 紧急静默开启时，全体面向用户的推送立即永久静默（不依赖任何假期区间，直到手动关闭）——用于紧急情况或长期停推。</p>
+              <p>• 日期区间条目自身开启且今天落在其区间内时，也会自动静默（短期间，离开区间自动恢复），与紧急静默开关互不干扰。</p>
+              <p>• 系统/安全告警（如爬虫失败、IP 安全事件）不受推送静默影响，仍会发送。</p>
               <p>• 修改即时生效，无需重启服务。</p>
             </div>
           }

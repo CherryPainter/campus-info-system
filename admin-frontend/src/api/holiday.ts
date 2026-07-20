@@ -27,9 +27,9 @@ export interface HolidayStatus {
 
 /** 假期模式 API */
 export const holidayApi = {
-  /** 获取当前状态（总开关 / 是否静默中 / 命中区间） */
+  /** 获取当前状态（紧急静默 / 是否静默中 / 命中区间） */
   getStatus: () => request.get<any, ApiResponse<HolidayStatus>>("/holiday/status"),
-  /** 切换总开关 */
+  /** 切换紧急静默开关 */
   setMaster: (enabled: boolean) =>
     request.put<any, ApiResponse<{ enabled: boolean }>>("/holiday/master", { enabled }),
   /** 区间列表 */

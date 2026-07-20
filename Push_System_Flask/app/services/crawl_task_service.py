@@ -78,22 +78,37 @@ def _resolve_eams_id(semester_id: int):
 
 
 def _all_semester_pairs():
-    """返回 [(eams_id, db_semester_id), ...]，来源于 course_meta.json。
+    """返回 [(eams_id, db_semester_id), ...]，用于全量爬取遍历所有学期。
 
-    course_meta.json 缺失（首次部署/爬虫尚未成功）时，回退到按当前日期推导的
-    学期，使全量爬取能直接爬取本学期，打破「没有 course_meta 就无法爬取、
-    爬取不了就永远没有 course_meta」的死结。
+    来源合并：
+      1. course_meta.json 中记录的学期（精确 eams_id）；
+      2. 候选学期范围（candidate_semester_pairs，基于当前日期生成，保证
+         即使 course_meta 只含当前学期，全量爬取也能覆盖往届学期）。
+
+    去重以 db_semester_id 为准（course_meta 优先，因其 eams_id 更精确）。
+    course_meta.json 缺失时回退到候选学期，打破「没有 course_meta 就无法
+    爬取、爬取不了就永远没有 course_meta」的死结。
     """
+    from app.repository.course_repository import candidate_semester_pairs
+
     meta = _read_course_meta()
-    if not meta:
-        db_id = derive_current_semester()["semester_id"]
-        return [(str(db_id)[-3:], db_id)]
     pairs = []
-    for s in meta.get("semesters", []):
-        eid = str(s.get("id"))
-        db_id = _semester_name_to_id(s.get("name", ""))
-        if eid and db_id:
+    seen = set()
+    if meta:
+        for s in meta.get("semesters", []):
+            eid = str(s.get("id"))
+            db_id = _semester_name_to_id(s.get("name", ""))
+            if eid and db_id:
+                pairs.append((eid, db_id))
+                seen.add(db_id)
+    # 补全候选学期（与学期下拉一致）
+    for eid, db_id in candidate_semester_pairs(years_back=3, years_forward=0):
+        if db_id not in seen:
             pairs.append((eid, db_id))
+            seen.add(db_id)
+    if not pairs:
+        db_id = derive_current_semester()["semester_id"]
+        pairs = [(str(db_id)[-3:], db_id)]
     return pairs
 
 

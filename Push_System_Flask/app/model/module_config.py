@@ -107,7 +107,7 @@ DEFAULT_CONFIGS = [
         "key": "holiday_mode_enabled",
         "value": "false",
         "value_type": "boolean",
-        "description": "假期模式总开关：开启后，落在「假期静默区间」内的日期全体面向用户的推送自动静默（系统/安全告警不受影响）",
+        "description": "推送静默·紧急静默开关：开启后全体面向用户的推送立即永久静默（不依赖假期区间，直到手动关闭）；系统/安全告警不受影响",
         "is_editable": True,
         "is_sensitive": False,
     },

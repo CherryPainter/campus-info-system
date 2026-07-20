@@ -7,14 +7,16 @@
 杜绝过去「硬编码日历 get_current_week_number」与「查 course_weeks 表
 _is_in_teaching_week」两套口径相互矛盾、各算各的乱象。
 
-权威判定顺序：
-  1. 假期模式激活（holiday_service，管理员显式配置） -> 非教学周（None）
-  2. 基于开学日推算当前周次：
+权威判定：
+  仅基于开学日推算当前周次：
        开学日 = 配置 system.semester_start_date（管理员可填）
                 或按 term 默认推算（秋=9/1，春=次年3/2）
         weeks_passed = (today - 开学日).days // 7 + 1
-        1 <= weeks_passed <= weeks_max(默认20, 可配) -> 该周次
-  3. 否则 -> 非教学周（None）
+        1 <= weeks_passed <= weeks_max(默认22, 可配) -> 该周次
+  否则 -> 非教学周（None）
+
+  注意：假期模式（holiday_service）不参与此处周次判定，它只门控推送/爬取
+  的静默，不影响课程表默认选中的周次。
 
 注意：开学日不再依赖任何数据库表（旧 course_weeks 表已彻底移除于本次重构），
 爬虫与系统均无法污染开学基准，从根上杜绝「暑假被算成第2周」类脏数据。
@@ -133,10 +135,15 @@ def get_semester_start_date(semester_id: int | None = None) -> date | None:
 
 
 def get_current_teaching_week() -> int | None:
-    """返回当前教学周周次；非教学周/假期/未配置/异常均返回 None。
+    """返回当前教学周周次；非教学周/未配置/异常均返回 None。
 
     判定基准：开学日（配置 system.semester_start_date 或按 term 推算）。
     用 ``(today - 开学日).days // 7 + 1`` 推算当前周次，并做教学周上限校验。
+
+    注意：本函数只回答「今天是第几教学周」这一日历问题，**不掺杂假期模式**。
+    假期静默（推送/爬取拦截）由 holiday_service.is_active() 在推送与爬取入口
+    单独门控，不应影响课程表视图默认选中的周次——否则假期模式一开，课程表
+    周次会被强行回退到第 1 周，与真实教学进度脱节。
 
     为什么不再依赖数据库表：
         旧 course_weeks 表的锚点由爬虫写入，暑假爬取会把开学锚点(week1)
@@ -144,16 +151,7 @@ def get_current_teaching_week() -> int | None:
         「上课中」。改为「开学日推算 + 上限校验」后，开学日来自配置/固定
         规则，爬虫无法污染，从根上杜绝脏数据。
     """
-    # 1. 假期模式优先：管理员显式静默期，一律视为非教学周
-    try:
-        from app.services.holiday_service import holiday_service
-
-        if holiday_service.is_active()[0]:
-            return None
-    except Exception as e:
-        logger.warning(f"[教学周] 假期模式判断异常，继续走开学日推算: {e}")
-
-    # 2. 基于开学日推算当前周次
+    # 基于开学日推算当前周次（唯一口径）
     try:
         start = get_semester_start_date(None)
         if not start:

@@ -834,7 +834,7 @@ export default function Processes() {
           showIcon
           icon={<StopOutlined />}
           style={{ marginBottom: 16 }}
-          message={`假期模式生效中${holidayStatus.period ? `（${holidayStatus.period.name}）` : ""}·推送已静音`}
+          message={`推送静默生效中${holidayStatus.period ? `（${holidayStatus.period.name}）` : ""}·推送已静音`}
           description="当前处于假期区间内，全体面向用户的推送已自动静音；进程历史中的「已静音」记录即由此产生。系统/安全告警不受影响。"
         />
       )}

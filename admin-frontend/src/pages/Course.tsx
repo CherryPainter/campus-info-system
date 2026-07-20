@@ -1313,18 +1313,20 @@ export default function Course() {
     return { start: monday, end: sunday };
   }, [selectedWeek, currentWeek, timetableData, selectedSemester]);
 
-  // 假期模式：选中的周落在某条启用假期区间内 → 接管为假期视图
+  // 假期卡片：选中周落在某条「启用」的假期区间内即接管（忽略系统级紧急静默开关）。
+  // 仅查看当前学期时生效；假期条目自身 enabled 开关开了 + 命中区间即显示。
   const selectedWeekInHoliday = useMemo(() => {
-    if (!holidayModeActive) return false;
+    if (!isViewingCurrentSemester) return false;
     const ps = parseYmd(holidayStatus?.period?.start_date);
     const pe = parseYmd(holidayStatus?.period?.end_date);
     if (!ps || !pe || !selectedWeekRange) return false;
     return selectedWeekRange.start <= pe && selectedWeekRange.end >= ps;
-  }, [holidayModeActive, holidayStatus, selectedWeekRange]);
+  }, [isViewingCurrentSemester, holidayStatus, selectedWeekRange]);
 
-  // 未配置假期模式时回退：选中的周不在任何教学周区间内（或超出范围）→ 视为非教学周
+  // 非教学周兜底：未命中任何启用假期条目，且选中周不在教学周区间内 → 视为非教学周。
+  // 命中假期条目(holidayStatus.period)时由上方假期卡片接管，此处不重复弹卡。
   const selectedWeekInBreak = useMemo(() => {
-    if (!isViewingCurrentSemester || holidayModeActive) return false;
+    if (!isViewingCurrentSemester || holidayStatus?.period) return false;
     const weeks = timetableData?.available_weeks;
     if (!weeks || weeks.length === 0) return true;
     if (!selectedWeekRange) return false;
@@ -1338,11 +1340,13 @@ export default function Course() {
     const maxWeek = Math.max(...weeks.map((w) => w.week_number || 0));
     if (selectedWeek && selectedWeek > maxWeek) return true;
     return false;
-  }, [isViewingCurrentSemester, holidayModeActive, timetableData, selectedWeekRange, selectedWeek]);
+  }, [isViewingCurrentSemester, holidayStatus, timetableData, selectedWeekRange, selectedWeek]);
 
-  // 假期页是否接管课程表视图：按「选中周」是否处于假期/非教学周判定，而非按「今天」。
-  // 这样假期区间内选中的周显示假期提示，历史教学周正常显示课表（周次选择器可自由切换）。
-  const showHoliday = activeView === "timetable" && (selectedWeekInHoliday || selectedWeekInBreak);
+  // 假期卡片展示：由「假期条目自身开关(enabled) + 当前日期命中区间」决定，
+  // 与系统级紧急静默开关(holiday_mode_enabled)解耦——只要条目开关开了且在对应学期
+  // 区间内就显示卡片，无论紧急静默是否开启。紧急静默仅控制推送/爬取的静默。
+  const showHoliday =
+    activeView === "timetable" && (selectedWeekInHoliday || selectedWeekInBreak);
 
   // 视图切换「课表/列表」按钮：放到标题「第X周课表」右侧，桌面端/移动端共用
   const viewSwitch = (
@@ -1504,7 +1508,7 @@ export default function Course() {
         title={
           <Space wrap align="center">
             <CalendarOutlined />
-            {showHoliday ? "假期模式" : selectedWeek ? `第${selectedWeek}周课表` : "课程管理"}
+            {showHoliday ? "推送静默" : selectedWeek ? `第${selectedWeek}周课表` : "课程管理"}
             {viewSwitch}
             {isPolling && <Badge dot offset={[4, -4]} />}
             {!showHoliday &&
