@@ -14,6 +14,7 @@ import {
 } from '@ant-design/icons';
 import { adminApi, processApi, type SpiderStatus, type TaskProcess } from '@/api/admin';
 import { electricityApi } from '@/api/electricity';
+import { holidayApi, type HolidayStatus } from '@/api/holiday';
 import CrawlScheduler from './CrawlScheduler';
 import { useIntervalPolling } from '@/hooks/useIntervalPolling';
 import { POLL_SLOW, POLL_FAST } from '@/hooks/pollIntervals';
@@ -72,6 +73,18 @@ const priorityConfig = {
   low: { color: '#52c41a', bg: '#f6ffed', text: '低' },
 };
 
+// 假期静默期间会被后端拦截、需禁用「立即执行」的任务 key 集合。
+// 说明：电量采集/校验类（fetch_all、check_cookie_validity）与课程手动推送
+// 后端不在假期静默拦截，故不计入，保持可用。
+const HOLIDAY_SKIPPED_KEYS = new Set<string>([
+  // 爬虫：假期静默 or 非教学周 双条件拦截
+  'spider', 'full_crawl',
+  // 天气：所有天气任务在假期静默均被拦截
+  'update_weather_now', 'update_weather_hourly', 'update_weather_alert', 'push_weather_daily', 'push_weather_analysis',
+  // 电量推送：假期静默拦截（采集/校验类不拦截）
+  'push_electricity_daily', 'push_electricity_weekly', 'push_electricity_monthly',
+]);
+
 export default function Tasks() {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
@@ -87,6 +100,8 @@ export default function Tasks() {
   const [clickFlash, setClickFlash] = useState<Set<string>>(new Set());
   const [triggerTimeByKey, setTriggerTimeByKey] = useState<Record<string, number>>({});
   const [processStatus, setProcessStatus] = useState<Record<string, TaskProcess | null>>({});
+  // 假期模式状态：active 时对应触发按钮会被后端静默拦截，前端同步禁用并提示
+  const [holidayStatus, setHolidayStatus] = useState<HolidayStatus | null>(null);
   const [reportedKeys, setReportedKeys] = useState<Set<string>>(new Set());
   const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -209,6 +224,13 @@ export default function Tasks() {
   // 爬虫状态每 30s 刷新一次（统一轮询 Hook）
   useIntervalPolling(fetchSpiderStatus, POLL_SLOW);
 
+  // 挂载时拉取假期模式状态，用于同步禁用触发按钮
+  useEffect(() => {
+    holidayApi.getStatus()
+      .then((res) => { if (res.status === 'success' && res.data) setHolidayStatus(res.data); })
+      .catch(() => {});
+  }, []);
+
   const handleTrigger = async (taskType: string, module: 'weather' | 'electricity' | 'spider' | 'course') => {
     addClickFlash(taskType); // 点击立即点亮「运行中」样式，待真实进程接管
     try {
@@ -221,6 +243,13 @@ export default function Tasks() {
         else response = await adminApi.triggerElectricity(taskType);
       }
       else if (module === 'course') response = await adminApi.triggerCourse(taskType);
+
+      // 假期静默 / 非教学周拦截：后端返回 skipped，提示已跳过且不点亮运行态
+      if ((response as any)?.skipped) {
+        message.warning((response as any).message || '假期静默中，已跳过');
+        removeClickFlash(taskType);
+        return;
+      }
 
       if (response?.status === 'success') {
         message.success(response.message || '任务触发成功');
@@ -292,7 +321,7 @@ export default function Tasks() {
             block
             size="small"
             loading={visualRunning}
-            disabled={visualRunning}
+            disabled={visualRunning || (!!holidayStatus?.active && HOLIDAY_SKIPPED_KEYS.has(task.key))}
           >
             {visualRunning ? '运行中...' : '立即执行'}
           </Button>
@@ -341,7 +370,7 @@ export default function Tasks() {
           onClick={() => handleTrigger(task.key, effectiveModule as any)}
           block
           size="small"
-          disabled={visualRunning}
+          disabled={visualRunning || (!!holidayStatus?.active && HOLIDAY_SKIPPED_KEYS.has(task.key))}
           className="task-action-btn"
         >
           {visualRunning ? '运行中...' : '立即执行'}

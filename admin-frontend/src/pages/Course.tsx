@@ -380,6 +380,11 @@ export default function Course() {
       if (taskType === 'sync_schedule') {
         // 同步课表 = 触发爬虫 → 用爬虫专用轮询确认真正完成
         const res = await adminApi.triggerSpider();
+        // 假期静默 / 非教学周拦截：后端返回 skipped，提示并跳过轮询
+        if ((res as any).skipped) {
+          message.warning(res.message || '假期静默中，已跳过课表爬取');
+          return;
+        }
         message.success(res.message || '爬虫任务已触发');
         startSpiderPolling();
       } else {
@@ -582,6 +587,11 @@ export default function Course() {
   const handleSyncCurrentWeek = async () => {
     try {
       const res = await adminApi.triggerSpider();
+      // 假期静默 / 非教学周拦截：后端返回 skipped，提示并跳过轮询
+      if ((res as any).skipped) {
+        message.warning(res.message || '假期静默中，已跳过课表爬取');
+        return;
+      }
       if (res?.status === 'success') {
         message.success('同步任务已启动，正在后台执行...');
         startPolling();
@@ -1205,8 +1215,8 @@ export default function Course() {
       <>
         {isAdmin && <Button icon={<ImportOutlined />} onClick={handleImport} disabled={isPolling} loading={isPolling}>导入</Button>}
         {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => handleAdd()} disabled={isPolling}>新增课程</Button>}
-        {isAdmin && <Button icon={<ScheduleOutlined />} onClick={handleSyncCurrentWeek} disabled={isPolling} loading={isPolling}>同步课表</Button>}
-        {isAdmin && <Button icon={<SyncOutlined />} onClick={() => { setIsFullCrawl(true); setCrawlModalVisible(true); }} disabled={isPolling}>全量爬取</Button>}
+        {isAdmin && <Button icon={<ScheduleOutlined />} onClick={handleSyncCurrentWeek} disabled={isPolling || holidayStatus?.active} loading={isPolling}>同步课表</Button>}
+        {isAdmin && <Button icon={<SyncOutlined />} onClick={() => { setIsFullCrawl(true); setCrawlModalVisible(true); }} disabled={isPolling || holidayStatus?.active}>全量爬取</Button>}
         <Button icon={<ReloadOutlined />} onClick={() => { fetchTimetable(selectedWeek); fetchCourses(); }} disabled={isPolling}>刷新</Button>
       </>
     );

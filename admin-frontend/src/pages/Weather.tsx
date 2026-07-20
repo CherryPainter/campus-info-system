@@ -7,6 +7,7 @@ import { useRunningTasksPolling } from '@/hooks/useRunningTasksPolling';
 import { CloudOutlined, ReloadOutlined, PlayCircleOutlined, LineChartOutlined, LoadingOutlined, FireOutlined, EnvironmentOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { adminApi, processApi } from '@/api/admin';
 import { weatherApi, type WeatherNow, type HourlyForecast, type WeatherAlert, type WeatherConfig } from '@/api/weather';
+import { holidayApi, type HolidayStatus } from '@/api/holiday';
 import WeatherChart from '@/components/WeatherChart';
 import { useUser } from '@/contexts/UserContext';
 
@@ -58,6 +59,8 @@ export default function Weather() {
   const [form] = Form.useForm();
   // 列表轮询开关（触发天气任务时开启）
   const [listPolling, setListPolling] = useState(false);
+  // 假期模式状态：active 时手动触发天气任务会被后端静默拦截，前端同步禁用触发按钮
+  const [holidayStatus, setHolidayStatus] = useState<HolidayStatus | null>(null);
 
   const fetchNow = async () => {
     setLoading(true);
@@ -215,6 +218,13 @@ export default function Weather() {
     })();
   }, []);
 
+  // 挂载时拉取假期模式状态，用于同步禁用触发按钮
+  useEffect(() => {
+    holidayApi.getStatus()
+      .then((res) => { if (res.status === 'success' && res.data) setHolidayStatus(res.data); })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (activeTab === 'now') fetchNow();
     else if (activeTab === 'hourly') fetchHourly();
@@ -310,13 +320,13 @@ export default function Weather() {
               </div>
               <Space style={{ marginTop: 16 }}>
                 <Button icon={<ReloadOutlined />} onClick={fetchNow} disabled={isPolling}>刷新数据</Button>
-                {isAdmin && <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => handleTrigger('update_weather_now')} disabled={isPolling} loading={isPolling}>更新天气数据</Button>}
+                {isAdmin && <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => handleTrigger('update_weather_now')} disabled={isPolling || holidayStatus?.active} loading={isPolling}>更新天气数据</Button>}
               </Space>
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: 40 }}>
               <Alert message="暂无数据，请先触发数据采集" type="info" />
-              {isAdmin && <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => handleTrigger('update_weather_now')} style={{ marginTop: 16 }} disabled={isPolling} loading={isPolling}>更新天气数据</Button>}
+              {isAdmin && <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => handleTrigger('update_weather_now')} style={{ marginTop: 16 }} disabled={isPolling || holidayStatus?.active} loading={isPolling}>更新天气数据</Button>}
             </div>
           )}
         </div>

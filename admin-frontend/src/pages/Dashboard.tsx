@@ -10,7 +10,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Card, Row, Col, Statistic, Button, Tag, Space, Spin, Typography, Alert, Progress,
-  Table, Badge, Divider, Tooltip, Timeline, Empty,
+  Table, Badge, Divider, Tooltip, Timeline, Empty, App,
   DatePicker, Segmented,
 } from 'antd';
 import { 
@@ -59,6 +59,7 @@ export default function Dashboard() {
   const [timeLabel, setTimeLabel] = useState<string>('');
   const { isOffline } = useServerStatus();
   const [holidayStatus, setHolidayStatus] = useState<HolidayStatus | null>(null);
+  const { message } = App.useApp();
 
   // 时间筛选
   const [timeRange, setTimeRange] = useState('this_month');
@@ -102,7 +103,12 @@ export default function Dashboard() {
 
   const handleTriggerWeather = async () => {
     try {
-      await adminApi.triggerWeather('update_weather_now');
+      const res = await adminApi.triggerWeather('update_weather_now');
+      // 假期静默拦截：后端返回 skipped，提示已跳过且不刷新
+      if ((res as any).skipped) {
+        message.warning(res.message || '假期静默中，已跳过');
+        return;
+      }
       fetchDashboard();
     } catch (error) {
       console.error('触发天气更新失败:', error);
@@ -111,7 +117,12 @@ export default function Dashboard() {
 
   const handleTriggerSpider = async () => {
     try {
-      await adminApi.triggerSpider();
+      const res = await adminApi.triggerSpider();
+      // 假期静默 / 非教学周拦截：后端返回 skipped，提示已跳过且不刷新
+      if ((res as any).skipped) {
+        message.warning(res.message || '假期静默中，已跳过');
+        return;
+      }
       fetchDashboard();
     } catch (error) {
       console.error('触发爬虫失败:', error);
@@ -496,6 +507,7 @@ export default function Dashboard() {
               icon={<SyncOutlined />} 
               onClick={handleTriggerWeather} 
               block
+              disabled={holidayStatus?.active}
             >
               更新天气数据
             </Button>
@@ -503,8 +515,15 @@ export default function Dashboard() {
           <Col xs={12} sm={8} md={6}>
             <Button 
               icon={<SendOutlined />} 
-              onClick={() => adminApi.triggerWeather('daily')} 
+              onClick={async () => {
+                try {
+                  const res = await adminApi.triggerWeather('daily');
+                  if ((res as any).skipped) { message.warning(res.message || '假期静默中，已跳过'); return; }
+                  fetchDashboard();
+                } catch (e) { console.error('触发天气晨报失败:', e); }
+              }} 
               block
+              disabled={holidayStatus?.active}
             >
               发送天气晨报
             </Button>
@@ -512,8 +531,15 @@ export default function Dashboard() {
           <Col xs={12} sm={8} md={6}>
             <Button 
               icon={<SendOutlined />} 
-              onClick={() => adminApi.triggerElectricity('daily')} 
+              onClick={async () => {
+                try {
+                  const res = await adminApi.triggerElectricity('daily');
+                  if ((res as any).skipped) { message.warning(res.message || '假期静默中，已跳过'); return; }
+                  fetchDashboard();
+                } catch (e) { console.error('触发电量日报失败:', e); }
+              }} 
               block
+              disabled={holidayStatus?.active}
             >
               发送电量日报
             </Button>
@@ -523,6 +549,7 @@ export default function Dashboard() {
               icon={<PlayCircleOutlined />} 
               onClick={handleTriggerSpider} 
               block
+              disabled={holidayStatus?.active}
             >
               触发课表爬虫
             </Button>

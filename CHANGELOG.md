@@ -42,6 +42,15 @@
 - **前端「已静音」状态可见 + 假期生效横幅**：`src/constants/statusMaps.ts` 的 `PROCESS_STATUS_MAP` 与 `TASK_STATUS_MAP` 补充 `skipped` 映射（`{ color:'default', icon:StopOutlined, text:'已静音' }`），修复此前假期静默的 skipped 进程记录在前端无文案/颜色（显示为空白或未知状态）的问题。`src/pages/Processes.tsx` 与 `src/pages/Dashboard.tsx` 顶部接入 `holidayApi.getStatus()`，假期模式生效时渲染 Alert 横幅「假期模式生效中（<假期名>）·推送已静音」，让静默不再只能从日志看出。
 - **高频静默每日汇总记录（历史可见且不刷屏）**：天气 `update_weather_now`/`update_weather_hourly`/`update_weather_alert` 等高频 job 走 `skip_if_active(record=False)`，此前假期里完全不建进程记录、前端无痕。现改为按「天 + task_type」聚合为 1 条 `skipped` 汇总进程记录（名称「假期高频静默汇总」，message 含累计次数，如「假期模式静默（2026年暑假）·天气高频任务已静音 3 次」），跨天自动新建；既保留历史可见性，又避免每 10/30/60 分钟刷一条记录撑爆进程表。对应 `app/core/task_state.py` 新增 `TaskStatus.SKIPPED='skipped'` 并纳入 `TERMINAL_STATUSES`；`holiday_service.skip_if_active` 新增 `_record_daily_summary()` 聚合逻辑。新增单测 4 例（`test_holiday_mute.py` 的 `TestHolidayDailySummary`）：同日同类型累加、不同类型各自独立、record=True 不写汇总、跨天新建，单测总数 31→35。
 
+- **手动触发接口假期前置拦截（与定时任务同源）**：此前假期/非教学周拦截只作用于定时调度（`run_spider`/`check_push_rules`），手动点「立即执行」仍会起线程跑一个立刻跳过的任务——前端只回「任务已触发」造成误导，且增加无意义请求（间接放大进程列表高频轮询触发的 429 限流）。现对三个手动触发接口补假期前置拦截，与 `run_spider` 同源双条件（`holiday_service.is_active()` 静默 OR `_is_in_teaching_week()` 非教学周）：
+  - `trigger_weather_task`（`/admin/weather/trigger`）：触发前查假期静默，命中即返回 `api_success(message='假期模式静默（<假期名>），<任务>已跳过', skipped=True)`，不起线程。
+  - `trigger_electricity_task`（`/admin/electricity/trigger`）：仅对面向用户的推送任务（`push_electricity_daily/weekly/monthly`、`check_low_power`）拦截；`check_cookie_validity`/`fetch_electricity_data` 属系统运维/采集，假期不静默、保持可触发。
+  - `trigger_spider`（`/admin/tasks/spider/trigger`）：双条件拦截（假期静默 OR 非教学周），命中即返回 `skipped=True`；运行前仍先判 `running` 返回 409。
+  - 全部拦截统一返回 `skipped=True` 标记（经 `api_success(**extra)` 透传），供前端区分「跳过」与「成功」。fail-open：拦截判断自身异常时不当误拦截，照常触发。
+- **前端假期模式禁用「立即执行」按钮 + 统一 skipped 反馈**：天气/电量/课程/任务/仪表盘各页接入 `holidayApi.getStatus()`，假期 `active` 时：
+  - 天气页「更新天气数据」、课程页「同步课表/全量爬取」、任务页 spider 类 + 天气类 + 电量推送类（fetch_all/check_cookie_validity/课程手动推送不禁用，因后端假期不拦截、应保持可用）、仪表盘四个快捷操作（更新天气/天气晨报/电量日报/课表爬虫）全部置灰禁用，从源头杜绝假期静默期的无意义触发。
+  - 各处触发函数对 `res.skipped` 显示 `message.warning(<原因>)` 且不开「已完成」轮询，作为假期状态未加载完成时的兜底防护。
+
 ### 课程管理假期视图（联动假期模式）
 - **问题**：课程管理页表头日期由前端写死学期开学日（3/2）推算；后端 `get_current_week_number()` 在暑假（7/19 之后）写死返回最后一周=20，导致页面冻结在最后教学周（7/13–7/19），表头显示 13 号而非今天，且无假期提示。
 - **修复/优化**：

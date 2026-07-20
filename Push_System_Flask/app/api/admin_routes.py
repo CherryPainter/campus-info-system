@@ -1109,12 +1109,26 @@ def trigger_spider():
         }
     """
     try:
-        from app.tasks.scheduler import run_spider, get_spider_status
+        from app.tasks.scheduler import run_spider, get_spider_status, _is_in_teaching_week
+        from app.services.holiday_service import holiday_service
 
         # 检查爬虫是否正在执行
         spider_status = get_spider_status()
         if spider_status.get('running'):
             return api_error(message='爬虫正在执行中，请稍后再试', http_status=409)
+
+        # 假期 / 非教学周 双条件拦截（与 run_spider 同源）：手动触发时也提前返回，
+        # 避免无意义地起线程跑一个立刻跳过的爬虫，并给前端明确「已跳过」反馈。
+        holiday_active, holiday_period = holiday_service.is_active()
+        in_teaching_week = _is_in_teaching_week()
+        if holiday_active or not in_teaching_week:
+            if holiday_active:
+                reason = f'假期模式静默（{holiday_period.name}）' if holiday_period else '假期模式静默'
+                msg = f'{reason}，已跳过课表爬取'
+            else:
+                msg = '当前不在教学周内（假期/长假），已跳过课表爬取'
+            logger.info(f'[管理后台] 手动触发爬虫被跳过: {msg}')
+            return api_success(message=msg, skipped=True)
 
         # 在独立线程中启动爬虫
         thread = threading.Thread(
