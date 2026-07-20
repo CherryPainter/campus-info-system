@@ -284,7 +284,6 @@ Push_System_Flask/
 |   |   |-- electricity.py                # ElectricityRecord + ElectricityRemaining
 |   |   |                                 #   + ElectricityTotalCapacity - 电量数据表
 |   |   |-- course.py                     # Course - 课程表 (支持软删除)
-|   |   |-- course_week.py                # CourseWeek - 周次日期范围表
 |   |   |-- custom_push.py                # CustomPush - 自定义推送表
 |   |   |-- task_process.py               # TaskProcess - 任务进程表
 |   |   |-- module_config.py              # ModuleConfig - 模块配置表 (30+ 默认配置)
@@ -1216,7 +1215,7 @@ flowchart LR
 
 ## 数据库模型
 
-系统共定义 13 个数据模型，对应数据库中的 13 张表：
+系统核心数据模型如下表（共 14 个，不含审计日志、会话等辅助表）：
 
 ### 用户与认证
 
@@ -1232,7 +1231,6 @@ flowchart LR
 | 模型                       | 表名                         | 说明           | 关键字段                                                                                                                                     |
 | -------------------------- | ---------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Course`                   | `courses`                    | 课程表         | course_name, teacher, classroom, building, week_day, period_idx, periods, start_time, end_time, weeks, week_number, is_deleted, push_enabled, data_source, last_verified_at |
-| `CourseWeek`               | `course_weeks`               | 周次日期范围表 | week_number(唯一), start_date, end_date                                                                                                      |
 | `WeatherRecord`            | `weather_records`            | 天气记录表     | record_type(now/hourly), city_name, temp, feels_like, text, humidity, wind_dir, wind_scale, precip, pop, pressure, vis, cloud, fx_time       |
 | `WeatherAlert`             | `weather_alerts`             | 天气预警表     | alert_id(唯一), city_name, headline, event_type, severity, color_code, description, start_time, end_time, is_active                          |
 | `ElectricityRecord`        | `electricity_records`        | 用电记录表     | record_time(索引), usage, meter                                                                                                              |
@@ -1480,17 +1478,4 @@ python init_db.py
 
 ## 更新日志
 
-> 本仓库的完整版本迭代记录统一维护在仓库根目录 [CHANGELOG.md](../CHANGELOG.md)（涵盖 v4.0.0 至今的全部版本，单一真相源）。后端 README 不再重复维护更新日志，避免版本信息分散与过时。
-
-最近版本速览：
-
-- **v6.13.0** 境外 IP 防火墙：仅允许中国 IP 访问（基于 ip2region 离线库），连登录入口一并拦截
-- **v6.12.3** 天气预警历史分页折叠（后端分页 + 前端"加载更多"）
-- **v6.12.2** 补充审计请求日志静默名单遗漏的轮询端点
-- **v6.12.1** 修复数据库指纹可空性误判与启动顺序前移
-- **v6.12.0** 数据库指纹漂移检测与启动期自动修复（多余表 / 列 / 类型 / 可空性）
-- **v6.11.2** 手动课保护：爬虫不可覆盖/挤占 `data_source='admin'` 课程
-- **v6.11.1** 课程数据来源标记 + 每日爬虫入库当前周 + 空结果护栏
-- **v6.11.0** 安全加固（SECRET_KEY 必填 / Redis 限流 / 强制管理员 MFA / 账号风险升级 / CORS 收口）
-
-更早版本请查阅 [CHANGELOG.md](../CHANGELOG.md)。
+> 本仓库的完整版本迭代记录统一维护在仓库根目录 [CHANGELOG.md](../CHANGELOG.md)（涵盖 v4.0.0 至今的全部版本，单一真相源）。后端 README 不再重复维护更新日志，避免版本信息分散与过时；所有历史版本请以根 CHANGELOG.md 为准。
