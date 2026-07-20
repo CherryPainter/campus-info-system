@@ -381,7 +381,7 @@ export default function Processes() {
       {/* 状态概览 */}
       <Alert
         message={<Space>{statusMap[p.status]?.icon}<span>{statusMap[p.status]?.text}</span></Space>}
-        type={p.status === 'completed' ? 'success' : p.status === 'failed' ? 'error' : p.status === 'running' ? 'info' : 'warning'}
+        type={p.status === 'completed' ? 'success' : p.status === 'failed' ? 'error' : p.status === 'running' ? 'info' : p.status === 'skipped' ? 'warning' : 'warning'}
         showIcon={false}
         style={{ marginBottom: 16 }}
       />
@@ -413,7 +413,7 @@ export default function Processes() {
         <div style={{ marginBottom: 8, fontWeight: 500 }}>执行进度</div>
         <Progress
           percent={p.progress}
-          status={p.status === 'failed' ? 'exception' : p.status === 'completed' ? 'success' : 'active'}
+          status={p.status === 'failed' ? 'exception' : p.status === 'completed' ? 'success' : p.status === 'skipped' ? 'normal' : 'active'}
           format={(percent) => `${p.processed_items} / ${p.total_items} (${percent}%)`}
         />
       </div>
@@ -428,6 +428,7 @@ export default function Processes() {
             ...(p.status === 'completed' ? [{ color: 'green', children: `执行完成 ${formatDateTime(p.completed_at)}` }] : []),
             ...(p.status === 'failed' ? [{ color: 'red', children: `执行失败 ${formatDateTime(p.completed_at)}` }] : []),
             ...(p.status === 'cancelled' ? [{ color: 'gray', children: `已取消 ${formatDateTime(p.completed_at)}` }] : []),
+            ...(p.status === 'skipped' ? [{ color: 'orange', children: `${p.message || '已静默'} ${formatDateTime(p.completed_at || p.started_at)}` }] : []),
           ]}
         />
       </div>
@@ -436,7 +437,13 @@ export default function Processes() {
       {p.message && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ marginBottom: 8, fontWeight: 500 }}>状态消息</div>
-          <div style={{ padding: 12, background: '#f6ffed', borderRadius: 4, border: '1px solid #b7eb8f' }}>
+          <div style={{
+            padding: 12,
+            background: p.status === 'failed' ? '#fff2f0' : p.status === 'skipped' ? '#fffbe6' : '#f6ffed',
+            borderRadius: 4,
+            border: `1px solid ${p.status === 'failed' ? '#ffccc7' : p.status === 'skipped' ? '#ffe58f' : '#b7eb8f'}`,
+            color: p.status === 'failed' ? '#ff4d4f' : undefined,
+          }}>
             {p.message}
           </div>
         </div>
