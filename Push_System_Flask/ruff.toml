@@ -1,0 +1,30 @@
+# ruff 配置 —— push_system 后端代码质量门禁
+# 渐进式规则：先启用"低风险高价值"的检查，让 CI 先绿，再逐步加严。
+# 目标不是一次性挑出所有问题，而是建立持续挡住低级错误的护栏。
+
+target-version = "py312"
+line-length = 100
+
+# 排除非团队代码（第三方 vendored 库）与产物目录，避免门禁被噪音拖红
+exclude = ["ip2region", ".venv", "__pycache__", "node_modules"]
+
+[lint]
+# E  = pycodestyle 错误（语法/基础风格，几乎无争议）
+# F  = pyflakes（未定义变量、未使用导入 —— 抓真 bug）
+# I  = isort（import 排序，统一即整洁）
+# UP = pyupgrade（提醒用新语法）
+# B  = flake8-bugbear（常见逻辑陷阱）
+# C4 = flake8-comprehensions（更地道的写法）
+select = ["E", "F", "I", "UP", "B", "C4"]
+
+# 渐进忽略项，等团队习惯后再打开：
+# E501 行过长 —— 历史长行多，先不强制
+# E402 模块级代码前的 import —— 部分文件有初始化顺序需求
+# B008 装饰器带参调用（Flask @app.route(...) 必现，误报多）
+# B904 异常未加 from —— 后续统一异常链
+# B905 zip 未带 strict —— 后续优化
+ignore = ["E501", "E402", "B008", "B904", "B905"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

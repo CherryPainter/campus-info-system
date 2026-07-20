@@ -1,0 +1,30 @@
+# pre-commit 钩子 —— 提交前自动挡住低级错误
+# 安装：pip install pre-commit && pre-commit install
+# 首次：pre-commit run --all-files
+
+repos:
+  # 后端：ruff 自带二进制，开箱即用（lint + 自动格式化）
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^Push_System_Flask/.*\.py$
+      - id: ruff-format
+        files: ^Push_System_Flask/.*\.py$
+
+  # 前端：复用项目内已安装的 eslint / prettier（local 钩子调用 npx）
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint (前端)
+        entry: bash -c 'cd admin-frontend && npx eslint . --fix'
+        language: system
+        pass_filenames: false
+        files: ^admin-frontend/.*\.(ts|tsx)$
+      - id: prettier
+        name: prettier (前端)
+        entry: bash -c 'cd admin-frontend && npx prettier --write'
+        language: system
+        pass_filenames: false
+        files: ^admin-frontend/.*\.(ts|tsx|json|css|md)$

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, dev]
+  pull_request:
+
+jobs:
+  backend:
+    name: 后端 lint + 测试
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Push_System_Flask
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 安装 ruff
+        run: pip install ruff==0.6.9
+      - name: ruff 静态检查
+        run: ruff check .
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+      # pytest 不在 requirements.txt 中，单独安装；测试基于 SQLite 内存库 + 桩隔离，
+      # 不依赖 MySQL / Redis，可直接作为硬性门禁运行。
+      - name: 安装测试依赖
+        run: pip install pytest
+      - name: 运行测试
+        run: pytest -q
+
+  frontend:
+    name: 前端 lint + 构建
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: 单元测试
+        run: npm test
+      - name: 类型检查 + 构建
+        run: npm run build
