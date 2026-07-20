@@ -656,6 +656,21 @@ def trigger_weather_task():
 
     func_name, label = task_map[task_type]
 
+    # 假期静默前置拦截：静默中手动触发的天气任务直接跳过，不启动无意义线程
+    try:
+        from app.services.holiday_service import holiday_service
+        holiday_active, holiday_period = holiday_service.is_active()
+        if holiday_active:
+            reason = f'假期模式静默（{holiday_period.name}）' if holiday_period else '假期模式静默'
+            logger.info(f'[管理后台] 手动触发天气任务被假期静默拦截: {label}')
+            return api_success(
+                message=f'{reason}，{label}已跳过',
+                skipped=True,
+            )
+    except Exception:
+        # fail-open：判断异常不拦截，照常触发，避免误静音
+        pass
+
     try:
         import app.modules.weather.tasks as weather_tasks
         task_func = getattr(weather_tasks, func_name)
@@ -799,6 +814,27 @@ def trigger_electricity_task():
         return api_error(message=f'不支持的任务类型: {task_type}', supported_types=list(task_map.keys()), http_status=400)
 
     func_name, label = task_map[task_type]
+
+    # 假期静默前置拦截：静默中手动触发的「面向用户推送/告警」类电量任务直接跳过。
+    # 注意：电量数据采集(fetch_electricity_data)与 Cookie 有效性检测(check_cookie_validity)
+    # 属系统运维/数据采集，假期不静默，仍照常触发，故不在拦截集内。
+    _ELECTRICITY_SILENCED = {
+        'push_electricity_daily', 'push_electricity_weekly',
+        'push_electricity_monthly', 'check_low_power',
+    }
+    try:
+        from app.services.holiday_service import holiday_service
+        holiday_active, holiday_period = holiday_service.is_active()
+        if holiday_active and task_type in _ELECTRICITY_SILENCED:
+            reason = f'假期模式静默（{holiday_period.name}）' if holiday_period else '假期模式静默'
+            logger.info(f'[管理后台] 手动触发电量任务被假期静默拦截: {label}')
+            return api_success(
+                message=f'{reason}，{label}已跳过',
+                skipped=True,
+            )
+    except Exception:
+        # fail-open：判断异常不拦截，照常触发，避免误静音
+        pass
 
     try:
         import app.modules.electricity.tasks as elec_tasks

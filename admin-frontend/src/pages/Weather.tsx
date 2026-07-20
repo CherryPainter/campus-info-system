@@ -190,6 +190,11 @@ export default function Weather() {
   const handleTrigger = async (taskType: string) => {
     try {
       const res = await adminApi.triggerWeather(taskType);
+      // 假期静默拦截：后端返回 skipped，提示已跳过且不开启「已完成」轮询
+      if ((res as any).skipped) {
+        message.warning(res.message || '假期静默中，已跳过');
+        return;
+      }
       message.success(res.message || '任务已触发');
       setListPolling(true);
     } catch (error) { message.error('触发任务失败'); }
