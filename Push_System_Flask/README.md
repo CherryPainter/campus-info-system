@@ -124,7 +124,7 @@ flowchart TB
     end
 
     subgraph STORE[数据存储 MySQL 8]
-        DB[(课程 / 天气 / 电量 / 用户 / Webhook 等 20 张表)]
+        DB[(课程 / 天气 / 电量 / 用户 / Webhook 等 19 张表)]
     end
 
     subgraph FE[管理后台 React + TypeScript]
@@ -273,8 +273,19 @@ Push_System_Flask/
 |   |   |                                 #   - RotatingFileHandler (10MB x 5)
 |   |   |-- extensions.py                 # Flask 扩展实例
 |   |                                     #   - flask_limiter.Limiter
+|   |   |-- bootstrap.py                  # 启动期副作用收口（建库迁移/默认配置/管理员账号/清理僵尸进程）
+|   |                                     #   - AUTO_MIGRATE_ON_START 可控
+|   |-- schema/                           # 数据库 Schema 管理（替代原 init_db.py）
+|   |   |-- __init__.py                    # Schema 包入口（create_all / migrate 聚合）
+|   |   |-- common.py                      # 公共建表工具
+|   |   |-- create_tables.py               # 建表
+|   |   |-- migrate.py                     # 增量迁移
+|   |   |-- seed.py                        # 默认数据播种
+|   |   |-- status.py                      # 表/列状态探测
+|   |   |-- fingerprint.py                 # 数据库指纹漂移检测
+|   |   |-- reset.py                       # 重置（开发用）
 |   |
-|   |-- model/                            # 数据模型层 (13 个模型)
+|   |-- model/                            # 数据模型层 (14 个模型)
 |   |   |-- __init__.py                   # 统一导出所有模型
 |   |   |-- user.py                       # User - 用户表
 |   |   |-- user_mfa.py                   # UserMFA - MFA 配置表
@@ -311,6 +322,9 @@ Push_System_Flask/
 |   |   |-- templates.json                # 6 个消息模板配置
 |   |   |-- geo_service.py                # IP 地理解析（境外防火墙用，基于 ip2region 离线库）
 |   |   |-- ip_blacklist_service.py        # IP 黑名单 / 登录爆破滑动窗口（Redis 或内存降级）
+|   |   |-- process_service.py             # 任务进程写入（从 process_routes 下沉，统一进程状态管理）
+|   |   |-- teaching_week_service.py        # 教学周推算（基于开学日配置 + 教务系统界限，替代 course_weeks 表）
+|   |   |-- notification_service.py         # 任务状态告警统一收口
 |   |
 |   |-- modules/                          # 功能模块
 |   |   |-- weather/                      # 天气监控子模块
@@ -332,6 +346,8 @@ Push_System_Flask/
 |   |
 |   |-- tasks/                            # 任务调度
 |   |   |-- scheduler.py                  # APScheduler 调度核心
+|   |   |-- executors.py                  # 定时任务执行逻辑（从 scheduler 拆出）
+|   |   |-- scheduler_state.py            # 调度共享状态（破 scheduler 循环依赖）
 |   |                                     #   - 条件注册 (按配置启用模块)
 |   |                                     #   - 爬虫并发锁/重试/超时
 |   |                                     #   - 推送规则协调 (爬虫与推送时间冲突处理)
@@ -358,6 +374,7 @@ Push_System_Flask/
 |   |   |                                 #   - 进程管理 (kill_process)
 |   |   |                                 #   - Python 路径检测
 |   |   |-- token.py                      # 动态 Token 管理
+|   |   |-- course_helpers.py             # 周次/学期纯函数工具（week_number 推算等）
 |   |                                     #   - 一次性/IP绑定/短时效安全 Token
 |   |
 |   |-- cqie-course-timetable/            # 课表爬虫子项目
@@ -365,6 +382,7 @@ Push_System_Flask/
 |       |-- spider.py                     # Playwright 爬虫 (登录/抓取/解析)
 |       |-- captcha.py                    # 验证码识别 (OpenCV + Tesseract)
 |       |-- pipeline.py                   # 数据处理与入库管道
+|       |-- parser_utils.py               # 纯解析函数（时间/周次文本解析）
 |       |-- config.py                     # 子项目配置
 |       |-- logger.py                     # 子项目日志
 |       |-- requirements.txt              # 子项目独立依赖
