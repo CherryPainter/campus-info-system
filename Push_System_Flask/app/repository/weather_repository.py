@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 天气数据仓库
 
@@ -8,12 +7,12 @@
 - 提供类型安全的 CRUD 接口
 """
 
-from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, and_
+from datetime import datetime
 
-from app.model.weather import WeatherRecord, WeatherAlert
+from sqlalchemy import and_, desc
+from sqlalchemy.orm import Session
+
+from app.model.weather import WeatherAlert, WeatherRecord
 
 
 class WeatherRepository:
@@ -28,18 +27,18 @@ class WeatherRepository:
         session: Session,
         record_type: str,
         city_name: str,
-        temp: Optional[float] = None,
-        feels_like: Optional[float] = None,
-        text: Optional[str] = None,
-        humidity: Optional[int] = None,
-        wind_dir: Optional[str] = None,
-        wind_scale: Optional[str] = None,
-        precip: Optional[float] = None,
-        pop: Optional[int] = None,
-        pressure: Optional[int] = None,
-        vis: Optional[float] = None,
-        cloud: Optional[int] = None,
-        fx_time: Optional[datetime] = None,
+        temp: float | None = None,
+        feels_like: float | None = None,
+        text: str | None = None,
+        humidity: int | None = None,
+        wind_dir: str | None = None,
+        wind_scale: str | None = None,
+        precip: float | None = None,
+        pop: int | None = None,
+        pressure: int | None = None,
+        vis: float | None = None,
+        cloud: int | None = None,
+        fx_time: datetime | None = None,
     ) -> WeatherRecord:
         """
         创建天气记录
@@ -74,7 +73,7 @@ class WeatherRepository:
         return record
 
     @staticmethod
-    def get_latest_now_record(session: Session, city_name: str = '重庆') -> Optional[WeatherRecord]:
+    def get_latest_now_record(session: Session, city_name: str = "重庆") -> WeatherRecord | None:
         """
         获取最新的实时天气记录
 
@@ -89,7 +88,7 @@ class WeatherRepository:
             session.query(WeatherRecord)
             .filter(
                 and_(
-                    WeatherRecord.record_type == 'now',
+                    WeatherRecord.record_type == "now",
                     WeatherRecord.city_name == city_name,
                 )
             )
@@ -100,9 +99,9 @@ class WeatherRepository:
     @staticmethod
     def get_hourly_records(
         session: Session,
-        city_name: str = '重庆',
+        city_name: str = "重庆",
         limit: int = 24,
-    ) -> List[WeatherRecord]:
+    ) -> list[WeatherRecord]:
         """
         获取逐小时预报记录
 
@@ -118,7 +117,7 @@ class WeatherRepository:
             session.query(WeatherRecord)
             .filter(
                 and_(
-                    WeatherRecord.record_type == 'hourly',
+                    WeatherRecord.record_type == "hourly",
                     WeatherRecord.city_name == city_name,
                 )
             )
@@ -130,7 +129,7 @@ class WeatherRepository:
     @staticmethod
     def delete_all_hourly_records(
         session: Session,
-        city_name: str = '重庆',
+        city_name: str = "重庆",
     ) -> int:
         """
         删除该城市的所有逐小时预报记录（更新前清空）
@@ -146,7 +145,7 @@ class WeatherRepository:
             session.query(WeatherRecord)
             .filter(
                 and_(
-                    WeatherRecord.record_type == 'hourly',
+                    WeatherRecord.record_type == "hourly",
                     WeatherRecord.city_name == city_name,
                 )
             )
@@ -157,7 +156,7 @@ class WeatherRepository:
     @staticmethod
     def delete_all_now_records(
         session: Session,
-        city_name: str = '重庆',
+        city_name: str = "重庆",
     ) -> int:
         """
         删除该城市的所有实时天气记录（更新前清空）
@@ -173,7 +172,7 @@ class WeatherRepository:
             session.query(WeatherRecord)
             .filter(
                 and_(
-                    WeatherRecord.record_type == 'now',
+                    WeatherRecord.record_type == "now",
                     WeatherRecord.city_name == city_name,
                 )
             )
@@ -192,9 +191,9 @@ class WeatherRepository:
         event_type: str,
         severity: str,
         color_code: str,
-        description: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        description: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> WeatherAlert:
         """
         创建天气预警记录
@@ -233,8 +232,8 @@ class WeatherRepository:
     @staticmethod
     def get_active_alerts(
         session: Session,
-        city_name: str = '重庆',
-    ) -> List[WeatherAlert]:
+        city_name: str = "重庆",
+    ) -> list[WeatherAlert]:
         """
         获取生效中的预警
 
@@ -249,7 +248,7 @@ class WeatherRepository:
             session.query(WeatherAlert)
             .filter(
                 and_(
-                    WeatherAlert.is_active == True,
+                    WeatherAlert.is_active.is_(True),
                     WeatherAlert.city_name == city_name,
                 )
             )
@@ -269,11 +268,7 @@ class WeatherRepository:
         Returns:
             bool: 是否成功
         """
-        alert = (
-            session.query(WeatherAlert)
-            .filter(WeatherAlert.alert_id == alert_id)
-            .first()
-        )
+        alert = session.query(WeatherAlert).filter(WeatherAlert.alert_id == alert_id).first()
         if alert:
             alert.is_active = False
             return True
@@ -292,9 +287,7 @@ class WeatherRepository:
             bool: 是否存在
         """
         return (
-            session.query(WeatherAlert)
-            .filter(WeatherAlert.alert_id == alert_id)
-            .first()
+            session.query(WeatherAlert).filter(WeatherAlert.alert_id == alert_id).first()
             is not None
         )
 
@@ -315,7 +308,7 @@ class WeatherRepository:
             .filter(
                 and_(
                     WeatherAlert.alert_id == alert_id,
-                    WeatherAlert.is_pushed == True,
+                    WeatherAlert.is_pushed.is_(True),
                 )
             )
             .first()
@@ -334,22 +327,20 @@ class WeatherRepository:
             session: 数据库会话
             alert_id: 预警标识
         """
-        alert = (
-            session.query(WeatherAlert)
-            .filter(WeatherAlert.alert_id == alert_id)
-            .first()
-        )
+        alert = session.query(WeatherAlert).filter(WeatherAlert.alert_id == alert_id).first()
         if alert:
             alert.is_pushed = True
         else:
-            session.add(WeatherAlert(
-                alert_id=alert_id,
-                city_name='',
-                headline='',
-                event_type='',
-                severity='',
-                color_code='',
-                is_active=False,
-                is_pushed=True,
-            ))
+            session.add(
+                WeatherAlert(
+                    alert_id=alert_id,
+                    city_name="",
+                    headline="",
+                    event_type="",
+                    severity="",
+                    color_code="",
+                    is_active=False,
+                    is_pushed=True,
+                )
+            )
         session.flush()

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 
 /** 通用 API 响应结构（各 api 模块内部 ApiResponse 的结构子集） */
 export interface ApiDataResponse<T> {
@@ -26,7 +26,7 @@ export interface TaskPollingOptions<T> {
   onFailed?: (data: T) => void;
 }
 
-const DEFAULT_TERMINAL = ['completed', 'completed_empty', 'success', 'failed', 'cancelled'];
+const DEFAULT_TERMINAL = ["completed", "completed_empty", "success", "failed", "cancelled"];
 
 /**
  * 按任务 ID 跟踪异步任务的完整生命周期（pending -> running -> 终态）。
@@ -67,7 +67,7 @@ export function useTaskPolling<T>(taskId: number | null, options: TaskPollingOpt
         optsRef.current.onUpdate?.(data);
         if (terminal.includes(status)) {
           stop();
-          if (status === 'failed' || status === 'cancelled') {
+          if (status === "failed" || status === "cancelled") {
             optsRef.current.onFailed?.(data);
           } else {
             optsRef.current.onDone?.(data);
@@ -76,7 +76,7 @@ export function useTaskPolling<T>(taskId: number | null, options: TaskPollingOpt
       } catch (e) {
         if (!alive) return;
         // 单次网络错误不终止轮询，下一周期重试
-        console.error('[useTaskPolling] 轮询异常', e);
+        console.error("[useTaskPolling] 轮询异常", e);
       }
     };
 

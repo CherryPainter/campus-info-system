@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Repository 层 - 数据访问封装
 
@@ -13,10 +12,10 @@ Repository 层 - 数据访问封装
 - 直接处理 HTTP 请求
 """
 
-from app.repository.weather_repository import WeatherRepository
 from app.repository.electricity_repository import ElectricityRepository
+from app.repository.weather_repository import WeatherRepository
 
 __all__ = [
-    'WeatherRepository',
-    'ElectricityRepository',
+    "WeatherRepository",
+    "ElectricityRepository",
 ]

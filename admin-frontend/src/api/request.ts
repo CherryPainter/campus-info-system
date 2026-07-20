@@ -1,20 +1,20 @@
 /**
  * Axios 请求实例模块
  * 封装 Axios 并配置请求/响应拦截器
- * 
+ *
  * 注意：现在使用 httpOnly cookie 存储 JWT token，前端无需手动设置 Authorization 头
  * 浏览器会自动携带 cookie 到后端
  */
 
-import axios, { type AxiosRequestConfig } from 'axios';
-import { notifySessionExpired } from '@/utils/sessionExpiry';
+import axios, { type AxiosRequestConfig } from "axios";
+import { notifySessionExpired } from "@/utils/sessionExpiry";
 
 /** 后端 API 基础地址
  * 开发环境（.env.development）配置为 http://yuetang.cloud:29528/api，直接调用后端避免 Cookie 域名问题
  * 生产环境默认使用相对路径 /api，由 Nginx 反向代理转发到后端
  * 可通过 VITE_API_BASE_URL 环境变量覆盖默认行为
  */
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 /** 创建 Axios 实例，配置基础 URL 和超时时间 */
 const request = axios.create({
@@ -30,7 +30,7 @@ const request = axios.create({
  * 避免浏览器/代理把爬虫状态、任务详情等 GET 响应缓存成陈旧值。
  */
 request.interceptors.request.use((config) => {
-  if ((config.method || 'get').toLowerCase() === 'get') {
+  if ((config.method || "get").toLowerCase() === "get") {
     config.params = { ...(config.params || {}), _t: Date.now() };
   }
   return config;
@@ -57,7 +57,7 @@ const REFRESH_COOLDOWN_MS = 10000;
 request.interceptors.response.use(
   (response) => {
     // 请求成功，触发在线事件
-    const event = new CustomEvent('server-online');
+    const event = new CustomEvent("server-online");
     window.dispatchEvent(event);
     return response.data;
   },
@@ -66,8 +66,8 @@ request.interceptors.response.use(
 
     // 检测网络错误（服务器离线）
     if (!error.response) {
-      const event = new CustomEvent('server-offline', { 
-        detail: { message: '无法连接到服务器，请检查后端服务是否运行' }
+      const event = new CustomEvent("server-offline", {
+        detail: { message: "无法连接到服务器，请检查后端服务是否运行" },
       });
       window.dispatchEvent(event);
       return Promise.reject({ ...error, isOffline: true });
@@ -75,18 +75,23 @@ request.interceptors.response.use(
 
     // 检测 502/503/504 错误（网关错误）
     if ([502, 503, 504].includes(error.response?.status)) {
-      const event = new CustomEvent('server-offline', { 
-        detail: { message: '服务器暂时不可用，请检查后端服务是否运行' }
+      const event = new CustomEvent("server-offline", {
+        detail: { message: "服务器暂时不可用，请检查后端服务是否运行" },
       });
       window.dispatchEvent(event);
       return Promise.reject({ ...error, isOffline: true });
     }
 
     // 检测 401 错误且尚未重试过，且不是登录请求
-    const isLoginRequest = originalRequest.url?.includes('/auth/login');
-    const isRefreshRequest = originalRequest.url?.includes('/auth/refresh');
-    
-    if (error.response?.status === 401 && !originalRequest._retry && !isLoginRequest && !isRefreshRequest) {
+    const isLoginRequest = originalRequest.url?.includes("/auth/login");
+    const isRefreshRequest = originalRequest.url?.includes("/auth/refresh");
+
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !isLoginRequest &&
+      !isRefreshRequest
+    ) {
       originalRequest._retry = true;
 
       // 提取会话失效原因，用于跳转登录页时弹框提示用户
@@ -95,7 +100,7 @@ request.interceptors.response.use(
         revoke_reason?: string;
         revoke_ip?: string;
       };
-      const authFailReason = errData.message || '您的登录会话已失效，请重新登录。';
+      const authFailReason = errData.message || "您的登录会话已失效，请重新登录。";
 
       // 检查是否在冷却时间内
       const now = Date.now();

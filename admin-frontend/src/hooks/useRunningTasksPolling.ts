@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type { TaskProcess } from '../api/admin';
+import { useEffect, useRef, useState } from "react";
+import type { TaskProcess } from "../api/admin";
 
 export interface RunningTasksResponse {
   status: string;
@@ -63,7 +63,7 @@ export function useRunningTasksPolling(options: RunningTasksOptions) {
         }
       } catch (e) {
         if (!alive) return;
-        console.error('[useRunningTasksPolling] 轮询异常', e);
+        console.error("[useRunningTasksPolling] 轮询异常", e);
       }
     };
 

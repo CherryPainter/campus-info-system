@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Gunicorn 生产环境配置
 
 核心修复：preload_app = True
@@ -10,8 +9,8 @@
 启动方式：
   gunicorn -c gunicorn_config.py run:app
 """
-import os
 
+import os
 
 # ============================================================
 # 关键：预加载应用
@@ -74,7 +73,7 @@ proc_name = "push_system"
 
 def post_fork(server, worker):
     """Worker 进程创建后立即回调：标记当前为 worker 进程。
-    
+
     配合 scheduler.py 中的环境变量检查，
     确保即使 preload_app 失效，worker 也不会启动调度器。
     """

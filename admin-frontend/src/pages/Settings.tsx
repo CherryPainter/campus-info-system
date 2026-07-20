@@ -9,6 +9,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Card, Collapse, Button, Spin, Typography, Divider, Alert, Input, InputNumber, Switch, Select, Space, Tooltip, Tag, Popconfirm, Modal, QRCode, App } from 'antd';
 import ResponsiveTable from '@/components/ResponsiveTable';
+import OtpInput from '@/components/common/OtpInput';
 import { SettingOutlined, ReloadOutlined, InfoCircleOutlined, EditOutlined, SaveOutlined, CloseOutlined, ToolOutlined, CloudOutlined, ThunderboltOutlined, SendOutlined, SafetyOutlined, CheckCircleOutlined, StopOutlined, BookOutlined, ClockCircleOutlined, MobileOutlined } from '@ant-design/icons';
 import { configApi, type ModuleConfigItem, type ModuleConfigGroup } from '@/api/admin';
 
@@ -47,8 +48,6 @@ export default function Settings() {
   const [mfaQrUrl, setMfaQrUrl] = useState('');
   const [mfaCode, setMfaCode] = useState('');
   const [mfaSetupStep, setMfaSetupStep] = useState<'idle' | 'scan' | 'verify' | 'disable'>('idle');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mfaInputRefs = useRef<any[]>([]);
   const mfaVisibleRef = useRef(false);
 
   // 同步 mfaVisibleRef
@@ -56,17 +55,10 @@ export default function Settings() {
     mfaVisibleRef.current = mfaModalVisible;
   }, [mfaModalVisible]);
 
-  // 切换到输入验证码步骤并聚焦
+  // 切换到输入验证码步骤（聚焦交给 OtpInput 的 autoFocus）
   const switchToVerifyStep = () => {
     setMfaSetupStep('verify');
     setMfaCode('');
-    // 延迟聚焦，等待输入框渲染
-    setTimeout(() => {
-      const firstInput = mfaInputRefs.current[0];
-      if (firstInput) {
-        firstInput.focus();
-      }
-    }, 300);
   };
 
   const fetchConfigs = async () => {
@@ -143,18 +135,11 @@ export default function Settings() {
     }
   };
 
-  // 禁用 MFA
+  // 禁用 MFA（聚焦交给 OtpInput 的 autoFocus）
   const handleMfaDisable = () => {
     setMfaModalVisible(true);
     setMfaSetupStep('disable');
     setMfaCode('');
-    // 延迟聚焦，等待弹窗和输入框渲染
-    setTimeout(() => {
-      const firstInput = mfaInputRefs.current[0];
-      if (firstInput) {
-        firstInput.focus();
-      }
-    }, 300);
   };
 
   const handleMfaDisableConfirm = async () => {
@@ -557,16 +542,6 @@ export default function Settings() {
         title="两步验证"
         open={mfaModalVisible}
         onCancel={() => { setMfaModalVisible(false); setMfaSetupStep('idle'); }}
-        afterOpenChange={(open) => {
-          if (open) {
-            setTimeout(() => {
-              const firstInput = mfaInputRefs.current[0];
-              if (firstInput) {
-                firstInput.focus();
-              }
-            }, 300);
-          }
-        }}
         footer={null}
         centered
         width={400}
@@ -615,62 +590,8 @@ export default function Settings() {
 
               {/* 验证码输入框 */}
               <Space direction="vertical" size="middle" style={{ width: '100%', marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
-                  {[0, 1, 2, 3, 4, 5].map((index) => (
-                    <Input
-                      key={index}
-                      ref={(el) => { mfaInputRefs.current[index] = el; }}
-                      value={mfaCode[index] || ''}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '');
-                        if (!val) return;
-                        
-                        const newCode = mfaCode.split('');
-                        newCode[index] = val[val.length - 1];
-                        setMfaCode(newCode.join(''));
-                        
-                        // 跳到下一个输入框
-                        if (index < 5) {
-                          setTimeout(() => {
-                            mfaInputRefs.current[index + 1]?.focus();
-                          }, 10);
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Backspace') {
-                          if (mfaCode[index]) {
-                            const newCode = mfaCode.split('');
-                            newCode[index] = '';
-                            setMfaCode(newCode.join(''));
-                          } else if (index > 0) {
-                            setTimeout(() => {
-                              mfaInputRefs.current[index - 1]?.focus();
-                            }, 10);
-                          }
-                        }
-                      }}
-                      onPaste={(e) => {
-                        e.preventDefault();
-                        const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-                        if (pasted) {
-                          setMfaCode(pasted);
-                        }
-                      }}
-                      maxLength={1}
-                      size="large"
-                      style={{
-                        width: 44,
-                        height: 48,
-                        textAlign: 'center',
-                        fontSize: 20,
-                        fontWeight: 500,
-                        borderRadius: 4,
-                      }}
-                    />
-                  ))}
-                </div>
-                
-                {/* 提示信息 */}
+                                <OtpInput value={mfaCode} onChange={setMfaCode} length={6} autoFocus />
+{/* 提示信息 */}
                 <div style={{ display: 'flex', justifyContent: 'center', gap: 8, color: '#8c8c8c', fontSize: 12 }}>
                   <ClockCircleOutlined />
                   <span>验证码每30秒更新一次</span>

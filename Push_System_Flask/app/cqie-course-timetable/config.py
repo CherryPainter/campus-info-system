@@ -2,6 +2,7 @@
 # 课程表爬虫与处理系统配置
 import os
 import sys
+
 from dotenv import load_dotenv
 
 # 获取当前文件所在的目录
@@ -10,11 +11,11 @@ current_file_dir = os.path.dirname(os.path.abspath(__file__))
 # 尝试多个可能的 .env 文件位置
 env_paths = [
     # 1. 项目根目录（上一级目录的上一级）
-    os.path.join(current_file_dir, '..', '..', '.env'),
+    os.path.join(current_file_dir, "..", "..", ".env"),
     # 2. 当前目录的父级
-    os.path.join(current_file_dir, '..', '.env'),
+    os.path.join(current_file_dir, "..", ".env"),
     # 3. 环境变量指定的路径
-    os.environ.get('ENV_FILE_PATH', ''),
+    os.environ.get("ENV_FILE_PATH", ""),
 ]
 
 # 加载 .env 文件（app.core.config 在导入时已统一加载，这里作为兜底确保爬虫子进程可用）
@@ -34,18 +35,19 @@ if project_root not in sys.path:
 # 尝试从项目 Config 类读取配置（如果失败，则使用旧方式）
 try:
     from app.core.config import Config
+
     # 使用 Config 类的配置
     CLASS_NAME = Config.CLASS_NAME
     ENABLE_BACKGROUND = Config.COURSE_ENABLE_BACKGROUND
 except (ImportError, AttributeError):
     # 回退到旧方式
-    CLASS_NAME = os.environ.get('CLASS_NAME', 'ZK2401')
-    ENABLE_BACKGROUND = os.environ.get('COURSE_ENABLE_BACKGROUND', 'true').lower() == 'true'
+    CLASS_NAME = os.environ.get("CLASS_NAME", "ZK2401")
+    ENABLE_BACKGROUND = os.environ.get("COURSE_ENABLE_BACKGROUND", "true").lower() == "true"
 
 # 爬虫配置
 SPIDER_CONFIG = {
-    "timeout": int(os.environ.get('JWXT_TIMEOUT', '120')),  # 超时时间（秒）
-    "headless": os.environ.get('JWXT_HEADLESS', 'true').lower() == 'true',  # 是否使用无头浏览器
+    "timeout": int(os.environ.get("JWXT_TIMEOUT", "120")),  # 超时时间（秒）
+    "headless": os.environ.get("JWXT_HEADLESS", "true").lower() == "true",  # 是否使用无头浏览器
     "output_dir": os.path.join(BASE_DIR, "output"),  # 输出目录
     "error_screenshot": True,  # 是否在错误时截图
     "max_retries": 3,  # 最大重试次数
@@ -54,23 +56,27 @@ SPIDER_CONFIG = {
         "initial_wait_time": 120,  # 初始等待时间（秒）
         "wait_increment": 60,  # 每次重试增加的等待时间（秒）
         "max_retries": 2,  # 最大重试次数
-        "max_total_wait": 240  # 最大总等待时间（秒）
+        "max_total_wait": 240,  # 最大总等待时间（秒）
     },
     "login": {
-        "username": os.environ.get('JWXT_USERNAME', ''),  # 登录账号
-        "password": os.environ.get('JWXT_PASSWORD', '')  # 登录密码
-    }
+        "username": os.environ.get("JWXT_USERNAME", ""),  # 登录账号
+        "password": os.environ.get("JWXT_PASSWORD", ""),  # 登录密码
+    },
 }
 
 # 注：登录凭据不再打印到 stdout，避免信息泄露
 
 # 课程处理配置
 PROCESSING_CONFIG = {
-    "first_schedule_path": os.path.join(BASE_DIR, "course_processing/first.json"),  # 第一套时间安排文件
-    "second_schedule_path": os.path.join(BASE_DIR, "course_processing/second.json"),  # 第二套时间安排文件
+    "first_schedule_path": os.path.join(
+        BASE_DIR, "course_processing/first.json"
+    ),  # 第一套时间安排文件
+    "second_schedule_path": os.path.join(
+        BASE_DIR, "course_processing/second.json"
+    ),  # 第二套时间安排文件
     "raw_data_dir": os.path.join(BASE_DIR, "output/course-data/raw"),  # 原始数据目录
     "processed_data_dir": os.path.join(BASE_DIR, "output/course-data/processed"),  # 处理后数据目录
-    "history_dir": os.path.join(BASE_DIR, "output/course-data/history")  # 历史数据目录
+    "history_dir": os.path.join(BASE_DIR, "output/course-data/history"),  # 历史数据目录
 }
 
 # 图片生成配置
@@ -99,8 +105,8 @@ IMAGE_CONFIG = {
         "星期四": "#FFF8E1",  # 浅黄色
         "星期五": "#F3E5F5",  # 浅紫色
         "星期六": "#E0F7FA",  # 浅蓝色
-        "星期日": "#FFECB3"   # 浅黄色
-    }
+        "星期日": "#FFECB3",  # 浅黄色
+    },
 }
 
 # 教务系统配置（兼容旧脚本）
@@ -111,21 +117,21 @@ JWXT_CONFIG = {
     "password": SPIDER_CONFIG["login"]["password"],
     "captcha_mode": "auto",  # 验证码模式: 'auto' 或 'manual'
     "base_url": "http://jwxt.cqie.edu.cn",  # 教务系统基础URL
-    "output_dir": SPIDER_CONFIG["output_dir"]
+    "output_dir": SPIDER_CONFIG["output_dir"],
 }
 
 # 验证码配置（兼容旧脚本）
 CAPTCHA_CONFIG = {
     "tesseract_path": "",  # Tesseract OCR路径
     "min_confidence": 60,  # 最小识别置信度
-    "max_attempts": 3  # 最大尝试次数
+    "max_attempts": 3,  # 最大尝试次数
 }
 
 # 日志配置（兼容旧脚本）
 LOG_CONFIG = {
     "level": "INFO",
     "format": "%(asctime)s - %(levelname)s - %(message)s",
-    "datefmt": "%Y-%m-%d %H:%M:%S"
+    "datefmt": "%Y-%m-%d %H:%M:%S",
 }
 
 # 其他配置
@@ -136,5 +142,5 @@ CONFIG = {
     "image": IMAGE_CONFIG,
     "jwxt": JWXT_CONFIG,
     "captcha": CAPTCHA_CONFIG,
-    "log": LOG_CONFIG
+    "log": LOG_CONFIG,
 }

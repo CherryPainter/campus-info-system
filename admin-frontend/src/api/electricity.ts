@@ -2,8 +2,8 @@
  * 电量相关 API 模块
  */
 
-import request from './request';
-import type { ApiResponse } from '@/types/api';
+import request from "./request";
+import type { ApiResponse } from "@/types/api";
 
 /** 剩余电量数据 */
 export interface ElectricityRemaining {
@@ -46,7 +46,7 @@ export interface ElectricityStatistics {
 }
 
 /** 时间范围类型 */
-export type RangeType = 'week' | 'last_week' | 'month' | 'last_month' | 'custom';
+export type RangeType = "week" | "last_week" | "month" | "last_month" | "custom";
 
 /** 电量配置 */
 export interface ElectricityConfig {
@@ -62,11 +62,11 @@ export interface ElectricityConfig {
  */
 export const electricityApi = {
   /** 获取剩余电量 */
-  getRemaining: () => request.get<any, ApiResponse<ElectricityRemaining>>('/electricity/remaining'),
+  getRemaining: () => request.get<any, ApiResponse<ElectricityRemaining>>("/electricity/remaining"),
 
   /** 获取用电记录（支持分页） */
-  getRecords: (limit?: number) => 
-    request.get<any, ApiResponse<ElectricityRecord[]>>('/electricity/records', {
+  getRecords: (limit?: number) =>
+    request.get<any, ApiResponse<ElectricityRecord[]>>("/electricity/records", {
       params: limit ? { limit } : undefined,
     }),
 
@@ -81,12 +81,19 @@ export const electricityApi = {
     if (range_type) params.range_type = range_type;
     if (start_date) params.start_date = start_date;
     if (end_date) params.end_date = end_date;
-    return request.get<any, ApiResponse<ElectricityStatistics>>('/electricity/statistics', { params });
+    return request.get<any, ApiResponse<ElectricityStatistics>>("/electricity/statistics", {
+      params,
+    });
   },
 
   /** 全量爬取（需管理员权限） */
-  triggerFetchAll: () => request.post<any, ApiResponse<{ task_id?: number }>>('/electricity/trigger/fetch_all'),
+  triggerFetchAll: () =>
+    request.post<any, ApiResponse<{ task_id?: number }>>("/electricity/trigger/fetch_all"),
 
   /** 删除全部用电记录（需管理员权限） */
-  deleteAllRecords: () => request.delete<any, ApiResponse<{ deleted_records: number; deleted_remaining: number; deleted_capacity: number }>>('/electricity/records'),
+  deleteAllRecords: () =>
+    request.delete<
+      any,
+      ApiResponse<{ deleted_records: number; deleted_remaining: number; deleted_capacity: number }>
+    >("/electricity/records"),
 };

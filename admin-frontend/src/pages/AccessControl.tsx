@@ -3,15 +3,11 @@
  * 将「用户管理」「会话管理」「访问控制（IP 黑名单）」三个模块整合到一个页面，使用 Tabs 切换
  * 路由：/access（仅管理员可访问）
  */
-import { Tabs } from 'antd';
-import {
-  UserOutlined,
-  DesktopOutlined,
-  StopOutlined,
-} from '@ant-design/icons';
-import UserManagement from './UserManagement';
-import SessionManager from './SessionManager';
-import Blacklist from './Blacklist';
+import { Tabs } from "antd";
+import { UserOutlined, DesktopOutlined, StopOutlined } from "@ant-design/icons";
+import UserManagement from "./UserManagement";
+import SessionManager from "./SessionManager";
+import Blacklist from "./Blacklist";
 
 export default function AccessControl() {
   return (
@@ -20,7 +16,7 @@ export default function AccessControl() {
       destroyInactiveTabPane={false}
       items={[
         {
-          key: 'users',
+          key: "users",
           label: (
             <span>
               <UserOutlined />
@@ -30,7 +26,7 @@ export default function AccessControl() {
           children: <UserManagement />,
         },
         {
-          key: 'sessions',
+          key: "sessions",
           label: (
             <span>
               <DesktopOutlined />
@@ -40,7 +36,7 @@ export default function AccessControl() {
           children: <SessionManager />,
         },
         {
-          key: 'blacklist',
+          key: "blacklist",
           label: (
             <span>
               <StopOutlined />

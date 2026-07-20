@@ -3,7 +3,7 @@
  * 提供黑名单列表的增删改查、启停、清理过期，以及安全事件查看
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import {
   Card,
   Tabs,
@@ -25,8 +25,8 @@ import {
   Spin,
   Pagination,
   Drawer,
-} from 'antd';
-import ResponsiveTable from '@/components/ResponsiveTable';
+} from "antd";
+import ResponsiveTable from "@/components/ResponsiveTable";
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -35,42 +35,41 @@ import {
   UnlockOutlined,
   EditOutlined,
   ExclamationCircleOutlined,
-} from '@ant-design/icons';
-import { formatDateTime } from '@/utils/datetime';
+} from "@ant-design/icons";
+import { formatDateTime } from "@/utils/datetime";
 import ipBlacklistApi, {
   type IPBlacklistRecord,
   type IPSecurityEvent,
   SOURCE_CN,
   EVENT_TYPE_CN,
-} from '@/api/ipBlacklist';
-import { IP_SOURCE_STYLE } from '@/constants/statusMaps';
-import { useMessage, showApiError } from '@/utils/message';
+} from "@/api/ipBlacklist";
+import { IP_SOURCE_STYLE } from "@/constants/statusMaps";
+import { useMessage, showApiError } from "@/utils/message";
 
 const { Text } = Typography;
 
 /** 格式化时间 */
-const fmtTime = (s: string | null) => (s ? formatDateTime(s) : '—');
+const fmtTime = (s: string | null) => (s ? formatDateTime(s) : "—");
 
 /** 严重程度颜色 */
-const sevColor = (s: string) =>
-  s === 'critical' ? 'red' : s === 'warning' ? 'orange' : 'blue';
+const sevColor = (s: string) => (s === "critical" ? "red" : s === "warning" ? "orange" : "blue");
 
 /** 来源颜色（优先用 IP_SOURCE_STYLE 映射） */
-const sourceColor = (s: string) => (IP_SOURCE_STYLE[s]?.color || 'default');
+const sourceColor = (s: string) => IP_SOURCE_STYLE[s]?.color || "default";
 
 /** 来源图标名 */
 const sourceIcon = (s: string) => IP_SOURCE_STYLE[s]?.icon;
 
 /** IP 格式校验 */
 const validateIp = (_: unknown, value: string) => {
-  const v = (value || '').trim();
-  if (!v) return Promise.reject(new Error('请输入 IP 地址'));
-  if (v.includes(':')) return Promise.resolve(); // IPv6 交由后端精校
+  const v = (value || "").trim();
+  if (!v) return Promise.reject(new Error("请输入 IP 地址"));
+  if (v.includes(":")) return Promise.resolve(); // IPv6 交由后端精校
   if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(v)) {
-    return Promise.reject(new Error('IPv4 格式不正确'));
+    return Promise.reject(new Error("IPv4 格式不正确"));
   }
-  if (v.split('.').some((n) => Number(n) > 255)) {
-    return Promise.reject(new Error('IPv4 每段不能超过 255'));
+  if (v.split(".").some((n) => Number(n) > 255)) {
+    return Promise.reject(new Error("IPv4 每段不能超过 255"));
   }
   return Promise.resolve();
 };
@@ -81,9 +80,9 @@ const EVENT_TYPE_OPTIONS = Object.entries(EVENT_TYPE_CN).map(([value, label]) =>
 }));
 
 const SEVERITY_OPTIONS = [
-  { value: 'info', label: '提示' },
-  { value: 'warning', label: '警告' },
-  { value: 'critical', label: '严重' },
+  { value: "info", label: "提示" },
+  { value: "warning", label: "警告" },
+  { value: "critical", label: "严重" },
 ];
 
 export default function Blacklist() {
@@ -115,7 +114,7 @@ export default function Blacklist() {
   const [onlyPending, setOnlyPending] = useState(true); // 仅显示未处理事件
   const [eventLoading, setEventLoading] = useState(false);
   const [actingEventId, setActingEventId] = useState<number | null>(null); // 正在处置（忽略/封禁）的事件
-  const [activeTab, setActiveTab] = useState<string>('list'); // 当前激活的 Tab
+  const [activeTab, setActiveTab] = useState<string>("list"); // 当前激活的 Tab
   const [togglingIp, setTogglingIp] = useState<string | null>(null); // 正在切换启停的 IP
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
@@ -133,7 +132,7 @@ export default function Blacklist() {
       setRecords(res.data);
       setTotal(res.pagination.total);
     } catch (e: any) {
-      message.error(showApiError(e, '加载黑名单失败'));
+      message.error(showApiError(e, "加载黑名单失败"));
     } finally {
       setLoading(false);
     }
@@ -153,7 +152,7 @@ export default function Blacklist() {
       setEvents(res.data);
       setEventTotal(res.pagination.total);
     } catch (e: any) {
-      message.error(showApiError(e, '加载安全事件失败'));
+      message.error(showApiError(e, "加载安全事件失败"));
     } finally {
       setEventLoading(false);
     }
@@ -174,20 +173,20 @@ export default function Blacklist() {
         duration_hours: values.duration_hours ?? null,
         note: values.note,
       });
-      if (res.status === 'success') {
+      if (res.status === "success") {
         message.success(`IP ${values.ip_address} 已加入黑名单`);
         setAddVisible(false);
         form.resetFields();
         setPage(1);
         loadList();
       } else {
-        message.error(res.message || '添加失败');
+        message.error(res.message || "添加失败");
       }
     } catch (e: any) {
       if (e?.response?.status === 400) {
-        message.error(showApiError(e, 'IP 格式不正确'));
+        message.error(showApiError(e, "IP 格式不正确"));
       } else {
-        message.error(showApiError(e, '添加失败'));
+        message.error(showApiError(e, "添加失败"));
       }
     } finally {
       setAddLoading(false);
@@ -201,17 +200,17 @@ export default function Blacklist() {
     setTogglingIp(record.ip_address);
     try {
       const res = await ipBlacklistApi.toggle(record.ip_address, active);
-      if (res.status === 'success') {
-        message.success(`IP ${record.ip_address} 已${active ? '启用' : '禁用'}`);
+      if (res.status === "success") {
+        message.success(`IP ${record.ip_address} 已${active ? "启用" : "禁用"}`);
         // 乐观更新当前行
         setRecords((prev) =>
-          prev.map((r) => (r.ip_address === record.ip_address ? { ...r, is_active: active } : r)),
+          prev.map((r) => (r.ip_address === record.ip_address ? { ...r, is_active: active } : r))
         );
       } else {
-        message.error(res.message || '操作失败');
+        message.error(res.message || "操作失败");
       }
     } catch (e: any) {
-      message.error(showApiError(e, '操作失败'));
+      message.error(showApiError(e, "操作失败"));
     } finally {
       setTogglingIp(null);
     }
@@ -221,14 +220,14 @@ export default function Blacklist() {
   const handleRemove = async (record: IPBlacklistRecord) => {
     try {
       const res = await ipBlacklistApi.remove(record.ip_address);
-      if (res.status === 'success') {
+      if (res.status === "success") {
         message.success(`IP ${record.ip_address} 已从黑名单移除`);
         loadList();
       } else {
-        message.error(res.message || '移除失败');
+        message.error(res.message || "移除失败");
       }
     } catch (e: any) {
-      message.error(showApiError(e, '移除失败'));
+      message.error(showApiError(e, "移除失败"));
     }
   };
 
@@ -236,14 +235,14 @@ export default function Blacklist() {
   const handleUnblock = async (record: IPBlacklistRecord) => {
     try {
       const res = await ipBlacklistApi.remove(record.ip_address);
-      if (res.status === 'success') {
+      if (res.status === "success") {
         message.success(`IP ${record.ip_address} 已解封，恢复访问权限`);
         loadList();
       } else {
-        message.error(res.message || '解封失败');
+        message.error(res.message || "解封失败");
       }
     } catch (e: any) {
-      message.error(showApiError(e, '解封失败'));
+      message.error(showApiError(e, "解封失败"));
     }
   };
 
@@ -251,11 +250,11 @@ export default function Blacklist() {
   const handleEdit = (record: IPBlacklistRecord) => {
     setEditRecord(record);
     editForm.setFieldsValue({
-      reason: record.reason || '',
+      reason: record.reason || "",
       duration_hours: record.expires_at
         ? Math.max(1, Math.round((new Date(record.expires_at).getTime() - Date.now()) / 3600000))
         : 0,
-      note: record.note || '',
+      note: record.note || "",
       is_active: record.is_active,
     });
     setEditVisible(true);
@@ -273,17 +272,17 @@ export default function Blacklist() {
         note: values.note,
         is_active: values.is_active,
       });
-      if (res.status === 'success') {
+      if (res.status === "success") {
         message.success(`IP ${editRecord.ip_address} 已更新`);
         setEditVisible(false);
         setEditRecord(null);
         loadList();
       } else {
-        message.error(res.message || '更新失败');
+        message.error(res.message || "更新失败");
       }
     } catch (e: any) {
       if (e?.response?.status !== 400) {
-        message.error(showApiError(e, '更新失败'));
+        message.error(showApiError(e, "更新失败"));
       }
     } finally {
       setEditLoading(false);
@@ -294,15 +293,15 @@ export default function Blacklist() {
   const handleCleanup = async () => {
     try {
       const res = await ipBlacklistApi.cleanup();
-      if (res.status === 'success') {
+      if (res.status === "success") {
         const count = res.data?.cleaned_count ?? 0;
         message.success(`已清理 ${count} 条过期记录`);
         loadList();
       } else {
-        message.error(res.message || '清理失败');
+        message.error(res.message || "清理失败");
       }
     } catch (e: any) {
-      message.error(showApiError(e, '清理失败'));
+      message.error(showApiError(e, "清理失败"));
     }
   };
 
@@ -311,14 +310,14 @@ export default function Blacklist() {
     setActingEventId(ev.id);
     try {
       const res = await ipBlacklistApi.ignoreEvent(ev.id);
-      if (res.status === 'success') {
+      if (res.status === "success") {
         message.success(`事件 ${ev.id} 已忽略`);
         loadEvents();
       } else {
-        message.error(res.message || '操作失败');
+        message.error(res.message || "操作失败");
       }
     } catch (e: any) {
-      message.error(showApiError(e, '操作失败'));
+      message.error(showApiError(e, "操作失败"));
     } finally {
       setActingEventId(null);
     }
@@ -329,14 +328,14 @@ export default function Blacklist() {
     setActingEventId(ev.id);
     try {
       const res = await ipBlacklistApi.banEvent(ev.id);
-      if (res.status === 'success') {
+      if (res.status === "success") {
         message.success(res.message || `IP ${ev.ip_address} 已加入黑名单`);
         loadEvents();
       } else {
-        message.error(res.message || '操作失败');
+        message.error(res.message || "操作失败");
       }
     } catch (e: any) {
-      message.error(showApiError(e, '操作失败'));
+      message.error(showApiError(e, "操作失败"));
     } finally {
       setActingEventId(null);
     }
@@ -345,42 +344,46 @@ export default function Blacklist() {
   // ============ 表格列定义 ============
   const blacklistColumns = [
     {
-      title: 'IP 地址',
-      dataIndex: 'ip_address',
-      key: 'ip_address',
+      title: "IP 地址",
+      dataIndex: "ip_address",
+      key: "ip_address",
       width: 160,
       render: (ip: string, row: IPBlacklistRecord) => (
         <Space>
           <Text strong>{ip}</Text>
-          <Tag color={row.is_active ? 'green' : 'default'}>
-            {row.is_active ? '生效' : '禁用'}
-          </Tag>
+          <Tag color={row.is_active ? "green" : "default"}>{row.is_active ? "生效" : "禁用"}</Tag>
           {/* 登录安全信号来源高亮（撞库/枚举/限流等） */}
-          {['brute', 'enum', 'rate_limit', 'account_target'].some((k) => row.source?.includes(k)) && (
-            <Tag color="red" icon={<ExclamationCircleOutlined />}>登录风险</Tag>
+          {["brute", "enum", "rate_limit", "account_target"].some((k) =>
+            row.source?.includes(k)
+          ) && (
+            <Tag color="red" icon={<ExclamationCircleOutlined />}>
+              登录风险
+            </Tag>
           )}
         </Space>
       ),
     },
     {
-      title: '原因',
-      dataIndex: 'reason',
-      key: 'reason',
+      title: "原因",
+      dataIndex: "reason",
+      key: "reason",
       ellipsis: true,
       render: (v: string | null) => v || <Text type="secondary">—</Text>,
     },
     {
-      title: '来源',
-      dataIndex: 'source',
-      key: 'source',
+      title: "来源",
+      dataIndex: "source",
+      key: "source",
       width: 150,
       render: (s: string) => {
         const style = IP_SOURCE_STYLE[s];
-        const isLoginRisk = ['brute', 'enum', 'rate_limit', 'account_target'].some((k) => s?.includes(k));
+        const isLoginRisk = ["brute", "enum", "rate_limit", "account_target"].some((k) =>
+          s?.includes(k)
+        );
         return (
-          <Tooltip title={isLoginRisk ? '登录安全自动处置' : `来源: ${s}`}>
+          <Tooltip title={isLoginRisk ? "登录安全自动处置" : `来源: ${s}`}>
             <Tag
-              color={style?.color || 'default'}
+              color={style?.color || "default"}
               style={isLoginRisk ? { fontWeight: 600 } : undefined}
             >
               {SOURCE_CN[s] || s}
@@ -390,25 +393,24 @@ export default function Blacklist() {
       },
     },
     {
-      title: '封禁时间',
-      dataIndex: 'blocked_at',
-      key: 'blocked_at',
+      title: "封禁时间",
+      dataIndex: "blocked_at",
+      key: "blocked_at",
       width: 165,
       render: (v: string | null) => fmtTime(v),
     },
     {
-      title: '过期时间',
-      dataIndex: 'expires_at',
-      key: 'expires_at',
+      title: "过期时间",
+      dataIndex: "expires_at",
+      key: "expires_at",
       width: 165,
-      render: (v: string | null) =>
-        v ? fmtTime(v) : <Tag color="purple">永久</Tag>,
+      render: (v: string | null) => (v ? fmtTime(v) : <Tag color="purple">永久</Tag>),
     },
     {
-      title: '操作',
-      key: 'action',
+      title: "操作",
+      key: "action",
       width: 240,
-      fixed: 'right' as const,
+      fixed: "right" as const,
       render: (_: unknown, row: IPBlacklistRecord) => (
         <Space size={4} wrap>
           {/* 一键解封（显式，区别于 toggle 禁用） */}
@@ -427,15 +429,11 @@ export default function Blacklist() {
             </Popconfirm>
           )}
           {/* 编辑（期限/备注/原因） */}
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(row)}
-          >
+          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(row)}>
             编辑
           </Button>
           {/* 启停开关 */}
-          <Tooltip title={row.is_active ? '点击禁用（保留记录）' : '点击启用'}>
+          <Tooltip title={row.is_active ? "点击禁用（保留记录）" : "点击启用"}>
             <Switch
               checked={row.is_active}
               size="small"
@@ -461,60 +459,59 @@ export default function Blacklist() {
 
   const eventColumns = [
     {
-      title: '时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
+      title: "时间",
+      dataIndex: "created_at",
+      key: "created_at",
       width: 170,
       render: (v: string | null) => fmtTime(v),
     },
     {
-      title: 'IP 地址',
-      dataIndex: 'ip_address',
-      key: 'ip_address',
+      title: "IP 地址",
+      dataIndex: "ip_address",
+      key: "ip_address",
       width: 150,
       render: (ip: string) => <Text strong>{ip}</Text>,
     },
     {
-      title: '事件类型',
-      dataIndex: 'event_type',
-      key: 'event_type',
+      title: "事件类型",
+      dataIndex: "event_type",
+      key: "event_type",
       width: 140,
       render: (t: string) => <Tag color="geekblue">{EVENT_TYPE_CN[t] || t}</Tag>,
     },
     {
-      title: '严重程度',
-      dataIndex: 'severity',
-      key: 'severity',
+      title: "严重程度",
+      dataIndex: "severity",
+      key: "severity",
       width: 100,
       render: (s: string) => <Tag color={sevColor(s)}>{s}</Tag>,
     },
     {
-      title: '路径',
-      dataIndex: 'path',
-      key: 'path',
+      title: "路径",
+      dataIndex: "path",
+      key: "path",
       ellipsis: true,
       render: (p: string | null) => p || <Text type="secondary">—</Text>,
     },
     {
-      title: '方法',
-      dataIndex: 'method',
-      key: 'method',
+      title: "方法",
+      dataIndex: "method",
+      key: "method",
       width: 80,
-      render: (m: string | null) => m || '—',
+      render: (m: string | null) => m || "—",
     },
     {
-      title: '是否封禁',
-      dataIndex: 'is_blocked',
-      key: 'is_blocked',
+      title: "是否封禁",
+      dataIndex: "is_blocked",
+      key: "is_blocked",
       width: 100,
-      render: (b: boolean) =>
-        b ? <Tag color="red">已封禁</Tag> : <Tag>未封禁</Tag>,
+      render: (b: boolean) => (b ? <Tag color="red">已封禁</Tag> : <Tag>未封禁</Tag>),
     },
     {
-      title: '操作',
-      key: 'action',
+      title: "操作",
+      key: "action",
       width: 170,
-      fixed: 'right' as const,
+      fixed: "right" as const,
       render: (_: unknown, row: IPSecurityEvent) => {
         if (row.is_blocked) return <Tag color="red">已封禁</Tag>;
         if (row.is_ignored) return <Tag>已忽略</Tag>;
@@ -532,7 +529,9 @@ export default function Blacklist() {
               okButtonProps={{ danger: true }}
               onConfirm={() => handleBan(row)}
             >
-              <Button danger size="small" loading={loading}>封禁</Button>
+              <Button danger size="small" loading={loading}>
+                封禁
+              </Button>
             </Popconfirm>
           </Space>
         );
@@ -543,20 +542,38 @@ export default function Blacklist() {
   const listTab = (
     <Card
       extra={
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'nowrap', gap: 6, overflow: 'hidden' }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "nowrap",
+            gap: 6,
+            overflow: "hidden",
+          }}
+        >
           <Space size={4}>
-          <Tooltip title="仅显示生效中的记录">
-            <span style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', gap: 4 }}>
-              <Switch
-                checked={onlyActive}
-                size="small"
-                onChange={(v) => {
-                  setOnlyActive(v);
-                  setPage(1);
+            <Tooltip title="仅显示生效中的记录">
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  whiteSpace: "nowrap",
+                  gap: 4,
                 }}
-              />
-              <Text type="secondary" style={{ fontSize: 12 }}>仅生效</Text>
-            </span>
+              >
+                <Switch
+                  checked={onlyActive}
+                  size="small"
+                  onChange={(v) => {
+                    setOnlyActive(v);
+                    setPage(1);
+                  }}
+                />
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  仅生效
+                </Text>
+              </span>
             </Tooltip>
             <Button size="small" icon={<ReloadOutlined />} onClick={loadList} loading={loading}>
               刷新
@@ -571,7 +588,12 @@ export default function Blacklist() {
               <Button size="small">清理过期</Button>
             </Popconfirm>
           </Space>
-          <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setAddVisible(true)}>
+          <Button
+            size="small"
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setAddVisible(true)}
+          >
             添加黑名单
           </Button>
         </div>
@@ -579,9 +601,9 @@ export default function Blacklist() {
     >
       {isMobile ? (
         // 手机端：每个 IP 一张专用卡片
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {loading && records.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <div style={{ textAlign: "center", padding: "40px 0" }}>
               <Spin />
             </div>
           ) : records.length === 0 ? (
@@ -589,29 +611,56 @@ export default function Blacklist() {
           ) : (
             records.map((rec) => (
               <Card key={rec.ip_address} size="small">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                >
                   <Space size={6}>
                     <Text strong>{rec.ip_address}</Text>
-                    <Tag color={rec.is_active ? 'green' : 'default'}>{rec.is_active ? '生效' : '禁用'}</Tag>
-                    {['brute', 'enum', 'rate_limit', 'account_target'].some((k) => rec.source?.includes(k)) && <Tag color="red" icon={<ExclamationCircleOutlined />}>登录风险</Tag>}
+                    <Tag color={rec.is_active ? "green" : "default"}>
+                      {rec.is_active ? "生效" : "禁用"}
+                    </Tag>
+                    {["brute", "enum", "rate_limit", "account_target"].some((k) =>
+                      rec.source?.includes(k)
+                    ) && (
+                      <Tag color="red" icon={<ExclamationCircleOutlined />}>
+                        登录风险
+                      </Tag>
+                    )}
                   </Space>
                   <Tag color={sourceColor(rec.source)}>{SOURCE_CN[rec.source] || rec.source}</Tag>
                 </div>
-                <Divider style={{ margin: '8px 0' }} />
-                <div style={{ fontSize: 12, color: '#666', lineHeight: '20px' }}>
-                  <div>原因：{rec.reason || '—'}</div>
+                <Divider style={{ margin: "8px 0" }} />
+                <div style={{ fontSize: 12, color: "#666", lineHeight: "20px" }}>
+                  <div>原因：{rec.reason || "—"}</div>
                   <div>封禁时间：{fmtTime(rec.blocked_at)}</div>
-                  <div>过期时间：{rec.expires_at ? fmtTime(rec.expires_at) : <Tag color="purple">永久</Tag>}</div>
+                  <div>
+                    过期时间：
+                    {rec.expires_at ? fmtTime(rec.expires_at) : <Tag color="purple">永久</Tag>}
+                  </div>
                   {rec.note && <div>备注：{rec.note}</div>}
                 </div>
-                <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                <div
+                  style={{
+                    marginTop: 10,
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
                   {rec.is_active && (
-                    <Button size="small" icon={<UnlockOutlined />} onClick={() => handleUnblock(rec)}>
+                    <Button
+                      size="small"
+                      icon={<UnlockOutlined />}
+                      onClick={() => handleUnblock(rec)}
+                    >
                       解封
                     </Button>
                   )}
-                  <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(rec)}>编辑</Button>
-                  <Tooltip title={rec.is_active ? '禁用（保留记录）' : '启用'}>
+                  <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(rec)}>
+                    编辑
+                  </Button>
+                  <Tooltip title={rec.is_active ? "禁用（保留记录）" : "启用"}>
                     <Switch
                       checked={rec.is_active}
                       size="small"
@@ -619,8 +668,12 @@ export default function Blacklist() {
                       onChange={(c) => handleToggle(rec, c)}
                     />
                   </Tooltip>
-                  <Popconfirm title="确认彻底移除？" description="将从黑名单永久删除"
-                    okText="删除" cancelText="取消" okButtonProps={{ danger: true }}
+                  <Popconfirm
+                    title="确认彻底移除？"
+                    description="将从黑名单永久删除"
+                    okText="删除"
+                    cancelText="取消"
+                    okButtonProps={{ danger: true }}
                     onConfirm={() => handleRemove(rec)}
                   >
                     <Button size="small" danger icon={<DeleteOutlined />} />
@@ -630,7 +683,7 @@ export default function Blacklist() {
             ))
           )}
           {records.length > 0 && total > perPage && (
-            <div style={{ textAlign: 'center', marginTop: 8 }}>
+            <div style={{ textAlign: "center", marginTop: 8 }}>
               <Pagination
                 size="small"
                 simple
@@ -648,7 +701,12 @@ export default function Blacklist() {
           columns={blacklistColumns}
           dataSource={records}
           loading={loading}
-          scroll={{ x: Math.max(900, blacklistColumns.reduce((sum, c) => sum + (c.width || 150), 0)) }}
+          scroll={{
+            x: Math.max(
+              900,
+              blacklistColumns.reduce((sum, c) => sum + (c.width || 150), 0)
+            ),
+          }}
           pagination={{
             current: page,
             pageSize: perPage,
@@ -667,7 +725,15 @@ export default function Blacklist() {
   const eventTab = (
     <Card
       extra={
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: 6, overflow: 'hidden' }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "nowrap",
+            gap: 6,
+            overflow: "hidden",
+          }}
+        >
           <Select
             placeholder="事件类型"
             allowClear
@@ -693,7 +759,9 @@ export default function Blacklist() {
             }}
           />
           <Tooltip title="仅显示未封禁且未忽略的事件">
-            <span style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', gap: 4 }}>
+            <span
+              style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", gap: 4 }}
+            >
               <Switch
                 checked={onlyPending}
                 size="small"
@@ -702,10 +770,17 @@ export default function Blacklist() {
                   setEventPage(1);
                 }}
               />
-              <Text type="secondary" style={{ fontSize: 12 }}>待处置</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                待处置
+              </Text>
             </span>
           </Tooltip>
-          <Button size="small" icon={<ReloadOutlined />} onClick={loadEvents} loading={eventLoading}>
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            onClick={loadEvents}
+            loading={eventLoading}
+          >
             刷新
           </Button>
         </div>
@@ -713,9 +788,9 @@ export default function Blacklist() {
     >
       {isMobile ? (
         // 手机端：每条安全事件一张专用卡片
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {eventLoading && events.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <div style={{ textAlign: "center", padding: "40px 0" }}>
               <Spin />
             </div>
           ) : events.length === 0 ? (
@@ -723,31 +798,55 @@ export default function Blacklist() {
           ) : (
             events.map((ev) => (
               <Card key={ev.id} size="small">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                >
                   <Space size={6}>
                     <Text strong>{ev.ip_address}</Text>
                     {ev.is_blocked ? <Tag color="red">已封禁</Tag> : <Tag>未封禁</Tag>}
                   </Space>
                   <Tag color={sevColor(ev.severity)}>{ev.severity}</Tag>
                 </div>
-                <Divider style={{ margin: '10px 0' }} />
-                <div style={{ fontSize: 12, color: '#666', lineHeight: '20px' }}>
+                <Divider style={{ margin: "10px 0" }} />
+                <div style={{ fontSize: 12, color: "#666", lineHeight: "20px" }}>
                   <div>时间：{fmtTime(ev.created_at)}</div>
-                  <div>事件类型：<Tag color="geekblue">{EVENT_TYPE_CN[ev.event_type] || ev.event_type}</Tag></div>
-                  <div>方法：{ev.method || '—'}</div>
-                  <div>路径：{ev.path || '—'}</div>
+                  <div>
+                    事件类型：
+                    <Tag color="geekblue">{EVENT_TYPE_CN[ev.event_type] || ev.event_type}</Tag>
+                  </div>
+                  <div>方法：{ev.method || "—"}</div>
+                  <div>路径：{ev.path || "—"}</div>
                 </div>
                 {ev.detail && (
                   <div style={{ marginTop: 8 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>请求详情：</Text>
-                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: 11, color: '#999', background: '#fafafa', padding: 8, borderRadius: 4 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      请求详情：
+                    </Text>
+                    <pre
+                      style={{
+                        margin: 0,
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-all",
+                        fontSize: 11,
+                        color: "#999",
+                        background: "#fafafa",
+                        padding: 8,
+                        borderRadius: 4,
+                      }}
+                    >
                       {ev.detail}
                     </pre>
                   </div>
                 )}
                 {!ev.is_blocked && !ev.is_ignored && (
-                  <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <Button size="small" loading={actingEventId === ev.id} onClick={() => handleIgnore(ev)}>
+                  <div
+                    style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 8 }}
+                  >
+                    <Button
+                      size="small"
+                      loading={actingEventId === ev.id}
+                      onClick={() => handleIgnore(ev)}
+                    >
                       忽略
                     </Button>
                     <Popconfirm
@@ -758,7 +857,9 @@ export default function Blacklist() {
                       okButtonProps={{ danger: true }}
                       onConfirm={() => handleBan(ev)}
                     >
-                      <Button danger size="small" loading={actingEventId === ev.id}>封禁</Button>
+                      <Button danger size="small" loading={actingEventId === ev.id}>
+                        封禁
+                      </Button>
                     </Popconfirm>
                   </div>
                 )}
@@ -766,7 +867,7 @@ export default function Blacklist() {
             ))
           )}
           {events.length > 0 && eventTotal > perPage && (
-            <div style={{ textAlign: 'center', marginTop: 8 }}>
+            <div style={{ textAlign: "center", marginTop: 8 }}>
               <Pagination
                 size="small"
                 simple
@@ -784,7 +885,12 @@ export default function Blacklist() {
           columns={eventColumns}
           dataSource={events}
           loading={eventLoading}
-          scroll={{ x: Math.max(900, eventColumns.reduce((sum, c) => sum + (c.width || 120), 0)) }}
+          scroll={{
+            x: Math.max(
+              900,
+              eventColumns.reduce((sum, c) => sum + (c.width || 120), 0)
+            ),
+          }}
           pagination={{
             current: eventPage,
             pageSize: perPage,
@@ -797,10 +903,10 @@ export default function Blacklist() {
           locale={{ emptyText: <Empty description="暂无安全事件" /> }}
           expandable={{
             expandedRowRender: (row) => (
-              <div style={{ padding: '8px 0' }}>
+              <div style={{ padding: "8px 0" }}>
                 <Text type="secondary">请求详情：</Text>
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                  {row.detail || '无'}
+                <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                  {row.detail || "无"}
                 </pre>
               </div>
             ),
@@ -811,18 +917,18 @@ export default function Blacklist() {
   );
 
   return (
-    <div style={{ overflowX: 'hidden' }}>
+    <div style={{ overflowX: "hidden" }}>
       <Tabs
         activeKey={activeTab}
         onChange={(key) => {
           setActiveTab(key);
-          if (key === 'events' && events.length === 0) {
+          if (key === "events" && events.length === 0) {
             loadEvents();
           }
         }}
         items={[
-          { key: 'list', label: '黑名单列表', children: listTab },
-          { key: 'events', label: '安全事件', children: eventTab },
+          { key: "list", label: "黑名单列表", children: listTab },
+          { key: "events", label: "安全事件", children: eventTab },
         ]}
       />
 
@@ -840,7 +946,11 @@ export default function Blacklist() {
         cancelText="取消"
         destroyOnClose
       >
-        <Form form={form} layout="vertical" initialValues={{ reason: '手动封禁', duration_hours: 0 }}>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ reason: "手动封禁", duration_hours: 0 }}
+        >
           <Form.Item
             label="IP 地址"
             name="ip_address"
@@ -852,12 +962,8 @@ export default function Blacklist() {
           <Form.Item label="封禁原因" name="reason">
             <Input placeholder="例如：恶意爬虫 / 攻击来源" />
           </Form.Item>
-          <Form.Item
-            label="封禁时长（小时）"
-            name="duration_hours"
-            extra="0 表示永久封禁"
-          >
-            <InputNumber min={0} max={87600} style={{ width: '100%' }} />
+          <Form.Item label="封禁时长（小时）" name="duration_hours" extra="0 表示永久封禁">
+            <InputNumber min={0} max={87600} style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item label="备注" name="note">
             <Input.TextArea rows={3} placeholder="可选备注信息" />
@@ -867,7 +973,7 @@ export default function Blacklist() {
 
       {/* 编辑黑名单抽屉 */}
       <Drawer
-        title={`编辑封禁记录 — ${editRecord?.ip_address || ''}`}
+        title={`编辑封禁记录 — ${editRecord?.ip_address || ""}`}
         open={editVisible}
         onClose={() => {
           setEditVisible(false);
@@ -878,7 +984,14 @@ export default function Blacklist() {
         destroyOnClose
         extra={
           <Space>
-            <Button onClick={() => { setEditVisible(false); setEditRecord(null); }}>取消</Button>
+            <Button
+              onClick={() => {
+                setEditVisible(false);
+                setEditRecord(null);
+              }}
+            >
+              取消
+            </Button>
             <Button type="primary" loading={editLoading} onClick={handleEditSubmit}>
               保存修改
             </Button>
@@ -887,13 +1000,30 @@ export default function Blacklist() {
       >
         {editRecord && (
           <>
-            <div style={{ marginBottom: 16, padding: '8px 12px', background: '#fafafa', borderRadius: 6, fontSize: 12 }}>
+            <div
+              style={{
+                marginBottom: 16,
+                padding: "8px 12px",
+                background: "#fafafa",
+                borderRadius: 6,
+                fontSize: 12,
+              }}
+            >
               <Space direction="vertical" size={4}>
-                <Text><Text strong>IP：</Text>{editRecord.ip_address}</Text>
-                <Text><Text strong>当前来源：</Text>
-                  <Tag color={sourceColor(editRecord.source)}>{SOURCE_CN[editRecord.source] || editRecord.source}</Tag>
+                <Text>
+                  <Text strong>IP：</Text>
+                  {editRecord.ip_address}
                 </Text>
-                <Text><Text strong>封禁时间：</Text>{fmtTime(editRecord.blocked_at)}</Text>
+                <Text>
+                  <Text strong>当前来源：</Text>
+                  <Tag color={sourceColor(editRecord.source)}>
+                    {SOURCE_CN[editRecord.source] || editRecord.source}
+                  </Tag>
+                </Text>
+                <Text>
+                  <Text strong>封禁时间：</Text>
+                  {fmtTime(editRecord.blocked_at)}
+                </Text>
               </Space>
             </div>
             <Form form={editForm} layout="vertical">
@@ -905,7 +1035,7 @@ export default function Blacklist() {
                 name="duration_hours"
                 extra="0 = 永久封禁；修改后从当前时间重新计算过期时间"
               >
-                <InputNumber min={0} max={87600} style={{ width: '100%' }} />
+                <InputNumber min={0} max={87600} style={{ width: "100%" }} />
               </Form.Item>
               <Form.Item label="备注" name="note">
                 <Input.TextArea rows={3} placeholder="可选备注信息（如误封原因、处置说明等）" />

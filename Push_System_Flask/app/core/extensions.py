@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Flask 扩展实例"""
+
 import os
 import time
+
+from flask import g
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from flask import g
 
 # 应用启动时间（用于计算运行时长，替代 psutil 依赖）
 _app_start_time = time.time()
@@ -16,18 +17,20 @@ _app_start_time = time.time()
 # - 突发限制：每秒最多 10 次请求
 # - 小时限制：每小时最多 500 次请求
 
+
 def get_identity_key():
     """
     获取请求身份标识（优先使用用户ID，否则使用IP地址）
-    
+
     这样可以实现：
     - 已认证用户：基于用户ID的速率限制
     - 未认证用户：基于IP地址的速率限制
     """
-    current_user = g.get('current_user')
-    if current_user and current_user.get('user_id'):
+    current_user = g.get("current_user")
+    if current_user and current_user.get("user_id"):
         return f"user:{current_user['user_id']}"
     return get_remote_address()
+
 
 def _resolve_ratelimit_storage_uri():
     """
@@ -52,6 +55,7 @@ def _resolve_ratelimit_storage_uri():
         return "memory://"
     try:
         import redis as _redis
+
         client = _redis.Redis.from_url(
             redis_url,
             socket_connect_timeout=2,
@@ -73,9 +77,9 @@ _RATELIMIT_STORAGE_URI = _resolve_ratelimit_storage_uri()
 limiter = Limiter(
     key_func=get_identity_key,
     default_limits=[
-        "60 per minute",      # 每分钟最多 60 次请求
-        "10 per second",      # 每秒最多 10 次请求（防止突发攻击）
-        "500 per hour",       # 每小时最多 500 次请求
+        "60 per minute",  # 每分钟最多 60 次请求
+        "10 per second",  # 每秒最多 10 次请求（防止突发攻击）
+        "500 per hour",  # 每小时最多 500 次请求
     ],
     # 限流计数存储：由启动期探活决定（Redis 可达用 Redis，否则内存）。
     # 非阻塞探针 + 2s 超时，避免 Redis 不可达时启动被拖死。
@@ -90,10 +94,10 @@ limiter = Limiter(
 # 预定义的限流规则（可在路由中使用）
 # 使用方式：@limiter.limit(RATE_LIMITS['strict'])
 RATE_LIMITS = {
-    'strict': "10 per minute",       # 严格限制：登录、认证等敏感接口
-    'moderate': "30 per minute",     # 中等限制：一般 API 接口
-    'lenient': "100 per minute",     # 宽松限制：公开查询接口
-    'burst': "200 per minute",       # 突发限制：批量操作接口
+    "strict": "10 per minute",  # 严格限制：登录、认证等敏感接口
+    "moderate": "30 per minute",  # 中等限制：一般 API 接口
+    "lenient": "100 per minute",  # 宽松限制：公开查询接口
+    "burst": "200 per minute",  # 突发限制：批量操作接口
 }
 
 # APScheduler (在 tasks/scheduler.py 中初始化)

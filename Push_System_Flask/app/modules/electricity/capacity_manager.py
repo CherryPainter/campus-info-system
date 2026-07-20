@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 电量容量管理器模块
 
@@ -17,11 +16,11 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any, Tuple
 from enum import Enum
+from typing import Any
 
-from app.core.logger import get_logger
 from app.core.database import get_db
+from app.core.logger import get_logger
 from app.model.electricity import ElectricityTotalCapacity
 from app.repository.electricity_repository import ElectricityRepository
 
@@ -30,10 +29,11 @@ logger = get_logger(__name__)
 
 class RecordReason(Enum):
     """容量记录原因枚举"""
-    AUTO_DETECT = "auto_detect"      # 自动检测（电量突然增加）
-    LOW_POWER = "low_power"          # 低电量警告时记录
-    MANUAL = "manual"                # 手动设置
-    INITIAL = "initial"              # 初始记录
+
+    AUTO_DETECT = "auto_detect"  # 自动检测（电量突然增加）
+    LOW_POWER = "low_power"  # 低电量警告时记录
+    MANUAL = "manual"  # 手动设置
+    INITIAL = "initial"  # 初始记录
 
 
 @dataclass
@@ -47,18 +47,19 @@ class CapacityRecord:
         recorded_at: 记录时间
         reason: 记录原因
     """
+
     total_capacity: float
     remaining_at_record: float
     recorded_at: datetime
     reason: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """转换为字典格式"""
         return {
-            'total_capacity': self.total_capacity,
-            'remaining_at_record': self.remaining_at_record,
-            'recorded_at': self.recorded_at.isoformat() if self.recorded_at else None,
-            'reason': self.reason,
+            "total_capacity": self.total_capacity,
+            "remaining_at_record": self.remaining_at_record,
+            "recorded_at": self.recorded_at.isoformat() if self.recorded_at else None,
+            "reason": self.reason,
         }
 
 
@@ -89,7 +90,7 @@ class ElectricityCapacityManager:
     # 低电量警告阈值
     LOW_POWER_WARNING_THRESHOLD: float = 10.0
 
-    def __init__(self, meter: str = 'default') -> None:
+    def __init__(self, meter: str = "default") -> None:
         """
         初始化容量管理器
 
@@ -97,8 +98,8 @@ class ElectricityCapacityManager:
             meter: 电表名称，默认为'default'
         """
         self._meter = meter
-        self._cache: Optional[CapacityRecord] = None
-        self._cache_time: Optional[datetime] = None
+        self._cache: CapacityRecord | None = None
+        self._cache_time: datetime | None = None
         self._cache_ttl: timedelta = timedelta(minutes=5)  # 缓存5分钟
 
     # ------------------------------------------------------------------
@@ -109,7 +110,7 @@ class ElectricityCapacityManager:
         self,
         current_remaining: float,
         low_power_threshold: float = LOW_POWER_WARNING_THRESHOLD,
-    ) -> Tuple[bool, Optional[CapacityRecord]]:
+    ) -> tuple[bool, CapacityRecord | None]:
         """
         更新剩余电量，检测是否需要记录新的容量
 
@@ -128,11 +129,16 @@ class ElectricityCapacityManager:
         session = get_db()
         try:
             # 获取上一次记录的剩余电量（取第二条，跳过刚插入的最新条）
-            last_remaining_record = ElectricityRepository.get_previous_remaining(session, self._meter)
+            last_remaining_record = ElectricityRepository.get_previous_remaining(
+                session, self._meter
+            )
             last_remaining = last_remaining_record.remaining if last_remaining_record else None
 
             # 检测是否充值（电量突然增加）—— 仅当有历史数据可比较时
-            if last_remaining is not None and current_remaining > last_remaining + self.RECHARGE_THRESHOLD:
+            if (
+                last_remaining is not None
+                and current_remaining > last_remaining + self.RECHARGE_THRESHOLD
+            ):
                 # 检测到充值，记录新的容量
                 # 新容量 = 当前剩余电量（假设充值后剩余即为新的总量参考）
                 new_capacity = current_remaining
@@ -142,8 +148,10 @@ class ElectricityCapacityManager:
                     remaining_at_record=current_remaining,
                     reason=RecordReason.AUTO_DETECT.value,
                 )
-                logger.info(f'[CapacityManager] 检测到电量充值: {last_remaining} -> {current_remaining}度，'
-                           f'记录新容量: {new_capacity}度（相比上一条记录增加 {current_remaining - last_remaining:.1f} 度）')
+                logger.info(
+                    f"[CapacityManager] 检测到电量充值: {last_remaining} -> {current_remaining}度，"
+                    f"记录新容量: {new_capacity}度（相比上一条记录增加 {current_remaining - last_remaining:.1f} 度）"
+                )
                 return True, record
 
             # 检测是否低电量警告
@@ -159,19 +167,21 @@ class ElectricityCapacityManager:
                         remaining_at_record=current_remaining,
                         reason=RecordReason.LOW_POWER.value,
                     )
-                    logger.info(f'[CapacityManager] 低电量警告: {current_remaining}度，'
-                               f'记录容量参考: {current_capacity}度')
+                    logger.info(
+                        f"[CapacityManager] 低电量警告: {current_remaining}度，"
+                        f"记录容量参考: {current_capacity}度"
+                    )
                     return False, record
 
             return False, None
 
         except Exception as e:
-            logger.error(f'[CapacityManager] 更新剩余电量失败: {e}')
+            logger.error(f"[CapacityManager] 更新剩余电量失败: {e}")
             return False, None
         finally:
             session.close()
 
-    def get_current_status(self) -> Dict[str, Any]:
+    def get_current_status(self) -> dict[str, Any]:
         """
         获取当前电量状态
 
@@ -202,21 +212,21 @@ class ElectricityCapacityManager:
             last_capacity_record = self._get_latest_capacity_record(session)
 
             return {
-                'remaining': round(remaining, 2),
-                'total_capacity': round(capacity, 2),
-                'percentage': round(percentage, 1),
-                'is_low_power': is_low_power,
-                'last_record': last_capacity_record.to_dict() if last_capacity_record else None,
+                "remaining": round(remaining, 2),
+                "total_capacity": round(capacity, 2),
+                "percentage": round(percentage, 1),
+                "is_low_power": is_low_power,
+                "last_record": last_capacity_record.to_dict() if last_capacity_record else None,
             }
 
         except Exception as e:
-            logger.error(f'[CapacityManager] 获取当前状态失败: {e}')
+            logger.error(f"[CapacityManager] 获取当前状态失败: {e}")
             return {
-                'remaining': 0.0,
-                'total_capacity': self.DEFAULT_CAPACITY,
-                'percentage': 0.0,
-                'is_low_power': True,
-                'last_record': None,
+                "remaining": 0.0,
+                "total_capacity": self.DEFAULT_CAPACITY,
+                "percentage": 0.0,
+                "is_low_power": True,
+                "last_record": None,
             }
         finally:
             session.close()
@@ -268,12 +278,12 @@ class ElectricityCapacityManager:
                 remaining_at_record=remaining,
                 reason=RecordReason.MANUAL.value,
             )
-            logger.info(f'[CapacityManager] 手动设置容量: {capacity}度，剩余: {remaining}度')
+            logger.info(f"[CapacityManager] 手动设置容量: {capacity}度，剩余: {remaining}度")
             return record
         finally:
             session.close()
 
-    def get_capacity_history(self, days: int = 30) -> List[CapacityRecord]:
+    def get_capacity_history(self, days: int = 30) -> list[CapacityRecord]:
         """
         获取容量历史记录
 
@@ -353,7 +363,7 @@ class ElectricityCapacityManager:
 
         return record
 
-    def _get_latest_capacity_record(self, session) -> Optional[CapacityRecord]:
+    def _get_latest_capacity_record(self, session) -> CapacityRecord | None:
         """
         获取最新的容量记录
 
@@ -389,7 +399,7 @@ class ElectricityCapacityManager:
 
         return None
 
-    def _get_recent_low_power_record(self, session) -> Optional[CapacityRecord]:
+    def _get_recent_low_power_record(self, session) -> CapacityRecord | None:
         """
         获取最近的低电量警告记录（24小时内）
 
@@ -439,10 +449,10 @@ class ElectricityCapacityManager:
 
 
 # 单例实例（便于全局使用）
-_default_manager: Optional[ElectricityCapacityManager] = None
+_default_manager: ElectricityCapacityManager | None = None
 
 
-def get_capacity_manager(meter: str = 'default') -> ElectricityCapacityManager:
+def get_capacity_manager(meter: str = "default") -> ElectricityCapacityManager:
     """
     获取容量管理器实例
 

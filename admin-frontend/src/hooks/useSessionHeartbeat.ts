@@ -7,17 +7,17 @@
  *
  * 端点始终返回 200（valid 标志区分），不会触发响应拦截器的 401 逻辑。
  */
-import { useCallback } from 'react';
-import request from '@/api/request';
-import { useIntervalPolling } from '@/hooks/useIntervalPolling';
-import { POLL_NORMAL } from '@/hooks/pollIntervals';
-import { notifySessionExpired } from '@/utils/sessionExpiry';
+import { useCallback } from "react";
+import request from "@/api/request";
+import { useIntervalPolling } from "@/hooks/useIntervalPolling";
+import { POLL_NORMAL } from "@/hooks/pollIntervals";
+import { notifySessionExpired } from "@/utils/sessionExpiry";
 
 export function useSessionHeartbeat(enabled: boolean, intervalMs: number = POLL_NORMAL): void {
   const check = useCallback(async () => {
     try {
       // request 拦截器已解包一层，res 即 { valid, reason, ip, time }
-      const res: any = await request.get('/auth/session/status');
+      const res: any = await request.get("/auth/session/status");
       if (res && res.valid === false) {
         notifySessionExpired({ reason: res.reason, ip: res.ip, time: res.time });
       }

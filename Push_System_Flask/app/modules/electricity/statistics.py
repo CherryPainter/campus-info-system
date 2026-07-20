@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 用电量统计模块
 按日、周、月维度聚合用电记录
@@ -8,7 +7,6 @@
 import json
 import os
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
 
 from app.core.logger import get_logger
 
@@ -21,8 +19,8 @@ class UsageStatistics:
     def __init__(self, records_path: str, remaining_power_path: str) -> None:
         self.records_path = records_path
         self.remaining_power_path = remaining_power_path
-        self._records: List[Dict] = []
-        self._remaining: Dict = {}
+        self._records: list[dict] = []
+        self._remaining: dict = {}
         self._load()
 
     # ------------------------------------------------------------------
@@ -33,11 +31,11 @@ class UsageStatistics:
         """重新从磁盘加载数据"""
         self._load()
 
-    def get_remaining_power(self) -> Dict:
+    def get_remaining_power(self) -> dict:
         """返回剩余电量字典，文件不存在时返回 {}"""
         return dict(self._remaining)
 
-    def get_daily_statistics(self, target_date: Optional[datetime] = None) -> Optional[Dict]:
+    def get_daily_statistics(self, target_date: datetime | None = None) -> dict | None:
         """
         返回指定日期的用电统计
 
@@ -49,28 +47,28 @@ class UsageStatistics:
         """
         if target_date is None:
             target_date = datetime.now() - timedelta(days=1)
-        target_str = target_date.strftime('%Y-%m-%d')
+        target_str = target_date.strftime("%Y-%m-%d")
 
         total = 0.0
-        meter_usage: Dict[str, float] = {}
+        meter_usage: dict[str, float] = {}
 
         for rec in self._records:
             try:
-                actual_date = self._actual_date(rec['time'])
+                actual_date = self._actual_date(rec["time"])
                 if actual_date != target_str:
                     continue
-                usage = float(rec['usage'])
+                usage = float(rec["usage"])
                 total += usage
-                meter = rec['meter']
+                meter = rec["meter"]
                 meter_usage[meter] = meter_usage.get(meter, 0.0) + usage
             except Exception:
                 continue
 
         if total > 0 or meter_usage:
-            return {'date': target_str, 'total_usage': total, 'meter_usage': meter_usage}
+            return {"date": target_str, "total_usage": total, "meter_usage": meter_usage}
         return None
 
-    def get_weekly_statistics(self, target_date: Optional[datetime] = None) -> Optional[Dict]:
+    def get_weekly_statistics(self, target_date: datetime | None = None) -> dict | None:
         """
         返回指定日期所在周（周一至周日）的用电统计
 
@@ -85,18 +83,18 @@ class UsageStatistics:
         week_end = week_start + timedelta(days=6)
 
         total = 0.0
-        meter_usage: Dict[str, float] = {}
-        daily_usage: Dict[str, float] = {}
+        meter_usage: dict[str, float] = {}
+        daily_usage: dict[str, float] = {}
 
         for rec in self._records:
             try:
-                actual_str = self._actual_date(rec['time'])
-                actual_dt = datetime.strptime(actual_str, '%Y-%m-%d')
+                actual_str = self._actual_date(rec["time"])
+                actual_dt = datetime.strptime(actual_str, "%Y-%m-%d")
                 if not (week_start.date() <= actual_dt.date() <= week_end.date()):
                     continue
-                usage = float(rec['usage'])
+                usage = float(rec["usage"])
                 total += usage
-                meter = rec['meter']
+                meter = rec["meter"]
                 meter_usage[meter] = meter_usage.get(meter, 0.0) + usage
                 daily_usage[actual_str] = daily_usage.get(actual_str, 0.0) + usage
             except Exception:
@@ -105,18 +103,18 @@ class UsageStatistics:
         if total > 0 or meter_usage:
             iso = week_start.isocalendar()
             return {
-                'year': iso[0],
-                'week_num': iso[1],
-                'start_date': week_start.strftime('%Y-%m-%d'),
-                'end_date': week_end.strftime('%Y-%m-%d'),
-                'total_usage': total,
-                'meter_usage': meter_usage,
-                'daily_usage': daily_usage,
-                'days_count': len(daily_usage),
+                "year": iso[0],
+                "week_num": iso[1],
+                "start_date": week_start.strftime("%Y-%m-%d"),
+                "end_date": week_end.strftime("%Y-%m-%d"),
+                "total_usage": total,
+                "meter_usage": meter_usage,
+                "daily_usage": daily_usage,
+                "days_count": len(daily_usage),
             }
         return None
 
-    def get_monthly_statistics(self, target_date: Optional[datetime] = None) -> Optional[Dict]:
+    def get_monthly_statistics(self, target_date: datetime | None = None) -> dict | None:
         """
         返回指定月份的用电统计
 
@@ -129,18 +127,18 @@ class UsageStatistics:
         month = target_date.month
 
         total = 0.0
-        meter_usage: Dict[str, float] = {}
-        daily_usage: Dict[str, float] = {}
+        meter_usage: dict[str, float] = {}
+        daily_usage: dict[str, float] = {}
 
         for rec in self._records:
             try:
-                actual_str = self._actual_date(rec['time'])
-                actual_dt = datetime.strptime(actual_str, '%Y-%m-%d')
+                actual_str = self._actual_date(rec["time"])
+                actual_dt = datetime.strptime(actual_str, "%Y-%m-%d")
                 if actual_dt.year != year or actual_dt.month != month:
                     continue
-                usage = float(rec['usage'])
+                usage = float(rec["usage"])
                 total += usage
-                meter = rec['meter']
+                meter = rec["meter"]
                 meter_usage[meter] = meter_usage.get(meter, 0.0) + usage
                 daily_usage[actual_str] = daily_usage.get(actual_str, 0.0) + usage
             except Exception:
@@ -148,12 +146,12 @@ class UsageStatistics:
 
         if total > 0 or meter_usage:
             return {
-                'year': year,
-                'month': month,
-                'total_usage': total,
-                'meter_usage': meter_usage,
-                'daily_usage': daily_usage,
-                'days_count': len(daily_usage),
+                "year": year,
+                "month": month,
+                "total_usage": total,
+                "meter_usage": meter_usage,
+                "daily_usage": daily_usage,
+                "days_count": len(daily_usage),
             }
         return None
 
@@ -170,11 +168,11 @@ class UsageStatistics:
             if not os.path.exists(self.records_path):
                 self._records = []
                 return
-            with open(self.records_path, 'r', encoding='utf-8') as f:
+            with open(self.records_path, encoding="utf-8") as f:
                 data = json.load(f)
             # 兼容嵌套列表结构 [[{...}], [{...}], ...]
             if isinstance(data, list) and data and isinstance(data[0], list):
-                flat: List[Dict] = []
+                flat: list[dict] = []
                 for sub in data:
                     if isinstance(sub, list):
                         flat.extend(sub)
@@ -183,9 +181,9 @@ class UsageStatistics:
                 self._records = flat
             else:
                 self._records = data if isinstance(data, list) else []
-            logger.info(f'UsageStatistics: 加载 {len(self._records)} 条用电记录')
+            logger.info(f"UsageStatistics: 加载 {len(self._records)} 条用电记录")
         except Exception as exc:
-            logger.error(f'UsageStatistics: 加载用电记录失败 {exc}')
+            logger.error(f"UsageStatistics: 加载用电记录失败 {exc}")
             self._records = []
 
     def _load_remaining(self) -> None:
@@ -193,11 +191,11 @@ class UsageStatistics:
             if not os.path.exists(self.remaining_power_path):
                 self._remaining = {}
                 return
-            with open(self.remaining_power_path, 'r', encoding='utf-8') as f:
+            with open(self.remaining_power_path, encoding="utf-8") as f:
                 self._remaining = json.load(f)
-            logger.debug(f'UsageStatistics: 剩余电量 {self._remaining}')
+            logger.debug(f"UsageStatistics: 剩余电量 {self._remaining}")
         except Exception as exc:
-            logger.error(f'UsageStatistics: 加载剩余电量失败 {exc}')
+            logger.error(f"UsageStatistics: 加载剩余电量失败 {exc}")
             self._remaining = {}
 
     @staticmethod
@@ -207,6 +205,6 @@ class UsageStatistics:
         原始时间为次日（记录时间 - 1 天 = 实际用电日）
         """
         date_str = time_str.split()[0]
-        dt = datetime.strptime(date_str, '%Y-%m-%d')
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
         actual = dt - timedelta(days=1)
-        return actual.strftime('%Y-%m-%d')
+        return actual.strftime("%Y-%m-%d")

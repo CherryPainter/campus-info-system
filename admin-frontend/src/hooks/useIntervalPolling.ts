@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
 /**
  * 固定间隔重复执行某个 fetcher（用于页面周期刷新、时钟、存活探测等）。
@@ -9,7 +9,7 @@ export function useIntervalPolling(
   intervalMs: number,
   enabled = true,
   /** 启用时是否立即执行一次；某些场景需延迟首个周期以避开竞态或避免挂载双拉，可传 false */
-  immediate = true,
+  immediate = true
 ) {
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;

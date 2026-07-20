@@ -4,6 +4,50 @@
 
 ---
 
+## v6.15.0 (2026-07-20)
+
+> 发版类型：**架构整理 + 功能修正（minor）**。后端启动/初始化与任务调度职责拆分收口（新增 schema 包、bootstrap、process_service、executors、scheduler_state、parser_utils、course_helpers、teaching_week_service、notification_service）；剔除 `course_weeks` 表，教学周改为基于开学日推算（修正第21周 / 周次下拉默认选中）；全仓库 ruff-format + prettier 格式化，补齐 CI / 格式化 / 测试脚手架。
+
+### 后端架构整理（模块拆分，职责收口）
+- 新增 `app/schema/` 包：将原仓库根 `init_db.py` 按职责拆分为 `common` / `status` / `create_tables` / `migrate` / `seed` / `reset` / `fingerprint` 子模块，根 `init_db.py` 仅作 CLI 装配入口。
+- 新增 `app/core/bootstrap.py`：把 `create_app` 中「启动期副作用」（建表、补列、清僵尸进程、写默认配置与管理员、指纹自动迁移/清理）收敛到 `run_bootstrap(app)`；提供 `flask bootstrap` CLI；受 `AUTO_MIGRATE_ON_START` 开关控制，可灰度关闭改为人工执行。
+- 新增 `app/services/process_service.py`：收敛原 `app/api/process_routes` 中被 service / 模块 / 调度层反向调用的进程写入入口（`create_task_process` / `update_task_progress` / `complete_task_process`），修正分层倒置。
+- 新增 `app/tasks/executors.py` + `app/tasks/scheduler_state.py`：把课表爬虫 / 推送执行逻辑与调度器共享状态从 `scheduler.py` 拆出，集中共享状态到 `scheduler_state`，消除「生命周期 ↔ 执行」相互 import 的循环依赖。
+- 新增 `app/cqie-course-timetable/parser_utils.py`：从 `main.py` 的 `CourseTableTool` 抽取与浏览器状态无关的纯解析函数，可单测、可复用，不改 spider_runner 以 subprocess 调用 `main.py` 的契约。
+- 新增 `app/utils/course_helpers.py`：把课程时间 / 周次纯计算逻辑从 `course_routes` 顶部下沉到 utils 层（依赖图叶子节点，仅依赖标准库），消除「service 反向 import api 层」的分层倒置。
+- 新增 `app/services/teaching_week_service.py`：教学周服务单例，基于开学日推算当前教学周（见下「剔除 course_weeks」）。
+- 新增 `app/services/notification_service.py`：统一状态告警收口（替代爬虫 `pipeline._send_status_alert`），失败静默、不依赖 Flask 请求上下文。
+- 新增单测：`test_course_split.py` / `test_delivery_service.py` / `test_no_is_true_false_antipattern.py` / `test_parser_utils.py`。
+
+### 剔除 course_weeks 表（治本，不再查表推算周次）
+- 删除 `app/model/course_week.py` 及 `model/__init__.py` 注册、`schema/common.py` 的 `('course_weeks', ...)` 条目；删除 `course_repository.get_week_number`（含危险的 `MAX(week_number)` 兜底）。
+- 移除 `crawl_task_service.py` / `tasks/executors.py` 中 `sync_course_weeks_from_dir` 调用。
+- 教学周改为**纯推算**：`teaching_week_service` 基于开学日（`system.semester_start_date` 配置优先，否则按学期 term 推算：秋季 9/1、春季次年 3/2）推算当前周，上限 22 周；前端 `available_weeks` 由 `build_available_weeks(semester_id)` 生成，字段结构不变，前端零改。
+- 开学日权威来源：新增 `system.semester_start_date` 配置项（默认空，空时按 term 推算，管理员可覆盖）。
+
+### 爬虫越权收回（系统差遣，两阶段；前序 v6.14 已立项）
+- 阶段1：`pipeline.save_to_database` 收敛为纯落库，不再承担周次 / 进程 / 图片 / 告警决策。
+- 阶段2：`main.py` 新增 `--only-image` 子命令（图片生成由系统按需调用）；移除 `pipeline._send_status_alert`，告警统一收口 `notification_service.send_status_alert`。
+
+### 教学周推算修正（本版本两轮）
+- **周次下拉默认选中**：暑假 `get_current_week_number()` 返回 0 时，`course_routes` 回退第1周（`or 1`），避免 Ant Design Select 因 `0` 为 falsy 不选中导致下拉显示空框（选项 1~25 仍在，仅缺默认值）。
+- **第21周修正**：`teaching_week_service._get_weeks_max()` 原硬编码 20，把开学日(3/2)推算的第21周(7/20)误判为非教学周 → 0；改为动态取值 `system.teaching_weeks_max` → 教务系统真实界限（`course_meta.json` 的 `weeks` 最大值，爬虫已从教务系统「教学周」下拉框抓取）→ 兜底 22。验证 7/20 正确返回第21周；真暑假（8月，推算 ≥23 周）仍正确归非教学周。
+
+### 假期模式前端修复（补 v6.14.0）
+- `src/pages/Tasks.tsx`：假期静默时禁用按钮补全至 16 个（含 `push_daily_schedule` / `push_weekly_image` / `fetch_all` / `check_cookie_validity` 等），统一 `cursor:not-allowed` + `opacity` + `title` 提示。
+- `src/style.css`：`.task-action-btn` 增加 `:disabled` / `[aria-disabled]` 规则（`!important` 覆盖内联），修复假期禁用按钮鼠标悬停无禁止光标的问题。
+
+### 全仓库格式化与工具链补齐
+- 后端 ruff-format（import 重排、去除 `# -*- coding: utf-8 -*-`）；前端 prettier（单引号转双引号、import 多行换行）。
+- 新增 `.pre-commit-config.yaml`（ruff + ruff-format + eslint + prettier）、`Push_System_Flask/ruff.toml`、前端 `eslint.config.js` / `.prettierrc.json` / `.prettierignore` / `vitest.config.ts` 与测试脚手架（`src/test/setup.ts`、`src/utils/__tests__/datetime.test.ts`、`src/utils/__tests__/semester.test.ts`）。
+- 新增 CI 工作流 `.github/workflows/ci.yml`。
+
+### 验证
+- 后端 pytest **113 passed**（仅 `datetime.utcnow()` 弃用告警，非错误）；前端 `npm run build`（tsc 无类型错误）通过。
+- 生产机升级步骤：部署后需手动 `DROP TABLE IF EXISTS course_weeks;`（模型已删除，SQLAlchemy 不会再管理该表，旧表须手动清理，否则成为孤儿表）。
+
+---
+
 ## v6.14.0 (2026-07-20)
 
 > 发版类型：**新功能（minor）**。新增「假期模式」：进入寒假/暑假后系统自动全体静默（不再向用户推送任何消息），并跳过课表爬取以节省资源；配套前端独立配置页。同时并入原拟单独发布的周课表教学周修复。

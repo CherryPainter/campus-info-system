@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """统一任务状态机与任务类型常量（后端统一任务模型核心）
 
 本模块是「统一任务模型」的基石，消除 TaskProcess / ScheduledCrawlTask / PushTask
@@ -15,36 +14,39 @@
     cancelled        已取消（手动停止）
 """
 
+
 # ============ 任务状态 ============
 class TaskStatus:
-    PENDING = 'pending'
-    RUNNING = 'running'
-    COMPLETED = 'completed'
-    COMPLETED_EMPTY = 'completed_empty'
-    FAILED = 'failed'
-    CANCELLED = 'cancelled'
-    SKIPPED = 'skipped'                      # 被假期模式静默跳过（未实际执行）
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    COMPLETED_EMPTY = "completed_empty"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    SKIPPED = "skipped"  # 被假期模式静默跳过（未实际执行）
 
 
 # 终态集合：进入后状态不再变化
-TERMINAL_STATUSES = frozenset({
-    TaskStatus.COMPLETED,
-    TaskStatus.COMPLETED_EMPTY,
-    TaskStatus.FAILED,
-    TaskStatus.CANCELLED,
-    TaskStatus.SKIPPED,
-})
+TERMINAL_STATUSES = frozenset(
+    {
+        TaskStatus.COMPLETED,
+        TaskStatus.COMPLETED_EMPTY,
+        TaskStatus.FAILED,
+        TaskStatus.CANCELLED,
+        TaskStatus.SKIPPED,
+    }
+)
 
 
 class TaskType:
-    SPIDER = 'spider'                       # 课表爬虫（单实例，内存并发锁）
-    COURSE_FULL_CRAWL = 'course_full_crawl' # 全量爬取
-    COURSE = 'course'                       # 课表推送
-    WEATHER = 'weather'                     # 天气
-    ELECTRICITY = 'electricity'             # 电量
-    CRAWL = 'crawl'                         # 预约爬取任务（scheduled_crawl_task）
-    CUSTOM = 'custom'                       # 自定义推送
-    SYSTEM = 'system'                       # 系统任务
+    SPIDER = "spider"  # 课表爬虫（单实例，内存并发锁）
+    COURSE_FULL_CRAWL = "course_full_crawl"  # 全量爬取
+    COURSE = "course"  # 课表推送
+    WEATHER = "weather"  # 天气
+    ELECTRICITY = "electricity"  # 电量
+    CRAWL = "crawl"  # 预约爬取任务（scheduled_crawl_task）
+    CUSTOM = "custom"  # 自定义推送
+    SYSTEM = "system"  # 系统任务
 
 
 def is_terminal(status: str) -> bool:

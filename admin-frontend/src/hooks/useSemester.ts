@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
-import { courseApi } from '@/api/course';
-import type { SemesterInfo } from '@/api/course';
+import { useState, useEffect, useCallback } from "react";
+import { courseApi } from "@/api/course";
+import type { SemesterInfo } from "@/api/course";
 
 /**
  * 学期列表 Hook（Course 与 CrawlScheduler 共用）
@@ -15,7 +15,7 @@ export function useSemester() {
     setLoading(true);
     try {
       const res = await courseApi.getSemesters();
-      if (res.status === 'success' && res.data) {
+      if (res.status === "success" && res.data) {
         const semestersData = res.data.semesters || [];
         const currentId = res.data.current_semester_id;
         const list: SemesterInfo[] = semestersData.map((s: any) => ({
@@ -29,7 +29,7 @@ export function useSemester() {
         if (current) setSelectedSemester(current.id);
       }
     } catch (error) {
-      console.error('获取学期列表失败:', error);
+      console.error("获取学期列表失败:", error);
     } finally {
       setLoading(false);
     }

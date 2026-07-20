@@ -2,17 +2,19 @@
  * 法律声明页面
  * 校园信息聚合与智能推送系统
  */
-import { Typography, Divider, Card, Alert } from 'antd';
-import { SafetyOutlined } from '@ant-design/icons';
+import { Typography, Divider, Card, Alert } from "antd";
+import { SafetyOutlined } from "@ant-design/icons";
 
 const { Title, Paragraph, Text, Link } = Typography;
 
 export default function Legal() {
   return (
-    <div style={{ maxWidth: 900, margin: '40px auto', padding: '0 24px' }}>
-      <Card bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-        <Title level={2} style={{ textAlign: 'center', marginBottom: 8 }}>法律声明</Title>
-        <Paragraph type="secondary" style={{ textAlign: 'center', marginBottom: 32 }}>
+    <div style={{ maxWidth: 900, margin: "40px auto", padding: "0 24px" }}>
+      <Card bordered={false} style={{ borderRadius: 12, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
+        <Title level={2} style={{ textAlign: "center", marginBottom: 8 }}>
+          法律声明
+        </Title>
+        <Paragraph type="secondary" style={{ textAlign: "center", marginBottom: 32 }}>
           最后更新日期：2026年7月7日
         </Paragraph>
 
@@ -71,7 +73,8 @@ export default function Legal() {
           不可抗力等原因暂时无法提供服务。我们不对因服务中断造成的任何损失承担责任。
         </Paragraph>
         <Paragraph>
-          4.3 <Text strong>第三方链接</Text>：本系统可能包含指向第三方网站或服务的链接（如 ICP 备案查询），
+          4.3 <Text strong>第三方链接</Text>：本系统可能包含指向第三方网站或服务的链接（如 ICP
+          备案查询），
           这些链接仅供用户便利使用。我们对第三方网站的内容、隐私政策和行为不承担任何责任。
         </Paragraph>
         <Paragraph>
@@ -80,9 +83,7 @@ export default function Legal() {
         </Paragraph>
 
         <Title level={4}>五、责任限制</Title>
-        <Paragraph>
-          在法律允许的最大范围内，本系统及其开发团队对以下情形不承担任何责任：
-        </Paragraph>
+        <Paragraph>在法律允许的最大范围内，本系统及其开发团队对以下情形不承担任何责任：</Paragraph>
         <Paragraph>
           <ul>
             <li>因使用或无法使用本系统服务而产生的任何直接、间接、附带、特殊或继发性损失；</li>
@@ -102,9 +103,7 @@ export default function Legal() {
         </Paragraph>
 
         <Title level={4}>七、适用法律与管辖</Title>
-        <Paragraph>
-          7.1 本法律声明的订立、执行、解释及争议解决均适用中华人民共和国法律。
-        </Paragraph>
+        <Paragraph>7.1 本法律声明的订立、执行、解释及争议解决均适用中华人民共和国法律。</Paragraph>
         <Paragraph>
           7.2 因本声明引起的或与本声明有关的任何争议，双方应首先友好协商解决。
           协商不成的，任何一方均可向有管辖权的人民法院提起诉讼。
@@ -117,19 +116,23 @@ export default function Legal() {
         </Paragraph>
 
         <Title level={4}>九、相关文件</Title>
-        <Paragraph>
-          本法律声明应与以下文件一并阅读，共同构成您使用本系统的完整法律基础：
-        </Paragraph>
+        <Paragraph>本法律声明应与以下文件一并阅读，共同构成您使用本系统的完整法律基础：</Paragraph>
         <Paragraph>
           <ul>
-            <li><Link href="/terms">用户协议</Link></li>
-            <li><Link href="/privacy">隐私政策</Link></li>
-            <li><Link href="/cookies">Cookie 政策</Link></li>
+            <li>
+              <Link href="/terms">用户协议</Link>
+            </li>
+            <li>
+              <Link href="/privacy">隐私政策</Link>
+            </li>
+            <li>
+              <Link href="/cookies">Cookie 政策</Link>
+            </li>
           </ul>
         </Paragraph>
 
         <Divider />
-        <Paragraph type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
+        <Paragraph type="secondary" style={{ textAlign: "center", fontSize: 12 }}>
           校园信息聚合与智能推送系统 · CherryPainter · © 2026
         </Paragraph>
       </Card>

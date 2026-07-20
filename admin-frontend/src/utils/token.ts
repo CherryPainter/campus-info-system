@@ -1,13 +1,13 @@
 /**
  * Token 存储工具模块
- * 
+ *
  * 注意：现在使用 httpOnly cookie 存储 token，前端无法直接访问
  * 这个文件保留用于兼容性，实际 token 由后端通过 Set-Cookie 设置
  */
 
 /**
  * Token 存储工具类
- * 
+ *
  * 由于使用 httpOnly cookie，前端无法直接读取 token
  * 所有 API 请求会自动携带 cookie
  */
@@ -34,7 +34,7 @@ export const tokenStorage = {
    */
   setTokens: (access: string, refresh: string): void => {
     // 不再存储到 localStorage，token 由后端通过 cookie 设置
-    console.warn('Token 现在使用 httpOnly cookie 存储，前端不再存储');
+    console.warn("Token 现在使用 httpOnly cookie 存储，前端不再存储");
   },
 
   /**
@@ -43,7 +43,7 @@ export const tokenStorage = {
    */
   clearTokens: (): void => {
     // 清除任何遗留的 localStorage 数据
-    localStorage.removeItem('admin_access_token');
-    localStorage.removeItem('admin_refresh_token');
+    localStorage.removeItem("admin_access_token");
+    localStorage.removeItem("admin_refresh_token");
   },
 };

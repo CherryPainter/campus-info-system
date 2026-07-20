@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 平台适配工具模块
 
@@ -7,20 +6,19 @@
 """
 
 import os
-import sys
+import platform
 import signal
 import subprocess
-import platform
-from typing import Optional, Tuple
+import sys
 
 
 class PlatformUtils:
     """平台适配工具类（全静态方法）"""
 
     # 当前平台
-    IS_WINDOWS = platform.system() == 'Windows'
-    IS_LINUX = platform.system() == 'Linux'
-    IS_MACOS = platform.system() == 'Darwin'
+    IS_WINDOWS = platform.system() == "Windows"
+    IS_LINUX = platform.system() == "Linux"
+    IS_MACOS = platform.system() == "Darwin"
 
     @staticmethod
     def get_platform() -> str:
@@ -32,13 +30,13 @@ class PlatformUtils:
         """
         system = platform.system()
         return {
-            'Windows': 'windows',
-            'Linux': 'linux',
-            'Darwin': 'macos',
-        }.get(system, 'unknown')
+            "Windows": "windows",
+            "Linux": "linux",
+            "Darwin": "macos",
+        }.get(system, "unknown")
 
     @staticmethod
-    def kill_process(pid: int, force: bool = False) -> Tuple[bool, str]:
+    def kill_process(pid: int, force: bool = False) -> tuple[bool, str]:
         """
         终止指定 PID 的进程（跨平台）
 
@@ -50,40 +48,47 @@ class PlatformUtils:
             (success, message) 元组
         """
         if not pid:
-            return False, 'PID 无效'
+            return False, "PID 无效"
 
         try:
             if PlatformUtils.IS_WINDOWS:
                 # Windows: 使用 taskkill 命令
-                cmd = ['taskkill', '/PID', str(pid)]
+                cmd = ["taskkill", "/PID", str(pid)]
                 if force:
-                    cmd.append('/F')
+                    cmd.append("/F")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, encoding='gbk', errors='replace')
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    encoding="gbk",
+                    errors="replace",
+                )
 
                 if result.returncode == 0:
-                    return True, f'进程 {pid} 已终止'
-                elif 'not found' in result.stderr.lower() or '找不到' in result.stderr:
-                    return False, f'进程 {pid} 不存在'
+                    return True, f"进程 {pid} 已终止"
+                elif "not found" in result.stderr.lower() or "找不到" in result.stderr:
+                    return False, f"进程 {pid} 不存在"
                 else:
-                    return False, f'终止失败: {result.stderr.strip()}'
+                    return False, f"终止失败: {result.stderr.strip()}"
             else:
                 # Linux/macOS: 使用 os.kill
                 sig = signal.SIGKILL if force else signal.SIGTERM
                 os.kill(pid, sig)
-                return True, f'进程 {pid} 已发送终止信号'
+                return True, f"进程 {pid} 已发送终止信号"
 
         except ProcessLookupError:
-            return False, f'进程 {pid} 不存在'
+            return False, f"进程 {pid} 不存在"
         except OSError as e:
             # Windows 上进程不存在可能抛出 OSError
-            if hasattr(e, 'winerror') and e.winerror == 87:
-                return False, f'进程 {pid} 不存在'
-            return False, f'终止进程时出错: {e}'
+            if hasattr(e, "winerror") and e.winerror == 87:
+                return False, f"进程 {pid} 不存在"
+            return False, f"终止进程时出错: {e}"
         except subprocess.TimeoutExpired:
-            return False, f'终止进程超时'
+            return False, "终止进程超时"
         except Exception as e:
-            return False, f'终止进程时出错: {e}'
+            return False, f"终止进程时出错: {e}"
 
     @staticmethod
     def process_exists(pid: int) -> bool:
@@ -103,8 +108,12 @@ class PlatformUtils:
             if PlatformUtils.IS_WINDOWS:
                 # Windows: 使用 tasklist 检查
                 result = subprocess.run(
-                    ['tasklist', '/FI', f'PID eq {pid}', '/NH'],
-                    capture_output=True, text=True, timeout=5, encoding='gbk', errors='replace'
+                    ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    encoding="gbk",
+                    errors="replace",
                 )
                 # 如果进程存在，输出会包含 PID
                 return str(pid) in result.stdout
@@ -161,7 +170,7 @@ class PlatformUtils:
             return False
 
     @staticmethod
-    def get_shell_command() -> Optional[str]:
+    def get_shell_command() -> str | None:
         """
         获取默认 shell 命令
 
@@ -171,7 +180,7 @@ class PlatformUtils:
         if PlatformUtils.IS_WINDOWS:
             return None  # Windows 使用默认 cmd
         else:
-            return '/bin/bash'
+            return "/bin/bash"
 
     @staticmethod
     def normalize_path(path: str) -> str:
@@ -195,7 +204,7 @@ class PlatformUtils:
         Returns:
             ';' (Windows) 或 ':' (Linux/macOS)
         """
-        return ';' if PlatformUtils.IS_WINDOWS else ':'
+        return ";" if PlatformUtils.IS_WINDOWS else ":"
 
     @staticmethod
     def get_line_ending() -> str:
@@ -205,11 +214,11 @@ class PlatformUtils:
         Returns:
             '\\r\\n' (Windows) 或 '\\n' (Linux/macOS)
         """
-        return '\r\n' if PlatformUtils.IS_WINDOWS else '\n'
+        return "\r\n" if PlatformUtils.IS_WINDOWS else "\n"
 
 
 # 便捷函数
-def kill_process(pid: int, force: bool = False) -> Tuple[bool, str]:
+def kill_process(pid: int, force: bool = False) -> tuple[bool, str]:
     """终止进程（便捷函数）"""
     return PlatformUtils.kill_process(pid, force)
 

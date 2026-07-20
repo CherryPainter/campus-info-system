@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 课程数据仓库层
 
 负责课程表的数据库操作，遵循 Repository 模式
 """
 
-import re
-import json
 import hashlib
-from datetime import datetime, date
-from typing import List, Optional, Dict, Any, Tuple
+import json
+import re
+from datetime import date, datetime
+from typing import Any
+
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
 
 from app.model.course import Course
-from app.model.course_week import CourseWeek
-
 
 # ----------------------------------------------------------------------
 # 课程导入时的字段补全/规范化辅助函数
@@ -26,7 +24,8 @@ from app.model.course_week import CourseWeek
 # 3) 将各种格式的周次/节次字符串规范化为列表，确保 JSON 列存储正确
 # ----------------------------------------------------------------------
 
-def derive_current_semester() -> Dict[str, Any]:
+
+def derive_current_semester() -> dict[str, Any]:
     """
     根据当前日期推导"当前学期"信息。
 
@@ -52,14 +51,14 @@ def derive_current_semester() -> Dict[str, Any]:
         start, term = y - 1, 2
     academic_year = f"{start}-{start + 1}"
     return {
-        'semester_id': int(f"{start}{term}"),
-        'semester_name': f"{academic_year}-{term}",
-        'academic_year': academic_year,
-        'term': term,
+        "semester_id": int(f"{start}{term}"),
+        "semester_name": f"{academic_year}-{term}",
+        "academic_year": academic_year,
+        "term": term,
     }
 
 
-def semester_info_from_id(semester_id: int) -> Dict[str, Any]:
+def semester_info_from_id(semester_id: int) -> dict[str, Any]:
     """
     根据 DB 格式学期 ID（如 20251）推导学期元信息。
 
@@ -78,15 +77,14 @@ def semester_info_from_id(semester_id: int) -> Dict[str, Any]:
     start = int(s[:-1])
     academic_year = f"{start}-{start + 1}"
     return {
-        'semester_id': semester_id,
-        'semester_name': f"{academic_year}-{term}",
-        'academic_year': academic_year,
-        'term': term,
+        "semester_id": semester_id,
+        "semester_name": f"{academic_year}-{term}",
+        "academic_year": academic_year,
+        "term": term,
     }
 
 
-
-def generate_course_code(data: Dict[str, Any]) -> str:
+def generate_course_code(data: dict[str, Any]) -> str:
     """
     在没有真实课程代码时，生成稳定的兜底课程代码。
     同一门课（课程名 + 星期 + 节次列表 + 教室 + 周次）在不同爬取中应得到相同代码，
@@ -102,27 +100,27 @@ def generate_course_code(data: Dict[str, Any]) -> str:
     Returns:
         str: 形如 "CRAWL-01234" 的代码
     """
-    name = data.get('course_name') or 'UNKNOWN'
-    wd = data.get('week_day', 0)
+    name = data.get("course_name") or "UNKNOWN"
+    wd = data.get("week_day", 0)
     # 优先用节次列表（更精准），回退到单个 period_idx
-    periods = data.get('periods')
+    periods = data.get("periods")
     if isinstance(periods, str):
         try:
             periods = json.loads(periods)
         except Exception:
             periods = None
     if isinstance(periods, list) and periods:
-        per = ','.join(str(p) for p in periods)
+        per = ",".join(str(p) for p in periods)
     else:
-        per = str(data.get('period_idx', 0))
-    room = data.get('classroom') or ''
-    wn = data.get('week_number') or ''
+        per = str(data.get("period_idx", 0))
+    room = data.get("classroom") or ""
+    wn = data.get("week_number") or ""
     raw = f"{name}|{wd}|{per}|{room}|{wn}"
-    h = int(hashlib.md5(raw.encode('utf-8')).hexdigest(), 16) % 100000
+    h = int(hashlib.md5(raw.encode("utf-8")).hexdigest(), 16) % 100000
     return f"CRAWL-{h:05d}"
 
 
-def normalize_weeks(weeks) -> List[int]:
+def normalize_weeks(weeks) -> list[int]:
     """
     将各种格式的周次描述规范化为升序去重的周次整数列表。
 
@@ -170,16 +168,16 @@ def normalize_weeks(weeks) -> List[int]:
             pass
         # 再按 空格/逗号 切分，逐段解析范围
         out = set()
-        for part in re.split(r'[\s,，]+', s):
+        for part in re.split(r"[\s,，]+", s):
             part = part.strip()
             if not part:
                 continue
-            is_odd = '单' in part
-            is_even = '双' in part
-            clean = part.replace('单', '').replace('双', '').replace('周', '')
-            if '-' in clean:
+            is_odd = "单" in part
+            is_even = "双" in part
+            clean = part.replace("单", "").replace("双", "").replace("周", "")
+            if "-" in clean:
                 try:
-                    a, b = clean.split('-')
+                    a, b = clean.split("-")
                     a, b = int(a.strip()), int(b.strip())
                     for w in range(a, b + 1):
                         if is_odd and w % 2 == 0:
@@ -198,12 +196,12 @@ def normalize_weeks(weeks) -> List[int]:
     return []
 
 
-def normalize_periods(periods) -> List[int]:
+def normalize_periods(periods) -> list[int]:
     """将节次字段规范化为整数列表（与 normalize_weeks 同理，但无单双周）。"""
     return normalize_weeks(periods)
 
 
-def weeks_to_bitmap(weeks: List[int], total: int = 25) -> Optional[str]:
+def weeks_to_bitmap(weeks: list[int], total: int = 25) -> str | None:
     """
     将周次列表转换为位图字符串（长度 total，'1' 表示有课）。
 
@@ -216,26 +214,27 @@ def weeks_to_bitmap(weeks: List[int], total: int = 25) -> Optional[str]:
     """
     if not weeks:
         return None
-    bits = ['0'] * total
+    bits = ["0"] * total
     for w in weeks:
         if 1 <= w <= total:
-            bits[w - 1] = '1'
-    return ''.join(bits)
+            bits[w - 1] = "1"
+    return "".join(bits)
 
 
 class CourseRepository:
     """
     课程数据仓库
-    
+
     职责：
     - 封装所有课程相关的数据库操作
     - 提供查询、创建、更新、删除方法
     - 不包含业务逻辑
     """
-    
+
     @staticmethod
-    def get_all(session: Session, week_number: Optional[int] = None,
-                semester_id: Optional[int] = None) -> List[Course]:
+    def get_all(
+        session: Session, week_number: int | None = None, semester_id: int | None = None
+    ) -> list[Course]:
         """
         获取所有未删除的课程
 
@@ -247,41 +246,39 @@ class CourseRepository:
         Returns:
             List[Course]: 课程列表
         """
-        query = session.query(Course).filter(Course.is_deleted == False)
+        query = session.query(Course).filter(Course.is_deleted.is_(False))
         if week_number is not None:
             query = query.filter(Course.week_number == week_number)
         if semester_id is not None:
             query = query.filter(Course.semester_id == semester_id)
         return query.order_by(Course.week_day, Course.period_idx).all()
-    
+
     @staticmethod
-    def get_by_id(session: Session, course_id: int) -> Optional[Course]:
+    def get_by_id(session: Session, course_id: int) -> Course | None:
         """
         根据ID获取课程
-        
+
         Args:
             session: 数据库会话
             course_id: 课程ID
-            
+
         Returns:
             Optional[Course]: 课程对象或None
         """
         return session.query(Course).filter(Course.id == course_id).first()
-    
+
     @staticmethod
     def get_by_week_day(
-        session: Session, 
-        week_day: int, 
-        week_number: Optional[int] = None
-    ) -> List[Course]:
+        session: Session, week_day: int, week_number: int | None = None
+    ) -> list[Course]:
         """
         获取指定星期的课程
-        
+
         Args:
             session: 数据库会话
             week_day: 星期几 (1-7)
             week_number: 可选，周次
-            
+
         Returns:
             List[Course]: 课程列表
         """
@@ -289,41 +286,41 @@ class CourseRepository:
         if week_number is not None:
             query = query.filter(Course.week_number == week_number)
         return query.order_by(Course.period_idx).all()
-    
+
     @staticmethod
-    def get_today_courses(session: Session, week_number: Optional[int] = None) -> List[Course]:
+    def get_today_courses(session: Session, week_number: int | None = None) -> list[Course]:
         """
         获取今天的课程
-        
+
         Args:
             session: 数据库会话
             week_number: 可选，周次
-            
+
         Returns:
             List[Course]: 今日课程列表
         """
         # 获取今天是星期几 (0=周一, 6=周日)
         today_week_day = date.today().weekday() + 1  # 转换为 1-7
-        
+
         return CourseRepository.get_by_week_day(session, today_week_day, week_number)
-    
+
     @staticmethod
     def create(
         session: Session,
         course_name: str,
         week_day: int,
         period_idx: int,
-        teacher: Optional[str] = None,
-        classroom: Optional[str] = None,
-        building: Optional[str] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
-        weeks: Optional[str] = None,
-        week_number: Optional[int] = None,
+        teacher: str | None = None,
+        classroom: str | None = None,
+        building: str | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        weeks: str | None = None,
+        week_number: int | None = None,
     ) -> Course:
         """
         创建课程
-        
+
         Args:
             session: 数据库会话
             course_name: 课程名称
@@ -336,30 +333,32 @@ class CourseRepository:
             end_time: 结束时间
             weeks: 上课周次
             week_number: 当前周次
-            
+
         Returns:
             Course: 创建的课程对象
         """
         sem = derive_current_semester()
         course = Course(
-            course_code=generate_course_code({
-                'course_name': course_name,
-                'week_day': week_day,
-                'period_idx': period_idx,
-                'classroom': classroom or '',
-            }),
+            course_code=generate_course_code(
+                {
+                    "course_name": course_name,
+                    "week_day": week_day,
+                    "period_idx": period_idx,
+                    "classroom": classroom or "",
+                }
+            ),
             course_name=course_name,
-            semester_id=sem['semester_id'],
-            semester_name=sem['semester_name'],
-            academic_year=sem['academic_year'],
-            term=sem['term'],
+            semester_id=sem["semester_id"],
+            semester_name=sem["semester_name"],
+            academic_year=sem["academic_year"],
+            term=sem["term"],
             week_day=week_day,
             period_idx=period_idx,
             teacher=teacher,
             classroom=classroom,
             building=building,
-            start_time=start_time or '',
-            end_time=end_time or '',
+            start_time=start_time or "",
+            end_time=end_time or "",
             weeks=normalize_weeks(weeks),
             weeks_bitmap=weeks_to_bitmap(normalize_weeks(weeks)),
             week_number=week_number,
@@ -367,10 +366,11 @@ class CourseRepository:
         session.add(course)
         session.flush()
         return course
-    
+
     @staticmethod
-    def create_batch(session: Session, courses_data: List[Dict[str, Any]],
-                      data_source: str = 'full') -> Tuple[int, int]:
+    def create_batch(
+        session: Session, courses_data: list[dict[str, Any]], data_source: str = "full"
+    ) -> tuple[int, int]:
         """
         批量创建课程（按课程代码去重，智能合并）
 
@@ -401,111 +401,128 @@ class CourseRepository:
         # 手动课保护（v6.11.2）：爬虫来源（full/daily）不得覆盖或挤占
         # data_source='admin' 的记录。先按批次涉及周次预载手动课所占槽位，
         # 用一个集合快速判断"该时间槽是否已被手动课占据"。
-        _crawler_source = data_source in ('full', 'daily')
+        _crawler_source = data_source in ("full", "daily")
         _admin_slots = set()
         if _crawler_source:
-            _wk_numbers = {d.get('week_number') for d in courses_data
-                           if d.get('week_number') is not None}
+            _wk_numbers = {
+                d.get("week_number") for d in courses_data if d.get("week_number") is not None
+            }
             if _wk_numbers:
-                _admins = session.query(Course).filter(
-                    Course.data_source == 'admin',
-                    Course.is_deleted == False,
-                    Course.week_number.in_(_wk_numbers),
-                ).all()
+                _admins = (
+                    session.query(Course)
+                    .filter(
+                        Course.data_source == "admin",
+                        Course.is_deleted.is_(False),
+                        Course.week_number.in_(_wk_numbers),
+                    )
+                    .all()
+                )
                 _admin_slots = {(c.week_day, c.period_idx, c.week_number) for c in _admins}
 
         for data in courses_data:
             # 规范化学期、周次、节次
-            weeks = normalize_weeks(data.get('weeks'))
+            weeks = normalize_weeks(data.get("weeks"))
             weeks_bitmap = weeks_to_bitmap(weeks)
-            periods = normalize_periods(data.get('periods', ''))
+            periods = normalize_periods(data.get("periods", ""))
             # 规范化 period_idx 为首节（periods[0]），避免源数据 period_idx 不一致
             # （如 [1,2] 课被标成 pidx=2）导致去重键错位、重复数据
-            period_idx = periods[0] if periods else data.get('period_idx', 1)
+            period_idx = periods[0] if periods else data.get("period_idx", 1)
             # 传入 periods 让兜底码基于节次列表生成，更精准且稳定
-            course_code = data.get('course_code') or generate_course_code({
-                'course_name': data.get('course_name'),
-                'week_day': data.get('week_day'),
-                'periods': periods,
-                'classroom': data.get('classroom'),
-                'week_number': data.get('week_number'),
-            })
+            course_code = data.get("course_code") or generate_course_code(
+                {
+                    "course_name": data.get("course_name"),
+                    "week_day": data.get("week_day"),
+                    "periods": periods,
+                    "classroom": data.get("classroom"),
+                    "week_number": data.get("week_number"),
+                }
+            )
 
             # 按课程代码 + 星期 + 节次 + 周次标记去重
-            existing = session.query(Course).filter(
-                and_(
-                    Course.course_code == course_code,
-                    Course.week_day == data.get('week_day', 1),
-                    Course.period_idx == period_idx,
-                    Course.week_number == data.get('week_number'),
-                    Course.is_deleted == False,
+            existing = (
+                session.query(Course)
+                .filter(
+                    and_(
+                        Course.course_code == course_code,
+                        Course.week_day == data.get("week_day", 1),
+                        Course.period_idx == period_idx,
+                        Course.week_number == data.get("week_number"),
+                        Course.is_deleted.is_(False),
+                    )
                 )
-            ).first()
+                .first()
+            )
 
             if existing:
                 # v6.11.2：爬虫来源不得覆盖手动课（admin），保留人工修正；
                 # 手动来源（admin）调用时仍可正常 upsert 自身。
-                if _crawler_source and existing.data_source == 'admin':
+                if _crawler_source and existing.data_source == "admin":
                     continue
                 # v6.11.2：同槽已被手动课占据则不再更新/新增第二条，避免重复
-                if _crawler_source and (data.get('week_day', 1), period_idx,
-                                        data.get('week_number')) in _admin_slots:
+                if (
+                    _crawler_source
+                    and (data.get("week_day", 1), period_idx, data.get("week_number"))
+                    in _admin_slots
+                ):
                     continue
                 # 计入"已更新"：命中既有记录即刷新来源/校验时间（无论字段是否变化）
                 updated_count += 1
                 # 已存在：比对更新（只更新有变化的字段）
-                if data.get('course_name') and data['course_name'] != existing.course_name:
-                    existing.course_name = data['course_name']
-                if data.get('teacher') and data['teacher'] != existing.teacher:
-                    existing.teacher = data['teacher']
-                if data.get('classroom') and data['classroom'] != existing.classroom:
-                    existing.classroom = data['classroom']
-                if data.get('building') and data['building'] != existing.building:
-                    existing.building = data['building']
-                if data.get('start_time') and data['start_time'] != existing.start_time:
-                    existing.start_time = data['start_time']
-                if data.get('end_time') and data['end_time'] != existing.end_time:
-                    existing.end_time = data['end_time']
-                if data.get('periods') is not None and periods and periods != existing.periods:
+                if data.get("course_name") and data["course_name"] != existing.course_name:
+                    existing.course_name = data["course_name"]
+                if data.get("teacher") and data["teacher"] != existing.teacher:
+                    existing.teacher = data["teacher"]
+                if data.get("classroom") and data["classroom"] != existing.classroom:
+                    existing.classroom = data["classroom"]
+                if data.get("building") and data["building"] != existing.building:
+                    existing.building = data["building"]
+                if data.get("start_time") and data["start_time"] != existing.start_time:
+                    existing.start_time = data["start_time"]
+                if data.get("end_time") and data["end_time"] != existing.end_time:
+                    existing.end_time = data["end_time"]
+                if data.get("periods") is not None and periods and periods != existing.periods:
                     existing.periods = periods
                 if weeks and weeks != existing.weeks:
                     existing.weeks = weeks
                     existing.weeks_bitmap = weeks_bitmap
                 # 学期信息以最新爬取为准，保持整批一致
-                existing.semester_id = data.get('semester_id') or sem['semester_id']
-                existing.semester_name = data.get('semester_name') or sem['semester_name']
-                existing.academic_year = data.get('academic_year') or sem['academic_year']
-                existing.term = data.get('term') or sem['term']
+                existing.semester_id = data.get("semester_id") or sem["semester_id"]
+                existing.semester_name = data.get("semester_name") or sem["semester_name"]
+                existing.academic_year = data.get("academic_year") or sem["academic_year"]
+                existing.term = data.get("term") or sem["term"]
                 # 刷新来源与校验时间（v6.11.1）
                 existing.data_source = data_source
                 existing.last_verified_at = datetime.utcnow()
                 existing.updated_at = datetime.utcnow()
             else:
                 # v6.11.2：同槽已被手动课占据则爬虫不插入第二条，避免重复展示
-                if _crawler_source and (data.get('week_day', 1), period_idx,
-                                        data.get('week_number')) in _admin_slots:
+                if (
+                    _crawler_source
+                    and (data.get("week_day", 1), period_idx, data.get("week_number"))
+                    in _admin_slots
+                ):
                     continue
                 # 不存在：创建新记录（补全所有 NOT NULL 字段）
                 course = Course(
                     course_code=course_code,
-                    course_name=data.get('course_name', ''),
-                    semester_id=data.get('semester_id') or sem['semester_id'],
-                    semester_name=data.get('semester_name') or sem['semester_name'],
-                    academic_year=data.get('academic_year') or sem['academic_year'],
-                    term=data.get('term') or sem['term'],
-                    week_day=data.get('week_day', 1),
+                    course_name=data.get("course_name", ""),
+                    semester_id=data.get("semester_id") or sem["semester_id"],
+                    semester_name=data.get("semester_name") or sem["semester_name"],
+                    academic_year=data.get("academic_year") or sem["academic_year"],
+                    term=data.get("term") or sem["term"],
+                    week_day=data.get("week_day", 1),
                     period_idx=period_idx,
                     periods=periods,
-                    teacher=data.get('teacher', ''),
-                    classroom=data.get('classroom', ''),
-                    building=data.get('building', ''),
-                    start_time=data.get('start_time', ''),
-                    end_time=data.get('end_time', ''),
+                    teacher=data.get("teacher", ""),
+                    classroom=data.get("classroom", ""),
+                    building=data.get("building", ""),
+                    start_time=data.get("start_time", ""),
+                    end_time=data.get("end_time", ""),
                     weeks=weeks,
                     weeks_bitmap=weeks_bitmap,
-                    week_number=data.get('week_number'),
-                    course_type=data.get('course_type'),
-                    credit=data.get('credit'),
+                    week_number=data.get("week_number"),
+                    course_type=data.get("course_type"),
+                    credit=data.get("credit"),
                     # 来源与校验时间（v6.11.1）
                     data_source=data_source,
                     last_verified_at=datetime.utcnow(),
@@ -515,86 +532,82 @@ class CourseRepository:
 
         session.flush()
         return created_count, updated_count
-    
+
     @staticmethod
-    def update(
-        session: Session,
-        course_id: int,
-        **kwargs
-    ) -> Optional[Course]:
+    def update(session: Session, course_id: int, **kwargs) -> Course | None:
         """
         更新课程
-        
+
         Args:
             session: 数据库会话
             course_id: 课程ID
             **kwargs: 要更新的字段
-            
+
         Returns:
             Optional[Course]: 更新后的课程或None
         """
         course = session.query(Course).filter(Course.id == course_id).first()
         if not course:
             return None
-        
+
         for key, value in kwargs.items():
-            if hasattr(course, key) and key not in ('id', 'created_at'):
+            if hasattr(course, key) and key not in ("id", "created_at"):
                 setattr(course, key, value)
-        
+
         course.updated_at = datetime.utcnow()
         session.flush()
         return course
-    
+
     @staticmethod
     def delete(session: Session, course_id: int) -> bool:
         """
         硬删除课程（从数据库中完全删除）
-        
+
         Args:
             session: 数据库会话
             course_id: 课程ID
-            
+
         Returns:
             bool: 是否删除成功
         """
         course = session.query(Course).filter(Course.id == course_id).first()
         if not course:
             return False
-        
+
         session.delete(course)
         session.flush()
         return True
-    
+
     @staticmethod
     def restore(session: Session, course_id: int) -> bool:
         """
         恢复已删除的课程
-        
+
         Args:
             session: 数据库会话
             course_id: 课程ID
-            
+
         Returns:
             bool: 是否恢复成功
         """
         course = session.query(Course).filter(Course.id == course_id).first()
         if not course:
             return False
-        
+
         course.is_deleted = False
         course.deleted_at = None
         course.deleted_reason = None
         session.flush()
         return True
-    
+
     @staticmethod
     def delete_all(session: Session) -> int:
         """
         删除所有课程
-        
+
         Args:
             session: 数据库会话
-            
+
         Returns:
             int: 删除的数量
         """
@@ -602,40 +615,16 @@ class CourseRepository:
         session.query(Course).delete()
         session.flush()
         return count
-    
+
     @staticmethod
-    def get_week_number(session: Session) -> Optional[int]:
-        """
-        获取当前「真实教学周次」。
-
-        基于学期第 1 周起始日（course_weeks.week_number=1.start_date）推算：
-            current_week = (today - 第1周起始日) // 7 + 1
-
-        注意：绝不能取 courses 表里最大的 week_number 当作当前周——当学期推进
-        超过数据中最大周次后，会被误判为“当前周”，导致课程被错误映射到本周，
-        进而引发“今天没课却推送”的误推送（详见 2026-07-15 排查记录）。
-
-        Returns:
-            Optional[int]: 当前教学周次；无第 1 周起始日数据时回退为 MAX(week_number)
-        """
-        first = session.query(CourseWeek).filter(CourseWeek.week_number == 1).first()
-        if first and first.start_date:
-            from datetime import date as _date
-            weeks_passed = (_date.today() - first.start_date).days // 7
-            return weeks_passed + 1
-        # 兜底：无第 1 周起始日数据，回退旧逻辑（仅作兼容，存在误推风险）
-        course = session.query(Course).order_by(Course.week_number.desc()).first()
-        return course.week_number if course else None
-    
-    @staticmethod
-    def count(session: Session, week_number: Optional[int] = None) -> int:
+    def count(session: Session, week_number: int | None = None) -> int:
         """
         统计课程数量
-        
+
         Args:
             session: 数据库会话
             week_number: 可选，按周次筛选
-            
+
         Returns:
             int: 课程数量
         """

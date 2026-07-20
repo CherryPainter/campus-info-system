@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """统一爬虫子进程执行入口（SpiderRunner）
 
 封装 subprocess 调用 app/cqie-course-timetable/main.py 的全部细节：
@@ -10,9 +9,10 @@
 替代 scheduler.run_spider 与 crawl_task_service._crawl_one_semester 中各自重复、
 易漂移的 subprocess 调用，成为系统调用课程爬虫的唯一入口。
 """
+
+import logging
 import os
 import subprocess
-import logging
 
 from app.core.config import Config
 from app.utils.platform_utils import PlatformUtils
@@ -22,22 +22,24 @@ logger = logging.getLogger(__name__)
 
 def spider_dir() -> str:
     """返回爬虫脚本所在目录。"""
-    return os.path.join(Config.BASE_DIR, 'app', 'cqie-course-timetable')
+    return os.path.join(Config.BASE_DIR, "app", "cqie-course-timetable")
 
 
 def build_spider_env(extra: dict = None) -> dict:
     """构造爬虫子进程环境变量（内存态 + 配置项注入）。"""
     env = os.environ.copy()
-    env['JWXT_HEADLESS'] = str(getattr(Config, 'SPIDER_HEADLESS', True)).lower()
-    tess = getattr(Config, 'TESSERACT_CMD', None)
+    env["JWXT_HEADLESS"] = str(getattr(Config, "SPIDER_HEADLESS", True)).lower()
+    tess = getattr(Config, "TESSERACT_CMD", None)
     if tess:
-        env['TESSERACT_CMD'] = tess
+        env["TESSERACT_CMD"] = tess
     if extra:
         env.update({k: str(v) for k, v in extra.items()})
     return env
 
 
-def run_spider_process(args=None, *, timeout: int = 600, headless=None) -> subprocess.CompletedProcess:
+def run_spider_process(
+    args=None, *, timeout: int = 600, headless=None
+) -> subprocess.CompletedProcess:
     """运行爬虫 main.py，返回 subprocess.CompletedProcess。
 
     Args:
@@ -52,18 +54,18 @@ def run_spider_process(args=None, *, timeout: int = 600, headless=None) -> subpr
         FileNotFoundError: 爬虫脚本不存在
         subprocess.TimeoutExpired: 超时（由调用方决定是否重试）
     """
-    script = os.path.join(spider_dir(), 'main.py')
+    script = os.path.join(spider_dir(), "main.py")
     if not os.path.exists(script):
-        raise FileNotFoundError(f'爬虫脚本不存在: {script}')
+        raise FileNotFoundError(f"爬虫脚本不存在: {script}")
 
-    python_path = os.environ.get('PYTHON_PATH', '') or PlatformUtils.get_python_command()
+    python_path = os.environ.get("PYTHON_PATH", "") or PlatformUtils.get_python_command()
     cmd = [python_path, script]
     if args:
         cmd.extend(str(a) for a in args)
 
     env = build_spider_env()
     if headless is not None:
-        env['JWXT_HEADLESS'] = str(headless).lower()
+        env["JWXT_HEADLESS"] = str(headless).lower()
 
     logger.info(f'[SpiderRunner] 执行: {" ".join(cmd)} (timeout={timeout}s)')
     return subprocess.run(
@@ -73,6 +75,6 @@ def run_spider_process(args=None, *, timeout: int = 600, headless=None) -> subpr
         text=True,
         timeout=timeout,
         env=env,
-        encoding='utf-8',
-        errors='replace',
+        encoding="utf-8",
+        errors="replace",
     )

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 电量业务服务
 
@@ -12,12 +11,14 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any, Tuple
+from typing import Any
 
 from app.core.database import get_db
-from app.repository.electricity_repository import ElectricityRepository
+from app.modules.electricity.capacity_manager import (
+    get_capacity_manager,
+)
 from app.modules.electricity.crawler import ElectricityCrawler
-from app.modules.electricity.capacity_manager import ElectricityCapacityManager, get_capacity_manager
+from app.repository.electricity_repository import ElectricityRepository
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class ElectricityService:
     封装所有电量相关的业务逻辑
     """
 
-    def __init__(self, crawler: Optional[ElectricityCrawler] = None, meter: str = 'default') -> None:
+    def __init__(self, crawler: ElectricityCrawler | None = None, meter: str = "default") -> None:
         """
         初始化服务
 
@@ -45,10 +46,11 @@ class ElectricityService:
         """获取或创建 crawler"""
         if self._crawler is None:
             from app.modules.electricity.tasks import _make_crawler
+
             self._crawler = _make_crawler()
         return self._crawler
 
-    def fetch_and_save_data(self, max_pages: Optional[int] = None) -> Tuple[bool, str]:
+    def fetch_and_save_data(self, max_pages: int | None = None) -> tuple[bool, str]:
         """
         获取并保存电量数据
 
@@ -64,19 +66,19 @@ class ElectricityService:
             # 获取剩余电量
             remaining = crawler.fetch_remaining_power()
             if remaining is None:
-                return False, '获取剩余电量失败'
+                return False, "获取剩余电量失败"
 
             # 获取用电记录
             records = crawler.fetch_usage_records(max_pages=max_pages)
             if not records:
-                return False, '获取用电记录失败'
+                return False, "获取用电记录失败"
 
             session = get_db()
             try:
                 # 保存剩余电量（处理 dict 格式 {'default': 128.5} 或单个数值）
                 remaining_value = remaining
                 if isinstance(remaining, dict):
-                    remaining_value = remaining.get('default', 0)
+                    remaining_value = remaining.get("default", 0)
                 remaining_float = float(remaining_value) if remaining_value else 0.0
 
                 ElectricityRepository.create_remaining(
@@ -96,37 +98,41 @@ class ElectricityService:
                 record_tuples = []
                 for r in records:
                     record_time = None
-                    if r.get('time'):
+                    if r.get("time"):
                         try:
-                            record_time = datetime.fromisoformat(r['time'].replace('Z', '+00:00'))
-                        except:
+                            record_time = datetime.fromisoformat(r["time"].replace("Z", "+00:00"))
+                        except (ValueError, TypeError):
                             record_time = datetime.utcnow()
                     else:
                         record_time = datetime.utcnow()
 
-                    record_tuples.append((
-                        record_time,
-                        float(r.get('usage', 0)) if r.get('usage') else 0.0,
-                        r.get('meter', 'default'),
-                    ))
+                    record_tuples.append(
+                        (
+                            record_time,
+                            float(r.get("usage", 0)) if r.get("usage") else 0.0,
+                            r.get("meter", "default"),
+                        )
+                    )
 
                 ElectricityRepository.create_records_batch(session, record_tuples)
 
                 session.commit()
-                logger.info(f'[ElectricityService] 电量数据已保存: {len(records)} 条记录，剩余 {remaining} 度')
-                return True, f'成功保存 {len(records)} 条用电记录'
+                logger.info(
+                    f"[ElectricityService] 电量数据已保存: {len(records)} 条记录，剩余 {remaining} 度"
+                )
+                return True, f"成功保存 {len(records)} 条用电记录"
 
-            except Exception as e:
+            except Exception:
                 session.rollback()
                 raise
             finally:
                 session.close()
 
         except Exception as e:
-            logger.error(f'[ElectricityService] 获取并保存电量数据失败: {e}')
-            return False, f'获取失败: {str(e)}'
+            logger.error(f"[ElectricityService] 获取并保存电量数据失败: {e}")
+            return False, f"获取失败: {str(e)}"
 
-    def get_remaining_power(self, meter: str = None) -> Optional[Dict[str, Any]]:
+    def get_remaining_power(self, meter: str = None) -> dict[str, Any] | None:
         """
         获取最新剩余电量（包含百分比信息）
 
@@ -145,9 +151,9 @@ class ElectricityService:
                 # 获取容量管理器的状态信息
                 capacity_status = self._capacity_manager.get_current_status()
                 # 合并容量信息到返回数据
-                data['total_capacity'] = capacity_status.get('total_capacity', 100.0)
-                data['percentage'] = capacity_status.get('percentage', 0.0)
-                data['is_low_power'] = capacity_status.get('is_low_power', False)
+                data["total_capacity"] = capacity_status.get("total_capacity", 100.0)
+                data["percentage"] = capacity_status.get("percentage", 0.0)
+                data["is_low_power"] = capacity_status.get("is_low_power", False)
                 return data
             return None
         finally:
@@ -155,10 +161,10 @@ class ElectricityService:
 
     def get_usage_records(
         self,
-        meter: Optional[str] = None,
-        days: Optional[int] = 30,
+        meter: str | None = None,
+        days: int | None = 30,
         limit: int = 1000,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         获取用电记录
 
@@ -196,7 +202,7 @@ class ElectricityService:
         finally:
             session.close()
 
-    def get_statistics(self, days: int = 30) -> Dict[str, Any]:
+    def get_statistics(self, days: int = 30) -> dict[str, Any]:
         """
         获取用电统计
 
@@ -220,18 +226,20 @@ class ElectricityService:
             for i in range(min(days, 7)):
                 target_date = datetime.utcnow() - timedelta(days=i)
                 total, count = ElectricityRepository.get_daily_statistics(session, target_date)
-                daily.append({
-                    'date': target_date.strftime('%Y-%m-%d'),
-                    'usage': total,
-                    'count': count,
-                })
+                daily.append(
+                    {
+                        "date": target_date.strftime("%Y-%m-%d"),
+                        "usage": total,
+                        "count": count,
+                    }
+                )
             daily.reverse()
 
             return {
-                'total_usage': round(total_usage, 2),
-                'meter_count': meter_count,
-                'by_meter': [{'meter': m, 'usage': round(u, 2)} for m, u in by_meter],
-                'daily': daily,
+                "total_usage": round(total_usage, 2),
+                "meter_count": meter_count,
+                "by_meter": [{"meter": m, "usage": round(u, 2)} for m, u in by_meter],
+                "daily": daily,
             }
         finally:
             session.close()
@@ -240,10 +248,10 @@ class ElectricityService:
         self,
         start_time: datetime,
         end_time: datetime,
-        local_start_time: Optional[datetime] = None,
-        local_end_time: Optional[datetime] = None,
-        meter: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        local_start_time: datetime | None = None,
+        local_end_time: datetime | None = None,
+        meter: str | None = None,
+    ) -> dict[str, Any]:
         """
         获取指定时间范围的用电统计
 
@@ -275,14 +283,14 @@ class ElectricityService:
             # 使用本地时间计算日期范围，确保正确显示
             display_start = local_start_time or (start_time + timedelta(hours=8))
             display_end = local_end_time or (end_time + timedelta(hours=8))
-            
+
             daily = []
             current_date = display_start.replace(hour=0, minute=0, second=0, microsecond=0)
             while current_date < display_end:
                 # 将本地日期转换为UTC时间范围进行查询
                 utc_day_start = current_date - timedelta(hours=8)
                 utc_day_end = utc_day_start + timedelta(days=1)
-                
+
                 # 查询当天的用电量（使用范围查询）
                 day_records = ElectricityRepository.get_records(
                     session=session,
@@ -292,27 +300,31 @@ class ElectricityService:
                 )
                 day_total = sum(r.usage for r in day_records)
                 day_count = len(day_records)
-                
+
                 # 显示日期使用本地时间
-                daily.append({
-                    'date': current_date.strftime('%Y-%m-%d'),
-                    'usage': round(day_total, 2),
-                    'count': day_count,
-                })
+                daily.append(
+                    {
+                        "date": current_date.strftime("%Y-%m-%d"),
+                        "usage": round(day_total, 2),
+                        "count": day_count,
+                    }
+                )
                 current_date += timedelta(days=1)
 
             return {
-                'total_usage': round(total_usage, 2),
-                'meter_count': meter_count,
-                'by_meter': [{'meter': m, 'usage': round(u, 2)} for m, u in by_meter],
-                'daily': daily,
-                'start_time': start_time.isoformat(),
-                'end_time': end_time.isoformat(),
+                "total_usage": round(total_usage, 2),
+                "meter_count": meter_count,
+                "by_meter": [{"meter": m, "usage": round(u, 2)} for m, u in by_meter],
+                "daily": daily,
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
             }
         finally:
             session.close()
 
-    def check_low_power(self, threshold: float = 10.0, meter: str = 'default') -> Tuple[bool, float]:
+    def check_low_power(
+        self, threshold: float = 10.0, meter: str = "default"
+    ) -> tuple[bool, float]:
         """
         检查是否低电量
 

@@ -11,16 +11,10 @@
  *
  * 用模块级 shown 标志保证同一页面生命周期内只弹一次，避免 401 / 心跳 / 多请求并发重复弹框。
  */
-import { Modal } from 'antd';
+import { Modal } from "antd";
 
 export type SessionRevokeReason =
-  | 'new_login'
-  | 'expired'
-  | 'admin_revoke'
-  | 'logout'
-  | 'unknown'
-  | 'no_session'
-  | string;
+  "new_login" | "expired" | "admin_revoke" | "logout" | "unknown" | "no_session" | string;
 
 export interface SessionExpiryDetail {
   reason?: SessionRevokeReason;
@@ -33,18 +27,18 @@ let shown = false;
 function buildMessage(detail?: SessionExpiryDetail): string {
   const ip = detail?.ip;
   switch (detail?.reason) {
-    case 'new_login':
+    case "new_login":
       return ip
         ? `您的账号已在其他设备登录（设备 IP：${ip}），当前会话已被强制下线，请重新登录。`
-        : '您的账号已在其他设备登录，当前会话已被强制下线，请重新登录。';
-    case 'expired':
-      return '登录会话已过期，请重新登录。';
-    case 'admin_revoke':
-      return '您的会话已被管理员强制下线，请重新登录。';
-    case 'logout':
-      return '您已在其他位置登出，请重新登录。';
+        : "您的账号已在其他设备登录，当前会话已被强制下线，请重新登录。";
+    case "expired":
+      return "登录会话已过期，请重新登录。";
+    case "admin_revoke":
+      return "您的会话已被管理员强制下线，请重新登录。";
+    case "logout":
+      return "您已在其他位置登出，请重新登录。";
     default:
-      return '您的登录会话已失效，请重新登录。';
+      return "您的登录会话已失效，请重新登录。";
   }
 }
 
@@ -59,13 +53,13 @@ export function notifySessionExpired(detail?: SessionExpiryDetail): void {
   const msg = buildMessage(detail);
 
   Modal.warning({
-    title: '登录会话已失效',
+    title: "登录会话已失效",
     content: msg,
-    okText: '确认',
+    okText: "确认",
     centered: true,
     closable: false,
     onOk: () => {
-      window.location.href = '/login';
+      window.location.href = "/login";
     },
   });
 }

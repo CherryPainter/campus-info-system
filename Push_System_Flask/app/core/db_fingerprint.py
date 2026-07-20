@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 数据库指纹：定义码 vs 实例码 的漂移检测
 
@@ -20,25 +19,24 @@
 - 类型归一化：定义侧用 MySQL dialect compile，实例侧用 INFORMATION_SCHEMA.COLUMN_TYPE，
   两者统一小写并剥离整数显示宽度（int(11)→int），保证可比。
 """
+
 import hashlib
 import json
 import os
 import re
-from typing import Any, Dict, List, Tuple
 
 from sqlalchemy import text
 from sqlalchemy.dialects.mysql import dialect as _mysql_dialect
 
-
 # 整数族统一为 int（MySQL 显示宽度 int(11) 是装饰性的，与定义侧 INTEGER 不可比，故抹平）
-_INT_FAMILY = {'int', 'integer', 'bigint', 'smallint', 'tinyint', 'mediumint'}
+_INT_FAMILY = {"int", "integer", "bigint", "smallint", "tinyint", "mediumint"}
 # Boolean 族：SQLAlchemy 编译为 BOOL，MySQL 实例侧为 tinyint(1)，需归一为同一族
-_BOOL_FAMILY = {'bool', 'bit'}
+_BOOL_FAMILY = {"bool", "bit"}
 
 
 def default_admin_username() -> str:
     """默认管理员用户名（与 JWT_ADMIN_USERNAME 环境变量一致）。"""
-    return os.getenv('JWT_ADMIN_USERNAME', 'admin')
+    return os.getenv("JWT_ADMIN_USERNAME", "admin")
 
 
 def _normalize_type(raw: str) -> str:
@@ -49,26 +47,36 @@ def _normalize_type(raw: str) -> str:
     仅当逻辑族不同（如 varchar↔int）时才视为类型变更。
     """
     if not raw:
-        return ''
+        return ""
     s = raw.lower().strip()
-    m = re.match(r'^([a-z]+)(?:\((\d+)(?:,(\d+))?\))?', s)
+    m = re.match(r"^([a-z]+)(?:\((\d+)(?:,(\d+))?\))?", s)
     if not m:
         return s
     base = m.group(1)
     size = m.group(2)
     # Boolean 必须在 _INT_FAMILY 之前判定：tinyint(1) 是 MySQL 布尔列的存储形式
     if base in _BOOL_FAMILY:
-        return 'bool'
-    if base == 'tinyint' and size == '1':
-        return 'bool'
+        return "bool"
+    if base == "tinyint" and size == "1":
+        return "bool"
     if base in _INT_FAMILY:
-        return 'int'
-    if base in ('varchar', 'char'):
-        return 'varchar'
-    if base in ('decimal', 'numeric'):
-        return 'decimal'
-    if base in ('datetime', 'timestamp', 'date', 'time', 'year',
-                'text', 'blob', 'json', 'float', 'double'):
+        return "int"
+    if base in ("varchar", "char"):
+        return "varchar"
+    if base in ("decimal", "numeric"):
+        return "decimal"
+    if base in (
+        "datetime",
+        "timestamp",
+        "date",
+        "time",
+        "year",
+        "text",
+        "blob",
+        "json",
+        "float",
+        "double",
+    ):
         return base
     return s  # 兜底原样
 
@@ -84,30 +92,23 @@ def _ensure_all_models():
     不会经 `from app import model` 自动注册，必须显式导入，否则定义码会漏表）。
     不直接 import init_db，避免 `python init_db.py` 以 __main__ 运行时产生循环/重复导入。
     """
-    from app.model import (
-        WeatherRecord, WeatherAlert,
-        ElectricityRecord, ElectricityRemaining, ElectricityTotalCapacity,
-        Course, CourseWeek, CustomPush, TaskProcess, ScheduledCrawlTask, PushTask,
-        TokenBlacklist, UserMFA, User, LoginLog, ModuleConfig, Webhook,
-    )
-    from app.model.ip_blacklist import IPBlacklist, IPSecurityEvent
-    from app.model.server_session import ServerSession
     from app.core.database import Base
+
     return Base
 
 
 # ──────────────────────────────────────────────────────────
 #  定义码（来自代码）
 # ──────────────────────────────────────────────────────────
-def _definition_schema() -> Dict[str, Dict[str, str]]:
+def _definition_schema() -> dict[str, dict[str, str]]:
     """从 SQLAlchemy 模型推导 schema 结构（需先 import 所有模型）。"""
     Base = _ensure_all_models()
 
     eng = _mysql_dialect()
-    schema: Dict[str, Dict[str, str]] = {}
+    schema: dict[str, dict[str, str]] = {}
     for table_name in sorted(Base.metadata.tables.keys()):
         table = Base.metadata.tables[table_name]
-        cols: Dict[str, str] = {}
+        cols: dict[str, str] = {}
         for col in sorted(table.columns, key=lambda c: c.name):
             try:
                 type_str = col.type.compile(dialect=eng)
@@ -118,18 +119,20 @@ def _definition_schema() -> Dict[str, Dict[str, str]]:
     return schema
 
 
-def _definition_configs() -> List[Tuple[str, str, str, bool, bool]]:
+def _definition_configs() -> list[tuple[str, str, str, bool, bool]]:
     from app.model.module_config import DEFAULT_CONFIGS
 
-    out: List[Tuple[str, str, str, bool, bool]] = []
+    out: list[tuple[str, str, str, bool, bool]] = []
     for c in DEFAULT_CONFIGS:
-        out.append((
-            c.get('module', ''),
-            c.get('key', ''),
-            c.get('value_type', ''),
-            bool(c.get('is_editable', False)),
-            bool(c.get('is_sensitive', False)),
-        ))
+        out.append(
+            (
+                c.get("module", ""),
+                c.get("key", ""),
+                c.get("value_type", ""),
+                bool(c.get("is_editable", False)),
+                bool(c.get("is_sensitive", False)),
+            )
+        )
     out.sort()
     return out
 
@@ -139,21 +142,21 @@ def _definition_admin() -> bool:
     return True
 
 
-def compute_definition_fingerprint() -> Tuple[str, dict]:
+def compute_definition_fingerprint() -> tuple[str, dict]:
     """返回 (sha256_hex, 结构化明细)。纯代码推导，无需数据库。"""
     struct = {
-        'schema': _definition_schema(),
-        'configs': _definition_configs(),
-        'admin': _definition_admin(),
+        "schema": _definition_schema(),
+        "configs": _definition_configs(),
+        "admin": _definition_admin(),
     }
     payload = json.dumps(struct, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(payload.encode('utf-8')).hexdigest(), struct
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest(), struct
 
 
 # ──────────────────────────────────────────────────────────
 #  实例码（来自当前数据库）
 # ──────────────────────────────────────────────────────────
-def _instance_schema(session, table_names: List[str]) -> Dict[str, Dict[str, str]]:
+def _instance_schema(session, table_names: list[str]) -> dict[str, dict[str, str]]:
     """查询当前数据库的全部用户表 schema，用于跟定义侧做全量 diff。
 
     table_names 来自 Base.metadata（定义侧知道的表名列表），
@@ -168,46 +171,47 @@ def _instance_schema(session, table_names: List[str]) -> Dict[str, Dict[str, str
             "WHERE TABLE_SCHEMA = :db "
             "ORDER BY TABLE_NAME, COLUMN_NAME"
         ),
-        {'db': db_name},
+        {"db": db_name},
     ).fetchall()
-    schema: Dict[str, Dict[str, str]] = {}
+    schema: dict[str, dict[str, str]] = {}
     for r in rows:
         tname, cname, ctype, nullable, ckey = r
-        pk = (ckey or '') == 'PRI'
-        schema.setdefault(tname, {})[cname] = _col_desc(ctype, nullable == 'YES', pk)
+        pk = (ckey or "") == "PRI"
+        schema.setdefault(tname, {})[cname] = _col_desc(ctype, nullable == "YES", pk)
     return schema
 
 
-def _instance_configs(session) -> List[Tuple[str, str, str, bool, bool]]:
+def _instance_configs(session) -> list[tuple[str, str, str, bool, bool]]:
     rows = session.execute(
         text(
             "SELECT module, `key`, value_type, is_editable, is_sensitive "
             "FROM module_configs ORDER BY module, `key`"
         )
     ).fetchall()
-    out: List[Tuple[str, str, str, bool, bool]] = []
+    out: list[tuple[str, str, str, bool, bool]] = []
     for r in rows:
-        out.append((r[0], r[1], r[2] or '', bool(r[3]), bool(r[4])))
+        out.append((r[0], r[1], r[2] or "", bool(r[3]), bool(r[4])))
     out.sort()
     return out
 
 
 def _instance_admin(session) -> bool:
     from app.model.user import User
+
     return session.query(User).filter_by(username=default_admin_username()).first() is not None
 
 
-def compute_instance_fingerprint(session) -> Tuple[str, dict]:
+def compute_instance_fingerprint(session) -> tuple[str, dict]:
     """返回 (sha256_hex, 结构化明细)。需要数据库会话。"""
     _ensure_all_models()
 
     struct = {
-        'schema': _instance_schema(session, table_names=[]),
-        'configs': _instance_configs(session),
-        'admin': _instance_admin(session),
+        "schema": _instance_schema(session, table_names=[]),
+        "configs": _instance_configs(session),
+        "admin": _instance_admin(session),
     }
     payload = json.dumps(struct, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(payload.encode('utf-8')).hexdigest(), struct
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest(), struct
 
 
 # ──────────────────────────────────────────────────────────
@@ -215,30 +219,30 @@ def compute_instance_fingerprint(session) -> Tuple[str, dict]:
 # ──────────────────────────────────────────────────────────
 def diff_fingerprints(def_struct: dict, inst_struct: dict) -> dict:
     """结构化 diff：逐项列出缺失/多余的表、列、类型变更、可空性变更、配置键，以及管理员一致性。"""
-    ds = def_struct['schema']
-    isc = inst_struct['schema']
+    ds = def_struct["schema"]
+    isc = inst_struct["schema"]
 
     missing_tables = sorted(set(ds) - set(isc))
     extra_tables = sorted(set(isc) - set(ds))
-    missing_columns: Dict[str, List[str]] = {}
-    extra_columns: Dict[str, List[str]] = {}
+    missing_columns: dict[str, list[str]] = {}
+    extra_columns: dict[str, list[str]] = {}
     # 类型变更（逻辑类型族不同，如 varchar↔int）与可空性变更分开统计：
     # 否则把 nullable 微调误报成「类型变更」，且清理脚本无法区分、只能跳过。
-    type_changed: Dict[str, Dict[str, List[str]]] = {}
-    null_changed: Dict[str, Dict[str, List[str]]] = {}
+    type_changed: dict[str, dict[str, list[str]]] = {}
+    null_changed: dict[str, dict[str, list[str]]] = {}
 
     for t in sorted(set(ds) & set(isc)):
         dc = ds[t]
         ic = isc[t]
         miss = sorted(set(dc) - set(ic))
         extra = sorted(set(ic) - set(dc))
-        t_changed: Dict[str, List[str]] = {}
-        n_changed: Dict[str, List[str]] = {}
+        t_changed: dict[str, list[str]] = {}
+        n_changed: dict[str, list[str]] = {}
         for c in dc:
             if c not in ic or dc[c] == ic[c]:
                 continue
-            d_parts = dc[c].split('|')
-            i_parts = ic[c].split('|')
+            d_parts = dc[c].split("|")
+            i_parts = ic[c].split("|")
             d_base = d_parts[0]
             i_base = i_parts[0]
             if d_base != i_base:
@@ -259,32 +263,41 @@ def diff_fingerprints(def_struct: dict, inst_struct: dict) -> dict:
         if n_changed:
             null_changed[t] = n_changed
 
-    dk = set(def_struct['configs'])
-    ik = set(inst_struct['configs'])
+    dk = set(def_struct["configs"])
+    ik = set(inst_struct["configs"])
     missing_config_keys = sorted(dk - ik)
     extra_config_keys = sorted(ik - dk)
 
-    admin_match = bool(def_struct['admin']) == bool(inst_struct['admin'])
+    admin_match = bool(def_struct["admin"]) == bool(inst_struct["admin"])
 
     diff = {
-        'missing_tables': missing_tables,
-        'extra_tables': extra_tables,
-        'missing_columns': missing_columns,
-        'extra_columns': extra_columns,
-        'type_changed': type_changed,
-        'null_changed': null_changed,
-        'missing_config_keys': missing_config_keys,
-        'extra_config_keys': extra_config_keys,
-        'admin': {
-            'definition_expects_admin': bool(def_struct['admin']),
-            'instance_admin_present': bool(inst_struct['admin']),
-            'match': admin_match,
+        "missing_tables": missing_tables,
+        "extra_tables": extra_tables,
+        "missing_columns": missing_columns,
+        "extra_columns": extra_columns,
+        "type_changed": type_changed,
+        "null_changed": null_changed,
+        "missing_config_keys": missing_config_keys,
+        "extra_config_keys": extra_config_keys,
+        "admin": {
+            "definition_expects_admin": bool(def_struct["admin"]),
+            "instance_admin_present": bool(inst_struct["admin"]),
+            "match": admin_match,
         },
     }
-    diff['match'] = not any([
-        missing_tables, extra_tables, missing_columns, extra_columns,
-        type_changed, null_changed, missing_config_keys, extra_config_keys, not admin_match,
-    ])
+    diff["match"] = not any(
+        [
+            missing_tables,
+            extra_tables,
+            missing_columns,
+            extra_columns,
+            type_changed,
+            null_changed,
+            missing_config_keys,
+            extra_config_keys,
+            not admin_match,
+        ]
+    )
     return diff
 
 
@@ -293,33 +306,45 @@ def check_db_fingerprint(session) -> dict:
     def_hash, def_struct = compute_definition_fingerprint()
     inst_hash, inst_struct = compute_instance_fingerprint(session)
     diff = diff_fingerprints(def_struct, inst_struct)
-    diff['definition_hash'] = def_hash
-    diff['instance_hash'] = inst_hash
+    diff["definition_hash"] = def_hash
+    diff["instance_hash"] = inst_hash
     return diff
 
 
 def summarize_diff(diff: dict) -> str:
     """把 diff 渲染成一行人话摘要（用于启动告警 / CLI）。"""
-    if diff['match']:
-        return '实例与初始化定义一致'
+    if diff["match"]:
+        return "实例与初始化定义一致"
     # 不一致：逐项列出
-    parts: List[str] = []
-    if diff.get('missing_tables'):
+    parts: list[str] = []
+    if diff.get("missing_tables"):
         parts.append(f"缺失表:{','.join(diff['missing_tables'])}")
-    if diff.get('extra_tables'):
+    if diff.get("extra_tables"):
         parts.append(f"多余表:{','.join(diff['extra_tables'])}")
-    if diff.get('missing_columns'):
-        parts.append('缺失列:' + ';'.join(f"{t}({','.join(c)})" for t, c in diff['missing_columns'].items()))
-    if diff.get('extra_columns'):
-        parts.append('多余列:' + ';'.join(f"{t}({','.join(c)})" for t, c in diff['extra_columns'].items()))
-    if diff.get('type_changed'):
-        parts.append('类型变更:' + ';'.join(f"{t}:{len(v)}列" for t, v in diff['type_changed'].items()))
-    if diff.get('null_changed'):
-        parts.append('可空性变更:' + ';'.join(f"{t}:{len(v)}列" for t, v in diff['null_changed'].items()))
-    if diff.get('missing_config_keys'):
+    if diff.get("missing_columns"):
+        parts.append(
+            "缺失列:" + ";".join(f"{t}({','.join(c)})" for t, c in diff["missing_columns"].items())
+        )
+    if diff.get("extra_columns"):
+        parts.append(
+            "多余列:" + ";".join(f"{t}({','.join(c)})" for t, c in diff["extra_columns"].items())
+        )
+    if diff.get("type_changed"):
+        parts.append(
+            "类型变更:" + ";".join(f"{t}:{len(v)}列" for t, v in diff["type_changed"].items())
+        )
+    if diff.get("null_changed"):
+        parts.append(
+            "可空性变更:" + ";".join(f"{t}:{len(v)}列" for t, v in diff["null_changed"].items())
+        )
+    if diff.get("missing_config_keys"):
         parts.append(f"缺失配置键:{len(diff['missing_config_keys'])}个")
-    if diff.get('extra_config_keys'):
+    if diff.get("extra_config_keys"):
         parts.append(f"多余配置键:{len(diff['extra_config_keys'])}个")
-    if not diff.get('admin', {}).get('match', True):
-        parts.append('默认管理员缺失' if not diff['admin'].get('instance_admin_present') else '默认管理员状态不符')
-    return '实例与初始化定义不一致 → ' + (' | '.join(parts) if parts else '未知差异')
+    if not diff.get("admin", {}).get("match", True):
+        parts.append(
+            "默认管理员缺失"
+            if not diff["admin"].get("instance_admin_present")
+            else "默认管理员状态不符"
+        )
+    return "实例与初始化定义不一致 → " + (" | ".join(parts) if parts else "未知差异")

@@ -25,10 +25,10 @@
  *
  * 用法：把页面里的 <Table ...> 直接换成 <ResponsiveTable ...> 即可，props 不变。
  */
-import { useState } from 'react';
-import type { ReactNode, Key } from 'react';
-import { Table, List, Card, Grid, Collapse, Pagination, Spin, Empty } from 'antd';
-import type { TableProps, TableColumnType, TablePaginationConfig } from 'antd';
+import { useState } from "react";
+import type { ReactNode, Key } from "react";
+import { Table, List, Card, Grid, Collapse, Pagination, Spin, Empty } from "antd";
+import type { TableProps, TableColumnType, TablePaginationConfig } from "antd";
 
 /** 组件属性：继承 antd TableProps，额外提供移动端卡片标题 / 折叠面板自定义 */
 export interface ResponsiveTableProps<T> extends TableProps<T> {
@@ -56,9 +56,7 @@ export interface ResponsiveTableProps<T> extends TableProps<T> {
  * 响应式表格组件
  * @template T 每行记录的数据类型
  */
-export default function ResponsiveTable<T extends object = any>(
-  props: ResponsiveTableProps<T>,
-) {
+export default function ResponsiveTable<T extends object = any>(props: ResponsiveTableProps<T>) {
   // 断点检测：md 对应 768px，未达到 md 视为移动端
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
@@ -106,13 +104,13 @@ export default function ResponsiveTable<T extends object = any>(
   // 分页解析
   const showPagination = paginationProp !== false;
   const pconf: TablePaginationConfig =
-    paginationProp && typeof paginationProp === 'object' ? paginationProp : {};
+    paginationProp && typeof paginationProp === "object" ? paginationProp : {};
   // 有 total 且有 onChange 视为服务端受控分页（dataSource 已是当前页数据，不能再切片）
-  const serverSide = pconf.total != null && typeof pconf.onChange === 'function';
+  const serverSide = pconf.total != null && typeof pconf.onChange === "function";
 
   const pageSize = pconf.pageSize ?? pconf.defaultPageSize ?? innerPageSize;
-  const current = serverSide ? pconf.current ?? 1 : pconf.current ?? innerCurrent;
-  const total = serverSide ? pconf.total ?? 0 : dataSource.length;
+  const current = serverSide ? (pconf.current ?? 1) : (pconf.current ?? innerCurrent);
+  const total = serverSide ? (pconf.total ?? 0) : dataSource.length;
 
   // 客户端分页需自行切片；服务端分页直接使用全部（即当前页）数据
   const pagedData: T[] = serverSide
@@ -135,8 +133,8 @@ export default function ResponsiveTable<T extends object = any>(
 
   /** 解析行的唯一 key */
   const resolveRowKey = (record: T, index: number): Key => {
-    if (typeof rowKey === 'function') return rowKey(record, index);
-    if (typeof rowKey === 'string') return (record as any)[rowKey] ?? index;
+    if (typeof rowKey === "function") return rowKey(record, index);
+    if (typeof rowKey === "string") return (record as any)[rowKey] ?? index;
     return index;
   };
 
@@ -147,24 +145,23 @@ export default function ResponsiveTable<T extends object = any>(
       label: mobileCollapseHeader(record, index),
       children: mobileCollapseContent(record, index),
     }));
-    const emptyNode: ReactNode =
-      (locale?.emptyText as ReactNode) ?? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />
-      );
+    const emptyNode: ReactNode = (locale?.emptyText as ReactNode) ?? (
+      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />
+    );
     return (
       <Spin spinning={!!loading}>
         {items.length === 0 ? (
-          <div style={{ padding: '24px 0' }}>{emptyNode}</div>
+          <div style={{ padding: "24px 0" }}>{emptyNode}</div>
         ) : (
           <Collapse
             accordion={mobileCollapseAccordion}
             size="small"
             items={items}
-            style={{ background: 'transparent' }}
+            style={{ background: "transparent" }}
           />
         )}
         {showPagination && total > pageSize && (
-          <div style={{ textAlign: 'center', marginTop: 12 }}>
+          <div style={{ textAlign: "center", marginTop: 12 }}>
             <Pagination
               size="small"
               current={current}
@@ -188,8 +185,8 @@ export default function ResponsiveTable<T extends object = any>(
         current,
         pageSize,
         total,
-        size: 'small' as const,
-        align: 'center' as const,
+        size: "small" as const,
+        align: "center" as const,
         showSizeChanger: pconf.showSizeChanger,
         pageSizeOptions: pconf.pageSizeOptions,
         showTotal: pconf.showTotal,
@@ -197,7 +194,6 @@ export default function ResponsiveTable<T extends object = any>(
         onShowSizeChange: handleSizeChange,
       }
     : (false as const);
-
 
   return (
     <List<T>
@@ -210,10 +206,7 @@ export default function ResponsiveTable<T extends object = any>(
       renderItem={(record, index) => {
         const key = resolveRowKey(record, index);
         return (
-          <List.Item
-            key={key}
-            style={{ padding: 0, border: 'none', display: 'block' }}
-          >
+          <List.Item key={key} style={{ padding: 0, border: "none", display: "block" }}>
             <Card
               size="small"
               style={{ marginBottom: 12, borderRadius: 8 }}
@@ -236,7 +229,7 @@ export default function ResponsiveTable<T extends object = any>(
                     : Array.isArray(dataIndex)
                       ? dataIndex.reduce(
                           (acc: any, k: any) => (acc == null ? acc : acc[k]),
-                          record as any,
+                          record as any
                         )
                       : (record as any)[dataIndex];
                 // 有 render 用 render 的结果，否则用原始值
@@ -244,49 +237,39 @@ export default function ResponsiveTable<T extends object = any>(
                   col.render ? col.render(rawValue, record, index) : rawValue
                 ) as ReactNode;
                 // 字段标签（title 可能是函数）
-                const label =
-                  typeof col.title === 'function'
-                    ? (col.title as any)({})
-                    : col.title;
+                const label = typeof col.title === "function" ? (col.title as any)({}) : col.title;
                 // 空值占位
                 const displayContent =
-                  content === null || content === undefined || content === ''
-                    ? '-'
-                    : content;
+                  content === null || content === undefined || content === "" ? "-" : content;
                 const colKey = (col.key ??
-                  (Array.isArray(dataIndex)
-                    ? dataIndex.join('.')
-                    : dataIndex) ??
+                  (Array.isArray(dataIndex) ? dataIndex.join(".") : dataIndex) ??
                   ci) as Key;
                 return (
                   <div
                     key={colKey}
                     style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
                       gap: 12,
-                      padding: '6px 0',
-                      borderBottom:
-                        ci < flatColumns.length - 1
-                          ? '1px solid #f5f5f5'
-                          : 'none',
+                      padding: "6px 0",
+                      borderBottom: ci < flatColumns.length - 1 ? "1px solid #f5f5f5" : "none",
                     }}
                   >
                     <span
                       style={{
-                        color: '#8c8c8c',
+                        color: "#8c8c8c",
                         flexShrink: 0,
                         fontSize: 13,
-                        lineHeight: '22px',
+                        lineHeight: "22px",
                       }}
                     >
                       {label}
                     </span>
                     <span
                       style={{
-                        textAlign: 'right',
-                        wordBreak: 'break-word',
+                        textAlign: "right",
+                        wordBreak: "break-word",
                         minWidth: 0,
                       }}
                     >
@@ -302,7 +285,7 @@ export default function ResponsiveTable<T extends object = any>(
                   style={{
                     marginTop: 8,
                     paddingTop: 8,
-                    borderTop: '1px dashed #f0f0f0',
+                    borderTop: "1px dashed #f0f0f0",
                   }}
                 >
                   {expandable.expandedRowRender(record, index, 0, true)}

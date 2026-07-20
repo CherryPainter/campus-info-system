@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 电量数据仓库
 
@@ -9,9 +8,9 @@
 """
 
 from datetime import datetime, timedelta
-from typing import List, Optional, Tuple
+
+from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func, and_
 
 from app.model.electricity import ElectricityRecord, ElectricityRemaining, ElectricityTotalCapacity
 
@@ -54,7 +53,7 @@ class ElectricityRepository:
     @staticmethod
     def create_records_batch(
         session: Session,
-        records: List[Tuple[datetime, float, str]],
+        records: list[tuple[datetime, float, str]],
     ) -> int:
         """
         批量创建用电记录（自动去重）
@@ -85,7 +84,7 @@ class ElectricityRepository:
             if existing:
                 # 更新用电量（可能有细微差异），删除旧记录插入新的
                 session.delete(existing)
-            
+
             record = ElectricityRecord(
                 record_time=record_time,
                 usage=usage,
@@ -99,11 +98,11 @@ class ElectricityRepository:
     @staticmethod
     def get_records(
         session: Session,
-        meter: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        meter: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         limit: int = 1000,
-    ) -> List[ElectricityRecord]:
+    ) -> list[ElectricityRecord]:
         """
         查询用电记录
 
@@ -126,18 +125,14 @@ class ElectricityRepository:
         if end_time:
             query = query.filter(ElectricityRecord.record_time <= end_time)
 
-        return (
-            query.order_by(desc(ElectricityRecord.record_time))
-            .limit(limit)
-            .all()
-        )
+        return query.order_by(desc(ElectricityRecord.record_time)).limit(limit).all()
 
     @staticmethod
     def get_daily_statistics(
         session: Session,
         target_date: datetime,
-        meter: Optional[str] = None,
-    ) -> Tuple[float, int]:
+        meter: str | None = None,
+    ) -> tuple[float, int]:
         """
         获取某日用电统计
 
@@ -174,7 +169,7 @@ class ElectricityRepository:
     def get_usage_by_meter(
         session: Session,
         days: int = 30,
-    ) -> List[Tuple[str, float]]:
+    ) -> list[tuple[str, float]]:
         """
         按电表统计用电量
 
@@ -205,8 +200,8 @@ class ElectricityRepository:
         session: Session,
         start_time: datetime,
         end_time: datetime,
-        meter: Optional[str] = None,
-    ) -> List[Tuple[str, float]]:
+        meter: str | None = None,
+    ) -> list[tuple[str, float]]:
         """
         按电表统计指定时间范围的用电量
 
@@ -219,16 +214,13 @@ class ElectricityRepository:
         Returns:
             List[Tuple[str, float]]: [(meter, total_usage), ...]
         """
-        query = (
-            session.query(
-                ElectricityRecord.meter,
-                func.sum(ElectricityRecord.usage),
-            )
-            .filter(
-                and_(
-                    ElectricityRecord.record_time >= start_time,
-                    ElectricityRecord.record_time < end_time,
-                )
+        query = session.query(
+            ElectricityRecord.meter,
+            func.sum(ElectricityRecord.usage),
+        ).filter(
+            and_(
+                ElectricityRecord.record_time >= start_time,
+                ElectricityRecord.record_time < end_time,
             )
         )
 
@@ -249,7 +241,7 @@ class ElectricityRepository:
     def create_remaining(
         session: Session,
         remaining: float,
-        meter: str = 'default',
+        meter: str = "default",
     ) -> ElectricityRemaining:
         """
         创建剩余电量记录
@@ -274,8 +266,8 @@ class ElectricityRepository:
     @staticmethod
     def get_latest_remaining(
         session: Session,
-        meter: str = 'default',
-    ) -> Optional[ElectricityRemaining]:
+        meter: str = "default",
+    ) -> ElectricityRemaining | None:
         """
         获取最新剩余电量
 
@@ -296,8 +288,8 @@ class ElectricityRepository:
     @staticmethod
     def get_previous_remaining(
         session: Session,
-        meter: str = 'default',
-    ) -> Optional[ElectricityRemaining]:
+        meter: str = "default",
+    ) -> ElectricityRemaining | None:
         """
         获取上一条剩余电量（跳过最新条，用于容量充值对比）
 
@@ -315,9 +307,9 @@ class ElectricityRepository:
     @staticmethod
     def get_remaining_history(
         session: Session,
-        meter: str = 'default',
+        meter: str = "default",
         days: int = 30,
-    ) -> List[ElectricityRemaining]:
+    ) -> list[ElectricityRemaining]:
         """
         获取剩余电量历史
 
@@ -350,8 +342,8 @@ class ElectricityRepository:
         session: Session,
         total_capacity: float,
         remaining_at_record: float,
-        meter: str = 'default',
-        reason: str = 'auto_detect',
+        meter: str = "default",
+        reason: str = "auto_detect",
     ) -> ElectricityTotalCapacity:
         """
         创建电量容量记录
@@ -380,8 +372,8 @@ class ElectricityRepository:
     @staticmethod
     def get_latest_capacity_record(
         session: Session,
-        meter: str = 'default',
-    ) -> Optional[ElectricityTotalCapacity]:
+        meter: str = "default",
+    ) -> ElectricityTotalCapacity | None:
         """
         获取最新容量记录
 
@@ -402,9 +394,9 @@ class ElectricityRepository:
     @staticmethod
     def get_capacity_history(
         session: Session,
-        meter: str = 'default',
+        meter: str = "default",
         days: int = 30,
-    ) -> List[ElectricityTotalCapacity]:
+    ) -> list[ElectricityTotalCapacity]:
         """
         获取容量历史记录
 

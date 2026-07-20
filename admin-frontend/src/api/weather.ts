@@ -2,8 +2,8 @@
  * 天气相关 API 模块
  */
 
-import request from './request';
-import type { ApiResponse } from '@/types/api';
+import request from "./request";
+import type { ApiResponse } from "@/types/api";
 
 /** 实时天气数据 */
 export interface WeatherNow {
@@ -45,7 +45,7 @@ export interface WeatherAlert {
 
 /** 天气配置 */
 export interface WeatherConfig {
-  auth_type?: 'jwt_ed25519' | 'api_key' | 'none';
+  auth_type?: "jwt_ed25519" | "api_key" | "none";
   credential_id?: string;
   project_id_configured?: boolean;
   private_key_configured?: boolean;
@@ -74,20 +74,23 @@ export interface WeatherStatistics {
  */
 export const weatherApi = {
   /** 获取实时天气 */
-  getNow: () => request.get<any, ApiResponse<WeatherNow>>('/weather/now'),
+  getNow: () => request.get<any, ApiResponse<WeatherNow>>("/weather/now"),
 
   /** 获取24h预报 */
-  getHourly: () => request.get<any, ApiResponse<HourlyForecast[]>>('/weather/hourly'),
+  getHourly: () => request.get<any, ApiResponse<HourlyForecast[]>>("/weather/hourly"),
 
   /** 获取预警信息 */
-  getAlert: () => request.get<any, ApiResponse<{ warnings: WeatherAlert[] }>>('/weather/alert'),
+  getAlert: () => request.get<any, ApiResponse<{ warnings: WeatherAlert[] }>>("/weather/alert"),
 
   /** 获取预警历史（分页加载） */
   getAlertHistory: (page = 1, page_size = 20) =>
-    request.get<any, ApiResponse<WeatherAlert[]> & {
-      pagination: { page: number; page_size: number; total: number; total_pages: number };
-    }>('/weather/alert/history', { params: { page, page_size } }),
+    request.get<
+      any,
+      ApiResponse<WeatherAlert[]> & {
+        pagination: { page: number; page_size: number; total: number; total_pages: number };
+      }
+    >("/weather/alert/history", { params: { page, page_size } }),
 
   /** 获取天气统计数据（实时 + 24h 预报） */
-  getStatistics: () => request.get<any, ApiResponse<WeatherStatistics>>('/weather/statistics'),
+  getStatistics: () => request.get<any, ApiResponse<WeatherStatistics>>("/weather/statistics"),
 };

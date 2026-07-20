@@ -2,8 +2,8 @@
  * 公共 Footer 组件
  * 包含用户协议、网站介绍、联系我们、隐私政策、法律声明、Cookies政策及版权信息
  */
-import React from 'react';
-import { APP_VERSION } from '@/version';
+import React from "react";
+import { APP_VERSION } from "@/version";
 
 interface FooterLink {
   href: string;
@@ -18,12 +18,12 @@ interface FooterProps {
  * 链接列表配置
  */
 const footerLinks: FooterLink[] = [
-  { href: '/terms', label: '用户协议' },
-  { href: '/about', label: '网站介绍' },
-  { href: '/contact', label: '联系我们' },
-  { href: '/privacy', label: '隐私政策' },
-  { href: '/legal', label: '法律声明' },
-  { href: '/cookies', label: 'Cookies政策' },
+  { href: "/terms", label: "用户协议" },
+  { href: "/about", label: "网站介绍" },
+  { href: "/contact", label: "联系我们" },
+  { href: "/privacy", label: "隐私政策" },
+  { href: "/legal", label: "法律声明" },
+  { href: "/cookies", label: "Cookies政策" },
 ];
 
 /**
@@ -38,21 +38,21 @@ export default function Footer({ style }: FooterProps) {
   return (
     <footer
       style={{
-        textAlign: 'center',
-        backgroundColor: 'rgba(250, 250, 250, 0.95)',
-        padding: '16px 0',
-        borderTop: '1px solid #f0f0f0',
+        textAlign: "center",
+        backgroundColor: "rgba(250, 250, 250, 0.95)",
+        padding: "16px 0",
+        borderTop: "1px solid #f0f0f0",
         ...style,
       }}
     >
       {/* 链接行 */}
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
           gap: 16,
-          flexWrap: 'wrap',
+          flexWrap: "wrap",
           marginBottom: 8,
         }}
       >
@@ -62,8 +62,8 @@ export default function Footer({ style }: FooterProps) {
               href={link.href}
               style={{
                 fontSize: 13,
-                color: '#666',
-                textDecoration: 'none',
+                color: "#666",
+                textDecoration: "none",
               }}
               target="_blank"
               rel="noopener noreferrer"
@@ -71,7 +71,7 @@ export default function Footer({ style }: FooterProps) {
               {link.label}
             </a>
             {index < footerLinks.length - 1 && (
-              <span style={{ fontSize: 12, color: '#d9d9d9' }}>|</span>
+              <span style={{ fontSize: 12, color: "#d9d9d9" }}>|</span>
             )}
           </React.Fragment>
         ))}
@@ -80,23 +80,21 @@ export default function Footer({ style }: FooterProps) {
       {/* 版本和技术支持信息 */}
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
           gap: 16,
-          flexWrap: 'wrap',
+          flexWrap: "wrap",
           marginBottom: 8,
         }}
       >
-        <span style={{ fontSize: 12, color: '#999' }}>
+        <span style={{ fontSize: 12, color: "#999" }}>
           校园信息聚合与智能推送系统 v{APP_VERSION}
         </span>
-        <span style={{ fontSize: 12, color: '#d9d9d9' }}>|</span>
-        <span style={{ fontSize: 12, color: '#999' }}>
-          技术支持：CherryPainter
-        </span>
-        <span style={{ fontSize: 12, color: '#d9d9d9' }}>|</span>
-        <span style={{ fontSize: 12, color: '#999' }}>
+        <span style={{ fontSize: 12, color: "#d9d9d9" }}>|</span>
+        <span style={{ fontSize: 12, color: "#999" }}>技术支持：CherryPainter</span>
+        <span style={{ fontSize: 12, color: "#d9d9d9" }}>|</span>
+        <span style={{ fontSize: 12, color: "#999" }}>
           © 2026 CherryPainter. All rights reserved.
         </span>
       </div>
@@ -105,11 +103,11 @@ export default function Footer({ style }: FooterProps) {
       {(beianIcp || beianMps) && (
         <div
           style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
             gap: 16,
-            flexWrap: 'wrap',
+            flexWrap: "wrap",
           }}
         >
           {beianIcp && (
@@ -117,22 +115,22 @@ export default function Footer({ style }: FooterProps) {
               href="https://beian.miit.gov.cn"
               style={{
                 fontSize: 12,
-                color: '#999',
-                textDecoration: 'none',
-                display: 'flex',
-                alignItems: 'center',
+                color: "#999",
+                textDecoration: "none",
+                display: "flex",
+                alignItems: "center",
                 gap: 4,
-                transition: 'all 0.3s ease',
+                transition: "all 0.3s ease",
               }}
               onMouseEnter={(e) => {
                 const target = e.currentTarget;
-                target.style.color = '#1890ff';
-                target.style.textDecoration = 'underline';
+                target.style.color = "#1890ff";
+                target.style.textDecoration = "underline";
               }}
               onMouseLeave={(e) => {
                 const target = e.currentTarget;
-                target.style.color = '#999';
-                target.style.textDecoration = 'none';
+                target.style.color = "#999";
+                target.style.textDecoration = "none";
               }}
               target="_blank"
               rel="noopener noreferrer"
@@ -140,30 +138,28 @@ export default function Footer({ style }: FooterProps) {
               {beianIcp}
             </a>
           )}
-          {beianIcp && beianMps && (
-            <span style={{ fontSize: 12, color: '#d9d9d9' }}>|</span>
-          )}
+          {beianIcp && beianMps && <span style={{ fontSize: 12, color: "#d9d9d9" }}>|</span>}
           {beianMps && (
             <a
               href="https://beian.mps.gov.cn/"
               style={{
                 fontSize: 12,
-                color: '#999',
-                textDecoration: 'none',
-                display: 'flex',
-                alignItems: 'center',
+                color: "#999",
+                textDecoration: "none",
+                display: "flex",
+                alignItems: "center",
                 gap: 4,
-                transition: 'all 0.3s ease',
+                transition: "all 0.3s ease",
               }}
               onMouseEnter={(e) => {
                 const target = e.currentTarget;
-                target.style.color = '#1890ff';
-                target.style.textDecoration = 'underline';
+                target.style.color = "#1890ff";
+                target.style.textDecoration = "underline";
               }}
               onMouseLeave={(e) => {
                 const target = e.currentTarget;
-                target.style.color = '#999';
-                target.style.textDecoration = 'none';
+                target.style.color = "#999";
+                target.style.textDecoration = "none";
               }}
               target="_blank"
               rel="noopener noreferrer"
@@ -174,7 +170,7 @@ export default function Footer({ style }: FooterProps) {
                 style={{
                   width: 16,
                   height: 16,
-                  verticalAlign: 'middle',
+                  verticalAlign: "middle",
                 }}
               />
               {beianMps}
@@ -182,7 +178,6 @@ export default function Footer({ style }: FooterProps) {
           )}
         </div>
       )}
-
     </footer>
   );
 }

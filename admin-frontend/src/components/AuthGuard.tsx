@@ -4,10 +4,10 @@
  *
  * 复用 UserContext 的认证结果，避免并发 /auth/me 请求
  */
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { Spin } from 'antd';
-import { useUser } from '@/contexts/UserContext';
-import { useSessionHeartbeat } from '@/hooks/useSessionHeartbeat';
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { Spin } from "antd";
+import { useUser } from "@/contexts/UserContext";
+import { useSessionHeartbeat } from "@/hooks/useSessionHeartbeat";
 
 /**
  * AuthGuard 组件
@@ -23,12 +23,14 @@ export default function AuthGuard() {
   // 加载中（等待 UserContext 完成认证检查）
   if (loading) {
     return (
-      <div style={{
-        height: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <Spin size="large" />
       </div>
     );

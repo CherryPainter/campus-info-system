@@ -1,4 +1,4 @@
-import { App } from 'antd';
+import { App } from "antd";
 
 /**
  * 统一消息提示（阶段 2 #6）
@@ -14,7 +14,7 @@ export function useMessage() {
  * 从 axios/fetch 错误中提取后端返回的可读错误信息。
  * 兼容形态：e.response.data.message / e.message / 兜底文案。
  */
-export function showApiError(e: unknown, fallback = '操作失败'): string {
+export function showApiError(e: unknown, fallback = "操作失败"): string {
   const err = e as {
     response?: { data?: { message?: string } };
     message?: string;

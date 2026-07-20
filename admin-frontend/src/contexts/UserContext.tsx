@@ -1,7 +1,7 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
-import { authApi } from '@/api/auth';
-import type { User } from '@/types/user';
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { useLocation } from "react-router-dom";
+import { authApi } from "@/api/auth";
+import type { User } from "@/types/user";
 
 interface UserContextType {
   user: User | null;
@@ -18,7 +18,7 @@ interface UserContextType {
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 // 公开页面列表（无需登录即可访问）
-const PUBLIC_PATHS = ['/login', '/terms', '/about', '/contact', '/privacy', '/legal', '/cookies'];
+const PUBLIC_PATHS = ["/login", "/terms", "/about", "/contact", "/privacy", "/legal", "/cookies"];
 
 // 检查当前是否在公开页面（无需鉴权）
 function isPublicPage(pathname: string): boolean {
@@ -43,10 +43,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    
+
     try {
       const res = await authApi.getMe();
-      if (res.status === 'success' && res.user) {
+      if (res.status === "success" && res.user) {
         setUser(res.user);
         setAuthenticated(true);
       } else {
@@ -92,16 +92,18 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, [location.pathname]);
 
   return (
-    <UserContext.Provider value={{
-      user,
-      loading,
-      authenticated,
-      refreshUser,
-      loginSuccess,
-      logout,
-      isAdmin: user?.role === 'admin',
-      isPrimary: user?.is_primary === true,
-    }}>
+    <UserContext.Provider
+      value={{
+        user,
+        loading,
+        authenticated,
+        refreshUser,
+        loginSuccess,
+        logout,
+        isAdmin: user?.role === "admin",
+        isPrimary: user?.is_primary === true,
+      }}
+    >
       {children}
     </UserContext.Provider>
   );
@@ -110,7 +112,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 export function useUser() {
   const context = useContext(UserContext);
   if (!context) {
-    throw new Error('useUser must be used within UserProvider');
+    throw new Error("useUser must be used within UserProvider");
   }
   return context;
 }

@@ -3,24 +3,73 @@
  * 包含：图形化课程表展示 + 课程CRUD操作
  * 支持：连续课程合并、实时拆分当前课程、高亮显示
  */
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
-  Card, Button, Table, Modal, Form, Input, Select, InputNumber,
-  Spin, Popconfirm, Space, Tag, Row, Col, Badge, Switch, Alert, App, Progress, Grid
-} from 'antd';
+  Card,
+  Button,
+  Table,
+  Modal,
+  Form,
+  Input,
+  Select,
+  InputNumber,
+  Spin,
+  Popconfirm,
+  Space,
+  Tag,
+  Row,
+  Col,
+  Badge,
+  Switch,
+  Alert,
+  App,
+  Progress,
+  Grid,
+} from "antd";
 import {
-  PlusOutlined, EditOutlined, DeleteOutlined, ImportOutlined,
-  ReloadOutlined, CalendarOutlined, ClockCircleOutlined, UserOutlined, EnvironmentOutlined, LoadingOutlined,
-  ScheduleOutlined, SyncOutlined
-} from '@ant-design/icons';
-import { courseApi, WEEK_DAY_MAP, PERIOD_MAP, BUILDINGS, FIRST_SCHEDULE, SECOND_SCHEDULE, getScheduleByBuilding, type Course, type TimetableData, type SemesterInfo, type CrawlTask } from '@/api/course';
-import HolidayCourseView from '@/components/HolidayCourseView';
-import { holidayApi, type HolidayStatus } from '@/api/holiday';
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  ImportOutlined,
+  ReloadOutlined,
+  CalendarOutlined,
+  ClockCircleOutlined,
+  UserOutlined,
+  EnvironmentOutlined,
+  LoadingOutlined,
+  ScheduleOutlined,
+  SyncOutlined,
+} from "@ant-design/icons";
+import {
+  courseApi,
+  WEEK_DAY_MAP,
+  PERIOD_MAP,
+  BUILDINGS,
+  FIRST_SCHEDULE,
+  SECOND_SCHEDULE,
+  getScheduleByBuilding,
+  type Course,
+  type TimetableData,
+  type SemesterInfo,
+  type CrawlTask,
+} from "@/api/course";
+import HolidayCourseView from "@/components/HolidayCourseView";
+import { holidayApi, type HolidayStatus } from "@/api/holiday";
 
 // 中文数字 → 阿拉伯数字映射
 const CN_NUM: Record<string, number> = {
-  '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6,
-  '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12,
+  一: 1,
+  二: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+  十: 10,
+  十一: 11,
+  十二: 12,
 };
 
 /** 将 period_name 中的中文数字统一转为阿拉伯数字，如 "第七、八节" → "第7、8节" */
@@ -39,12 +88,12 @@ function getWeekDateLabel(
 ): string {
   const wk = availableWeeks?.find((w) => w.week_number === weekNumber);
   if (wk?.start_date) {
-    const parts = wk.start_date.split('-').map(Number);
+    const parts = wk.start_date.split("-").map(Number);
     if (parts.length === 3 && parts.every((n) => !Number.isNaN(n))) {
       const dt = new Date(parts[0], parts[1] - 1, parts[2]);
       dt.setDate(dt.getDate() + (weekDay - 1));
-      const m = String(dt.getMonth() + 1).padStart(2, '0');
-      const d = String(dt.getDate()).padStart(2, '0');
+      const m = String(dt.getMonth() + 1).padStart(2, "0");
+      const d = String(dt.getDate()).padStart(2, "0");
       return `${m}-${d}`;
     }
   }
@@ -54,26 +103,34 @@ function getWeekDateLabel(
 /** 解析 'YYYY-MM-DD' 为本地 0 点 Date，非法返回 null */
 function parseYmd(s?: string | null): Date | null {
   if (!s) return null;
-  const p = s.split('-').map(Number);
+  const p = s.split("-").map(Number);
   if (p.length !== 3 || p.some((n) => Number.isNaN(n))) return null;
   return new Date(p[0], p[1] - 1, p[2]);
 }
 
-import { adminApi, processApi, type TaskProcess } from '@/api/admin';
-import { useTaskPolling } from '@/hooks/useTaskPolling';
-import { useIntervalPolling } from '@/hooks/useIntervalPolling';
-import { POLL_FAST } from '@/hooks/pollIntervals';
-import { useUser } from '@/contexts/UserContext';
-import CrawlScheduler from './CrawlScheduler';
-import { useSemester } from '@/hooks/useSemester';
-import { getWeekDate, getSemesterStartDate } from '@/utils/semester';
+import { adminApi, processApi, type TaskProcess } from "@/api/admin";
+import { useTaskPolling } from "@/hooks/useTaskPolling";
+import { useIntervalPolling } from "@/hooks/useIntervalPolling";
+import { POLL_FAST } from "@/hooks/pollIntervals";
+import { useUser } from "@/contexts/UserContext";
+import CrawlScheduler from "./CrawlScheduler";
+import { useSemester } from "@/hooks/useSemester";
+import { getWeekDate, getSemesterStartDate } from "@/utils/semester";
 
 const { Option } = Select;
 
 /** 课程颜色映射 */
 const COURSE_COLORS = [
-  '#1890ff', '#52c41a', '#faad14', '#ff4d4f', '#722ed1',
-  '#13c2c2', '#eb2f96', '#f5222d', '#fa541c', '#fa8c16'
+  "#1890ff",
+  "#52c41a",
+  "#faad14",
+  "#ff4d4f",
+  "#722ed1",
+  "#13c2c2",
+  "#eb2f96",
+  "#f5222d",
+  "#fa541c",
+  "#fa8c16",
 ];
 
 /** 根据课程名生成稳定的颜色索引 */
@@ -96,27 +153,39 @@ export default function Course() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [form] = Form.useForm();
-  const [activeView, setActiveView] = useState<'timetable' | 'list'>('timetable');
+  const [activeView, setActiveView] = useState<"timetable" | "list">("timetable");
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedWeek, setSelectedWeek] = useState<number | undefined>(undefined);
   const [currentWeek, setCurrentWeek] = useState<number | undefined>(undefined);
   const [isPolling, setIsPolling] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [spiderRunning, setSpiderRunning] = useState(false);   // 爬虫是否正在运行
-  const [spiderMessage, setSpiderMessage] = useState('');       // 爬虫状态提示
-  const [pushEnabled, setPushEnabled] = useState(true);  // 新增：本地状态管理推送开关
+  const [spiderRunning, setSpiderRunning] = useState(false); // 爬虫是否正在运行
+  const [spiderMessage, setSpiderMessage] = useState(""); // 爬虫状态提示
+  const [pushEnabled, setPushEnabled] = useState(true); // 新增：本地状态管理推送开关
   const [crawlModalVisible, setCrawlModalVisible] = useState(false); // 爬取调度弹窗
   const [isFullCrawl, setIsFullCrawl] = useState(false); // 是否全量爬取
   // 学期列表与选中项统一由 useSemester Hook 管理（避免与 CrawlScheduler 重复实现）
-  const { semesters: semesterList, selectedSemester, setSelectedSemester, currentSemesterId } = useSemester();
+  const {
+    semesters: semesterList,
+    selectedSemester,
+    setSelectedSemester,
+    currentSemesterId,
+  } = useSemester();
   // 假期模式状态（管理员配置，作为课程页假期视图的权威来源；未配置时回退 course_weeks 判定）
   const [holidayStatus, setHolidayStatus] = useState<HolidayStatus | null>(null);
   useEffect(() => {
     let cancelled = false;
-    holidayApi.getStatus()
-      .then((res) => { if (!cancelled && res.status === 'success' && res.data) setHolidayStatus(res.data); })
-      .catch(() => { /* 接口异常不阻断课表加载，回退到 course_weeks 判定 */ });
-    return () => { cancelled = true; };
+    holidayApi
+      .getStatus()
+      .then((res) => {
+        if (!cancelled && res.status === "success" && res.data) setHolidayStatus(res.data);
+      })
+      .catch(() => {
+        /* 接口异常不阻断课表加载，回退到 course_weeks 判定 */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
   // 统一轮询 Hook 的启用开关（替代原先散落的 setInterval 定时器引用）
   const [spiderPolling, setSpiderPolling] = useState(false);
@@ -127,20 +196,23 @@ export default function Course() {
   // 移动端适配：屏幕 < md(768px) 视为手机端
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
-  
+
   // 监听教学楼变化，用于动态显示节次时间
-  const selectedBuilding = Form.useWatch('building', form);
+  const selectedBuilding = Form.useWatch("building", form);
 
   // 每分钟更新当前时间（统一轮询 Hook）
   useIntervalPolling(() => setCurrentTime(new Date()), 60000);
 
   /** 获取课程表数据，返回后端解析出的实际周次（供列表同步使用） */
-  const fetchTimetable = async (weekNumber?: number, semesterId?: number): Promise<number | undefined> => {
+  const fetchTimetable = async (
+    weekNumber?: number,
+    semesterId?: number
+  ): Promise<number | undefined> => {
     const sem = semesterId ?? selectedSemester;
     setLoading(true);
     try {
       const res = await courseApi.getTimetable(weekNumber, sem);
-      if (res.status === 'success' && res.data) {
+      if (res.status === "success" && res.data) {
         setTimetableData(res.data);
         // 如果没有指定周次，使用后端自动判断的周（本学期=当前周，非本学期=第一个有课的周）
         if (weekNumber === undefined && res.data.week_number) {
@@ -153,7 +225,7 @@ export default function Course() {
         return res.data.week_number;
       }
     } catch (error) {
-      message.error('加载课程表失败');
+      message.error("加载课程表失败");
     } finally {
       setLoading(false);
     }
@@ -165,12 +237,15 @@ export default function Course() {
     const sem = semesterId ?? selectedSemester;
     setLoading(true);
     try {
-      const res = await courseApi.getList({ week_number: weekNumber || selectedWeek, semester_id: sem });
-      if (res.status === 'success' && res.data) {
+      const res = await courseApi.getList({
+        week_number: weekNumber || selectedWeek,
+        semester_id: sem,
+      });
+      if (res.status === "success" && res.data) {
         setCourses(res.data);
       }
     } catch (error) {
-      message.error('加载课程列表失败');
+      message.error("加载课程列表失败");
     } finally {
       setLoading(false);
     }
@@ -180,10 +255,10 @@ export default function Course() {
   const checkRunningTasks = async () => {
     try {
       const res = await processApi.getRunning();
-      if (res.status === 'success' && res.data?.data) {
+      if (res.status === "success" && res.data?.data) {
         // 同时检查爬虫任务(spider)和课程任务(course)
         const runningTasks = res.data.data.filter(
-          (t: TaskProcess) => t.task_type === 'course' || t.task_type === 'spider'
+          (t: TaskProcess) => t.task_type === "course" || t.task_type === "spider"
         );
         if (runningTasks.length > 0) {
           setIsPolling(true);
@@ -195,19 +270,19 @@ export default function Course() {
       // immediate 任务创建时为 pending，后台线程稍后翻为 running；两者都应视为"运行中"
       const crawlRes = await courseApi.crawlTasks.list({ per_page: 50 });
       const crawlTasks = crawlRes.data.filter(
-        (t) => t.status === 'running' || t.status === 'pending'
+        (t) => t.status === "running" || t.status === "pending"
       );
-        if (crawlTasks.length > 0) {
-          // 记录初始运行中的 id，避免挂载时误报「完成」
-          crawlRunningIdsRef.current = new Set(crawlTasks.map((t) => t.id));
-          setIsPolling(true);
-          setListPolling(true);
-          return [];
-        }
+      if (crawlTasks.length > 0) {
+        // 记录初始运行中的 id，避免挂载时误报「完成」
+        crawlRunningIdsRef.current = new Set(crawlTasks.map((t) => t.id));
+        setIsPolling(true);
+        setListPolling(true);
+        return [];
+      }
       setIsPolling(false);
       return [];
     } catch (error) {
-      console.error('检查任务状态失败:', error);
+      console.error("检查任务状态失败:", error);
       setIsPolling(false);
       return [];
     }
@@ -232,7 +307,7 @@ export default function Course() {
     setSpiderPolling(false);
     setCrawlPollId(null);
     setSpiderRunning(false);
-    setSpiderMessage('');
+    setSpiderMessage("");
     setRunningTasks([]);
     setCrawlRunning([]);
   };
@@ -248,20 +323,20 @@ export default function Course() {
   useTaskPolling<CrawlTask>(crawlPollId, {
     fetcher: (id) => courseApi.crawlTasks.get(id),
     resolve: (d) => ({ status: d.status, message: d.message ?? d.error_message ?? undefined }),
-    terminalStatuses: ['completed', 'completed_empty', 'failed', 'cancelled'],
+    terminalStatuses: ["completed", "completed_empty", "failed", "cancelled"],
     intervalMs: POLL_FAST,
     onDone: (d) => {
       stopPolling();
-      if (d.status === 'completed_empty') {
-        message.warning(d.message || '爬取完成，但未获取到任何课程数据（可能尚未排课）');
+      if (d.status === "completed_empty") {
+        message.warning(d.message || "爬取完成，但未获取到任何课程数据（可能尚未排课）");
       } else {
-        message.success('爬取任务完成！正在刷新数据...');
+        message.success("爬取任务完成！正在刷新数据...");
       }
       refreshAllData();
     },
     onFailed: (d) => {
       stopPolling();
-      message.error(`爬取任务失败: ${d.error_message || '未知错误'}`);
+      message.error(`爬取任务失败: ${d.error_message || "未知错误"}`);
     },
   });
 
@@ -275,24 +350,24 @@ export default function Course() {
   const fetchRunningTasks = async () => {
     try {
       const res = await processApi.getRunning();
-      if (res.status === 'success' && res.data?.data) {
+      if (res.status === "success" && res.data?.data) {
         const processTasks = res.data.data.filter(
-          (t: TaskProcess) => t.task_type === 'course' || t.task_type === 'spider'
+          (t: TaskProcess) => t.task_type === "course" || t.task_type === "spider"
         );
         setRunningTasks(processTasks);
         // 同时查询爬取预约任务(scheduled_crawl_tasks)的运行态
         const crawlTasks = await fetchCrawlRunning();
         setCrawlRunning(crawlTasks);
-        
+
         // 如果没有运行中的任务，停止轮询并刷新数据
         if (processTasks.length === 0 && crawlTasks.length === 0 && isPolling) {
           stopPolling();
-          message.success('任务已完成，数据已刷新');
+          message.success("任务已完成，数据已刷新");
           refreshAllData();
         }
       }
     } catch (error) {
-      console.error('获取运行中任务失败:', error);
+      console.error("获取运行中任务失败:", error);
     }
   };
 
@@ -304,26 +379,27 @@ export default function Course() {
     try {
       // immediate 任务创建时为 pending，后台线程稍后翻为 running；两者都视为"运行中"
       const res = await courseApi.crawlTasks.list({ per_page: 50 });
-      const active = res.data.filter(
-        (t) => t.status === 'running' || t.status === 'pending'
-      );
-        const curIds = new Set(active.map((t) => t.id));
-        // 上一轮在跑、本轮不在 → 视为已完成，查询最终状态给出分级提示
-        const finishedIds = [...crawlRunningIdsRef.current].filter((id) => !curIds.has(id));
-        for (const id of finishedIds) {
-          try {
-            const r = await courseApi.crawlTasks.get(id);
-            const st = r.data?.status;
-            const msg = r.data?.message || r.data?.error_message || '';
-            if (st === 'completed') message.success(`爬取任务完成：${msg || '已导入课程'}`);
-            else if (st === 'completed_empty') message.warning(msg || '爬取完成，但未获取到任何课程数据（可能尚未排课）');
-            else if (st === 'failed') message.error(`爬取任务失败：${msg}`);
-          } catch { /* 忽略单条查询失败 */ }
+      const active = res.data.filter((t) => t.status === "running" || t.status === "pending");
+      const curIds = new Set(active.map((t) => t.id));
+      // 上一轮在跑、本轮不在 → 视为已完成，查询最终状态给出分级提示
+      const finishedIds = [...crawlRunningIdsRef.current].filter((id) => !curIds.has(id));
+      for (const id of finishedIds) {
+        try {
+          const r = await courseApi.crawlTasks.get(id);
+          const st = r.data?.status;
+          const msg = r.data?.message || r.data?.error_message || "";
+          if (st === "completed") message.success(`爬取任务完成：${msg || "已导入课程"}`);
+          else if (st === "completed_empty")
+            message.warning(msg || "爬取完成，但未获取到任何课程数据（可能尚未排课）");
+          else if (st === "failed") message.error(`爬取任务失败：${msg}`);
+        } catch {
+          /* 忽略单条查询失败 */
         }
-        crawlRunningIdsRef.current = curIds;
-        return active;
+      }
+      crawlRunningIdsRef.current = curIds;
+      return active;
     } catch (error) {
-      console.error('查询爬取任务状态失败:', error);
+      console.error("查询爬取任务状态失败:", error);
     }
     return [];
   }
@@ -334,66 +410,73 @@ export default function Course() {
     spiderElapsedRef.current = 0;
     setIsPolling(true);
     setSpiderRunning(true);
-    setSpiderMessage('爬虫启动中...');
+    setSpiderMessage("爬虫启动中...");
     setSpiderPolling(true);
   };
 
   // 爬虫状态轮询：由 spiderPolling 开关驱动（替代原先散落的 setInterval）
-  useIntervalPolling(async () => {
-    spiderElapsedRef.current += 2;
-    try {
-      const res = await adminApi.getSpiderStatus();
-      if (res.status === 'success' && res.spider) {
-        const { running, last_result, last_error } = res.spider;
-        if (running) {
-          setSpiderRunning(true);
-          setSpiderMessage(`正在爬取... (已耗时 ${spiderElapsedRef.current}s)`);
-        } else {
-          // 爬虫已停止：关闭本轮询开关并给出分级提示
-          setSpiderRunning(false);
-          setSpiderMessage('');
-          setSpiderPolling(false);
-          setIsPolling(false);
-
-          if (last_result === 'success') {
-            message.success('课程表爬取成功，数据已刷新');
-            refreshAllData();
-          } else if (last_result === 'failed') {
-            message.error(`爬取失败: ${last_error || '未知错误'}`);
+  useIntervalPolling(
+    async () => {
+      spiderElapsedRef.current += 2;
+      try {
+        const res = await adminApi.getSpiderStatus();
+        if (res.status === "success" && res.spider) {
+          const { running, last_result, last_error } = res.spider;
+          if (running) {
+            setSpiderRunning(true);
+            setSpiderMessage(`正在爬取... (已耗时 ${spiderElapsedRef.current}s)`);
           } else {
-            // last_result 为 null（首次加载）或 running 已清除，视为完成
-            message.success('课程表爬取完成，数据已刷新');
-            refreshAllData();
+            // 爬虫已停止：关闭本轮询开关并给出分级提示
+            setSpiderRunning(false);
+            setSpiderMessage("");
+            setSpiderPolling(false);
+            setIsPolling(false);
+
+            if (last_result === "success") {
+              message.success("课程表爬取成功，数据已刷新");
+              refreshAllData();
+            } else if (last_result === "failed") {
+              message.error(`爬取失败: ${last_error || "未知错误"}`);
+            } else {
+              // last_result 为 null（首次加载）或 running 已清除，视为完成
+              message.success("课程表爬取完成，数据已刷新");
+              refreshAllData();
+            }
           }
         }
+      } catch {
+        // 接口异常不中断轮询
+        console.error("获取爬虫状态失败");
       }
-    } catch {
-      // 接口异常不中断轮询
-      console.error('获取爬虫状态失败');
-    }
-    // immediate=false：触发后延迟一个周期再首检，避开后端 _spider_running 尚未置位的竞态
-  }, POLL_FAST, spiderPolling, false);
+      // immediate=false：触发后延迟一个周期再首检，避开后端 _spider_running 尚未置位的竞态
+    },
+    POLL_FAST,
+    spiderPolling,
+    false
+  );
 
   // 触发课程任务
   const handleTrigger = async (taskType: string) => {
     try {
-      if (taskType === 'sync_schedule') {
+      if (taskType === "sync_schedule") {
         // 同步课表 = 触发爬虫 → 用爬虫专用轮询确认真正完成
         const res = await adminApi.triggerSpider();
         // 假期静默 / 非教学周拦截：后端返回 skipped，提示并跳过轮询
         if ((res as any).skipped) {
-          message.warning(res.message || '假期静默中，已跳过课表爬取');
+          message.warning(res.message || "假期静默中，已跳过课表爬取");
           return;
         }
-        message.success(res.message || '爬虫任务已触发');
+        message.success(res.message || "爬虫任务已触发");
         startSpiderPolling();
       } else {
         // 其他课程任务（推送等）
         const res = await adminApi.triggerCourse(taskType);
-        message.success(res.message || '任务已触发');
+        message.success(res.message || "任务已触发");
         startPolling();
       }
-    } catch (error) { message.error('触发任务失败'); }
+    } catch (error) {
+      message.error("触发任务失败");
+    }
   };
 
   /** 导入课程 */
@@ -401,13 +484,13 @@ export default function Course() {
     setLoading(true);
     try {
       const res = await courseApi.import();
-      if (res.status === 'success') {
+      if (res.status === "success") {
         message.success(`成功导入 ${res.data?.imported_count} 门课程`);
         fetchTimetable();
         fetchCourses();
       }
     } catch (error) {
-      message.error('导入失败');
+      message.error("导入失败");
     } finally {
       setLoading(false);
     }
@@ -422,15 +505,18 @@ export default function Course() {
     let periodArray: number[] = [];
     if (Array.isArray(periodsData)) {
       periodArray = periodsData.map(Number).filter((n: number) => n >= 1 && n <= 12);
-    } else if (typeof periodsData === 'string') {
-      periodArray = periodsData.split(',').map(Number).filter((n: number) => n >= 1 && n <= 12);
+    } else if (typeof periodsData === "string") {
+      periodArray = periodsData
+        .split(",")
+        .map(Number)
+        .filter((n: number) => n >= 1 && n <= 12);
     } else {
       periodArray = [course.period_idx].filter((n: number) => n >= 1 && n <= 12);
     }
-    
+
     const initialPushEnabled = (course as any).push_enabled === false ? false : true;
     setPushEnabled(initialPushEnabled);
-    
+
     form.setFieldsValue({
       ...course,
       period_idx: periodArray,
@@ -466,30 +552,32 @@ export default function Course() {
     if (isDeleting) {
       return;
     }
-    
+
     try {
       // 节次多选，转为逗号分隔字符串
       const periodIndices = values.period_idx;
-      const periodsStr = Array.isArray(periodIndices) ? periodIndices.join(',') : String(periodIndices);
-      
+      const periodsStr = Array.isArray(periodIndices)
+        ? periodIndices.join(",")
+        : String(periodIndices);
+
       // 根据楼栋选择时间表
-      const schedule = getScheduleByBuilding(values.building || '');
-      
+      const schedule = getScheduleByBuilding(values.building || "");
+
       // 获取第一节的时间作为开始时间，最后一节的时间作为结束时间
       const firstPeriod = periodIndices[0];
       const lastPeriod = periodIndices[periodIndices.length - 1];
       const firstPeriodInfo = schedule[firstPeriod];
       const lastPeriodInfo = schedule[lastPeriod];
-      
+
       // 保存时使用的周次
       const weekToSave = values.week_number || selectedWeek || 1;
-      
+
       const data = {
         ...values,
         period_idx: periodsStr,
         periods: periodsStr,
-        start_time: firstPeriodInfo?.start || '',
-        end_time: lastPeriodInfo?.end || '',
+        start_time: firstPeriodInfo?.start || "",
+        end_time: lastPeriodInfo?.end || "",
         week_number: weekToSave,
         semester_id: selectedSemester, // 把课程挂到当前查看的学期，避免自建课程因学期错配而不显示
         push_enabled: pushEnabled, // 使用本地状态
@@ -498,7 +586,7 @@ export default function Course() {
       };
 
       await courseApi.create(data);
-      message.success(editingCourse ? '课程更新成功' : '课程创建成功');
+      message.success(editingCourse ? "课程更新成功" : "课程创建成功");
       setModalVisible(false);
       setEditingCourse(null);
       form.resetFields();
@@ -506,7 +594,7 @@ export default function Course() {
       fetchTimetable(weekToSave);
       fetchCourses(weekToSave);
     } catch (error) {
-      message.error('保存失败');
+      message.error("保存失败");
     }
   };
 
@@ -514,43 +602,41 @@ export default function Course() {
   const handleDelete = async (course: Course) => {
     try {
       setIsDeleting(true);
-      
+
       // 先关闭编辑弹窗，重置状态，防止删除后触发意外的保存
       setEditingCourse(null);
       setModalVisible(false);
       form.resetFields();
-      
+
       // 先删除当前点击的课程
       await courseApi.delete(course.id);
-      
+
       // 从两个数据源（timetableData 和 courses）中查找同一课程的其他记录
-      const allCourses = [
-        ...(timetableData?.courses || []),
-        ...(courses || [])
-      ];
-      
+      const allCourses = [...(timetableData?.courses || []), ...(courses || [])];
+
       // 去重（通过 id）
-      const uniqueCourses = Array.from(new Map(allCourses.map(c => [c.id, c])).values());
-      
+      const uniqueCourses = Array.from(new Map(allCourses.map((c) => [c.id, c])).values());
+
       // 筛选出同一天、同一课程名、同一教室的其他记录（排除当前已删除的）
       const sameCourses = uniqueCourses.filter(
-        c => c.id !== course.id &&
-             c.week_day === course.week_day && 
-             c.course_name === course.course_name && 
-             c.classroom === course.classroom &&
-             (c.week_number ?? -1) === (course.week_number ?? -1)
+        (c) =>
+          c.id !== course.id &&
+          c.week_day === course.week_day &&
+          c.course_name === course.course_name &&
+          c.classroom === course.classroom &&
+          (c.week_number ?? -1) === (course.week_number ?? -1)
       );
-      
+
       for (const c of sameCourses) {
         await courseApi.delete(c.id);
       }
-      
-      message.success('课程删除成功');
+
+      message.success("课程删除成功");
       fetchTimetable(selectedWeek);
       fetchCourses(selectedWeek);
     } catch (error) {
-      console.error('删除失败:', error);
-      message.error('删除失败');
+      console.error("删除失败:", error);
+      message.error("删除失败");
     } finally {
       setIsDeleting(false);
     }
@@ -569,16 +655,16 @@ export default function Course() {
   const handlePeriodChange = (periodIndices: number[]) => {
     if (periodIndices.length > 0) {
       // 根据当前楼栋选择时间表
-      const building = form.getFieldValue('building') || '';
+      const building = form.getFieldValue("building") || "";
       const schedule = getScheduleByBuilding(building);
-      
+
       const firstPeriod = periodIndices[0];
       const lastPeriod = periodIndices[periodIndices.length - 1];
       const firstPeriodInfo = schedule[firstPeriod];
       const lastPeriodInfo = schedule[lastPeriod];
       form.setFieldsValue({
-        start_time: firstPeriodInfo?.start || '',
-        end_time: lastPeriodInfo?.end || '',
+        start_time: firstPeriodInfo?.start || "",
+        end_time: lastPeriodInfo?.end || "",
       });
     }
   };
@@ -589,18 +675,18 @@ export default function Course() {
       const res = await adminApi.triggerSpider();
       // 假期静默 / 非教学周拦截：后端返回 skipped，提示并跳过轮询
       if ((res as any).skipped) {
-        message.warning(res.message || '假期静默中，已跳过课表爬取');
+        message.warning(res.message || "假期静默中，已跳过课表爬取");
         return;
       }
-      if (res?.status === 'success') {
-        message.success('同步任务已启动，正在后台执行...');
+      if (res?.status === "success") {
+        message.success("同步任务已启动，正在后台执行...");
         startPolling();
       } else {
-        message.error(res?.message || '启动同步任务失败');
+        message.error(res?.message || "启动同步任务失败");
       }
     } catch (error: any) {
-      console.error('启动同步任务失败:', error);
-      message.error(error?.response?.data?.message || error?.message || '网络错误');
+      console.error("启动同步任务失败:", error);
+      message.error(error?.response?.data?.message || error?.message || "网络错误");
     }
   };
 
@@ -657,6 +743,7 @@ export default function Course() {
       isOngoing: timetableData.current_status.is_ongoing,
       hasCurrentCourse: (timetableData.current_status as any).has_current_course || false,
       currentWeekDay: timetableData.current_status.current_week_day,
+      isTeachingWeek: (timetableData.current_status as any).is_teaching_week !== false, // 后端缺字段时默认 true（向后兼容）
     };
   }, [timetableData]);
 
@@ -668,22 +755,30 @@ export default function Course() {
   const cellMap = useMemo(() => {
     if (!timetableData) return null;
 
-    const map: Record<number, Record<number, {
-      course: Course;
-      rowSpan: number;
-      render: boolean;
-      isOngoing?: boolean;
-      isPast?: boolean;
-    }>> = {};
+    const map: Record<
+      number,
+      Record<
+        number,
+        {
+          course: Course;
+          rowSpan: number;
+          render: boolean;
+          isOngoing?: boolean;
+          isPast?: boolean;
+        }
+      >
+    > = {};
 
     const { currentPeriod, isOngoing, currentWeekDay } = currentStatus;
     const courseList = timetableData.courses || [];
 
     // 实时状态（正在上课/已结束）仅在「查看真实当前学期的当前周」时生效，
     // 否则其他周次/历史学期中同星期的课程会在当下时段被误标为「正在上课」
-    const isRealCurrentWeek = selectedSemester !== undefined
-      && semesterList.find((s: SemesterInfo) => s.is_current)?.id === selectedSemester
-      && selectedWeek !== undefined && selectedWeek === currentWeek;
+    const isRealCurrentWeek =
+      selectedSemester !== undefined &&
+      semesterList.find((s: SemesterInfo) => s.is_current)?.id === selectedSemester &&
+      selectedWeek !== undefined &&
+      selectedWeek === currentWeek;
 
     // 初始化空表格
     for (let day = 1; day <= 7; day++) {
@@ -715,8 +810,11 @@ export default function Course() {
       if (periodsData) {
         if (Array.isArray(periodsData)) {
           return periodsData.map(Number).filter((n: number) => n >= 1 && n <= 12);
-        } else if (typeof periodsData === 'string') {
-          return periodsData.split(',').map(Number).filter((n: number) => n >= 1 && n <= 12);
+        } else if (typeof periodsData === "string") {
+          return periodsData
+            .split(",")
+            .map(Number)
+            .filter((n: number) => n >= 1 && n <= 12);
         }
       }
 
@@ -742,7 +840,9 @@ export default function Course() {
           }
         }
         // 中文数字顿号，如 "第七、八节"
-        const cnDotMatch = periodName.match(/第([一二三四五六七八九十]+)、([一二三四五六七八九十]+)节/);
+        const cnDotMatch = periodName.match(
+          /第([一二三四五六七八九十]+)、([一二三四五六七八九十]+)节/
+        );
         if (cnDotMatch) {
           const first = parseCN(cnDotMatch[1]);
           const second = parseCN(cnDotMatch[2]);
@@ -772,8 +872,8 @@ export default function Course() {
     function mergeAdjacentCourses(dayCourses: typeof courseList) {
       // 先解析每条记录的节次，按首节升序排序
       const withPeriods = dayCourses
-        .map(c => ({ course: c, periods: parsePeriods(c) }))
-        .filter(x => x.periods.length > 0);
+        .map((c) => ({ course: c, periods: parsePeriods(c) }))
+        .filter((x) => x.periods.length > 0);
       withPeriods.sort((a, b) => a.periods[0] - b.periods[0]);
 
       const merged: { course: Course; allPeriods: number[] }[] = [];
@@ -785,17 +885,18 @@ export default function Course() {
         // 合并条件辅助函数：两个字段都非空时才严格要求相等，任一为空则视为匹配
         // （解决后端教师/教室字段部分为空导致同门课无法合并的问题）
         function fieldsMatch(a: any, b: any): boolean {
-            const aEmpty = a === null || a === undefined || a === '';
-            const bEmpty = b === null || b === undefined || b === '';
-            return aEmpty || bEmpty || a === b;
+          const aEmpty = a === null || a === undefined || a === "";
+          const bEmpty = b === null || b === undefined || b === "";
+          return aEmpty || bEmpty || a === b;
         }
 
         // 合并条件：同名、同教师（空值兼容）、同教室（空值兼容），且当前课程首节 === 上一课末节+1（严格相邻，不允许重叠）
-        const canMerge = last &&
-            last.course.course_name === c.course_name &&
-            fieldsMatch(last.course.teacher, c.teacher) &&
-            fieldsMatch(last.course.classroom, c.classroom) &&
-            periods[0] === lastEnd + 1;
+        const canMerge =
+          last &&
+          last.course.course_name === c.course_name &&
+          fieldsMatch(last.course.teacher, c.teacher) &&
+          fieldsMatch(last.course.classroom, c.classroom) &&
+          periods[0] === lastEnd + 1;
 
         if (canMerge) {
           // 严格相邻合并，直接追加（已排序不会有重叠）
@@ -803,7 +904,7 @@ export default function Course() {
           last.course = {
             ...last.course,
             end_time: c.end_time,
-            periods: last.allPeriods.join(','),
+            periods: last.allPeriods.join(","),
           } as any;
         } else {
           merged.push({ course: { ...c }, allPeriods: [...periods] });
@@ -830,8 +931,8 @@ export default function Course() {
         let courseIsOngoing = false;
         let courseIsPast = false;
         if (isRealCurrentWeek && day === currentWeekDay && course.start_time && course.end_time) {
-          const [sh, sm] = course.start_time.split(':').map(Number);
-          const [eh, em] = course.end_time.split(':').map(Number);
+          const [sh, sm] = course.start_time.split(":").map(Number);
+          const [eh, em] = course.end_time.split(":").map(Number);
           if (!isNaN(sh) && !isNaN(eh)) {
             const startMin = sh * 60 + sm;
             const endMin = eh * 60 + em;
@@ -876,26 +977,41 @@ export default function Course() {
   /** 渲染课程表单元格 */
   const renderCourseCell = (day: number, period: number) => {
     if (!cellMap) return null;
-    
+
     const cellInfo = cellMap[day]?.[period];
-    
+
     // 没有课程数据，渲染空白
     if (!cellInfo) {
       return (
-        <td key={`${day}-${period}`} style={{ padding: isMobile ? '2px' : '4px', border: '1px solid #f0f0f0', verticalAlign: 'top' }}>
+        <td
+          key={`${day}-${period}`}
+          style={{
+            padding: isMobile ? "2px" : "4px",
+            border: "1px solid #f0f0f0",
+            verticalAlign: "top",
+          }}
+        >
           <div
-            style={{ height: isMobile ? '44px' : '76px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fafafa', borderRadius: '4px', cursor: isAdmin ? 'pointer' : 'default' }}
+            style={{
+              height: isMobile ? "44px" : "76px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#fafafa",
+              borderRadius: "4px",
+              cursor: isAdmin ? "pointer" : "default",
+            }}
             onClick={() => isAdmin && handleAdd(day, period)}
           >
-            {!isMobile && <PlusOutlined style={{ color: '#d9d9d9' }} />}
+            {!isMobile && <PlusOutlined style={{ color: "#d9d9d9" }} />}
           </div>
         </td>
       );
     }
-    
+
     // 被合并的节次，不渲染
     if (!cellInfo.render) return null;
-    
+
     const { course, rowSpan, isOngoing } = cellInfo;
     // 只使用 cellInfo.isOngoing 判断是否正在上课（由前端合并逻辑设置）
     const isCurrentCourse = isOngoing;
@@ -908,8 +1024,8 @@ export default function Course() {
     let classProgress = 0;
     if (isCurrentCourse && course.start_time && course.end_time) {
       const now = currentTime;
-      const [sh, sm] = course.start_time.split(':').map(Number);
-      const [eh, em] = course.end_time.split(':').map(Number);
+      const [sh, sm] = course.start_time.split(":").map(Number);
+      const [eh, em] = course.end_time.split(":").map(Number);
       const startMin = sh * 60 + sm;
       const endMin = eh * 60 + em;
       const nowMin = now.getHours() * 60 + now.getMinutes();
@@ -923,92 +1039,130 @@ export default function Course() {
     const activeBgColor = isCurrentCourse
       ? `linear-gradient(to bottom, #fff1f0 ${classProgress * 100}%, ${baseColor}15 ${classProgress * 100}%)`
       : `${baseColor}15`;
-    const activeBorderColor = isCurrentCourse ? '#ff4d4f' : baseColor;
+    const activeBorderColor = isCurrentCourse ? "#ff4d4f" : baseColor;
 
     return (
       <td
         key={`${day}-${period}`}
         rowSpan={rowSpan}
-        style={{ 
-          padding: '4px', 
-          border: '1px solid #f0f0f0', 
-          verticalAlign: 'top',
+        style={{
+          padding: "4px",
+          border: "1px solid #f0f0f0",
+          verticalAlign: "top",
         }}
       >
         <div
           style={{
             height: `${rowSpan * (isMobile ? 50 : 84) - (isMobile ? 4 : 8)}px`,
-            minHeight: isMobile ? '44px' : '76px',
-            padding: isMobile ? '3px' : '8px',
-            backgroundColor: isDisabled ? '#f5f5f5' : activeBgColor,
-            borderLeft: `3px solid ${isDisabled ? '#d9d9d9' : activeBorderColor}`,
-            borderRadius: '4px',
-            cursor: isAdmin ? 'pointer' : 'default',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
+            minHeight: isMobile ? "44px" : "76px",
+            padding: isMobile ? "3px" : "8px",
+            backgroundColor: isDisabled ? "#f5f5f5" : activeBgColor,
+            borderLeft: `3px solid ${isDisabled ? "#d9d9d9" : activeBorderColor}`,
+            borderRadius: "4px",
+            cursor: isAdmin ? "pointer" : "default",
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
             opacity: isDisabled ? 0.5 : 1,
-            transition: 'background-color 1s ease',
+            transition: "background-color 1s ease",
           }}
           onClick={() => isAdmin && handleEdit(course)}
         >
           {isCurrentCourse && (
-            <div style={{
-              background: 'linear-gradient(135deg, #ff4d4f, #ff7875)',
-              color: '#fff',
-              padding: isMobile ? '1px 3px' : '2px 8px',
-              borderRadius: '4px',
-              fontSize: isMobile ? 9 : 11,
-              fontWeight: 'bold',
-              textAlign: 'center',
-              marginBottom: isMobile ? 2 : 4,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 2,
-            }}>
+            <div
+              style={{
+                background: "linear-gradient(135deg, #ff4d4f, #ff7875)",
+                color: "#fff",
+                padding: isMobile ? "1px 3px" : "2px 8px",
+                borderRadius: "4px",
+                fontSize: isMobile ? 9 : 11,
+                fontWeight: "bold",
+                textAlign: "center",
+                marginBottom: isMobile ? 2 : 4,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 2,
+              }}
+            >
               {!isMobile && <ClockCircleOutlined />}
               正在上课
             </div>
           )}
           {isDisabled && (
-            <Tag color="default" style={{ marginBottom: 4, fontSize: isMobile ? 9 : 11 }}>不推送</Tag>
+            <Tag color="default" style={{ marginBottom: 4, fontSize: isMobile ? 9 : 11 }}>
+              不推送
+            </Tag>
           )}
-          <div style={{ fontWeight: 'bold', fontSize: isMobile ? 11 : 13, color: isDisabled ? '#999' : (isCurrentCourse ? '#ff4d4f' : baseColor), marginBottom: isMobile ? 2 : '4px', lineHeight: isMobile ? 1.2 : 'normal' }}>
+          <div
+            style={{
+              fontWeight: "bold",
+              fontSize: isMobile ? 11 : 13,
+              color: isDisabled ? "#999" : isCurrentCourse ? "#ff4d4f" : baseColor,
+              marginBottom: isMobile ? 2 : "4px",
+              lineHeight: isMobile ? 1.2 : "normal",
+            }}
+          >
             {course.course_name}
           </div>
-          <div style={{ fontSize: isMobile ? 10 : 12, color: '#666', flex: 1, lineHeight: isMobile ? 1.2 : 'normal' }}>
-            {course.teacher && <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><UserOutlined style={{ marginRight: 2 }} />{course.teacher}</div>}
-            {course.building && course.classroom && <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><EnvironmentOutlined style={{ marginRight: 2 }} />{course.building} {course.classroom}</div>}
-            {!course.building && course.classroom && <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><EnvironmentOutlined style={{ marginRight: 2 }} />{course.classroom}</div>}
+          <div
+            style={{
+              fontSize: isMobile ? 10 : 12,
+              color: "#666",
+              flex: 1,
+              lineHeight: isMobile ? 1.2 : "normal",
+            }}
+          >
+            {course.teacher && (
+              <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <UserOutlined style={{ marginRight: 2 }} />
+                {course.teacher}
+              </div>
+            )}
+            {course.building && course.classroom && (
+              <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <EnvironmentOutlined style={{ marginRight: 2 }} />
+                {course.building} {course.classroom}
+              </div>
+            )}
+            {!course.building && course.classroom && (
+              <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <EnvironmentOutlined style={{ marginRight: 2 }} />
+                {course.classroom}
+              </div>
+            )}
           </div>
-          <div style={{ fontSize: isMobile ? 9 : 11, color: '#999', marginTop: 'auto' }}>
+          <div style={{ fontSize: isMobile ? 9 : 11, color: "#999", marginTop: "auto" }}>
             {course.start_time} - {course.end_time}
           </div>
           {/* 显示节次信息 */}
-          <div style={{ fontSize: isMobile ? 9 : 11, color: '#999', marginTop: 2 }}>
+          <div style={{ fontSize: isMobile ? 9 : 11, color: "#999", marginTop: 2 }}>
             {(() => {
               // 优先使用 period_name（爬取数据格式，统一转阿拉伯数字）
               const periodName = (course as any).period_name;
               if (periodName) return normalizePeriodName(periodName);
-              
+
               // 使用 periods 字段（支持 JSON 数组格式和旧字符串格式）
               const periodsData = (course as any).periods;
               let pArr: number[] = [];
               if (Array.isArray(periodsData)) {
                 pArr = periodsData.map(Number).filter((n: number) => n >= 1 && n <= 12);
-              } else if (typeof periodsData === 'string') {
-                pArr = periodsData.split(',').map(Number).filter((n: number) => n >= 1 && n <= 12);
+              } else if (typeof periodsData === "string") {
+                pArr = periodsData
+                  .split(",")
+                  .map(Number)
+                  .filter((n: number) => n >= 1 && n <= 12);
               }
-              
+
               // 如果 periods 为空或无效，使用 period_idx
               if (pArr.length === 0) {
                 pArr = [course.period_idx].filter((n: number) => n >= 1 && n <= 12);
               }
-              
+
               if (pArr.length === 1) return PERIOD_MAP[pArr[0]]?.name || `第${pArr[0]}节`;
               if (pArr.length >= 2) {
-                const first = pArr[0], last = pArr[pArr.length - 1];
+                const first = pArr[0],
+                  last = pArr[pArr.length - 1];
                 return `第${first}-${last}节`;
               }
               return `第${course.period_idx}节`;
@@ -1022,51 +1176,77 @@ export default function Course() {
   /** 表格列定义 */
   const columns = useMemo(() => {
     const base = [
-      { title: '课程名称', dataIndex: 'course_name', key: 'course_name' },
-      { title: '教师', dataIndex: 'teacher', key: 'teacher' },
-      { title: '教室', dataIndex: 'classroom', key: 'classroom' },
-      { title: '星期', dataIndex: 'week_day', key: 'week_day', render: (v: number) => WEEK_DAY_MAP[v] },
-      { title: '节次', dataIndex: 'period_idx', key: 'period_idx', render: (_: any, r: Course) => {
-        // 优先使用 period_name（爬取数据格式，统一转阿拉伯数字）
-        const periodName = (r as any).period_name;
-        if (periodName) return normalizePeriodName(periodName);
-        
-        // 使用 periods 字段（支持 JSON 数组格式和旧字符串格式）
-        const periodsData = (r as any).periods;
-        let pArr: number[] = [];
-        if (Array.isArray(periodsData)) {
-          pArr = periodsData.map(Number).filter((n: number) => n >= 1 && n <= 12);
-        } else if (typeof periodsData === 'string') {
-          pArr = periodsData.split(',').map(Number).filter((n: number) => n >= 1 && n <= 12);
-        }
-        
-        // 如果 periods 为空或无效，使用 period_idx
-        if (pArr.length === 0) {
-          pArr = [r.period_idx].filter((n: number) => n >= 1 && n <= 12);
-        }
-        
-        if (pArr.length === 1) return PERIOD_MAP[pArr[0]]?.name || `第${pArr[0]}节`;
-        if (pArr.length >= 2) {
-          return `第${pArr[0]}-${pArr[pArr.length - 1]}节`;
-        }
-        return `第${r.period_idx}节`;
-      }},
-      { title: '时间', key: 'time', render: (_: any, r: Course) => `${r.start_time}-${r.end_time}` },
-      { title: '周次', dataIndex: 'weeks', key: 'weeks', render: (v: any) => {
-        if (Array.isArray(v)) return v.join(',');
-        if (typeof v === 'string') return v;
-        return '';
-      }},
+      { title: "课程名称", dataIndex: "course_name", key: "course_name" },
+      { title: "教师", dataIndex: "teacher", key: "teacher" },
+      { title: "教室", dataIndex: "classroom", key: "classroom" },
+      {
+        title: "星期",
+        dataIndex: "week_day",
+        key: "week_day",
+        render: (v: number) => WEEK_DAY_MAP[v],
+      },
+      {
+        title: "节次",
+        dataIndex: "period_idx",
+        key: "period_idx",
+        render: (_: any, r: Course) => {
+          // 优先使用 period_name（爬取数据格式，统一转阿拉伯数字）
+          const periodName = (r as any).period_name;
+          if (periodName) return normalizePeriodName(periodName);
+
+          // 使用 periods 字段（支持 JSON 数组格式和旧字符串格式）
+          const periodsData = (r as any).periods;
+          let pArr: number[] = [];
+          if (Array.isArray(periodsData)) {
+            pArr = periodsData.map(Number).filter((n: number) => n >= 1 && n <= 12);
+          } else if (typeof periodsData === "string") {
+            pArr = periodsData
+              .split(",")
+              .map(Number)
+              .filter((n: number) => n >= 1 && n <= 12);
+          }
+
+          // 如果 periods 为空或无效，使用 period_idx
+          if (pArr.length === 0) {
+            pArr = [r.period_idx].filter((n: number) => n >= 1 && n <= 12);
+          }
+
+          if (pArr.length === 1) return PERIOD_MAP[pArr[0]]?.name || `第${pArr[0]}节`;
+          if (pArr.length >= 2) {
+            return `第${pArr[0]}-${pArr[pArr.length - 1]}节`;
+          }
+          return `第${r.period_idx}节`;
+        },
+      },
+      {
+        title: "时间",
+        key: "time",
+        render: (_: any, r: Course) => `${r.start_time}-${r.end_time}`,
+      },
+      {
+        title: "周次",
+        dataIndex: "weeks",
+        key: "weeks",
+        render: (v: any) => {
+          if (Array.isArray(v)) return v.join(",");
+          if (typeof v === "string") return v;
+          return "";
+        },
+      },
     ];
     if (isAdmin) {
       base.push({
-        title: '操作',
-        key: 'action',
+        title: "操作",
+        key: "action",
         render: (_: any, record: Course) => (
           <Space>
-            <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
+            <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
+              编辑
+            </Button>
             <Popconfirm title="确定删除该课程的所有节次吗？" onConfirm={() => handleDelete(record)}>
-              <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
+              <Button type="link" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
             </Popconfirm>
           </Space>
         ),
@@ -1076,7 +1256,8 @@ export default function Course() {
   }, [isAdmin]);
 
   // 是否正在查看"当前学期"：决定周次下拉是否标记"(本周)"，避免历史学期误标
-  const isViewingCurrentSemester = selectedSemester !== undefined && selectedSemester === currentSemesterId;
+  const isViewingCurrentSemester =
+    selectedSemester !== undefined && selectedSemester === currentSemesterId;
 
   // 是否在「假期 / 非教学周」：当前学期 + 今天不在任何教学周日期区间内（或超出教学周范围）
   const inBreak = useMemo(() => {
@@ -1092,8 +1273,8 @@ export default function Course() {
     // 检查今天是否落在任一教学周的日期区间内
     const inAnyRange = weeks.some((w) => {
       if (!w.start_date || !w.end_date) return false;
-      const p1 = w.start_date.split('-').map(Number);
-      const p2 = w.end_date.split('-').map(Number);
+      const p1 = w.start_date.split("-").map(Number);
+      const p2 = w.end_date.split("-").map(Number);
       if (p1.length !== 3 || p2.length !== 3) return false;
       const s = new Date(p1[0], p1[1] - 1, p1[2]);
       const e = new Date(p2[0], p2[1] - 1, p2[2]);
@@ -1161,13 +1342,27 @@ export default function Course() {
 
   // 假期页是否接管课程表视图：按「选中周」是否处于假期/非教学周判定，而非按「今天」。
   // 这样假期区间内选中的周显示假期提示，历史教学周正常显示课表（周次选择器可自由切换）。
-  const showHoliday = activeView === 'timetable' && (selectedWeekInHoliday || selectedWeekInBreak);
+  const showHoliday = activeView === "timetable" && (selectedWeekInHoliday || selectedWeekInBreak);
 
   // 视图切换「课表/列表」按钮：放到标题「第X周课表」右侧，桌面端/移动端共用
   const viewSwitch = (
     <Space.Compact>
-      <Button type={activeView === 'timetable' ? 'primary' : 'default'} size={isMobile ? 'small' : 'middle'} onClick={() => setActiveView('timetable')} disabled={isPolling}>课程表</Button>
-      <Button type={activeView === 'list' ? 'primary' : 'default'} size={isMobile ? 'small' : 'middle'} onClick={() => setActiveView('list')} disabled={isPolling}>列表</Button>
+      <Button
+        type={activeView === "timetable" ? "primary" : "default"}
+        size={isMobile ? "small" : "middle"}
+        onClick={() => setActiveView("timetable")}
+        disabled={isPolling}
+      >
+        课程表
+      </Button>
+      <Button
+        type={activeView === "list" ? "primary" : "default"}
+        size={isMobile ? "small" : "middle"}
+        onClick={() => setActiveView("list")}
+        disabled={isPolling}
+      >
+        列表
+      </Button>
     </Space.Compact>
   );
 
@@ -1183,8 +1378,13 @@ export default function Course() {
       >
         {semesterList.map((s) => (
           <Option key={s.id} value={s.id}>
-            <span style={{ fontWeight: s.is_current ? 'bold' : 'normal', color: s.is_current ? '#1890ff' : undefined }}>
-              {s.name} {s.is_current ? '(当前)' : ''}
+            <span
+              style={{
+                fontWeight: s.is_current ? "bold" : "normal",
+                color: s.is_current ? "#1890ff" : undefined,
+              }}
+            >
+              {s.name} {s.is_current ? "(当前)" : ""}
             </span>
           </Option>
         ))}
@@ -1199,11 +1399,17 @@ export default function Course() {
         disabled={isPolling}
       >
         {Array.from({ length: 25 }, (_, i) => i + 1).map((w) => {
-          const isCurrentWeek = isViewingCurrentSemester && currentWeek === w && !inBreak && !holidayModeActive;
+          const isCurrentWeek =
+            isViewingCurrentSemester && currentWeek === w && !inBreak && !holidayModeActive;
           return (
             <Option key={w} value={w}>
-              <span style={{ fontWeight: isCurrentWeek ? 'bold' : 'normal', color: isCurrentWeek ? '#1890ff' : undefined }}>
-                第{w}周 {isCurrentWeek ? '(本周)' : ''}
+              <span
+                style={{
+                  fontWeight: isCurrentWeek ? "bold" : "normal",
+                  color: isCurrentWeek ? "#1890ff" : undefined,
+                }}
+              >
+                第{w}周 {isCurrentWeek ? "(本周)" : ""}
               </span>
             </Option>
           );
@@ -1213,32 +1419,77 @@ export default function Course() {
 
     const actions = (
       <>
-        {isAdmin && <Button icon={<ImportOutlined />} onClick={handleImport} disabled={isPolling} loading={isPolling}>导入</Button>}
-        {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => handleAdd()} disabled={isPolling}>新增课程</Button>}
-        {isAdmin && <Button icon={<ScheduleOutlined />} onClick={handleSyncCurrentWeek} disabled={isPolling || holidayStatus?.active} loading={isPolling}>同步课表</Button>}
-        {isAdmin && <Button icon={<SyncOutlined />} onClick={() => { setIsFullCrawl(true); setCrawlModalVisible(true); }} disabled={isPolling || holidayStatus?.active}>全量爬取</Button>}
-        <Button icon={<ReloadOutlined />} onClick={() => { fetchTimetable(selectedWeek); fetchCourses(); }} disabled={isPolling}>刷新</Button>
+        {isAdmin && (
+          <Button
+            icon={<ImportOutlined />}
+            onClick={handleImport}
+            disabled={isPolling}
+            loading={isPolling}
+          >
+            导入
+          </Button>
+        )}
+        {isAdmin && (
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => handleAdd()}
+            disabled={isPolling}
+          >
+            新增课程
+          </Button>
+        )}
+        {isAdmin && (
+          <Button
+            icon={<ScheduleOutlined />}
+            onClick={handleSyncCurrentWeek}
+            disabled={isPolling || holidayStatus?.active}
+            loading={isPolling}
+          >
+            同步课表
+          </Button>
+        )}
+        {isAdmin && (
+          <Button
+            icon={<SyncOutlined />}
+            onClick={() => {
+              setIsFullCrawl(true);
+              setCrawlModalVisible(true);
+            }}
+            disabled={isPolling || holidayStatus?.active}
+          >
+            全量爬取
+          </Button>
+        )}
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={() => {
+            fetchTimetable(selectedWeek);
+            fetchCourses();
+          }}
+          disabled={isPolling}
+        >
+          刷新
+        </Button>
       </>
     );
 
     if (isMobile) {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
           {/* 第一行：学期 + 周次 */}
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {termSelect}
             {weekSelect}
           </div>
           {/* 第二行：操作按钮 */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {actions}
-          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{actions}</div>
         </div>
       );
     }
 
     return (
-      <Space wrap style={{ justifyContent: 'flex-end' }}>
+      <Space wrap style={{ justifyContent: "flex-end" }}>
         {termSelect}
         {weekSelect}
         {actions}
@@ -1253,14 +1504,20 @@ export default function Course() {
         title={
           <Space wrap align="center">
             <CalendarOutlined />
-            {showHoliday ? '假期模式' : (selectedWeek ? `第${selectedWeek}周课表` : '课程管理')}
+            {showHoliday ? "假期模式" : selectedWeek ? `第${selectedWeek}周课表` : "课程管理"}
             {viewSwitch}
             {isPolling && <Badge dot offset={[4, -4]} />}
-            {isViewingCurrentSemester && currentStatus.hasCurrentCourse && currentWeek === selectedWeek && currentStatus.currentPeriod >= 1 && currentStatus.currentPeriod <= 12 && (
-              <Tag color="red" icon={<ClockCircleOutlined />}>
-                上课中 - 第{currentStatus.currentPeriod}节
-              </Tag>
-            )}
+            {!showHoliday &&
+              isViewingCurrentSemester &&
+              currentStatus.hasCurrentCourse &&
+              currentStatus.isTeachingWeek &&
+              currentWeek === selectedWeek &&
+              currentStatus.currentPeriod >= 1 &&
+              currentStatus.currentPeriod <= 12 && (
+                <Tag color="red" icon={<ClockCircleOutlined />}>
+                  上课中 - 第{currentStatus.currentPeriod}节
+                </Tag>
+              )}
           </Space>
         }
         extra={isMobile ? null : renderToolbar()}
@@ -1279,15 +1536,15 @@ export default function Course() {
                     {runningTasks.map((task) => (
                       <div key={task.id} style={{ marginBottom: 4 }}>
                         <Tag color="processing">{task.task_type}</Tag>
-                        <span style={{ fontSize: 12, color: '#666' }}>
-                          {task.message || '正在执行...'}
+                        <span style={{ fontSize: 12, color: "#666" }}>
+                          {task.message || "正在执行..."}
                         </span>
                         {task.progress !== undefined && (
-                          <Progress 
-                            percent={task.progress} 
-                            size="small" 
+                          <Progress
+                            percent={task.progress}
+                            size="small"
                             style={{ marginTop: 4 }}
-                            status={task.status === 'failed' ? 'exception' : 'active'}
+                            status={task.status === "failed" ? "exception" : "active"}
                           />
                         )}
                       </div>
@@ -1299,10 +1556,15 @@ export default function Course() {
                     {crawlRunning.map((task) => (
                       <div key={`crawl-${task.id}`} style={{ marginBottom: 4 }}>
                         <Tag color="processing">
-                          爬取任务{task.scope === 'all' ? '·全量' : task.semester_id ? `·学期${task.semester_id}` : ''}
+                          爬取任务
+                          {task.scope === "all"
+                            ? "·全量"
+                            : task.semester_id
+                              ? `·学期${task.semester_id}`
+                              : ""}
                         </Tag>
-                        <span style={{ fontSize: 12, color: '#666' }}>
-                          {task.message || '正在执行...'}
+                        <span style={{ fontSize: 12, color: "#666" }}>
+                          {task.message || "正在执行..."}
                         </span>
                       </div>
                     ))}
@@ -1316,8 +1578,10 @@ export default function Course() {
           />
         )}
         {loading ? (
-          <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>
-        ) : activeView === 'timetable' ? (
+          <div style={{ textAlign: "center", padding: 50 }}>
+            <Spin size="large" />
+          </div>
+        ) : activeView === "timetable" ? (
           showHoliday ? (
             <HolidayCourseView
               today={currentTime}
@@ -1325,77 +1589,146 @@ export default function Course() {
               holidayPeriod={holidayStatus?.period ?? undefined}
             />
           ) : (
-          <div style={isMobile ? { width: '100%', overflow: 'hidden' } : { overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            <table style={{ width: '100%', minWidth: isMobile ? 'unset' : 900, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-              {/* colgroup 锁定列宽：移动端只渲染有课的天，均分剩余宽度，空白列（如无课的周六/周日）不再占位置 */}
-              <colgroup>
-                <col style={{ width: isMobile ? '34px' : '80px' }} />
-                {renderDayList.map((day) => (
-                  <col key={day} style={{ width: `calc((100% - ${isMobile ? '34px' : '80px'}) / ${renderDayList.length})` }} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr>
-                  <th style={{ width: isMobile ? '32px' : '80px', padding: isMobile ? '4px 2px' : '12px', border: '1px solid #f0f0f0', backgroundColor: '#fafafa', fontSize: isMobile ? 11 : 14 }}>{isMobile ? '节' : '时间'}</th>
-                  {renderDayList.map((day) => {
-                    // 计算该天的日期
-                    const label = WEEK_DAY_MAP[day];
-                    const weekNum = selectedWeek || 1;
-                    const dateStr = getWeekDateLabel(weekNum, day, timetableData?.available_weeks);
-                    // 只有"正在查看当前学期"且选中的周次是真实本周时，才显示"今天"
-                    const isToday = isViewingCurrentSemester && currentWeek === weekNum && currentStatus.currentWeekDay === day;
+            <div
+              style={
+                isMobile
+                  ? { width: "100%", overflow: "hidden" }
+                  : { overflowX: "auto", WebkitOverflowScrolling: "touch" }
+              }
+            >
+              <table
+                style={{
+                  width: "100%",
+                  minWidth: isMobile ? "unset" : 900,
+                  borderCollapse: "collapse",
+                  tableLayout: "fixed",
+                }}
+              >
+                {/* colgroup 锁定列宽：移动端只渲染有课的天，均分剩余宽度，空白列（如无课的周六/周日）不再占位置 */}
+                <colgroup>
+                  <col style={{ width: isMobile ? "34px" : "80px" }} />
+                  {renderDayList.map((day) => (
+                    <col
+                      key={day}
+                      style={{
+                        width: `calc((100% - ${isMobile ? "34px" : "80px"}) / ${renderDayList.length})`,
+                      }}
+                    />
+                  ))}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th
+                      style={{
+                        width: isMobile ? "32px" : "80px",
+                        padding: isMobile ? "4px 2px" : "12px",
+                        border: "1px solid #f0f0f0",
+                        backgroundColor: "#fafafa",
+                        fontSize: isMobile ? 11 : 14,
+                      }}
+                    >
+                      {isMobile ? "节" : "时间"}
+                    </th>
+                    {renderDayList.map((day) => {
+                      // 计算该天的日期
+                      const label = WEEK_DAY_MAP[day];
+                      const weekNum = selectedWeek || 1;
+                      const dateStr = getWeekDateLabel(
+                        weekNum,
+                        day,
+                        timetableData?.available_weeks
+                      );
+                      // 只有"正在查看当前学期"且选中的周次是真实本周时，才显示"今天"
+                      const isToday =
+                        isViewingCurrentSemester &&
+                        currentWeek === weekNum &&
+                        currentStatus.currentWeekDay === day;
+                      return (
+                        <th
+                          key={day}
+                          style={{
+                            padding: isMobile ? "4px 1px" : "12px",
+                            border: "1px solid #f0f0f0",
+                            backgroundColor: isToday ? "#e6f7ff" : "#fafafa",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: isMobile ? 0 : 8,
+                            }}
+                          >
+                            <span style={{ fontSize: isMobile ? 12 : 14 }}>{label}</span>
+                            {isToday && !isMobile && <Tag color="blue">今天</Tag>}
+                          </div>
+                          {!isMobile && (
+                            <div style={{ fontSize: 12, color: "#999", fontWeight: "normal" }}>
+                              {dateStr}
+                            </div>
+                          )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((period) => {
+                    const periodInfo = PERIOD_MAP[period];
+                    const isCurrentPeriod = false; // 节次列不高亮
                     return (
-                      <th key={day} style={{ padding: isMobile ? '4px 1px' : '12px', border: '1px solid #f0f0f0', backgroundColor: isToday ? '#e6f7ff' : '#fafafa' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 0 : 8 }}>
-                          <span style={{ fontSize: isMobile ? 12 : 14 }}>{label}</span>
-                          {isToday && !isMobile && <Tag color="blue">今天</Tag>}
-                        </div>
-                        {!isMobile && <div style={{ fontSize: 12, color: '#999', fontWeight: 'normal' }}>{dateStr}</div>}
-                      </th>
+                      <tr key={period}>
+                        <td
+                          style={{
+                            padding: isMobile ? "2px" : "8px",
+                            border: isCurrentPeriod ? "2px solid #ff4d4f" : "1px solid #f0f0f0",
+                            textAlign: "center",
+                            backgroundColor: isCurrentPeriod ? "#fff1f0" : "#fafafa",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: "bold",
+                              fontSize: isMobile ? 11 : 14,
+                              color: isCurrentPeriod ? "#ff4d4f" : undefined,
+                            }}
+                          >
+                            {isMobile ? period : periodInfo?.name}
+                          </div>
+                        </td>
+                        {renderDayList.map((day) => renderCourseCell(day, period))}
+                      </tr>
                     );
                   })}
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((period) => {
-                  const periodInfo = PERIOD_MAP[period];
-                  const isCurrentPeriod = false; // 节次列不高亮
-                  return (
-                    <tr key={period}>
-                      <td style={{ 
-                        padding: isMobile ? '2px' : '8px', 
-                        border: isCurrentPeriod ? '2px solid #ff4d4f' : '1px solid #f0f0f0', 
-                        textAlign: 'center', 
-                        backgroundColor: isCurrentPeriod ? '#fff1f0' : '#fafafa' 
-                      }}>
-                        <div style={{ fontWeight: 'bold', fontSize: isMobile ? 11 : 14, color: isCurrentPeriod ? '#ff4d4f' : undefined }}>
-                          {isMobile ? period : periodInfo?.name}
-                        </div>
-                      </td>
-                      {renderDayList.map((day) => renderCourseCell(day, period))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                </tbody>
+              </table>
+            </div>
           )
         ) : (
-          <Table dataSource={courses} columns={columns} rowKey="id" scroll={isMobile ? undefined : { x: isAdmin ? 850 : 700 }} />
+          <Table
+            dataSource={courses}
+            columns={columns}
+            rowKey="id"
+            scroll={isMobile ? undefined : { x: isAdmin ? 850 : 700 }}
+          />
         )}
       </Card>
 
       {/* 编辑弹窗 */}
       <Modal
-        title={editingCourse ? '编辑课程' : '新增课程'}
+        title={editingCourse ? "编辑课程" : "新增课程"}
         open={modalVisible}
         onOk={() => {
           if (!isDeleting) {
-            form.validateFields().then(values => {
-              handleSave(values);
-            }).catch(err => {
-              message.error('请检查必填字段');
-            });
+            form
+              .validateFields()
+              .then((values) => {
+                handleSave(values);
+              })
+              .catch((err) => {
+                message.error("请检查必填字段");
+              });
           }
         }}
         onCancel={() => {
@@ -1405,11 +1738,14 @@ export default function Course() {
         }}
         width={600}
         footer={[
-          <Button key="back" onClick={() => {
-            setModalVisible(false);
-            setEditingCourse(null);
-            form.resetFields();
-          }}>
+          <Button
+            key="back"
+            onClick={() => {
+              setModalVisible(false);
+              setEditingCourse(null);
+              form.resetFields();
+            }}
+          >
             取消
           </Button>,
           editingCourse && (
@@ -1427,44 +1763,63 @@ export default function Course() {
             type="primary"
             onClick={() => {
               if (!isDeleting) {
-                form.validateFields().then(values => {
-                  handleSave(values);
-                }).catch(err => {
-                  message.error('请检查必填字段');
-                });
+                form
+                  .validateFields()
+                  .then((values) => {
+                    handleSave(values);
+                  })
+                  .catch((err) => {
+                    message.error("请检查必填字段");
+                  });
               }
             }}
             loading={isDeleting}
           >
-            {editingCourse ? '确定' : '新增'}
+            {editingCourse ? "确定" : "新增"}
           </Button>,
         ]}
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="course_name" label="课程名称" rules={[{ required: true, message: '请输入课程名称' }]}>
+          <Form.Item
+            name="course_name"
+            label="课程名称"
+            rules={[{ required: true, message: "请输入课程名称" }]}
+          >
             <Input placeholder="请输入课程名称" />
           </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="week_day" label="星期" rules={[{ required: true, message: '请选择星期' }]}>
+              <Form.Item
+                name="week_day"
+                label="星期"
+                rules={[{ required: true, message: "请选择星期" }]}
+              >
                 <Select placeholder="选择星期">
                   {Object.entries(WEEK_DAY_MAP).map(([value, label]) => (
-                    <Option key={value} value={Number(value)}>{label}</Option>
+                    <Option key={value} value={Number(value)}>
+                      {label}
+                    </Option>
                   ))}
                 </Select>
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="building" label="教学楼" rules={[{ required: true, message: '请选择教学楼' }]}>
-                <Select 
-                  placeholder="选择教学楼" 
+              <Form.Item
+                name="building"
+                label="教学楼"
+                rules={[{ required: true, message: "请选择教学楼" }]}
+              >
+                <Select
+                  placeholder="选择教学楼"
                   onChange={(value) => {
                     // 教学楼变化时，清空节次选择
                     form.setFieldsValue({ period_idx: undefined });
                   }}
                 >
                   {BUILDINGS.map((b) => (
-                    <Option key={b.code} value={b.name}>{b.name}</Option>
+                    <Option key={b.code} value={b.name}>
+                      {b.name}
+                    </Option>
                   ))}
                 </Select>
               </Form.Item>
@@ -1472,17 +1827,23 @@ export default function Course() {
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="period_idx" label="节次" rules={[{ required: true, message: '请选择节次' }]}>
+              <Form.Item
+                name="period_idx"
+                label="节次"
+                rules={[{ required: true, message: "请选择节次" }]}
+              >
                 <Select
                   mode="multiple"
                   placeholder="选择节次"
                   onChange={handlePeriodChange}
-                  style={{ width: '100%' }}
+                  style={{ width: "100%" }}
                 >
                   {(() => {
-                    const schedule = getScheduleByBuilding(selectedBuilding || '');
+                    const schedule = getScheduleByBuilding(selectedBuilding || "");
                     return Object.entries(schedule).map(([value, { name, start, end }]) => (
-                      <Option key={value} value={Number(value)}>{name} ({start}-{end})</Option>
+                      <Option key={value} value={Number(value)}>
+                        {name} ({start}-{end})
+                      </Option>
                     ));
                   })()}
                 </Select>
@@ -1520,14 +1881,8 @@ export default function Course() {
           </Row>
           {/* 推送开关使用本地状态管理 */}
           {editingCourse && (
-            <Form.Item
-              label="推送提醒"
-              extra="关闭后不会推送课前提醒，课程卡片变灰"
-            >
-              <Switch
-                checked={pushEnabled}
-                onChange={(checked) => setPushEnabled(checked)}
-              />
+            <Form.Item label="推送提醒" extra="关闭后不会推送课前提醒，课程卡片变灰">
+              <Switch checked={pushEnabled} onChange={(checked) => setPushEnabled(checked)} />
             </Form.Item>
           )}
         </Form>
@@ -1537,7 +1892,10 @@ export default function Course() {
       <CrawlScheduler
         visible={crawlModalVisible}
         isFullCrawl={isFullCrawl}
-        onClose={() => { setCrawlModalVisible(false); setIsFullCrawl(false); }}
+        onClose={() => {
+          setCrawlModalVisible(false);
+          setIsFullCrawl(false);
+        }}
         onStarted={(taskId) => {
           // 有 taskId 时用按 id 轮询（能正确处理 pending→completed 全生命周期）
           if (taskId) startCrawlTaskPolling(taskId);

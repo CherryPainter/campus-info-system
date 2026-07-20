@@ -2,16 +2,18 @@
  * 用户协议页面
  * 校园信息聚合与智能推送系统
  */
-import { Typography, Divider, Card } from 'antd';
+import { Typography, Divider, Card } from "antd";
 
 const { Title, Paragraph, Text } = Typography;
 
 export default function Terms() {
   return (
-    <div style={{ maxWidth: 900, margin: '40px auto', padding: '0 24px' }}>
-      <Card bordered={false} style={{ borderRadius: 12, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-        <Title level={2} style={{ textAlign: 'center', marginBottom: 8 }}>用户协议</Title>
-        <Paragraph type="secondary" style={{ textAlign: 'center', marginBottom: 32 }}>
+    <div style={{ maxWidth: 900, margin: "40px auto", padding: "0 24px" }}>
+      <Card bordered={false} style={{ borderRadius: 12, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
+        <Title level={2} style={{ textAlign: "center", marginBottom: 8 }}>
+          用户协议
+        </Title>
+        <Paragraph type="secondary" style={{ textAlign: "center", marginBottom: 32 }}>
           最后更新日期：2026年7月7日
         </Paragraph>
 
@@ -31,11 +33,26 @@ export default function Terms() {
         <Paragraph>本系统为校园用户提供以下信息服务：</Paragraph>
         <Paragraph>
           <ul>
-            <li><Text strong>天气信息推送</Text>：自动获取天气数据，包括实时天气、逐小时预报及气象预警信息，并通过企业微信等渠道推送给用户。</li>
-            <li><Text strong>宿舍电量监控</Text>：自动获取宿舍电表数据，提供用电量统计与查询，并在电量不足时发出预警提醒。</li>
-            <li><Text strong>课程管理提醒</Text>：支持课程表导入与管理，在课程开始前自动推送上课提醒通知。</li>
-            <li><Text strong>信息聚合展示</Text>：通过统一的管理后台，集中展示天气、电量、课程等校园信息。</li>
-            <li><Text strong>安全与访问控制</Text>：采用多因素认证与访问控制等安全措施，全方位保障账户与系统安全。</li>
+            <li>
+              <Text strong>天气信息推送</Text>
+              ：自动获取天气数据，包括实时天气、逐小时预报及气象预警信息，并通过企业微信等渠道推送给用户。
+            </li>
+            <li>
+              <Text strong>宿舍电量监控</Text>
+              ：自动获取宿舍电表数据，提供用电量统计与查询，并在电量不足时发出预警提醒。
+            </li>
+            <li>
+              <Text strong>课程管理提醒</Text>
+              ：支持课程表导入与管理，在课程开始前自动推送上课提醒通知。
+            </li>
+            <li>
+              <Text strong>信息聚合展示</Text>
+              ：通过统一的管理后台，集中展示天气、电量、课程等校园信息。
+            </li>
+            <li>
+              <Text strong>安全与访问控制</Text>
+              ：采用多因素认证与访问控制等安全措施，全方位保障账户与系统安全。
+            </li>
           </ul>
         </Paragraph>
 

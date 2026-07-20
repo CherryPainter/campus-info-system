@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """统一任务进程写入服务（UnifiedTaskService）
 
 集中所有 TaskProcess 记录的创建 / 更新 / 查询，作为整个系统任务状态写入的
@@ -10,20 +9,26 @@
 - 进程「开始 / 进度 / 完成」三类操作均在此实现，业务代码不得直接 new TaskProcess()；
 - 方法的返回值 / 行为与原 process_routes 工具函数保持一致，确保调用方无感知切换。
 """
-import os
+
 import logging
+import os
 from datetime import datetime
 
 from app.core.database import get_db
-from app.model.task_process import TaskProcess
 from app.core.task_state import TaskStatus
+from app.model.task_process import TaskProcess
 
 logger = logging.getLogger(__name__)
 
 
-def create_process(name: str, task_type: str, total_items: int = 0,
-                   created_by: str = 'system', pid=None,
-                   message: str = '任务启动中...') -> int:
+def create_process(
+    name: str,
+    task_type: str,
+    total_items: int = 0,
+    created_by: str = "system",
+    pid=None,
+    message: str = "任务启动中...",
+) -> int:
     """创建任务进程记录，返回进程 ID。"""
     session = get_db()
     try:
@@ -42,7 +47,7 @@ def create_process(name: str, task_type: str, total_items: int = 0,
         session.commit()
         session.refresh(process)
         process_id = process.id
-        logger.info(f'[UnifiedTask] 创建任务进程: {name} (ID={process_id}, type={task_type})')
+        logger.info(f"[UnifiedTask] 创建任务进程: {name} (ID={process_id}, type={task_type})")
         return process_id
     finally:
         session.close()
@@ -67,8 +72,13 @@ def update_progress(process_id: int, processed: int, total: int = None, message:
         session.close()
 
 
-def complete_process(process_id: int, status: str = TaskStatus.COMPLETED,
-                     message: str = None, error: str = None, progress: int = None):
+def complete_process(
+    process_id: int,
+    status: str = TaskStatus.COMPLETED,
+    message: str = None,
+    error: str = None,
+    progress: int = None,
+):
     """完成任务进程，写入终态与耗时。"""
     session = get_db()
     try:
@@ -88,7 +98,7 @@ def complete_process(process_id: int, status: str = TaskStatus.COMPLETED,
         elif status == TaskStatus.COMPLETED:
             process.progress = 100
         session.commit()
-        logger.info(f'[UnifiedTask] 任务完成: {process.name} (status={status})')
+        logger.info(f"[UnifiedTask] 任务完成: {process.name} (status={status})")
     finally:
         session.close()
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Flask 应用入口"""
+
 import os
 import sys
 
@@ -11,10 +11,6 @@ from app import create_app
 
 app = create_app()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     config = app.config
-    app.run(
-        host=config['HOST'],
-        port=config['PORT'],
-        debug=config['DEBUG']
-    )
+    app.run(host=config["HOST"], port=config["PORT"], debug=config["DEBUG"])

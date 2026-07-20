@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """IP 地理解析服务（境外拦截用）。
 
 基于本地 ip2region 离线库（ip2region_v4.xdb）判断 IP 所属国家，
@@ -7,9 +6,10 @@
 数据文件：项目根目录 ip2region.xdb（与 vendored 的 ip2region 包同层）
 解析引擎：Push_System_Flask/ip2region（官方 Python 绑定，已 vendoring 进仓库，含 LICENSE）
 """
+
 import ipaddress
-import threading
 import logging
+import threading
 from pathlib import Path
 
 from ip2region import util
@@ -18,7 +18,7 @@ from ip2region.searcher import new_with_buffer
 logger = logging.getLogger(__name__)
 
 # 数据文件位置：本文件在 app/services/，向上两级即项目根 Push_System_Flask
-_DB_PATH = Path(__file__).resolve().parents[2] / 'ip2region.xdb'
+_DB_PATH = Path(__file__).resolve().parents[2] / "ip2region.xdb"
 
 _searcher = None
 _init_lock = threading.Lock()
@@ -55,20 +55,21 @@ def _get_searcher():
         if _searcher is not None:
             return _searcher
         if not _DB_PATH.exists():
-            logger.critical('ip2region 数据库缺失: %s，境外拦截降级为放行', _DB_PATH)
+            logger.critical("ip2region 数据库缺失: %s，境外拦截降级为放行", _DB_PATH)
             return None
         try:
             c_buffer = util.load_content_from_file(str(_DB_PATH))
             header = util.load_header_from_file(str(_DB_PATH))
             version = util.version_from_header(header)
             if version is None:
-                logger.critical('无法识别 ip2region 数据库版本，境外拦截降级为放行')
+                logger.critical("无法识别 ip2region 数据库版本，境外拦截降级为放行")
                 return None
             _searcher = new_with_buffer(version, c_buffer)
-            logger.info('ip2region 离线库已加载（%s，%.1f MB）',
-                        _DB_PATH.name, len(c_buffer) / 1024 / 1024)
+            logger.info(
+                "ip2region 离线库已加载（%s，%.1f MB）", _DB_PATH.name, len(c_buffer) / 1024 / 1024
+            )
         except Exception as e:
-            logger.critical('加载 ip2region 数据库失败: %s，境外拦截降级为放行', e)
+            logger.critical("加载 ip2region 数据库失败: %s，境外拦截降级为放行", e)
             return None
         return _searcher
 
@@ -116,13 +117,13 @@ def is_china_ip(ip: str) -> bool:
     try:
         region = searcher.search(ip)
     except Exception as e:
-        logger.error('ip2region 查询异常 %s: %s，降级放行', ip, e)
+        logger.error("ip2region 查询异常 %s: %s，降级放行", ip, e)
         return True
 
     if not region:
         result = False
     else:
-        country = region.split('|')[0].strip()
-        result = (country == '中国')
+        country = region.split("|")[0].strip()
+        result = country == "中国"
     _cache_set(ip, result)
     return result

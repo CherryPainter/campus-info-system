@@ -41,7 +41,7 @@ export function getWeekDate(weekNumber: number, weekDay: number, semesterId?: nu
   targetDate.setDate(weekMonday.getDate() + weekDay - 1);
 
   // 格式化为 MM-DD
-  const month = String(targetDate.getMonth() + 1).padStart(2, '0');
-  const day = String(targetDate.getDate()).padStart(2, '0');
+  const month = String(targetDate.getMonth() + 1).padStart(2, "0");
+  const day = String(targetDate.getDate()).padStart(2, "0");
   return `${month}-${day}`;
 }
