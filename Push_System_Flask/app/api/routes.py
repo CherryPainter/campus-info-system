@@ -79,7 +79,7 @@ def trigger():
 
     查询参数:
         force: bool - 为 true 时忽略时间窗口检查，强制触发所有适用规则（默认 false）
-        type: str - 指定规则类型（before_class/daily_schedule/before_end_class/weekly_schedule/after_class）
+        type: str - 指定规则类型（before_class/daily_schedule/before_end_class/after_class）
     """
     force = request.args.get("force", "false").lower() == "true"
     rule_type = request.args.get("type", "")

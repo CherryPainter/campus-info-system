@@ -986,7 +986,6 @@ def trigger_course_task():
 
     支持的 task_type：
     - push_daily_schedule    — 推送今日课表
-    - push_weekly_schedule   — 推送本周课表
     - push_weekly_image      — 推送周课表图片
     """
     data = request.get_json(silent=True) or {}

@@ -516,7 +516,7 @@ def _send_weekly_image(run_timestamp=None):
 
     task_service.create_task(
         {
-            "rule_id": "weekly_schedule",
+            "rule_id": "weekly_image",
             "rule_name": "每周课表图片推送",
             "trigger_time": datetime.now(),
             "task_type": "image",

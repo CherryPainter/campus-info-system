@@ -176,7 +176,6 @@ class DeliveryService:
         if task_type in ("schedule", "course", "image") and sub_type in (
             "daily",
             "daily_no_class",
-            "weekly",
             "weekly_image",
             "course_reminder",
             "before_end_class",

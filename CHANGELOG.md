@@ -4,6 +4,24 @@
 
 ---
 
+## v6.15.2 (2026-07-20)
+
+> 发版类型：**功能移除（patch）**。砍掉冗余且会在假期误发的文本版每周课表推送（"本周课程安排…祝本周学习顺利！"），保留图片版周课表。
+
+### 移除文本版每周课表推送
+- 删除 `weekly_schedule` 默认规则（`rule_service._rules`）及其两个触发 handler（`_check_weekly_schedule`、`_check_weekly_schedule_force`），规则引擎不再生成 `sub_type="weekly"` 的推送任务。
+- 删除配套模板 `schedule_summary_weekly`：`app/services/template_service.py` 内置默认模板 + `app/services/templates.json` 条目一并移除。
+- 清理死代码：移除 `task_service._get_priority` 中 `("schedule_summary", "weekly")` 优先级映射、`delivery_service._get_adapter_name_for_task` 路由元组里的 `"weekly"`（保留 `"weekly_image"`）、`process_routes.get_dynamic_rules` 的 `weekly_schedule` 映射与 `trigger_desc` 分支、`admin_routes` / `routes` 中过时的 `push_weekly_schedule` 文档字符串；`executors._send_weekly_image` 的 `rule_id` 标签由 `weekly_schedule` 更正为 `weekly_image`。
+- 图片版周课表（`generate_weekly_course` → `_send_weekly_image`，`sub_type="weekly_image"`）不受影响，仍是每周课表的主推送形态。
+
+### 为什么砍掉（兼答"假期里它怎么还发出来"）
+- 文本版与图片版内容重复，属历史遗留的冗余推送；且在假期里仍会按规则（每周一 08:00）+ 数据库里上学期残留的课程数据把文字版发出。
+- 根因：假期静默**不是自动生效**，而是需要显式开启——要么管理员打开紧急静默总开关（`system.holiday_mode_enabled`），要么今天命中某条启用的假期区间。运行实例若未配置这两项，`holiday_service.is_active()` 返回 False，第一道闸不拦。
+- 即便未开静默，第二道闸 `_is_in_teaching_week()` 也只按校历学期（`course_meta.json` 的 weeks / 开学日推算）判定"是否在校历学期内"，**不consult假期静默**。若学期定义仍覆盖当前日期，教学周判定返回 True，第二道闸也不拦。
+- 两道闸都不拦 → `check_push_rules` 正常推进 → `_check_weekly_schedule` 在配置日触发 → 旧课程数据仍在库 → 文字版照发。这也就是它"逃脱假期静默"的完整链路。
+
+---
+
 ## v6.15.1 (2026-07-20)
 
 > 发版类型：**功能修正（patch）**。假期静默语义重构与前端命名统一：将「假期模式」拆分为「紧急静默（永久/手动）」与「假期条目短期静默（按日期自动）」两个独立来源；假期卡片展示与静默开关解耦；学期下拉/全量爬取补全所有学期；前端侧边栏与页面文案统一为「推送静默」，系统级开关更名为「紧急静默」；假期条目开关增加 hover 描述。

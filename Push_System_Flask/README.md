@@ -1,6 +1,6 @@
 # 校园信息聚合与智能推送系统
 
-> **v6.15.1** | Flask 3.1 + React 19 + TypeScript + Vite + Ant Design 5
+> **v6.15.2** | Flask 3.1 + React 19 + TypeScript + Vite + Ant Design 5
 >
 > 集成课表自动爬取与推送、天气监控与预警、宿舍电量管理三大核心模块，通过企业微信 Webhook 实现消息推送，提供 React + Ant Design Pro 管理后台。
 
@@ -575,7 +575,7 @@ npm run dev
 | 变量          | 默认值                       | 说明                             |
 | ------------- | ---------------------------- | -------------------------------- |
 | `APP_NAME`    | `校园信息聚合与智能推送系统` | 应用名称                         |
-| `APP_VERSION` | `6.15.1`                     | 应用版本                         |
+| `APP_VERSION` | `6.15.2`                     | 应用版本                         |
 | `DEBUG`       | `false`                      | 调试模式（生产环境必须为 false） |
 | `HOST`        | `0.0.0.0`                    | 监听地址                         |
 | `PORT`        | `29528`                      | 监听端口                         |
@@ -1051,7 +1051,7 @@ flowchart TD
     ADP -->|WeComAdapter 单 Webhook| W1[企业微信 Webhook]
     ADP -->|MultiWeComAdapter 多 Webhook<br/>至少一个成功即整体成功| W2[企业微信 Webhook]
 
-    RULE -. 规则类型 .- R["before_class 课前15分钟<br/>daily_schedule 每日07:00<br/>before_end_class 下课前10分钟<br/>weekly_schedule 每周一08:00<br/>after_class 上课后5分钟(默认禁用)"]
+    RULE -. 规则类型 .- R["before_class 课前15分钟<br/>daily_schedule 每日07:00<br/>before_end_class 下课前10分钟<br/>after_class 上课后5分钟(默认禁用)"]
 
 
 ```
@@ -1210,7 +1210,6 @@ flowchart TD
 | `course_reminder_before_end_class` | 即将下课提醒 | markdown | 同上 + `{{minutes_before_end}}`, `{{next_course_block}}`                                                  |
 | `course_reminder_after_class`      | 上课后确认   | markdown | `{{course_name}}`, `{{start_time}}`, `{{end_time}}`                                                       |
 | `schedule_summary_daily`           | 每日课表     | markdown | `{{courses_list}}`                                                                                        |
-| `schedule_summary_weekly`          | 每周课表     | markdown | `{{courses_list}}`                                                                                        |
 | `schedule_summary_daily_no_class`  | 今日无课     | markdown | --                                                                                                        |
 
 模板支持热重载（`POST /api/templates/reload`），无需重启服务。渲染时自动截断保护（最大 3900 字节，企业微信限制 4096 字节）。
@@ -1223,7 +1222,7 @@ flowchart TD
 flowchart LR
     R[RuleService 命中规则] --> SEL[选择模板]
     SEL --> T["course_reminder_before_class<br/>course_reminder_before_end_class<br/>course_reminder_after_class"]
-    SEL --> S["schedule_summary_daily<br/>schedule_summary_weekly<br/>schedule_summary_daily_no_class"]
+    SEL --> S["schedule_summary_daily<br/>schedule_summary_daily_no_class"]
     T --> REND["TemplateService 渲染<br/>占位符替换 · 最大3900字节截断"]
     S --> REND
     REND --> RELOAD["支持热重载<br/>POST /api/templates/reload"]

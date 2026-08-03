@@ -89,15 +89,6 @@ class RuleService:
                 # minutes 不在此处固化，每次检查时动态读取
             },
             {
-                "id": "weekly_schedule",
-                "type": "weekly_schedule",
-                "name": "每周课表推送",
-                "enabled": True,
-                "priority": 3,
-                "time": "08:00",
-                "day_of_week": 1,
-            },
-            {
                 "id": "after_class",
                 "type": "after_class",
                 "name": "上课后推送",
@@ -331,32 +322,6 @@ class RuleService:
                 )
         return tasks
 
-    def _check_weekly_schedule(self, now, today_schedules, all_schedules, rule):
-        """每周课表推送规则"""
-        if now.isoweekday() != rule.get("day_of_week", 1):
-            return None
-        h, m = map(int, rule["time"].split(":"))
-        now_ts = now.timestamp()
-        from datetime import datetime as _dt
-
-        push_dt = _dt(now.year, now.month, now.day, h, m)
-        push_ts = push_dt.timestamp()
-        dedup_key = f"weekly_schedule|{now.strftime('%Y-%m-%d')}"
-        if self._is_triggered(dedup_key):
-            return None
-        if now_ts >= push_ts and now_ts - push_ts < _TRIGGER_WINDOW_SECONDS:
-            self._mark_triggered(dedup_key, now_ts)
-            return {
-                "rule_id": rule["id"],
-                "rule_name": rule["name"],
-                "trigger_time": now,
-                "task_type": "schedule_summary",
-                "sub_type": "weekly",
-                "course_info": all_schedules,
-                "trigger_condition": {"weekly_time": rule["time"]},
-            }
-        return None
-
     def _check_after_class(self, now, today_schedules, all_schedules, rule):
         """上课后推送规则"""
         tasks = []
@@ -475,18 +440,6 @@ class RuleService:
                 tasks.append(task)
         return tasks
 
-    def _check_weekly_schedule_force(self, now, today_schedules, all_schedules, rule):
-        """强制模式：生成本周课表推送"""
-        return {
-            "rule_id": rule["id"],
-            "rule_name": rule["name"],
-            "trigger_time": now,
-            "task_type": "schedule_summary",
-            "sub_type": "weekly",
-            "course_info": all_schedules,
-            "trigger_condition": {"weekly_time": rule["time"]},
-        }
-
     def _check_after_class_force(self, now, today_schedules, all_schedules, rule):
         """强制模式：为每门已开始的课程生成确认"""
         tasks = []
@@ -526,9 +479,6 @@ class RuleService:
                 r["minutes"] = before_end_class_minutes
             elif rule["id"] == "daily_schedule":
                 r["time"] = daily_push_time
-            elif rule["id"] == "weekly_schedule":
-                r["time"] = rule.get("time", "08:00")
-                r["day_of_week"] = rule.get("day_of_week", 1)
             elif rule["id"] == "after_class":
                 r["minutes"] = rule.get("minutes", 5)
             result.append(r)

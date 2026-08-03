@@ -45,14 +45,6 @@ _DEFAULT_TEMPLATES = [
         "content": "# 今日课程安排\n\n{{courses_list}}\n\n祝学习愉快！",
     },
     {
-        "id": "schedule_summary_weekly",
-        "name": "每周课表",
-        "type": "schedule_summary",
-        "sub_type": "weekly",
-        "msg_type": "markdown",
-        "content": "# 本周课程安排\n\n{{courses_list}}\n\n祝本周学习顺利！",
-    },
-    {
         "id": "schedule_summary_daily_no_class",
         "name": "今日无课",
         "type": "schedule_summary",

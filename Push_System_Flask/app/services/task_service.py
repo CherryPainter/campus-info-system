@@ -121,7 +121,6 @@ class TaskService:
             ("course_reminder", "before_end_class"): 2,
             ("schedule_summary", "daily"): 3,
             ("course_reminder", "after_class"): 4,
-            ("schedule_summary", "weekly"): 5,
         }
         return priority_map.get((task_data.get("task_type"), task_data.get("sub_type")), 3)
 

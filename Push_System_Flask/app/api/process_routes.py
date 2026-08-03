@@ -134,7 +134,6 @@ def get_dynamic_rules():
             "before_class": "course_reminder",
             "daily_schedule": "daily_schedule",
             "before_end_class": "before_end_class",
-            "weekly_schedule": "weekly_schedule",
             "after_class": "after_class",
         }
 
@@ -149,8 +148,6 @@ def get_dynamic_rules():
                 trigger_desc = f'下课前 {rule.get("minutes", 10)} 分钟'
             elif rule["id"] == "daily_schedule":
                 trigger_desc = f'每天 {rule.get("time", "07:00")}（有课时）'
-            elif rule["id"] == "weekly_schedule":
-                trigger_desc = f'每周一 {rule.get("time", "08:00")}'
             elif rule["id"] == "after_class":
                 trigger_desc = f'下课后 {rule.get("minutes", 5)} 分钟'
             else:
