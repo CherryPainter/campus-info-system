@@ -4,7 +4,7 @@
  */
 import { useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Form, Input, Button, Card, Typography, Modal, Divider, Space, App, Checkbox } from "antd";
+import { Form, Input, Button, Card, Typography, Modal, Divider, Space, App, Checkbox, Alert } from "antd";
 import {
   UserOutlined,
   LockOutlined,
@@ -69,6 +69,9 @@ export default function Login() {
 
   // 随机选择一张背景图（组件挂载时只执行一次）
   const randomBg = useRandomBackground();
+  // 是否有可返回的上一页：仅用于"栈底提示条"判断（直达登录页/微信内打开时
+  // 左滑手势在栈底只会刷新页面，提示用户没有上一页可退）。
+  const [canGoBack] = useState(() => window.history.length > 1);
 
   // 清除错误消息
   const clearError = useCallback(() => {
@@ -104,13 +107,14 @@ export default function Login() {
         // 首次引导：管理员尚未启用 MFA 但被放行 → 强制引导至个人中心完成 MFA 设置
         if (res.mfa_setup_required) {
           message.warning("为保障账户安全，请先在个人中心完成多因素认证(MFA)设置");
-          navigate("/profile");
+          navigate("/profile", { replace: true });
           setLoading(false);
           return;
         }
         // 根据角色决定跳转目标：管理员到仪表盘，普通用户到首页
+        // replace 替换掉登录页条目：手机上左滑可直接退到登录前的页面，而不是回到登录页
         const targetPath = res.user?.role === "admin" ? "/dashboard" : "/welcome";
-        navigate(targetPath);
+        navigate(targetPath, { replace: true });
       } else {
         // 其他错误状态
         const errMsg = res.message || "登录失败";
@@ -162,9 +166,9 @@ export default function Login() {
         if (res.user) {
           loginSuccess(res.user);
         }
-        // 根据角色决定跳转目标：管理员到仪表盘，普通用户到首页
+        // 根据角色决定跳转目标：管理员到仪表盘，普通用户到首页（replace 替换登录页条目）
         const targetPath = res.user?.role === "admin" ? "/dashboard" : "/welcome";
-        navigate(targetPath);
+        navigate(targetPath, { replace: true });
       } else {
         const errMsg = res.message || "验证失败";
         message.error(errMsg);
@@ -197,6 +201,7 @@ export default function Login() {
   return (
     <div
       style={{
+        position: "relative",
         minHeight: "100vh",
         display: "flex",
         flexDirection: "column",
@@ -207,16 +212,32 @@ export default function Login() {
         backgroundColor: "#f5f5f5",
       }}
     >
+      {/* 登录页无"上一页"语义：第一次访问栈底无路可退、退出登录后回到本页也无意义
+          （回退会落到已登出的页面再被 AuthGuard 踢回登录，形成死循环）。
+          删除原"返回"按钮，栈底场景由下方提示条告知用户"无上一页可退"。 */}
+
       {/* 登录卡片区域 - 占据flex: 1自动扩展到中间 */}
       <div
         style={{
           flex: 1,
           display: "flex",
+          flexDirection: "column",
           justifyContent: "center",
           alignItems: "center",
           padding: "20px 16px",
         }}
       >
+        {/* 栈底提示：直达登录页（扫码/输入网址/微信内打开链接）时左滑只会刷新，
+            明确告知没有上一页可返回，避免用户反复左滑产生“退不出”的困惑 */}
+        {!canGoBack && (
+          <Alert
+            type="info"
+            showIcon
+            closable
+            style={{ width: "100%", maxWidth: 400, marginBottom: 16 }}
+            message="当前页面是第一个打开的页面，没有上一页可返回；如需退出请直接关闭浏览器标签页"
+          />
+        )}
         {/* 登录卡片 */}
         <Card
           style={{

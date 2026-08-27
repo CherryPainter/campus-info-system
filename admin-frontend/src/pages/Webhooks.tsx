@@ -25,6 +25,7 @@ import {
   Alert,
   Descriptions,
   Divider,
+  Grid,
 } from "antd";
 import ResponsiveTable from "@/components/ResponsiveTable";
 import {
@@ -75,6 +76,9 @@ const MODULE_MAP: Record<string, { label: string; color: string }> = {
 
 export default function Webhooks() {
   const [loading, setLoading] = useState(false);
+  // 移动端断点：收缩外层 Card body padding
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingWebhook, setEditingWebhook] = useState<Webhook | null>(null);
@@ -335,24 +339,26 @@ export default function Webhooks() {
 
   return (
     <div>
-      <Card
-        title={
-          <Space>
-            <LinkOutlined />
-            <span>Webhook 管理</span>
-          </Space>
-        }
-        extra={
-          <Space>
-            <Button icon={<ReloadOutlined />} loading={reloading} onClick={handleReload}>
-              重载配置
-            </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-              添加 Webhook
-            </Button>
-          </Space>
-        }
-      >
+      <Card styles={{ body: { padding: isMobile ? 12 : 24 } }}>
+        {/* 工具条独立成行：避免与 PageContainer 自动生成的标题"Webhook 管理"挤在 Card title 行；
+            flex-wrap 让移动端控件不足时自然换行，不再挤压"添加 Webhook"按钮 */}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+            justifyContent: "flex-end",
+            marginBottom: 16,
+          }}
+        >
+          <Button icon={<ReloadOutlined />} loading={reloading} onClick={handleReload}>
+            重载配置
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            添加 Webhook
+          </Button>
+        </div>
+
         <Alert
           message="Webhook 配置说明"
           description={

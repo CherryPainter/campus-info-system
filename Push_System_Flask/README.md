@@ -1,6 +1,6 @@
 # 校园信息聚合与智能推送系统
 
-> **v6.15.2** | Flask 3.1 + React 19 + TypeScript + Vite + Ant Design 5
+> **v6.15.3** | Flask 3.1 + React 19 + TypeScript + Vite + Ant Design 5
 >
 > 集成课表自动爬取与推送、天气监控与预警、宿舍电量管理三大核心模块，通过企业微信 Webhook 实现消息推送，提供 React + Ant Design Pro 管理后台。
 
@@ -82,6 +82,8 @@
 - **CORS 白名单**：可配置允许的跨域域名列表
 - **敏感信息脱敏**：管理后台 API 返回的 API Key、Cookie 均做脱敏处理
 - **登录安全**：完整登录日志审计（IP、User-Agent、成功/失败/登出时间），密码修改需验证旧密码
+- **登录爆破防护（v6.15.3）**：两层防线——① 前置限流 `_check_login_rate_limit`：基于 **Redis 固定窗口**（60s / 5 次），多 worker 共享计数，堵住"4 个 worker 各自计数"绕过；② 登录失败信号感知：五维度滑动窗口（单账号失败 / 单账号多 IP / 单 IP 扫账号 / 单 IP 枚举 / 单 IP 总量），其中"同一 IP 对同一账号失败 10 次"触发**临时封禁 1 小时**。自动处置一律限时、只有手动封禁可永久；被锁 IP 持正确凭据登录走自助解封通道（白名单防自锁）
+- **安全事件一键处置（v6.15.3）**：封禁某条安全事件对应的 IP 时，自动将该 IP 其余未处理事件一并标记为已封禁，返回消息附带数量；同一 IP 在黑名单表始终只有 1 条记录（按 IP 更新而非新增），不会因多条事件累加
 - **境外 IP 防火墙（v6.13.0）**：基于本地 ip2region 离线库判定客户端 IP 所属国家，仅允许中国 IP 访问（含登录入口）；命中境外立即返回 403，不进入任何业务逻辑。支持开关与例外 IP/CIDR 白名单（防自锁）
 
 ---
@@ -222,12 +224,12 @@ Push_System_Flask/
 |   |-- __init__.py                       # 应用工厂 (create_app)
 |   |                                     #   - 加载配置、日志、CORS、限流
 |   |                                     #   - 初始化数据库、JWT 管理器
-|   |                                     #   - 注册 11 个蓝图
+|   |                                     #   - 注册 15 个蓝图
 |   |                                     #   - 启动服务层和调度器
 |   |                                     #   - 初始化默认配置和管理员账号
 |   |                                     #   - 清理僵尸进程
 |   |
-|   |-- api/                              # API 路由蓝图 (11 个)
+|   |-- api/                              # API 路由蓝图 (15 个)
 |   |   |-- routes.py                     # 核心课表推送 API (api_bp -> /api)
 |   |   |                                 #   13 个端点: 服务信息/健康检查/系统状态
 |   |   |                                 #   课表查询/推送规则/任务统计/模板/爬虫
@@ -253,7 +255,15 @@ Push_System_Flask/
 |   |   |-- weather_routes.py             # 天气模块 API (weather_bp -> /api/weather)
 |   |   |                                 #   实时天气/逐时预报/预警/统计/手动触发
 |   |   |-- electricity_routes.py         # 电量模块 API (electricity_bp -> /api/electricity)
-|   |                                     #   剩余电量/用电记录/统计/配置/触发
+|   |   |                                 #   剩余电量/用电记录/统计/配置/触发
+|   |   |-- holiday_routes.py             # 推送静默 API (holiday_bp -> /api/admin/holiday)
+|   |   |                                 #   假期模式 CRUD/状态/静默区间
+|   |   |-- ip_blacklist_routes.py        # IP 黑名单 API (ip_blacklist_bp -> /api/admin/ip-blacklist)
+|   |   |                                 #   黑名单 CRUD/安全事件列表/封禁/忽略
+|   |   |-- session_routes.py             # 会话管理 API (session_bp -> /api/admin/session)
+|   |   |                                 #   会话列表/强制下线/在线状态
+|   |   |-- task_routes.py                # 任务管理 API (task_bp -> /api/admin/tasks)
+|   |                                     #   任务 CRUD/触发/取消
 |   |
 |   |-- core/                             # 核心基础模块
 |   |   |-- config.py                     # 配置管理中心
@@ -285,7 +295,7 @@ Push_System_Flask/
 |   |   |-- fingerprint.py                 # 数据库指纹漂移检测
 |   |   |-- reset.py                       # 重置（开发用）
 |   |
-|   |-- model/                            # 数据模型层 (14 个模型)
+|   |-- model/                            # 数据模型层 (16 个模型文件 / 20+ 表)
 |   |   |-- __init__.py                   # 统一导出所有模型
 |   |   |-- user.py                       # User - 用户表
 |   |   |-- user_mfa.py                   # UserMFA - MFA 配置表
@@ -299,6 +309,11 @@ Push_System_Flask/
 |   |   |-- task_process.py               # TaskProcess - 任务进程表
 |   |   |-- module_config.py              # ModuleConfig - 模块配置表 (30+ 默认配置)
 |   |   |-- webhook.py                    # Webhook - Webhook 配置表
+|   |   |-- holiday_period.py             # HolidayPeriod - 假期/静默时段表
+|   |   |-- ip_blacklist.py               # IPBlacklist + IPSecurityEvent - IP 黑名单与安全事件表
+|   |   |-- push_task.py                  # PushTask - 推送任务表
+|   |   |-- scheduled_crawl_task.py       # ScheduledCrawlTask - 爬取预约任务表
+|   |   |-- server_session.py             # ServerSession - 服务端会话表
 |   |
 |   |-- repository/                       # 仓库层 (数据访问封装)
 |   |   |-- course_repository.py          # 课程数据 CRUD (批量创建/去重/软删除/恢复)
@@ -425,28 +440,48 @@ Push_System_Flask/
 |       |   |-- ServerStatusProvider.tsx  # 服务器离线检测与提示
 |       |   |-- HomeRedirect.tsx          # 首页重定向 (按角色)
 |       |   |-- Footer.tsx                # 公共页脚 (备案信息/法律链接)
+|       |   |-- ResponsiveTable.tsx       # 响应式表格 (桌面表格/移动端卡片列表/折叠面板)
+|       |   |-- HolidayCourseView.tsx     # 假期模式课表视图
 |       |   |-- ElectricityChart.tsx      # 电量可视化 (折线图/饼图/柱状图)
 |       |   |-- WeatherChart.tsx          # 天气可视化 (温度/降水/湿度图表)
 |       |-- contexts/
 |       |   |-- UserContext.tsx           # 用户认证状态管理 (Context + Hooks)
 |       |-- layouts/
 |       |   |-- AdminLayout.tsx           # ProLayout 侧边栏布局 (动态菜单)
+|       |-- hooks/                        # 自定义 Hooks
+|       |   |-- useIntervalPolling.ts     # 间隔轮询
+|       |   |-- useTaskPolling.ts         # 任务状态轮询
+|       |   |-- useRunningTasksPolling.ts # 运行中任务轮询
+|       |   |-- useSessionHeartbeat.ts    # 会话心跳探测
+|       |   |-- useSemester.ts            # 学期/周次数据
 |       |-- pages/                        # 页面组件
 |       |   |-- Login.tsx                 # 登录页 (随机背景/MFA验证码输入)
 |       |   |-- Dashboard.tsx             # 仪表盘 (状态卡片/统计/时间线/快捷操作)
-|       |   |-- Weather.tsx               # 天气管理
+|       |   |-- Weather.tsx               # 天气管理 (实时/24h/预警/可视化/配置)
 |       |   |-- Electricity.tsx           # 电量管理
 |       |   |-- Course.tsx                # 课程管理 (图形化课表/CRUD)
 |       |   |-- Tasks.tsx                 # 任务管理 (手动触发)
 |       |   |-- Push.tsx                  # 自定义推送
-|       |   |-- Processes.tsx             # 进程管理
+|       |   |-- Processes.tsx             # 进程管理 (执行历史/爬取预约)
 |       |   |-- Webhooks.tsx              # Webhook 管理
-|       |   |-- Settings.tsx              # 系统设置
-|       |   |-- UserManagement.tsx        # 用户管理
+|       |   |-- HolidayMode.tsx           # 推送静默 (假期模式)
+|       |   |-- Settings.tsx              # 系统设置 (模块配置/MFA)
 |       |   |-- Profile.tsx               # 个人设置
-|       |   |-- Welcome.tsx               # 欢迎页
+|       |   |-- Welcome.tsx               # 欢迎页 (用户端首页)
+|       |   |-- AccessControl.tsx         # 用户与权限整合页 (用户/会话/访问控制)
+|       |   |-- UserManagement.tsx        # 用户管理
+|       |   |-- Blacklist.tsx             # IP 黑名单与安全事件
+|       |   |-- SessionManager.tsx        # 会话管理
+|       |   |-- About.tsx / Terms.tsx     # 关于 / 条款等公开页
+|       |   |-- Privacy.tsx / Legal.tsx / Cookies.tsx / Contact.tsx
 |       |-- utils/
-|           |-- token.ts                  # Token 工具 (兼容 httpOnly Cookie 迁移)
+|       |   |-- token.ts                  # Token 工具 (兼容 httpOnly Cookie 迁移)
+|       |   |-- sessionExpiry.ts          # 会话失效统一弹框 (401/心跳)
+|       |   |-- datetime.ts               # 时间格式化工具
+|       |   |-- semester.ts               # 学期/周次工具
+|       |-- constants/
+|       |   |-- statusMaps.ts             # 状态文案/颜色映射
+|       |-- types/                        # TypeScript 类型定义 (api/user)
 |
 |-- data/                                 # 运行时数据 (自动创建)
 |   |-- (MySQL 实例)                      # 运行时数据库为 MySQL（由 DATABASE_* 配置，无本地 SQLite 文件）
@@ -575,7 +610,7 @@ npm run dev
 | 变量          | 默认值                       | 说明                             |
 | ------------- | ---------------------------- | -------------------------------- |
 | `APP_NAME`    | `校园信息聚合与智能推送系统` | 应用名称                         |
-| `APP_VERSION` | `6.15.2`                     | 应用版本                         |
+| `APP_VERSION` | `6.15.3`                     | 应用版本                         |
 | `DEBUG`       | `false`                      | 调试模式（生产环境必须为 false） |
 | `HOST`        | `0.0.0.0`                    | 监听地址                         |
 | `PORT`        | `29528`                      | 监听端口                         |

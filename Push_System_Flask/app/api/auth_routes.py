@@ -144,10 +144,37 @@ def _record_logout(log_id):
 
 
 def _check_login_rate_limit():
-    """检查登录频率限制，超过限制返回错误响应或 None"""
-    client_ip = get_client_ip()
-    now = time.time()
+    """检查登录频率限制，超过限制返回错误响应或 None。
 
+    固定窗口：同一 IP 在 LOGIN_RATE_WINDOW 秒内最多 LOGIN_RATE_LIMIT 次登录请求。
+    计数存储：
+      - 优先 Redis（INCR + EXPIRE 原子实现，多 gunicorn worker 共享同一计数，
+        避免各 worker 进程内存独立导致限流被轮询分发绕过）；
+      - Redis 不可用/异常时降级进程内存（`_login_attempts`，单 worker 语义；
+        多 worker 下降级期间各自计数，由信号感知层 evaluate_login_failure
+        的 Redis 计数兜底，见 ip_blacklist_service）。
+    """
+    client_ip = get_client_ip()
+
+    from app.services.ip_blacklist_service import _get_redis_client
+
+    rc = _get_redis_client()
+    if rc is not None:
+        try:
+            key = f"login_rate:{client_ip}"
+            n = rc.incr(key)
+            if n == 1:
+                rc.expire(key, LOGIN_RATE_WINDOW)
+            if n > LOGIN_RATE_LIMIT:
+                return api_error(
+                    message=f"登录尝试过于频繁，请在 {LOGIN_RATE_WINDOW} 秒后重试",
+                    http_status=429,
+                )
+            return None
+        except Exception as exc:
+            logger.warning(f"[登录限流] Redis 计数异常，降级进程内存: {exc}")
+
+    now = time.time()
     with _login_lock:
         # 清理过期记录
         _login_attempts[client_ip] = [
@@ -297,6 +324,8 @@ def _login_failure_response(client_ip, username, kind, user_id, user_agent):
             dur_h = dec.get("duration_hours")
             if dec.get("scope") == "account_target":
                 reason = f'{label}(账号 {username} 遭 {dec.get("current_count")} 个不同IP围攻)'
+            elif dec.get("scope") == "ip_account":
+                reason = f'{label}(5分钟内{dec.get("current_count")}次失败)'
             else:
                 reason = f'{label}(5分钟内{dec.get("current_count")}个不同账号失败)'
             target_ips = dec.get("target_ips") or [client_ip]

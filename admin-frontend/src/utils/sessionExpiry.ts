@@ -59,7 +59,10 @@ export function notifySessionExpired(detail?: SessionExpiryDetail): void {
     centered: true,
     closable: false,
     onOk: () => {
-      window.location.href = "/login";
+      // 用 replace 替换当前业务页，避免历史栈堆叠 /login 条目：
+      // 会话已失效的页面留在历史里只会让手机左滑返回手势又回到这里，
+      // replace 后左滑可直接退到更早的页面（甚至站外）。
+      window.location.replace("/login");
     },
   });
 }

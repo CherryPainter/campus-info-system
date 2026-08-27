@@ -7,7 +7,7 @@
  * - 电量任务管理
  */
 import { useState, useEffect, useRef } from "react";
-import { Card, Row, Col, Button, Tag, Typography, Badge, App } from "antd";
+import { Card, Row, Col, Button, Tag, Typography, Badge, App, Grid } from "antd";
 import {
   CloudOutlined,
   ThunderboltOutlined,
@@ -190,6 +190,9 @@ const HOLIDAY_SKIPPED_KEYS = new Set<string>([
 
 export default function Tasks() {
   const { message } = App.useApp();
+  // 移动端断点：用于收缩双层 Card 的 body padding，避免手机上左右留白过大
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [loading, setLoading] = useState(false);
   const [spiderStatus, setSpiderStatus] = useState<SpiderStatus | null>(null);
   // 运行中视觉态（真实感知，不再用伪超时）：
@@ -469,7 +472,7 @@ export default function Tasks() {
           transition: "all 0.3s ease",
           background: visualRunning ? "#fff5f5" : undefined,
         }}
-        styles={{ body: { padding: 16 } }}
+        styles={{ body: { padding: isMobile ? 8 : 16 } }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
           <div
@@ -562,7 +565,7 @@ export default function Tasks() {
             border: "none",
             boxShadow: "0 4px 24px rgba(0,0,0,0.06)",
           }}
-          styles={{ body: { padding: 24 } }}
+          styles={{ body: { padding: isMobile ? 12 : 24 } }}
         >
           {renderModuleHeader(category)}
 

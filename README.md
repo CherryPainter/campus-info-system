@@ -1,13 +1,13 @@
 # 校园信息聚合与智能推送系统
 
-[![version](https://img.shields.io/badge/version-v6.15.2-blue)](https://github.com/CherryPainter/campus-info-system)
+[![version](https://img.shields.io/badge/version-v6.15.3-blue)](https://github.com/CherryPainter/campus-info-system)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![deploy](https://img.shields.io/badge/deploy-生产环境-success)](https://github.com/CherryPainter/campus-info-system)
 [![stack](https://img.shields.io/badge/stack-Flask%20%7C%20React%20%7C%20MySQL-blue)](https://github.com/CherryPainter/campus-info-system)
 
 > 一套「采集 → 聚合 → 主动推送」的校园信息中台：自动获取课表、天气、宿舍电量，并通过企业微信机器人主动推送到群，配套 React 管理后台统一展示与配置。
 >
-> 毕业设计项目 · 当前版本 `v6.15.2` · 已部署上线
+> 毕业设计项目 · 当前版本 `v6.15.3` · 已部署上线
 
 ---
 
@@ -37,6 +37,8 @@
 - 宿舍电量 —— 电量采集、余额查询、低电量提醒
 - 企业微信推送 —— 课程 / 天气 / 电量 / 自定义通知统一经群机器人推送
 - 信息聚合后台 —— React 管理台一站式查看与配置，内置 MFA、IP 黑名单、会话管理等安全能力
+- 登录爆破防护（v6.15.3）—— Redis 前置限流 + 五维度失败信号感知，单账号维度自动临时封禁；安全事件支持一键处置（封禁同 IP 全部事件）
+- 移动端适配（v6.15.3）—— 全站响应式布局治理：预警折叠列表、历史栈返回修复、移动端留白收敛、系统设置/进程管理等专项优化
 
 ---
 
@@ -127,15 +129,23 @@ WECOM_WEBHOOK=<企业微信机器人 Webhook>
 
 ```
 push_system/
-├── admin-frontend/      前端（React 19 + Vite + Ant Design 5）
-├── Push_System_Flask/   后端（Flask + 爬虫子系统）
-│   ├── app/api/         接口路由（按蓝图划分，约 110 个接口）
-│   ├── app/models/      数据模型（约 20 张表）
-│   ├── app/services/    业务逻辑
-│   └── app/cqie-course-timetable/  课表爬虫
-├── docs/                项目文档（见下）
-└── README.md            本文件
+├── admin-frontend/        前端（React 19 + Vite + Ant Design 5）
+├── Push_System_Flask/     后端（Flask + 爬虫子系统）
+│   ├── app/api/           接口路由（15 个蓝图）
+│   ├── app/model/         数据模型（16 个模型文件 / 20+ 表）
+│   ├── app/repository/    数据访问层（CRUD 封装）
+│   ├── app/services/      业务服务层（课表推送流水线 + IP 黑名单等）
+│   ├── app/modules/       可插拔模块（weather / electricity）
+│   ├── app/schema/        Schema 工具链（建表 / 迁移 / 种子）
+│   ├── app/tasks/         任务调度（APScheduler + 执行器）
+│   ├── app/core/          核心基础（配置 / 数据库 / 日志 / 扩展）
+│   ├── app/cqie-course-timetable/  课表爬虫子项目（可替换模块）
+│   └── docs/              后端部署与安全文档（DEPLOY_LINUX / 安全配置指南等）
+├── docs/                  （见 Push_System_Flask/docs/，根目录此文件为占位）
+└── README.md              本文件
 ```
+
+> 注：课表爬虫是**可替换模块**——主程序通过 `spider_runner` 以子进程方式调用，数据契约是 JSON 文件，推送链对爬虫实现零感知；换学校只需替换爬虫包产出同结构 JSON。
 
 ---
 

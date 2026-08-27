@@ -158,6 +158,22 @@ def test_evaluate_password_per_ip_account_rate_limit(fake_clock):
     assert svc.evaluate_login_failure("2.2.2.2", "alice", "password") is None
 
 
+def test_evaluate_password_per_ip_account_tier2_temp_block(fake_clock):
+    # 同一 IP 对同一账号失败 10 次 => 升级为临时封禁（写黑名单，后续在密码校验前直接 403）
+    dec = None
+    for i in range(10):
+        fake_clock.advance(1)
+        dec = svc.evaluate_login_failure("5.5.5.5", "admin", "password")
+    assert dec is not None
+    assert dec["level"] == 2
+    assert dec["scope"] == "ip_account"
+    assert dec["action"] == "temp_block"
+    assert dec["source"] == "login_brute_tier2"
+    assert dec["duration_hours"] == 1
+    # 隔离性：其他 IP 试同一账号不受影响
+    assert svc.evaluate_login_failure("6.6.6.6", "admin", "password") is None
+
+
 def test_evaluate_password_rate_limit_not_before_threshold(fake_clock):
     for _ in range(4):
         fake_clock.advance(1)
@@ -392,6 +408,30 @@ def test_ban_event_ip(session):
     ev2 = session.query(IPSecurityEvent).filter_by(id=ev.id).first()
     assert ev2.is_blocked is True
     assert svc.IPBlacklistService.ban_event_ip(session, 99999) == (False, "事件不存在")
+
+
+def test_ban_event_ip_marks_siblings(session):
+    # 同一 IP 的多条未处理事件：封禁其中一条，其余应被一并标记为已封禁（黑名单不累加）
+    ev1 = svc.IPBlacklistService.record_event(
+        session, "10.10.10.11", "login_security", path="/api/auth/login"
+    )
+    ev2 = svc.IPBlacklistService.record_event(
+        session, "10.10.10.11", "login_security", path="/api/auth/login"
+    )
+    ignored = svc.IPBlacklistService.record_event(
+        session, "10.10.10.11", "login_security", path="/api/auth/login"
+    )
+    svc.IPBlacklistService.ignore_event(session, ignored.id)  # 已忽略的不应被改动
+
+    ok, msg = svc.IPBlacklistService.ban_event_ip(session, ev1.id)
+    assert ok is True
+    assert "一并处置" in msg  # 提示附带被一并处置的数量
+    assert session.query(IPSecurityEvent).filter_by(id=ev2.id).first().is_blocked is True
+    ig = session.query(IPSecurityEvent).filter_by(id=ignored.id).first()
+    assert ig.is_ignored is True
+    assert ig.is_blocked is False
+    # 黑名单表始终只有 1 条该 IP 记录（不因多条事件累加）
+    assert session.query(IPBlacklist).filter_by(ip_address="10.10.10.11").count() == 1
 
 
 def test_cleanup_expired(session):

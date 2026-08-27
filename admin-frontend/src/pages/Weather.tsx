@@ -20,6 +20,7 @@ import {
   Space,
   Badge,
   App,
+  Collapse,
 } from "antd";
 import { useRunningTasksPolling } from "@/hooks/useRunningTasksPolling";
 import {
@@ -74,6 +75,21 @@ const fmtHour = (t: string): string => {
   const d = new Date(t);
   if (isNaN(d.getTime())) return t;
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
+/** 格式化时间字符串为 YYYY-MM-DD HH:mm（预警历史列表用） */
+const fmtDateTime = (t?: string): string => {
+  if (!t) return "";
+  const d = new Date(t);
+  if (isNaN(d.getTime())) return t;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/** 标题超长截断：超过 maxLen 个字时截断并加省略号（完整标题放 title 属性可查看） */
+const shortenTitle = (text: string, maxLen = 10): string => {
+  if (!text) return "";
+  return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
 };
 
 export default function Weather() {
@@ -155,7 +171,8 @@ export default function Weather() {
   const fetchAlertHistory = async (page = 1) => {
     setAlertHistoryLoading(true);
     try {
-      const res = await weatherApi.getAlertHistory(page);
+      // 每页 5 条：预警描述较长（可达数百字），手机上一次渲染过多会拖出超长列表
+      const res = await weatherApi.getAlertHistory(page, 5);
       if (res.status === "success" && res.data) {
         const list = res.data || [];
         setAlertHistory((prev) => (page === 1 ? list : [...prev, ...list]));
@@ -367,19 +384,20 @@ export default function Weather() {
                   <span style={{ color: "#999", marginRight: 8 }}>天气:</span>
                   <span>{nowData.text}</span>
                 </div>
-                {(nowData as any).update_time && (
-                  <div style={{ flex: 1, textAlign: "right" }}>
-                    <span style={{ color: "#999", marginRight: 8 }}>更新时间:</span>
-                    <span>
-                      {(() => {
-                        const date = new Date((nowData as any).update_time);
-                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
-                      })()}
-                    </span>
-                  </div>
-                )}
               </div>
-              <Space style={{ marginTop: 16 }}>
+              {/* 更新时间独立一行（左对齐），避免手机上被"城市/天气/更新时间"三列挤到换行 */}
+              {(nowData as any).update_time && (
+                <div style={{ marginTop: 8, textAlign: "left" }}>
+                  <span style={{ color: "#999", marginRight: 8 }}>更新时间:</span>
+                  <span>
+                    {(() => {
+                      const date = new Date((nowData as any).update_time);
+                      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+                    })()}
+                  </span>
+                </div>
+              )}
+            <Space style={{ marginTop: 16 }}>
                 <Button icon={<ReloadOutlined />} onClick={fetchNow} disabled={isPolling}>
                   刷新数据
                 </Button>
@@ -511,22 +529,70 @@ export default function Weather() {
           <div style={{ marginBottom: 24 }}>
             <h3 style={{ marginBottom: 12 }}>当前预警</h3>
             {alertData.length > 0 ? (
-              alertData.map((alert) => (
-                <Alert
-                  key={alert.id}
-                  message={alert.headline}
-                  description={alert.description}
-                  type={
-                    alert.color_code === "red"
-                      ? "error"
-                      : alert.color_code === "orange"
-                        ? "warning"
-                        : "info"
-                  }
-                  showIcon
-                  style={{ marginBottom: 16 }}
-                />
-              ))
+              <Collapse
+                ghost
+                expandIconPosition="end"
+                items={alertData.map((alert) => {
+                  // 按预警等级显示颜色标签（与和风 color_code 对应）
+                  const levelTag =
+                    alert.color_code === "red" ? (
+                      <Tag color="error">红色预警</Tag>
+                    ) : alert.color_code === "orange" ? (
+                      <Tag color="warning">橙色预警</Tag>
+                    ) : alert.color_code === "yellow" ? (
+                      <Tag color="gold">黄色预警</Tag>
+                    ) : (
+                      <Tag>预警</Tag>
+                    );
+                  return {
+                    key: alert.id,
+                    label: (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          paddingRight: 8,
+                          // 不换行：标题用 ellipsis 吸收宽度，避免 [等级][时间] 被挤到下一行
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontWeight: 500,
+                            flex: "1 1 auto",
+                            minWidth: 0,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                          title={alert.headline}
+                        >
+                          {shortenTitle(alert.headline, 10)}
+                        </span>
+                        {levelTag}
+                        {alert.created_at && (
+                          <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>
+                            {fmtDateTime(alert.created_at)}
+                          </span>
+                        )}
+                      </div>
+                    ),
+                    children: (
+                      <div
+                        style={{
+                          color: "#595959",
+                          fontSize: 13,
+                          lineHeight: 1.7,
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {alert.description}
+                      </div>
+                    ),
+                  };
+                })}
+              />
             ) : (
               <Alert message="当前无天气预警" type="success" showIcon />
             )}
@@ -537,31 +603,70 @@ export default function Weather() {
               <Spin />
             ) : alertHistory.length > 0 ? (
               <>
-                {alertHistory.map((alert) => (
-                  <Alert
-                    key={alert.id}
-                    message={
-                      <Space>
-                        {alert.headline}
-                        <Tag color={alert.is_pushed ? "green" : "default"}>
+                {/* 折叠列表：默认只显示标题+状态+时间，点开展开完整描述，
+                    避免一条数百字的预警把列表撑得超长（手机场景） */}
+                <Collapse
+                  ghost
+                  expandIconPosition="end"
+                  items={alertHistory.map((alert) => ({
+                    key: alert.id,
+                    label: (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          paddingRight: 8,
+                          // 不换行：标题用 ellipsis 吸收宽度，避免 [状态][时间] 被挤到下一行
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontWeight: 500,
+                            flex: "1 1 auto",
+                            minWidth: 0,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                          title={alert.headline}
+                        >
+                          {shortenTitle(alert.headline, 10)}
+                        </span>
+                        <Tag color={alert.is_pushed ? "green" : "default"} style={{ flexShrink: 0 }}>
                           {alert.is_pushed ? "已推送" : "未推送"}
                         </Tag>
-                      </Space>
-                    }
-                    description={alert.description}
-                    type="info"
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                  />
-                ))}
+                        {alert.created_at && (
+                          <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>
+                            {fmtDateTime(alert.created_at)}
+                          </span>
+                        )}
+                      </div>
+                    ),
+                    children: (
+                      <div
+                        style={{
+                          color: "#595959",
+                          fontSize: 13,
+                          lineHeight: 1.7,
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {alert.description}
+                      </div>
+                    ),
+                  }))}
+                />
                 {alertHistoryTotal > alertHistory.length && (
-                  <Button
-                    onClick={() => fetchAlertHistory(alertHistoryPage + 1)}
-                    loading={alertHistoryLoading}
-                    style={{ marginTop: 8 }}
-                  >
-                    加载更多（已显示 {alertHistory.length} / {alertHistoryTotal}）
-                  </Button>
+                  <div style={{ textAlign: "center", marginTop: 16 }}>
+                    <Button
+                      onClick={() => fetchAlertHistory(alertHistoryPage + 1)}
+                      loading={alertHistoryLoading}
+                    >
+                      加载更多（已显示 {alertHistory.length} / {alertHistoryTotal}）
+                    </Button>
+                  </div>
                 )}
               </>
             ) : (

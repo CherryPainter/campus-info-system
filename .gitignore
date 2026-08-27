@@ -14,6 +14,7 @@ build.log
 .env.*
 !.env.example
 参考/
+技术总结/
 
 # ===== 运行数据 / 上传 / 日志 =====
 .uploads/

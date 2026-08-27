@@ -523,7 +523,7 @@ export default function Blacklist() {
             </Button>
             <Popconfirm
               title="确认封禁该 IP？"
-              description={`将把 ${row.ip_address} 加入黑名单`}
+              description={`将把 ${row.ip_address} 加入黑名单，该 IP 其余同类事件将一并标记为已处置`}
               okText="封禁"
               cancelText="取消"
               okButtonProps={{ danger: true }}
@@ -541,6 +541,8 @@ export default function Blacklist() {
 
   const listTab = (
     <Card
+      variant={isMobile ? "borderless" : undefined}
+      styles={{ body: { padding: isMobile ? 0 : 24 } }}
       extra={
         <div
           style={{
@@ -724,6 +726,8 @@ export default function Blacklist() {
 
   const eventTab = (
     <Card
+      variant={isMobile ? "borderless" : undefined}
+      styles={{ body: { padding: isMobile ? 0 : 24 } }}
       extra={
         <div
           style={{
@@ -851,7 +855,7 @@ export default function Blacklist() {
                     </Button>
                     <Popconfirm
                       title="确认封禁该 IP？"
-                      description={`将把 ${ev.ip_address} 加入黑名单`}
+                      description={`将把 ${ev.ip_address} 加入黑名单，该 IP 其余同类事件将一并标记为已处置`}
                       okText="封禁"
                       cancelText="取消"
                       okButtonProps={{ danger: true }}

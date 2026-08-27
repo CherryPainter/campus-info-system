@@ -849,21 +849,28 @@ export default function Processes() {
               </span>
             ),
             children: (
-              <Card
-                title={
-                  <Space>
-                    任务进程管理
-                    {runningCount > 0 && (
-                      <Badge count={runningCount} style={{ backgroundColor: "#52c41a" }} />
-                    )}
-                    <Badge
-                      count={scheduledJobs.length}
-                      style={{ backgroundColor: "#1890ff" }}
-                      overflowCount={99}
-                    />
-                  </Space>
-                }
-              >
+              <div>
+                {/* 顶部标题（替代原 Card.title），去掉外层 Card 包裹后移动端不再被 24px padding 累加挤压 */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 16,
+                    fontWeight: 600,
+                    fontSize: 16,
+                  }}
+                >
+                  <span>任务进程管理</span>
+                  {runningCount > 0 && (
+                    <Badge count={runningCount} style={{ backgroundColor: "#52c41a" }} />
+                  )}
+                  <Badge
+                    count={scheduledJobs.length}
+                    style={{ backgroundColor: "#1890ff" }}
+                    overflowCount={99}
+                  />
+                </div>
                 {/* 定时任务计划 */}
                 {scheduledJobs.length > 0 && (
                   <div style={{ marginBottom: 16 }}>
@@ -1001,19 +1008,21 @@ export default function Processes() {
                 </Row>
 
                 {/* 执行历史 */}
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 8,
-                  }}
-                >
-                  <div style={{ fontWeight: 600, color: "#666", fontSize: 14 }}>
+                <div style={{ marginBottom: 8 }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      color: "#666",
+                      fontSize: 14,
+                      marginBottom: 8,
+                    }}
+                  >
                     <HistoryOutlined style={{ marginRight: 6 }} />
                     执行历史
                   </div>
-                  <Space>
+                  {/* 筛选条独立一行：flex-wrap 让控件在手机端空间不足时自然换行，
+                      避免与标题挤在同一行导致标题竖排、刷新按钮被挤到下一行 */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     <Select
                       placeholder="状态"
                       allowClear
@@ -1067,7 +1076,7 @@ export default function Processes() {
                     >
                       刷新
                     </Button>
-                  </Space>
+                  </div>
                 </div>
                 <ResponsiveTable
                   dataSource={processes}
@@ -1121,7 +1130,7 @@ export default function Processes() {
                     </div>
                   )}
                 />
-              </Card>
+              </div>
             ),
           },
           {
@@ -1132,7 +1141,8 @@ export default function Processes() {
               </span>
             ),
             children: (
-              <Card title="爬取预约任务">
+              <div>
+                <h3 style={{ marginTop: 0, marginBottom: 16 }}>爬取预约任务</h3>
                 <div
                   style={{
                     marginBottom: 16,
@@ -1349,7 +1359,7 @@ export default function Processes() {
                     </div>
                   )}
                 />
-              </Card>
+              </div>
             ),
           },
         ]}

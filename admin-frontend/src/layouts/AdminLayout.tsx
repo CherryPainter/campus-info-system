@@ -94,7 +94,8 @@ export default function AdminLayout() {
       tokenStorage.clearTokens();
       // 重置 UserContext 状态
       userLogout();
-      navigate("/login");
+      // replace 替换掉当前业务页，避免登出后手机左滑返回又回到已登出的页面
+      navigate("/login", { replace: true });
     }
   };
 
@@ -160,7 +161,10 @@ export default function AdminLayout() {
           breadcrumb: isMobile ? {} : undefined,
         }}
       >
-        <Outlet />
+        {/* 移动端收缩内容区左右 padding，缓解 PageContainer + 页面内 Card 的留白累加 */}
+        <div style={isMobile ? { padding: "0 8px" } : undefined}>
+          <Outlet />
+        </div>
       </PageContainer>
     </ProLayout>
   );

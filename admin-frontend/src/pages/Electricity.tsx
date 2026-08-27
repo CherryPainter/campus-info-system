@@ -19,6 +19,7 @@ import {
   Badge,
   App,
   Tag,
+  Grid,
 } from "antd";
 import { useRunningTasksPolling } from "@/hooks/useRunningTasksPolling";
 import { useTaskPolling } from "@/hooks/useTaskPolling";
@@ -45,6 +46,9 @@ import { useUser } from "@/contexts/UserContext";
 export default function Electricity() {
   const { isAdmin } = useUser();
   const { message } = App.useApp();
+  // 移动端断点：收缩外层/内层 Card 的 body padding，避免 Card→Tabs→Card 三层留白累加
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [activeTab, setActiveTab] = useState("remaining");
   const [loading, setLoading] = useState(false);
   const [remaining, setRemaining] = useState<ElectricityRemaining | null>(null);
@@ -273,7 +277,7 @@ export default function Electricity() {
             <div>
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12}>
-                  <Card>
+                  <Card styles={{ body: { padding: isMobile ? 12 : 24 } }}>
                     <Statistic
                       title="剩余电量"
                       value={remaining.default}
@@ -471,7 +475,7 @@ export default function Electricity() {
 
   return (
     <div>
-      <Card>
+      <Card styles={{ body: { padding: isMobile ? 12 : 24 } }}>
         <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabs} />
       </Card>
     </div>

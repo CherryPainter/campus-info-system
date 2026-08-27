@@ -29,6 +29,7 @@ import {
   App,
   DatePicker,
   Segmented,
+  Grid,
 } from "antd";
 import {
   CheckCircleOutlined,
@@ -89,6 +90,9 @@ export default function Dashboard() {
   const { isOffline } = useServerStatus();
   const [holidayStatus, setHolidayStatus] = useState<HolidayStatus | null>(null);
   const { message } = App.useApp();
+  // 移动端断点：收缩外层 Card body padding，避免 PageContainer + Card + 内层小 Card 留白累加
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
 
   // 时间筛选
   const [timeRange, setTimeRange] = useState("this_month");
@@ -441,7 +445,7 @@ export default function Dashboard() {
       {/* 任务统计 */}
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} lg={16}>
-          <Card style={{ height: "100%" }}>
+          <Card style={{ height: "100%" }} styles={{ body: { padding: isMobile ? 12 : 24 } }}>
             {/* ── 卡片头部：标题 + 时间筛选 ── */}
             <div
               style={{

@@ -4,6 +4,72 @@
 
 ---
 
+## v6.15.3 (2026-08-25)
+
+> 发版类型：**安全修复 + 移动端体验优化（patch）**。登录爆破防护升级（单账号临时封禁 + 前置限流 Redis 化），并完成一批手机端布局治理（折叠预警列表、左滑返回、全站留白收敛、系统设置/进程管理/Webhooks 专项优化）。
+
+### 单账号暴力破解升级为临时封禁
+- `ACCOUNT_FAIL_TIERS` 增加第 2 级：同一 IP 对同一账号 5 分钟内失败 **10 次** → 写黑名单**临时封禁 1 小时**（`source=login_brute_tier2`），后续请求在 login 入口 `is_ip_blocked` 处于密码校验**之前**直接 403 拦截；到期自动解除，仅手动封禁可永久，持正确凭据的自助解封通道不变。
+- 修复 `evaluate_login_failure` 维度一硬编码 `action="rate_limit"` / `duration_hours=None` / `source=None` 的 bug（此前即使 `_match_tier` 返回更高层级也永远只限流不封禁），改为从层级配置读取。
+- `_login_failure_response` 的 `temp_block` 分支 reason 文案补充 `ip_account` 场景（此前误写成"不同账号失败"）。
+- 新增回归测试 `test_evaluate_password_per_ip_account_tier2_temp_block`（含隔离性断言）。
+
+### 前置登录限流改为 Redis 共享计数
+- `_check_login_rate_limit`（60 秒内同 IP 超过 5 次登录请求 → 429，位于密码校验之前）由进程内存字典改为 **Redis 固定窗口计数**（`INCR` + `EXPIRE`，key `login_rate:{ip}`），Gunicorn 多 worker 共享同一计数，不再被轮询分发绕过。
+- Redis 不可用或异常时自动降级原进程内存路径（滑动窗口），并告警日志；恢复后自动重连（复用 `ip_blacklist_service._get_redis_client` 冷却期机制）。
+- 新增 `tests/test_login_rate_limit.py` 4 例：Redis 路径前 5 放行第 6 起 429、内存降级路径、Redis 异常降级、不同 IP 隔离。
+
+### 验证
+- `tests/test_ip_blacklist.py` + `tests/test_login_rate_limit.py` 共 34 例全部通过。
+- 前置限流与信号感知层（`evaluate_login_failure`，Redis 滑动窗口）分工：前置限流挡"请求总量"，信号感知层挡"失败信号"，两者计数相互独立、互不干扰。
+
+### 手机端登录页"左滑退不出/变刷新"修复
+- **根因**：iOS Safari / 内置浏览器在历史栈无可退条目时，右缘左滑手势 = 刷新当前页（浏览器行为，页面无法阻止）；而项目多处整页跳转（`window.location.href`）与 `Navigate replace` 混用，进一步污染历史栈——直达登录页时栈底无前页，左滑即刷新；会话过期/登出后整页跳转会堆叠 `/login` 条目，左滑退回业务页又立刻被踢回，形成"退不出"。
+- 修复（让历史栈可退到站外 / 明确告知无路可退）：
+  - `sessionExpiry.ts`：会话失效跳转 `window.location.href` → `window.location.replace("/login")`，替换掉已失效业务页，不再堆叠历史。
+  - `AdminLayout.tsx`：登出跳转 `navigate("/login")` → `navigate("/login", { replace: true })`。
+  - `Welcome.tsx`：快捷入口整页跳转改为 SPA 内 `navigate`。
+  - `Login.tsx`：登录成功 / MFA 成功 / MFA 引导跳转全部加 `{ replace: true }`，登录页条目被业务页替换，左滑可直接退回登录前页面；栈底（直达登录页/微信内打开）时显示提示条"没有上一页可返回，请直接关闭浏览器标签页"，避免用户反复左滑困惑。
+  - **后续清理（按用户反馈"返回按钮在登录页无意义"）**：删除原 `canGoBack` 状态下显示的"返回"按钮——第一次访问栈底时本就不显示，而退出登录后到达登录页时回退会落到已登出页面再被 AuthGuard 踢回登录形成死循环。提示条保留（告知栈底真实情况）。
+- 边界说明：手机浏览器在"历史栈唯一条目"上的左滑刷新是系统级行为，任何网页代码都无法拦截；本次修复保证有历史可退的场景能正常退到站外，并给无历史场景明确提示。
+
+### 天气预警历史列表优化（手机端）
+- 预警历史改为**折叠列表**：默认只显示"标题 + 已推送状态 + 时间"，点击展开查看完整描述——避免单条数百字的预警（如高温橙色预警全文）把列表撑得超长。
+- **当前预警同步改为折叠列表**：标题 + 等级标签（红/橙/黄/预警，按 `color_code` 映射）+ 时间，点击展开描述；空状态保持"当前无天气预警"。
+- **标题过长省略号**：标题超过 **10 个字**时截断为"前 10 字 + ..."（`shortenTitle`），完整标题放 `title` 属性长按可查看；标签/时间 `flexShrink: 0` 不会被挤压换行，CSS ellipsis 兜底。
+- **实时天气"更新时间"独立一行**：原来"城市/天气/更新时间"三列在手机上挤不下、更新时间被挤换行；改为城市+天气一行、更新时间独立一行（左对齐）。
+- 每页条数 20 → **5 条**（前端 `getAlertHistory(page, 5)`，后端接口无需改动）。
+- "加载更多"按钮**居中显示**。
+
+### 进程管理页面去除多余 Card 包裹
+- "执行历史"和"爬取预约"两个 tab 原本各自套了一层 `<Card title="...">`，在移动端 Tabs padding + Card 24px padding + 折叠面板自身 padding 累加，列表内容被挤成窄条。
+- 去掉两个外层 Card 包裹，原 Card 标题（"任务进程管理"、"爬取预约任务"）改为 tab 内容顶部的独立标题行（带 Badge 徽章的 flex 行/普通 h3），列表内容获得完整可用宽度。
+- **执行历史工具条布局修复**：原来"执行历史"标题与 3 个 Select + 刷新按钮用 `display: flex; justify-content: space-between` 同一行横排，mobile 端左侧标题被挤成竖排、刷新按钮被挤到第二行。改为标题独占一行、筛选控件用 `flex-wrap: wrap` 自然换行。
+
+### 全站移动端左右留白治理（跨页面）
+- **AdminLayout**：`PageContainer` 移动端内容区左右 padding 降为 `8px`（在 children 外包一层响应式 div，`PageContainer` 本身不支持 `contentStyle` 属性），一次性缓解所有页面"PageContainer + 页面 Card"的留白累加。
+- **Tasks**：双层 Card 嵌套（分类 Card 24px + 任务 Card 16px）在移动端降为 12/8（新增 `Grid.useBreakpoint`）。
+- **Electricity**：外层 Card 与"剩余电量"内层 Card 移动端 body padding 24 → 12（`Card → Tabs → Card` 三层留白）。
+- **Dashboard**：任务执行统计主 Card 移动端 body padding 24 → 12。
+- 已适配不动：Course（已有 isMobile 降级）、Blacklist/SessionManager（已有 useBreakpoint 卡片视图）、Push/Webhooks/HolidayMode（单层 Card 靠 ResponsiveTable 兜底，由全局 contentStyle 缓解）。
+- **Settings**：配置项表格"外层 Card → Collapse 面板 → ResponsiveTable 移动端卡片"三层嵌套，移动端外层 Card body padding 24→12、Collapse 面板 size=middle→small 缩内边距、MFA Card 同步 12/24。
+- **Webhooks**：去重 PageContainer 自动生成的"Webhook 管理"标题（去掉 Card title，避免与面包屑重复）；工具条"重载配置 / 添加 Webhook"从 Card extra 改为 Card children 顶部独立行（`flex-wrap: wrap, justifyContent: flex-end`），移动端不再被挤压；Card body padding 24→12。
+- **UserManagement / Blacklist 移动端"白色容器"消除**：两个页面的外层 Card 移动端加 `variant="borderless"` 去除白色边框 + body padding 0，让内容直接贴 Tabs 边缘，消除"Card 进一步限制内容宽度 + 视觉割裂"问题。桌面端保持原 outlined + 24px padding。
+- **Settings 移动端专用紧凑卡片**：原移动端用 ResponsiveTable 把每个配置项渲染成"配置项/当前值/说明/操作"4 字段竖排卡片（每项 4 行文字，手机端眼花）。改为移动端专属紧凑卡片：第一行"配置项名（粗体+省略号）+ 当前值 + 操作"，第二行小字说明；编辑态输入控件与保存/取消独占行。桌面端保持原表格。
+- **Settings 移动端隐藏"配置说明" Alert**：3 条说明（可编辑/只读/敏感）占用手机首屏大量空间，对"快速操作"场景价值低，移动端用 `!isMobile` 隐藏，桌面端保留。
+- **Settings 全部说明性 Alert 改为"标题旁问号图标 + 弹窗详情"（按用户建议重构）**：顶部"配置说明"Alert 与课程/电量面板内的"爬取计划"Alert 全部移除，改为三个 `?` 图标——外层 Card 标题"系统设置"旁、课程面板标题旁、电量面板标题旁；点击弹出 Modal 展示对应说明（面板内图标 `stopPropagation` 不触发折叠）。移动端首屏直接进入配置列表，说明信息按需查看。
+- **Settings 移动端折叠面板默认收起**：桌面端 `defaultActiveKey` 全部展开（便于浏览），移动端默认 `[]` 全部收起（手机上同时展开 5 个模块过于拥挤）。
+- **用户端首页（Welcome）移动端留白收缩**：根容器 `padding: 24` 与 PageContainer 8px 累加导致手机左右各约 32px 留白，移动端降为 `8px`（桌面端保持 24px）。
+- **Welcome "使用提示"布局崩坏修复 + Card 留白收缩**：原 `<div display:flex>` 包裹 Tag + Text（Antd Text 渲染为 `<span>`），Text 在 flex 容器内**没有 `flex: 1; min-width: 0`**，长文字被挤压成几个字就换行（截图现象）。修复：Tag `flexShrink: 0` 固定宽，Text 加 `flex: 1; min-width: 0` 占满剩余空间并自然换行；Card body padding 移动端 24→12。
+- **Welcome "使用提示"对齐统一（按用户建议改为指标符式列表）**：原 `display:flex` 横排 Tag + Text，文字长折行导致行高不一，Tag 视觉上"参差不齐"。改为统一列表结构：固定高度的"彩色圆角标签条"（替代 Tag，宽 56 / 高 22，背景色 + 主题色文字）+ Text `flex:1 minWidth:0`。三行视觉一致（统一高度 22px 标签条 + 文字自然换行），首行折行不再影响对齐。
+
+### 安全事件封禁：同一 IP 全部事件一并处置
+- 后端 `ban_event_ip`：封禁某条安全事件对应的 IP 后，**自动将该 IP 其余未处理事件（未封禁且未忽略）一并标记为已封禁**，返回消息附带一并处置的数量（如"IP 1.2.3.4 已加入黑名单，并一并处置了 18 条同类事件"）。同一 IP 在黑名单表始终只有 1 条记录（`block_ip` 按 IP 更新而非新增），不会因多条事件累加。
+- 前端确认弹窗（桌面表格 + 手机卡片）提示文案补充"该 IP 其余同类事件将一并标记为已处置"。
+- 新增回归测试 `test_ban_event_ip_marks_siblings`（含已忽略事件不被改动、黑名单不累加断言）。
+
+---
+
 ## v6.15.2 (2026-07-20)
 
 > 发版类型：**功能移除（patch）**。砍掉冗余且会在假期误发的文本版每周课表推送（"本周课程安排…祝本周学习顺利！"），保留图片版周课表。

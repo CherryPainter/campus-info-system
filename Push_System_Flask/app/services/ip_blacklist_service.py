@@ -62,6 +62,15 @@ ACCOUNT_FAIL_TIERS = {
         "severity": "warning",
         "label": "该IP对该账号尝试次数过多(限流)",
     },
+    2: {
+        "threshold": 10,  # 同一 IP 对同一账号 5 分钟内失败 10 次 → 升级为临时封禁
+        "action": "temp_block",  # 写黑名单临时封禁该 IP（非永久），后续请求在密码校验前直接 403
+        "lock_seconds": 3600,
+        "duration_hours": 1,  # 封禁 1 小时（到期自动解除，仅手动封禁可永久）
+        "source": "login_brute_tier2",
+        "severity": "critical",
+        "label": "该IP对该账号尝试次数过多(临时封禁)",
+    },
 }
 
 # 维度二：IP 跨账号（同一 IP 窗口内失败涉及的【不同账号】数）→ 疑似撞库/枚举
@@ -336,10 +345,10 @@ def evaluate_login_failure(
                 {
                     "level": t,
                     "scope": "ip_account",
-                    "action": "rate_limit",
+                    "action": cfg["action"],
                     "lock_seconds": cfg["lock_seconds"],
-                    "source": None,
-                    "duration_hours": None,
+                    "source": cfg.get("source"),
+                    "duration_hours": cfg.get("duration_hours"),
                     "severity": cfg["severity"],
                     "label": cfg["label"],
                     "current_count": cnt,
@@ -668,9 +677,32 @@ class IPBlacklistService:
             note=f"来自安全事件 #{event_id} 的处置",
         )
         event.is_blocked = True
+
+        # 同一 IP 只需封禁一次：将该 IP 其余「未处理」事件一并标记为已封禁，
+        # 避免同 IP 的多条事件流水（如暴力破解产生的连环登录失败事件）需要逐条处置。
+        siblings = (
+            session.query(IPSecurityEvent)
+            .filter(
+                and_(
+                    IPSecurityEvent.ip_address == ip_address,
+                    IPSecurityEvent.id != event_id,
+                    IPSecurityEvent.is_blocked.is_(False),
+                    IPSecurityEvent.is_ignored.is_(False),
+                )
+            )
+            .all()
+        )
+        for sib in siblings:
+            sib.is_blocked = True
+
         session.commit()
-        logger.warning(f"[IP黑名单] 安全事件 {event_id} 对应 IP {ip_address} 已被封禁")
-        return True, f"IP {ip_address} 已加入黑名单"
+        logger.warning(
+            f"[IP黑名单] 安全事件 {event_id} 对应 IP {ip_address} 已被封禁，"
+            f"一并处置同类事件 {len(siblings)} 条"
+        )
+        return True, f"IP {ip_address} 已加入黑名单" + (
+            f"，并一并处置了 {len(siblings)} 条同类事件" if siblings else ""
+        )
 
     @staticmethod
     def record_event(

@@ -326,6 +326,10 @@ export default function UserManagement() {
     <div>
       <Card
         title="用户管理"
+        // 移动端消除外层白色容器：borderless 去边框 + body padding 0 让内容直接贴 Tabs 边缘，
+        // 避免"Card 进一步限制"导致用户卡片被挤窄，桌面端保持默认 outlined/24px padding
+        variant={isMobile ? "borderless" : undefined}
+        styles={{ body: { padding: isMobile ? 0 : 24 } }}
         extra={
           <Button
             type="primary"
