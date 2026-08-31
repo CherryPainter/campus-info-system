@@ -1,0 +1,784 @@
+@import '../../styles/variables.scss';
+
+.weather-page {
+  position: relative;
+  z-index: 1;          // 内容层在背景图层之上
+  min-height: 100vh;
+  color: #fff;
+
+  // ====== 顶部栏（返回角标 + 城市名居中 + 底部分割线） ======
+  .weather-top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;   // 城市名水平居中
+    position: relative;
+    padding: 28rpx $spacing-lg 32rpx;  // 上下加宽
+  }
+
+  .weather-back-btn {
+    position: absolute;
+    left: $spacing-lg;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 64rpx;
+    height: 64rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    .iconfont {
+      font-size: 40rpx;
+      color: rgba(255, 255, 255, 0.9);
+    }
+  }
+
+  .weather-city {
+    font-size: 40rpx;             // 字号加大
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    letter-spacing: 2rpx;
+  }
+
+  // 分割线（不连左右屏幕边缘）
+  .weather-top-divider {
+    margin: 0 $spacing-lg;       // 左右留缩进，不贴边
+    height: 1rpx;
+    background: rgba(255, 255, 255, 0.18);
+  }
+
+  // ====== 温度区（vivo 原型格式） ======
+  .weather-hero {
+    margin-top: 50rpx;          // 与上方顶部栏拉开间距
+    padding: 32rpx $spacing-lg 20rpx;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;       // 为胶囊绝对定位提供参照
+  }
+
+  .weather-temp-main {
+    display: flex;
+    align-items: flex-start;
+    line-height: 1;
+  }
+
+  .weather-temp-num {
+    font-size: 200rpx;
+    font-weight: 500;
+    color: #fff;
+    letter-spacing: -4rpx;
+    line-height: 1;
+  }
+
+  .weather-temp-unit {
+    font-size: 56rpx;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.85);
+    margin-top: 28rpx;
+    margin-left: 2rpx;
+  }
+
+  // ====== 温度左侧 PM2.5 / UV 胶囊标签（绝对定位，左对齐贴边） ======
+  .weather-temp-badges {
+    position: absolute;
+    left: $spacing-lg;       // 与 hero 的 padding-left 对齐，真正贴到内容区左边缘
+    top: -20rpx;
+    display: flex;
+    flex-direction: column;
+    gap: 16rpx;
+  }
+
+  .weather-badge {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 130rpx;            // 固定宽度，两个胶囊绝对等大
+    height: 56rpx;             // 固定高度，两个胶囊绝对等高
+    padding: 0 14rpx 0 18rpx;
+    border-radius: 999rpx;     // 胶囊状
+    background: rgba(255, 255, 255, 0.14);
+    backdrop-filter: blur(8px);
+    box-sizing: border-box;
+    gap: 8rpx;                 // 键与值之间留间距
+  }
+
+  .weather-badge-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 36rpx;
+  }
+
+  .weather-badge-abbr {
+    font-size: 22rpx;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+    letter-spacing: 1rpx;
+    line-height: 1.1;
+  }
+
+  .weather-badge-line {
+    width: 28rpx;
+    height: 3rpx;
+    border-radius: 2rpx;
+    margin: 2rpx 0 1rpx;
+  }
+
+  .weather-badge-sub {
+    font-size: 18rpx;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    line-height: 1.1;
+  }
+
+  .weather-badge-val {
+    font-size: $font-size-sm;
+    color: rgba(255, 255, 255, 0.9);
+    line-height: 1;
+    text-align: center;       // 在自身空间内水平居中
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  // 体感（在 °C 右下方）
+  .weather-feels-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-left: -52rpx;
+    margin-top: 132rpx;
+    flex-shrink: 0;
+  }
+
+  .weather-feels-label {
+    font-size: $font-size-sm;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .weather-feels-value {
+    font-size: $font-size-md;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  // 天气文字 + 温度区间
+  .weather-desc-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12rpx;
+    margin-top: 10rpx;
+  }
+
+  .weather-desc {
+    font-size: $font-size-xl;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .weather-temp-range {
+    font-size: 40rpx;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 500;
+  }
+
+  // ====== 折线图区域（Canvas 内含折线+时间轴） ======
+  .weather-section {
+    margin-top: $spacing-md;
+    padding: 0 $spacing-lg;
+  }
+
+  .weather-chart-scroll {
+    white-space: nowrap;
+  }
+
+  .chart-container {
+    padding: $spacing-sm 0 0;   // 图表区等宽铺满，不留左右 padding
+  }
+
+  // Canvas：固定屏幕宽度，内部曲线+时间轴随触摸平移
+  .weather-chart-canvas {
+    display: block;
+    width: 100%;
+    height: 460rpx;           // 加高至 460rpx：容纳曲线 + 最高温标注 + 节点圆 + 图标时间块（间距加大后需更多空间）
+  }
+
+  // ====== 信息卡（透明底，核心4项横排+次要底行） ======
+  .weather-info-card {
+    margin: $spacing-md $spacing-lg 0;
+    padding: $spacing-sm $spacing-md;
+    border-radius: $radius-large;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1rpx solid rgba(255, 255, 255, 0.15);
+  }
+
+  .weather-info-row {
+    display: flex;
+    padding: $spacing-xs 0;
+  }
+
+  .weather-info-sub-row {
+    border-top: 1rpx solid rgba(255, 255, 255, 0.1);
+    margin-top: $spacing-xs;
+    padding-top: $spacing-sm;
+  }
+
+  .weather-info-item {
+    flex: 1;
+    text-align: center;
+    padding: $spacing-xs 0;
+  }
+
+  .info-icon {
+    display: block;
+    font-size: 36rpx;
+    margin-bottom: 4rpx;
+  }
+
+  .weather-info-label {
+    display: block;
+    font-size: $font-size-xs;
+    color: rgba(255, 255, 255, 0.55);
+    margin-bottom: 4rpx;
+  }
+
+  .weather-info-value {
+    display: block;
+    font-size: $font-size-md;
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 500;
+  }
+
+  // ====== 预警（紧凑横条模式） ======
+  .weather-alert-bar {
+    position: relative;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-radius: $radius-medium;
+    padding: $spacing-sm $spacing-md $spacing-sm 28rpx;
+    margin-bottom: $spacing-sm;
+    overflow: hidden;
+  }
+
+  .alert-bar-color {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 8rpx;
+
+    .severity-bar-red & { background: #ff5252; }
+    .severity-bar-orange & { background: #ffab40; }
+    .severity-bar-yellow & { background: #ffcc02; }
+    .severity-bar-blue & { background: #64b5f6; }
+    .severity-bar-unknown & { background: rgba(255, 255, 255, 0.4); }
+  }
+
+  .alert-bar-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .alert-bar-headline {
+    font-size: $font-size-md;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: $spacing-sm;
+  }
+
+  .alert-bar-tag {
+    font-size: 20rpx;
+    padding: 2rpx 14rpx;
+    border-radius: $radius-full;
+    font-weight: 600;
+    flex-shrink: 0;
+
+    &.tag-red { background: rgba(198, 40, 40, 0.35); color: #ff5252; }
+    &.tag-orange { background: rgba(230, 81, 0, 0.3); color: #ffab40; }
+    &.tag-yellow { background: rgba(245, 127, 23, 0.25); color: #ffcc02; }
+    &.tag-blue { background: rgba(21, 101, 192, 0.25); color: #64b5f6; }
+    &.tag-unknown { background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.7); }
+  }
+
+  .alert-bar-desc {
+    font-size: $font-size-sm;
+    color: rgba(255, 255, 255, 0.7);
+    line-height: 1.5;
+    margin-top: 6rpx;
+  }
+
+  // ====== 区块标题（预警/7天/指数/AQI 共用） ======
+  .weather-section-title {
+    display: block;
+    font-size: $font-size-lg;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    margin: $spacing-md 0 $spacing-sm;
+  }
+
+  // 数据未就绪时的占位（始终占住区块位置，避免数据到达时布局跳动）
+  .weather-placeholder {
+    display: block;
+    font-size: $font-size-sm;
+    color: rgba(255, 255, 255, 0.45);
+    line-height: 1.6;
+    padding: $spacing-sm 0 $spacing-md;
+  }
+
+  // ====== 未来 7 天（横向滚动） ======
+  .daily-scroll {
+    white-space: nowrap;
+    width: 100%;
+  }
+
+  .daily-card {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    width: 150rpx;
+    padding: $spacing-sm 0;
+    margin-right: $spacing-sm;
+    border-radius: $radius-medium;
+    background: rgba(255, 255, 255, 0.14);
+  }
+
+  .daily-week {
+    font-size: $font-size-sm;
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 500;
+  }
+
+  .daily-date {
+    font-size: 20rpx;
+    color: rgba(255, 255, 255, 0.55);
+    margin-top: 2rpx;
+  }
+
+  .daily-icon-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 10rpx 0;
+  }
+
+  .daily-icon {
+    font-size: 44rpx;
+  }
+
+  // 降水概率角标（图标右上角，仅 >=60% 时由组件渲染；无胶囊，仅白字）
+  .daily-pop-badge {
+    position: absolute;
+    top: -6rpx;
+    right: -24rpx;
+    color: #fff;
+    font-size: 19rpx;
+    font-weight: 700;
+    line-height: 1;
+    text-shadow: 0 1rpx 3rpx rgba(0, 0, 0, 0.5);
+  }
+
+  .daily-temp-max {
+    font-size: $font-size-md;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .daily-temp-min {
+    font-size: $font-size-sm;
+    color: rgba(255, 255, 255, 0.6);
+    margin-top: 2rpx;
+  }
+
+  .daily-text {
+    font-size: 20rpx;
+    color: rgba(255, 255, 255, 0.7);
+    margin-top: 6rpx;
+    white-space: normal;
+    text-align: center;
+    width: 130rpx;
+  }
+
+  // ====== 生活指数（网格） ======
+  .indices-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $spacing-sm;
+  }
+
+  .index-card {
+    width: calc(33.33% - #{$spacing-sm});
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: $radius-medium;
+    padding: $spacing-sm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .index-icon {
+    font-size: 40rpx;
+    margin-bottom: 6rpx;
+  }
+
+  .index-name {
+    display: block;
+    font-size: $font-size-sm;
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 500;
+  }
+
+  .index-category {
+    display: block;
+    font-size: 20rpx;
+    color: rgba(255, 255, 255, 0.7);
+    margin: 4rpx 0 6rpx;
+  }
+
+  .index-text {
+    display: block;
+    font-size: 20rpx;
+    color: rgba(255, 255, 255, 0.6);
+    line-height: 1.4;
+  }
+
+  // 长按时作为卡片唯一内容：稍大、亮色、多行
+  .index-text--full {
+    font-size: 22rpx;
+    color: rgba(255, 255, 255, 0.92);
+    line-height: 1.55;
+  }
+
+  // ====== 空气质量（AQI 色条卡片） ======
+  .weather-air-card {
+    margin: $spacing-md 0 0;
+    padding: $spacing-md;
+    border-radius: $radius-large;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1rpx solid rgba(255, 255, 255, 0.15);
+  }
+
+  .air-header {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: $spacing-sm;
+  }
+
+  .air-aqi-block {
+    display: flex;
+    align-items: baseline;
+    gap: 12rpx;
+  }
+
+  .air-aqi-num {
+    font-size: 72rpx;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .air-aqi-level {
+    font-size: $font-size-lg;
+    font-weight: 600;
+    margin-top: 8rpx;
+  }
+
+  // 色条（优→严重 渐变）
+  .air-bar-wrap {
+    position: relative;
+    margin-top: $spacing-sm;
+  }
+
+  .air-bar-track {
+    height: 16rpx;
+    border-radius: 8rpx;
+    overflow: hidden;
+    background: linear-gradient(90deg,
+      #67c23a 0%,      // 优
+      #e6a23c 35%,     // 良
+      #f56c6c 55%,     // 轻度
+      #e040fb 75%,     // 中度/重度
+      #7b1fa2 100%     // 严重
+    );
+  }
+
+  .air-bar-fill {
+    width: 100%;
+    height: 100%;
+  }
+
+  .air-bar-marker {
+    position: absolute;
+    top: -6rpx;
+    width: 4rpx;
+    height: 28rpx;
+    background: #fff;
+    border-radius: 2rpx;
+    transform: translateX(-50%);
+    box-shadow: 0 2rpx 6rpx rgba(0, 0, 0, 0.3);
+  }
+
+  .air-bar-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8rpx;
+  }
+
+  .air-bar-label {
+    font-size: 20rpx;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  // 污染物指标行
+  .air-pollutants {
+    display: flex;
+    justify-content: space-between;
+    margin-top: $spacing-md;
+    padding-top: $spacing-sm;
+    border-top: 1rpx solid rgba(255, 255, 255, 0.08);
+  }
+
+  .air-pollutant-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4rpx;
+    min-width: 80rpx;
+  }
+
+  .air-pollutant-label {
+    font-size: 20rpx;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .air-pollutant-value {
+    font-size: $font-size-md;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  .air-pollutant-dot {
+    width: 32rpx;
+    height: 6rpx;
+    border-radius: 3rpx;
+    margin-top: 2rpx;
+  }
+
+  // ====== 降雨提醒卡片（大温度之下，独立醒目） ======
+  .minutely-card-wrap {
+    margin: $spacing-md $spacing-lg 0;
+  }
+
+  // 降雨提醒卡片（浅蓝白底 + 摘要 + 雨滴 + 折线图 + 时间轴）
+  .minutely-card {
+    background: #eaf3fc;
+    border-radius: 24rpx;
+    padding: 28rpx 24rpx 20rpx;
+    box-shadow: 0 4rpx 16rpx rgba(56, 135, 222, 0.12);
+  }
+
+  // 顶部摘要文字（居中）
+  .minutely-summary {
+    display: block;
+    text-align: center;
+    font-size: 28rpx;
+    color: #5a6b7c;
+    font-weight: 500;
+    margin-bottom: 18rpx;
+    line-height: 1.4;
+  }
+
+  // 图表区域：雨滴左 + 折线右
+  .minutely-chart-area {
+    display: flex;
+    align-items: flex-end;
+    padding: 0 4rpx;
+  }
+
+  // 左侧雨滴列
+  .minutely-raindrops {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    width: 56rpx;
+    padding-bottom: 6rpx;
+    gap: 2rpx;
+
+    .raindrop {
+      line-height: 1;
+      opacity: 0.85;
+    }
+    .raindrop-lg { font-size: 36rpx; }
+    .raindrop-md { font-size: 28rpx; opacity: 0.72; }
+    .raindrop-sm { font-size: 22rpx; opacity: 0.55; }
+  }
+
+  // 右侧折线图容器
+  .minutely-line-wrap {
+    flex: 1;
+    height: 140rpx;
+    margin-left: 8rpx;
+  }
+
+  .minutely-line-canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  // 底部时间轴
+  .minutely-time-axis {
+    display: flex;
+    justify-content: space-between;
+    padding: 12rpx 8rpx 0;
+    margin-top: -2rpx;
+  }
+
+  .minutely-time-label {
+    font-size: 22rpx;
+    color: #94a3b8;
+    font-weight: 400;
+
+    &.is-now {
+      color: #60a5fa;
+      font-weight: 600;
+    }
+  }
+
+  // ====== 数据来源标注（页面底部） ======
+  .weather-source {
+    display: flex;
+    justify-content: center;
+    padding: $spacing-sm 0;
+  }
+
+  .weather-source-text {
+    font-size: $font-size-xs;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 1rpx;
+  }
+}
+
+// ====== 天气特效层（固定全屏覆盖，不随滚动，不拦截交互） ======
+.weather-screen {
+  position: relative;
+  min-height: 100vh;
+  // 数据未到达前的底色调，避免背景图层淡入前出现白屏"硬切"
+  background: #4a6b8a;
+}
+
+// 背景渐变图层：绝对覆盖全内容高度，数据就绪后 opacity 过渡淡入
+.weather-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  transition: opacity 0.9s ease;
+}
+
+.weather-fx {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  pointer-events: none;
+  overflow: hidden;
+  // 进入页面 / 切换天气类型时整体淡入，避免特效"硬冒出来"
+  animation: fxFadeIn 0.9s ease both;
+}
+
+@keyframes fxFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+// —— 晴天：阳光光晕 + 旋转光束 ——
+.weather-fx--sunny {
+  .fx-sun-glow {
+    position: absolute;
+    top: -140rpx;
+    right: -110rpx;
+    width: 440rpx;
+    height: 440rpx;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 238, 176, 0.55) 0%, rgba(255, 214, 120, 0.25) 42%, rgba(255, 214, 120, 0) 70%);
+    animation: fxSunBreath 6s ease-in-out infinite;
+  }
+  .fx-sun-rays {
+    position: absolute;
+    top: -220rpx;
+    right: -220rpx;
+    width: 640rpx;
+    height: 640rpx;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg,
+      rgba(255, 242, 184, 0) 0deg,
+      rgba(255, 242, 184, 0.16) 18deg,
+      rgba(255, 242, 184, 0) 36deg,
+      rgba(255, 242, 184, 0) 180deg,
+      rgba(255, 242, 184, 0.16) 198deg,
+      rgba(255, 242, 184, 0) 216deg);
+    animation: fxSunSpin 30s linear infinite;
+    opacity: 0.7;
+  }
+}
+
+@keyframes fxSunBreath {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+
+@keyframes fxSunSpin {
+  to { transform: rotate(360deg); }
+}
+
+// —— 雨天：下落雨丝 ——
+.weather-fx--rainy {
+  .fx-raindrop {
+    position: absolute;
+    top: -60rpx;
+    width: 2rpx;
+    border-radius: 2rpx;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(200, 222, 255, 0.9) 100%);
+    animation-name: fxRainFall;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+}
+
+@keyframes fxRainFall {
+  0% { transform: translateY(-60rpx) rotate(12deg); }
+  100% { transform: translateY(110vh) rotate(12deg); }
+}
+
+// —— 雾天：飘动雾团 ——
+.weather-fx--foggy {
+  .fx-fog {
+    position: absolute;
+    width: 380rpx;
+    height: 220rpx;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 70%);
+    filter: blur(22rpx);
+    animation-name: fxFogDrift;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+  }
+}
+
+@keyframes fxFogDrift {
+  0% { transform: translateX(-50rpx); }
+  100% { transform: translateX(70rpx); }
+}

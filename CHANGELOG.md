@@ -4,6 +4,47 @@
 
 ---
 
+## v6.16.0 (2026-08-27)
+
+> 发版类型：**新功能（minor）**。微信小程序第二客户端落地（第一 + 第二阶段）：`student` 角色 + `StudentProfile` / `WechatAccount` 模型 + 微信 code 登录 + JWT 双 Token 签发 + `student_required` 权限装饰器 + 小程序用户/学生资料 API + 课表/天气/电量只读接口。遵循《微信小程序扩展开发指南》红线：不重写 JWT、不动管理员 MFA、管理端认证流程零改动、业务逻辑一律复用现有 Service。
+
+### 新增数据模型（只加表，不改任何现有表）
+- `student_profiles`：与 User 1:1（user_id 唯一），存放学号/学院/专业/班级/年级/手机号等学生身份信息，避免塞进 User 主表；首次登录只建骨架，由学生本人（`PUT /api/miniapp/student/profile`）或后续管理端补充。
+- `wechat_accounts`：openid 唯一作为微信身份标识，另存 unionid 与 session_key（服务端专用，`to_dict` 不外泄）；建表走现有 `create_all` + 指纹迁移兜底，`users` 表零改动。
+
+### 微信小程序认证（/api/miniapp/auth）
+- `POST /login`：`wx.login()` code → 后端调微信官方 `code2Session` 换取 openid（**绝不信任客户端提交的 openid**）→ 首次登录自动创建 `User(role=student)` + `WechatAccount` + `StudentProfile` 骨架，再次登录复用已有用户 → 复用现有 `JWTManager.generate_tokens` 签发双 Token（返回在响应体，小程序端自行保存，不写 httpOnly cookie）。
+- 学生 User 的 `password_hash` 生成**随机 bcrypt 哈希**：既满足 `users.password_hash NOT NULL` 约束，又保证随机密码无人可知、学生账号无法走 `/api/auth/login` 密码登录。
+- `POST /refresh`：Body 携带 refresh_token 轮换（旧 refresh 自动进黑名单）；`POST /logout`：Bearer access_token 撤销（可选一并撤销 refresh_token）。
+- AppSecret 只存服务端环境变量（`WECHAT_MINIAPP_APPID` / `WECHAT_MINIAPP_SECRET` / `WECHAT_SESSION_TIMEOUT`），未配置时登录返回 503；小程序前端代码不含任何敏感配置。
+
+### 权限隔离（student_required）
+- 新增 `app/utils/student_auth.py`：在现有 `jwt_required` 之上检查 `role == 'student'`，非学生 403。
+- 角色互斥：student 访问 `@admin_required` 接口 → 403；admin 访问小程序学生接口 → 403；管理端密码 + MFA 流程零改动。
+
+### 小程序用户 API（/api/miniapp，第一阶段范围）
+- `GET /user/me`：当前学生用户信息（user_id 取自 JWT，防越权）。
+- `GET /student/profile` / `PUT /student/profile`：本人学生资料查询/更新，只允许更新传入白名单字段（学号/姓名/学院/专业/班级/年级/手机号），客户端无法通过传 `user_id` 篡改归属（IDOR 防护）。
+
+### 课表 / 天气 / 电量接口（/api/miniapp，第二阶段范围）
+- 全部 `@student_required` 保护，路由层只做鉴权与编排，业务查询**一律复用现有 Service**（`schedule_service` / `weather_service` / `electricity_service`），不复制业务逻辑。
+- **课表**：`GET /schedule/today`（今日课程，复用 `get_today_schedules`）；`GET /schedule/week`（指定周课表，缺省当前教学周，按 `weeks` 字段 + `is_course_in_week` 过滤，附带 `available_weeks` 可选周列表）；`GET /schedule/current`（当前教学周信息：week_number/is_teaching_week/date/week_day）。
+  - 说明（遵循指南 §35）：Course 表为全校/单账号爬取的唯一课表数据，**无学生身份维度**，小程序查询的即该份课表，接口按周过滤返回，未擅自给 Course 表加 user_id。
+- **天气**：`GET /weather/current`（实时天气，30 分钟 TTL 过期后台刷新）；`GET /weather/hourly`（24 小时逐小时预报，60 分钟 TTL）；`GET /weather/alerts`（生效中预警，包装为 `warnings`）。
+- **电量**：`GET /electricity/current`（剩余电量，含百分比/总量/低电量标记）；`GET /electricity/history`（用电记录，默认最近 30 条、`days=None` 避免北京/UTC 时区错配截断，支持 `limit` 参数上限 1000）。
+
+### 验证
+- `tests/test_miniapp_auth.py` 14 例（SQLite 内存库 + mock 微信 code2Session）：首次/再次登录、缺 code 400、微信侧错误 40029→401、配置缺失→503、access 过期 401、无 token 401、student↔admin 双向 403、资料 GET/PUT 防 IDOR、refresh 轮换（旧 token 二次刷新 401）、logout 撤销后原 token 失效。
+- `tests/test_miniapp_phase2.py` 13 例（mock Service 方法 + 注入课表内存缓存）：无 token 401、admin 403、today 按日期过滤、week 按周过滤/默认当前周/非法周 400、current 周信息、天气三端、电量 current/history（limit 透传）。
+- 全量回归 `pytest`：**151 通过**（含既有全部用例；本轮开发过程中曾出现的 `test_course_spider_skip` MySQL 凭据环境性失败，在本地 MySQL 就绪后同步通过）。
+- 真实后端实测（重启后）：`/api/ping`、`/api/health`（version 6.16.0）、小程序蓝图挂载（无 token 401）、微信 code2Session 真实调用（40029 → 401 映射）、管理端登录回归全部符合预期；测试环境额外补齐 `beautifulsoup4`/`lxml`（电量服务链依赖，requirements.txt 本就包含）。
+
+### 部署说明（生产机）
+- 需在服务端 `.env` 新增 `WECHAT_MINIAPP_APPID` / `WECHAT_MINIAPP_SECRET`（真实小程序后台获取），未配置时小程序登录接口不可用（503）；`.env.example` 已同步占位。
+- 新增 2 张表由启动期自动迁移创建（指纹迁移兜底），无需手写 DDL；无需 `pip install`（复用已有 requests/bcrypt 依赖）。
+
+---
+
 ## v6.15.3 (2026-08-25)
 
 > 发版类型：**安全修复 + 移动端体验优化（patch）**。登录爆破防护升级（单账号临时封禁 + 前置限流 Redis 化），并完成一批手机端布局治理（折叠预警列表、左滑返回、全站留白收敛、系统设置/进程管理/Webhooks 专项优化）。

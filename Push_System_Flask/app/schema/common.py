@@ -48,6 +48,10 @@ ALL_TABLES = [
     ('server_sessions',              '服务端会话',              'ServerSession'),
     ('ip_blacklist',                 'IP 黑名单',               'IPBlacklist'),
     ('ip_security_events',           'IP 安全事件',             'IPSecurityEvent'),
+    ('announcements',                '校园通知',                'Announcement'),
+    ('announcement_attachments',     '通知附件',                'AnnouncementAttachment'),
+    ('announcement_reads',           '通知已读记录',            'AnnouncementRead'),
+    ('announcement_favorites',       '通知收藏记录',            'AnnouncementFavorite'),
 ]
 
 def _ensure_db():

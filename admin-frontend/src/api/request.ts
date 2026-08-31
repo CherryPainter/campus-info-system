@@ -2,15 +2,17 @@
  * Axios 请求实例模块
  * 封装 Axios 并配置请求/响应拦截器
  *
- * 注意：现在使用 httpOnly cookie 存储 JWT token，前端无需手动设置 Authorization 头
- * 浏览器会自动携带 cookie 到后端
+ * 标准 JWT Bearer 流程：access_token 存于 localStorage，每次请求经拦截器以
+ * `Authorization: Bearer <access_token>` 头携带；refresh_token 存于 httpOnly cookie，
+ * 刷新时由浏览器自动随 withCredentials 携带。
  */
 
 import axios, { type AxiosRequestConfig } from "axios";
 import { notifySessionExpired } from "@/utils/sessionExpiry";
+import { tokenStorage } from "@/utils/token";
 
 /** 后端 API 基础地址
- * 开发环境（.env.development）配置为 http://yuetang.cloud:29528/api，直接调用后端避免 Cookie 域名问题
+ * 开发环境（.env.development）配置为 /api，由 Vite 代理转发到 localhost:29528（同源，避免跨域）
  * 生产环境默认使用相对路径 /api，由 Nginx 反向代理转发到后端
  * 可通过 VITE_API_BASE_URL 环境变量覆盖默认行为
  */
@@ -32,6 +34,12 @@ const request = axios.create({
 request.interceptors.request.use((config) => {
   if ((config.method || "get").toLowerCase() === "get") {
     config.params = { ...(config.params || {}), _t: Date.now() };
+  }
+  // 标准 JWT Bearer 流程：若本地存有 access_token，则附加 Authorization 头
+  const accessToken = tokenStorage.getAccessToken();
+  if (accessToken) {
+    config.headers = config.headers || {};
+    (config.headers as Record<string, string>).Authorization = `Bearer ${accessToken}`;
   }
   return config;
 });
@@ -125,8 +133,19 @@ request.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        // 调用刷新接口（会自动使用 httpOnly cookie 中的 refresh_token）
-        await axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true });
+        // refresh_token 存于 httpOnly cookie，由浏览器经 withCredentials 自动携带，前端不持有；
+        // 刷新接口只需空 body，后端从 cookie 取出 refresh_token 并轮换。
+        const refreshResp = await axios.post(
+          `${API_BASE_URL}/auth/refresh`,
+          {},
+          { withCredentials: true, headers: { "Content-Type": "application/json" } }
+        );
+        const newAccess = refreshResp.data?.access_token;
+        if (newAccess) {
+          tokenStorage.setAccessToken(newAccess);
+        } else {
+          throw new Error("刷新响应未返回 access_token");
+        }
 
         // 刷新成功，重置冷却时间
         lastRefreshFailedAt = 0;
@@ -135,12 +154,13 @@ request.interceptors.response.use(
         pendingRequests.forEach((cb) => cb());
         pendingRequests = [];
 
-        // 重发原始请求
+        // 重发原始请求（请求拦截器会自动带上新的 Bearer 头）
         return request(originalRequest);
       } catch {
         // 刷新失败，记录失败时间并弹框提示后跳登录页
         lastRefreshFailedAt = Date.now();
         pendingRequests = [];
+        tokenStorage.clearTokens();
         if (!isRedirectingToLogin) {
           isRedirectingToLogin = true;
           notifySessionExpired({ reason: errData.revoke_reason, ip: errData.revoke_ip });

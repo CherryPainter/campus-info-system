@@ -84,7 +84,8 @@ function normalizePeriodName(name: string): string {
 function getWeekDateLabel(
   weekNumber: number,
   weekDay: number,
-  availableWeeks?: { week_number: number; start_date?: string | null; end_date?: string | null }[]
+  availableWeeks?: { week_number: number; start_date?: string | null; end_date?: string | null }[],
+  semesterId?: number
 ): string {
   const wk = availableWeeks?.find((w) => w.week_number === weekNumber);
   if (wk?.start_date) {
@@ -97,7 +98,8 @@ function getWeekDateLabel(
       return `${m}-${d}`;
     }
   }
-  return getWeekDate(weekNumber, weekDay, undefined);
+  // 缺后端数据时，按当前选中学期推算，而非忽略学期用「今天」重新推断
+  return getWeekDate(weekNumber, weekDay, semesterId);
 }
 
 /** 解析 'YYYY-MM-DD' 为本地 0 点 Date，非法返回 null */
@@ -1640,13 +1642,16 @@ export default function Course() {
                       const dateStr = getWeekDateLabel(
                         weekNum,
                         day,
-                        timetableData?.available_weeks
+                        timetableData?.available_weeks,
+                        selectedSemester
                       );
-                      // 只有"正在查看当前学期"且选中的周次是真实本周时，才显示"今天"
+                      // 只有"正在查看当前学期"且选中的周次是真实本周、且处于教学周内时，才显示"今天"
+                      // 非教学周（假期/暑假）时 current_status.is_teaching_week=false，避免把回退周（如第1周 03-08）错标成今天
                       const isToday =
                         isViewingCurrentSemester &&
                         currentWeek === weekNum &&
-                        currentStatus.currentWeekDay === day;
+                        currentStatus.currentWeekDay === day &&
+                        currentStatus.isTeachingWeek;
                       return (
                         <th
                           key={day}

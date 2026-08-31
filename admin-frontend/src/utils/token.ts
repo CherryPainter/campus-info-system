@@ -1,49 +1,56 @@
 /**
  * Token 存储工具模块
  *
- * 注意：现在使用 httpOnly cookie 存储 token，前端无法直接访问
- * 这个文件保留用于兼容性，实际 token 由后端通过 Set-Cookie 设置
- */
-
-/**
- * Token 存储工具类
+ * 鉴权设计（标准 JWT Bearer + httpOnly refresh cookie）：
+ * - 登录成功：后端在响应体返回 access_token；前端将其存入 localStorage，
+ *   每次请求经 request 拦截器以 `Authorization: Bearer <access_token>` 头携带。
+ * - refresh_token 由后端以 httpOnly cookie 下发（JS 不可读），
+ *   刷新时浏览器经 withCredentials 自动随请求携带，前端不接触、不存储。
  *
- * 由于使用 httpOnly cookie，前端无法直接读取 token
- * 所有 API 请求会自动携带 cookie
+ * 安全边界：
+ * - access_token 短时效且可轮换，即使被 XSS 窃取影响有限；
+ * - refresh_token 存于 httpOnly cookie，对 XSS 免疫，是现代 SPA 的推荐做法。
+ *
+ * 同源说明：开发走 Vite 代理（/api → localhost:29528，同源），
+ * 生产由 Nginx 同源反代，故 httpOnly cookie 可正常种/读，不会出现跨域丢失。
  */
+
+const ACCESS_TOKEN_KEY = "admin_access_token";
+
 export const tokenStorage = {
-  /**
-   * 获取访问令牌
-   * @returns 始终返回 null（使用 httpOnly cookie）
-   */
+  /** 获取当前 access_token（Bearer 头用），无则返回 null */
   getAccessToken: (): string | null => {
-    return null;
+    try {
+      return localStorage.getItem(ACCESS_TOKEN_KEY);
+    } catch {
+      return null;
+    }
   },
 
-  /**
-   * 获取刷新令牌
-   * @returns 始终返回 null（使用 httpOnly cookie）
-   */
-  getRefreshToken: (): string | null => {
-    return null;
+  /** 仅更新 access_token（登录成功 / 刷新成功后调用） */
+  setAccessToken: (access: string): void => {
+    try {
+      localStorage.setItem(ACCESS_TOKEN_KEY, access);
+    } catch {
+      // localStorage 不可用时静默降级（隐私模式等），不影响当前内存态请求
+    }
   },
 
-  /**
-   * 同时保存访问令牌和刷新令牌
-   * @deprecated 现在使用 httpOnly cookie，前端不再存储 token
-   */
-  setTokens: (access: string, refresh: string): void => {
-    // 不再存储到 localStorage，token 由后端通过 cookie 设置
-    console.warn("Token 现在使用 httpOnly cookie 存储，前端不再存储");
+  /** 登录成功时持久化 access_token（refresh_token 由 httpOnly cookie 承载，前端不持有） */
+  setTokens: (access: string): void => {
+    try {
+      localStorage.setItem(ACCESS_TOKEN_KEY, access);
+    } catch {
+      // 静默降级
+    }
   },
 
-  /**
-   * 清除所有令牌
-   * 调用后端登出接口会自动清除 cookie
-   */
+  /** 清除 access_token（登出 / 会话失效时调用；refresh_token 由后端过期失效） */
   clearTokens: (): void => {
-    // 清除任何遗留的 localStorage 数据
-    localStorage.removeItem("admin_access_token");
-    localStorage.removeItem("admin_refresh_token");
+    try {
+      localStorage.removeItem(ACCESS_TOKEN_KEY);
+    } catch {
+      // 静默降级
+    }
   },
 };

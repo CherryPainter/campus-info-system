@@ -1,0 +1,54 @@
+@import '../../styles/variables.scss';
+
+.electricity-card {
+  .electricity-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .electricity-title {
+    font-size: $font-size-lg;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  .electricity-main {
+    display: flex;
+    align-items: baseline;
+    margin: $spacing-sm 0 $spacing-md;
+  }
+
+  .electricity-value {
+    font-size: 80rpx;
+    font-weight: 600;
+    color: $primary-color;
+    line-height: 1.1;
+  }
+
+  .electricity-unit {
+    margin-left: $spacing-xs;
+    font-size: $font-size-sm;
+    color: $text-tertiary;
+  }
+
+  .electricity-bar {
+    height: 16rpx;
+    border-radius: $radius-full;
+    background: rgba(26, 115, 232, 0.12);
+    overflow: hidden;
+    margin-bottom: $spacing-sm;
+
+    .electricity-bar-inner {
+      height: 100%;
+      border-radius: $radius-full;
+      background: $primary-color;
+      transition: width 0.3s ease;
+    }
+  }
+
+  .electricity-sub {
+    font-size: $font-size-xs;
+    color: $text-tertiary;
+  }
+}

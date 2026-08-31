@@ -1,0 +1,71 @@
+@import '../../styles/variables.scss';
+
+// 首页特殊背景：蓝白斜渐变溶解背景
+// 渐变层覆盖到"常用功能"卡片位置（约 560rpx），其后回到白底
+.home-page {
+  position: relative;
+  background: $background;
+
+  .home-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 600rpx;
+    // 一滴墨水从左上角晕开：中心淡蓝 → 向外平滑扩散至透明，无硬边界
+    background: radial-gradient(
+      circle at 18% 0%,
+      rgba(122, 167, 255, 0.26) 0%,
+      rgba(122, 167, 255, 0.14) 30%,
+      rgba(122, 167, 255, 0.06) 55%,
+      rgba(122, 167, 255, 0) 75%
+    );
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  // 内容层置于渐变之上（WXSS 不支持属性选择器，用统一包装类提升层级）
+  .home-content {
+    position: relative;
+    z-index: 1;
+  }
+
+  .home-nav-title {
+    display: block;
+    padding: $spacing-md $spacing-lg 0;
+    font-size: 44rpx;
+    font-weight: 700;
+    color: $text-primary;
+    line-height: 1.2;
+  }
+
+  .home-hero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $spacing-md;
+    padding: $spacing-md $spacing-lg $spacing-md;
+
+    .hero-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .hero-greeting {
+      display: block;
+      font-size: $font-size-xl;
+      font-weight: 600;
+      color: $text-primary;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .hero-date {
+      display: block;
+      margin-top: $spacing-xs;
+      font-size: $font-size-sm;
+      color: $text-tertiary;
+    }
+  }
+}

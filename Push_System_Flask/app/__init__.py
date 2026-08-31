@@ -253,6 +253,11 @@ def create_app(config_class=None):
 
     app.register_blueprint(process_bp, url_prefix="/api/admin/processes")
 
+    # 注册校园通知（公告）管理蓝图
+    from app.api.announcement_routes import announcement_bp
+
+    app.register_blueprint(announcement_bp, url_prefix="/api/admin/announcements")
+
     # 注册模块配置蓝图
     from app.api.config_routes import config_bp
 
@@ -282,6 +287,16 @@ def create_app(config_class=None):
     from app.api.holiday_routes import holiday_bp
 
     app.register_blueprint(holiday_bp, url_prefix="/api/holiday")
+
+    # 注册微信小程序认证蓝图（第二客户端，与管理端 /api/auth 隔离）
+    from app.api.miniapp_auth_routes import miniapp_auth_bp
+
+    app.register_blueprint(miniapp_auth_bp, url_prefix="/api/miniapp/auth")
+
+    # 注册微信小程序业务蓝图（学生端能力，与 /api/admin 隔离）
+    from app.api.miniapp_routes import miniapp_bp
+
+    app.register_blueprint(miniapp_bp, url_prefix="/api/miniapp")
 
     # 注册统一任务查询蓝图（按 ID 查任务状态的单一入口）
     from app.api.task_routes import task_bp

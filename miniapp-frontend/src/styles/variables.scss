@@ -1,0 +1,44 @@
+// ============================================================
+// Design Token（原型图为唯一依据）
+// 统一颜色 / 圆角 / 间距 / 字体，禁止页面里散落魔法值
+// ============================================================
+
+// ---------- 颜色 ----------
+$primary-color: #1a73e8; // 主色（选中态 / 链接 / 强调）
+$primary-light: #e8f0fe; // 主色浅底
+$text-primary: #1d2129; // 主要文字
+$text-secondary: #5c6470; // 次要文字
+$text-tertiary: #8a8f99; // 弱化文字（时间戳 / 辅助）
+$text-inverse: #ffffff; // 深底反白
+
+$background: #f6f7fb; // 页面背景
+$card-background: #ffffff; // 卡片背景
+$border-color: #ebedf0; // 分割线 / 描边
+
+$success: #00b578; // 成功 / 正常
+$warning: #ff8f1f; // 警告 / 进行中
+$error: #e8380f; // 错误 / 已结束强调
+
+// ---------- 圆角 ----------
+$radius-small: 8rpx;
+$radius-medium: 16rpx;
+$radius-large: 24rpx;
+$radius-full: 999rpx;
+
+// ---------- 间距 ----------
+$spacing-xs: 8rpx;
+$spacing-sm: 16rpx;
+$spacing-md: 24rpx;
+$spacing-lg: 32rpx;
+$spacing-xl: 48rpx;
+
+// ---------- 阴影（轻量，避免过度玻璃态） ----------
+$shadow-card: 0 4rpx 16rpx rgba(0, 0, 0, 0.04);
+
+// ---------- 字号 ----------
+$font-size-xs: 22rpx;
+$font-size-sm: 24rpx;
+$font-size-md: 28rpx;
+$font-size-lg: 32rpx;
+$font-size-xl: 40rpx;
+$font-size-xxl: 56rpx;

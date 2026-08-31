@@ -1,0 +1,399 @@
+@import '../../styles/variables.scss';
+
+// ==================== 页面容器 ====================
+.electricity-page {
+  background: #f5f6fa;
+  min-height: 100vh;
+  padding-bottom: $spacing-xl;
+  box-sizing: border-box;
+}
+
+// ==================== 自定义导航栏（左返回 + 中标题） ====================
+.elec-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #fff;
+  margin-bottom: $spacing-md; // 导航栏与下方卡片间距
+}
+
+.elec-navbar-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx; // 导航栏内容区高度（44px）
+  padding: 0 $spacing-md;
+  position: relative;
+}
+
+.elec-navbar-left {
+  position: absolute;
+  left: $spacing-md;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80rpx;
+  height: 100%;
+}
+
+.elec-navbar-back {
+  font-size: 48rpx;
+  font-weight: 300;
+  color: $text-primary;
+  line-height: 1;
+  margin-top: -4rpx; // 视觉微调居中
+}
+
+.elec-navbar-title {
+  font-size: $font-size-lg;
+  font-weight: 400;
+  color: $text-primary;
+  line-height: 88rpx;
+}
+
+.elec-navbar-right {
+  position: absolute;
+  right: $spacing-md;
+  top: 0;
+  bottom: 0;
+  width: 80rpx;
+}
+
+// ==================== 电量信息卡片（唯一卡片，包含所有电量信息） ====================
+.elec-hero-card {
+  padding: $spacing-lg;
+
+  // ---- 上半区：左文字 + 右圆环 ----
+  .elec-hero-top {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  // 左侧列
+  .elec-hero-left {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    margin-right: $spacing-lg;
+  }
+
+  // 电表名行
+  .elec-meter-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8rpx;
+    margin-bottom: $spacing-md;
+  }
+
+  .elec-meter-name {
+    font-size: $font-size-md;
+    color: $text-primary;
+    font-weight: 500;
+    display: inline-block;
+  }
+
+  .elec-edit-icon {
+    font-size: 28rpx;
+    color: $text-tertiary;
+    display: inline-block;
+  }
+
+  // 大数字行
+  .elec-value-row {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 4rpx;
+    margin-bottom: 4rpx;
+  }
+
+  .elec-value-num {
+    font-size: 80rpx;
+    font-weight: 700;
+    color: $text-primary;
+    line-height: 1;
+    display: inline-block;
+  }
+
+  .elec-value-unit {
+    font-size: $font-size-md;
+    color: $text-secondary;
+    font-weight: 400;
+    display: inline-block;
+  }
+
+  .elec-value-label {
+    font-size: $font-size-sm;
+    color: $text-tertiary;
+    display: block;
+    margin-bottom: 12rpx;
+  }
+
+  // 状态文字（大数字下方）
+  .elec-status-text {
+    font-size: $font-size-md;
+    font-weight: 500;
+
+    &.normal { color: #52c41a; }
+    &.low   { color: #faad14; }
+  }
+
+  // ---- 右侧圆环 ----
+  .elec-ring-wrap {
+    position: relative;
+    width: 180rpx;
+    height: 180rpx;
+    flex-shrink: 0;
+  }
+
+  .elec-ring-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+  }
+
+  .elec-ring-hole {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 140rpx;
+    height: 140rpx;
+    border-radius: 50%;
+    background: #fff;
+  }
+
+  // ---- 分割线 ----
+  .elec-card-divider {
+    height: 1rpx;
+    background: $border-color;
+    margin: $spacing-lg 0 $spacing-md;
+  }
+
+  // ---- 统计行（同一卡片内） ----
+  .elec-stats-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+
+    .elec-stat-item {
+      display: flex;
+      flex-direction: row;
+      align-items: baseline;
+      gap: 8rpx;
+    }
+
+    .elec-stat-label {
+      font-size: $font-size-sm;
+      color: $text-secondary;
+      display: inline-block;
+    }
+
+    .elec-stat-val {
+      font-size: $font-size-lg;
+      font-weight: 600;
+      color: $text-primary;
+      display: inline-block;
+    }
+
+    .elec-stat-unit-inline {
+      font-size: $font-size-xs;
+      color: $text-tertiary;
+      font-weight: 400;
+    }
+
+    .elec-stat-divider {
+      width: 1rpx;
+      height: 40rpx;
+      background: $border-color;
+    }
+  }
+
+  // ---- 更新时间（同一卡片内） ----
+  .elec-update-time {
+    display: block;
+    font-size: $font-size-xs;
+    color: $text-tertiary;
+    margin-top: $spacing-md;
+  }
+}
+
+// ==================== 用电趋势（Canvas 折线图） ====================
+.elec-trend-card {
+  margin-top: $spacing-sm;
+  padding: $spacing-lg;
+
+  .elec-trend-head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: $spacing-xs;
+  }
+
+  .elec-trend-title {
+    font-size: $font-size-lg;
+    font-weight: 600;
+    color: $text-primary;
+    display: block;
+  }
+
+  .elec-trend-tabs {
+    display: flex;
+    flex-direction: row;
+    gap: $spacing-xs;
+    background: #f0f2f5;
+    border-radius: $radius-large;
+    padding: 4rpx;
+  }
+
+  .elec-tab {
+    font-size: $font-size-sm;
+    color: $text-secondary;
+    padding: 6rpx 22rpx;
+    border-radius: $radius-medium;
+    line-height: 1.4;
+    display: inline-block;
+
+    &.active {
+      background: #fff;
+      color: $primary-color;
+      font-weight: 600;
+      box-shadow: 0 2rpx 6rpx rgba(0, 0, 0, 0.06);
+    }
+  }
+
+  .elec-trend-sub {
+    display: block;
+    font-size: $font-size-xs;
+    color: $text-tertiary;
+    margin-bottom: $spacing-sm;
+  }
+
+  .elec-trend-empty {
+    display: block;
+    font-size: $font-size-sm;
+    color: $text-tertiary;
+    padding: $spacing-lg 0;
+    text-align: center;
+  }
+
+  .elec-canvas-wrap {
+    width: 100%;
+    height: 420rpx;
+  }
+
+  .elec-line-canvas {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+// ==================== 用电记录 ====================
+.elec-records-card {
+  margin-top: $spacing-sm;
+  padding: $spacing-lg;
+
+  .elec-records-head {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: $spacing-md;
+  }
+
+  .elec-records-head-row {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  // 用电记录结算规则提示（学校每日 0 点后结算前一天）
+  .elec-records-tip {
+    display: block;
+    font-size: $font-size-xs;
+    color: $text-tertiary;
+    margin-top: 4rpx;
+  }
+
+  .elec-records-title {
+    display: block;
+    font-size: $font-size-lg;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  .elec-records-count {
+    font-size: $font-size-sm;
+    color: $text-tertiary;
+  }
+
+  .elec-records-empty {
+    display: block;
+    font-size: $font-size-sm;
+    color: $text-tertiary;
+    padding: $spacing-md 0;
+    text-align: center;
+  }
+
+  .elec-record {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: $spacing-md 0;
+    border-bottom: 1rpx solid $border-color;
+
+    &.last {
+      border-bottom: none;
+    }
+
+    .elec-record-date {
+      font-size: $font-size-md;
+      color: $text-secondary;
+      display: block;
+    }
+
+    .elec-record-usage {
+      font-size: $font-size-md;
+      font-weight: 600;
+      color: $text-primary;
+      display: block;
+    }
+  }
+
+  .elec-more-btn {
+    display: flex;
+    justify-content: center;
+    padding-top: $spacing-md;
+  }
+
+  .elec-more-text {
+    font-size: $font-size-sm;
+    color: $primary-color;
+    display: block;
+  }
+}
+
+// ==================== 错误态重试 ====================
+.state-retry {
+  margin-top: $spacing-md;
+  padding: $spacing-sm $spacing-lg;
+  border-radius: $radius-full;
+  background: $primary-light;
+}
+
+.state-retry-text {
+  font-size: $font-size-sm;
+  color: $primary-color;
+}

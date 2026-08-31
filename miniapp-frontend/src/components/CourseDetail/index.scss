@@ -1,0 +1,38 @@
+@import '../../styles/variables.scss';
+
+.course-detail {
+  padding: $spacing-lg $spacing-lg calc(#{$spacing-lg} + env(safe-area-inset-bottom));
+
+  .detail-title {
+    display: block;
+    font-size: $font-size-lg;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: $spacing-lg;
+  }
+
+  .detail-row {
+    display: flex;
+    align-items: flex-start;
+    padding: $spacing-sm 0;
+    border-bottom: 1rpx solid $border-color;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    .detail-label {
+      width: 120rpx;
+      flex-shrink: 0;
+      font-size: $font-size-sm;
+      color: $text-tertiary;
+    }
+
+    .detail-value {
+      flex: 1;
+      font-size: $font-size-md;
+      color: $text-primary;
+      word-break: break-all;
+    }
+  }
+}

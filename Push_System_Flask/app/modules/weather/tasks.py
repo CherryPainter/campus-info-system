@@ -16,6 +16,10 @@ logger = get_logger(__name__)
 _CACHE_TTL_NOW: int = 30 * 60  # 实时天气缓存 30 分钟
 _CACHE_TTL_HOURLY: int = 60 * 60  # 逐小时预报缓存 60 分钟
 _CACHE_TTL_ALERT: int = 10 * 60  # 预警缓存 10 分钟
+_CACHE_TTL_DAILY: int = 3 * 60 * 60  # 逐天预报缓存 3 小时
+_CACHE_TTL_INDICES: int = 6 * 60 * 60  # 生活指数缓存 6 小时
+_CACHE_TTL_AIR: int = 30 * 60  # 空气质量缓存 30 分钟
+_CACHE_TTL_MINUTELY: int = 30 * 60  # 分钟级降水缓存 30 分钟
 
 
 # ------------------------------------------------------------------
@@ -308,6 +312,82 @@ def update_weather_alert() -> None:
         _update_weather_alert_impl()
     finally:
         _alert_update_lock.release()
+
+
+def update_weather_daily() -> None:
+    """每 3 小时更新逐天预报（仅更新缓存，不落库、不推送）。"""
+    from app.services.holiday_service import holiday_service
+
+    if holiday_service.skip_if_active("更新逐天预报", "weather", record=False):
+        return
+    try:
+        fetcher = _make_fetcher()
+        cache = _make_cache()
+        data = fetcher.fetch_daily()
+        if data:
+            cache.set("daily", data, _CACHE_TTL_DAILY)
+            logger.info(f"[天气] 逐天预报已更新缓存: {len(data)} 天")
+        else:
+            logger.warning("[天气] 逐天预报数据为空")
+    except Exception as exc:
+        logger.error(f"[天气] 更新逐天预报失败: {exc}")
+
+
+def update_weather_indices() -> None:
+    """每 6 小时更新生活指数（仅更新缓存，不落库、不推送）。"""
+    from app.services.holiday_service import holiday_service
+
+    if holiday_service.skip_if_active("更新生活指数", "weather", record=False):
+        return
+    try:
+        fetcher = _make_fetcher()
+        cache = _make_cache()
+        data = fetcher.fetch_indices()
+        if data:
+            cache.set("indices", data, _CACHE_TTL_INDICES)
+            logger.info(f"[天气] 生活指数已更新缓存: {len(data)} 项")
+        else:
+            logger.warning("[天气] 生活指数数据为空")
+    except Exception as exc:
+        logger.error(f"[天气] 更新生活指数失败: {exc}")
+
+
+def update_weather_air() -> None:
+    """每 30 分钟更新空气质量（仅更新缓存，不落库、不推送）。"""
+    from app.services.holiday_service import holiday_service
+
+    if holiday_service.skip_if_active("更新空气质量", "weather", record=False):
+        return
+    try:
+        fetcher = _make_fetcher()
+        cache = _make_cache()
+        data = fetcher.fetch_airquality()
+        if data:
+            cache.set("air", data, _CACHE_TTL_AIR)
+            logger.info("[天气] 空气质量已更新缓存")
+        else:
+            logger.warning("[天气] 空气质量数据为空")
+    except Exception as exc:
+        logger.error(f"[天气] 更新空气质量失败: {exc}")
+
+
+def update_weather_minutely() -> None:
+    """每 30 分钟更新分钟级降水（仅更新缓存，不落库、不推送）。"""
+    from app.services.holiday_service import holiday_service
+
+    if holiday_service.skip_if_active("更新分钟级降水", "weather", record=False):
+        return
+    try:
+        fetcher = _make_fetcher()
+        cache = _make_cache()
+        data = fetcher.fetch_minutely()
+        if data:
+            cache.set("minutely", data, _CACHE_TTL_MINUTELY)
+            logger.info("[天气] 分钟级降水已更新缓存")
+        else:
+            logger.warning("[天气] 分钟级降水数据为空")
+    except Exception as exc:
+        logger.error(f"[天气] 更新分钟级降水失败: {exc}")
 
 
 def _update_weather_alert_impl() -> None:
@@ -744,7 +824,8 @@ analyze_and_push = push_weather_analysis
 
 def refresh_all_cache() -> dict:
     """手动刷新全部天气缓存。"""
-    result = {"now": False, "hourly": False, "alert": False}
+    result = {"now": False, "hourly": False, "alert": False,
+              "daily": False, "indices": False, "air": False, "minutely": False}
     try:
         fetcher = _make_fetcher()
         cache = _make_cache()
@@ -762,6 +843,26 @@ def refresh_all_cache() -> dict:
         alert_data = fetcher.fetch_alert()
         cache.set("alert", {"warnings": alert_data}, _CACHE_TTL_ALERT)
         result["alert"] = True
+
+        daily_data = fetcher.fetch_daily()
+        if daily_data:
+            cache.set("daily", daily_data, _CACHE_TTL_DAILY)
+            result["daily"] = True
+
+        indices_data = fetcher.fetch_indices()
+        if indices_data:
+            cache.set("indices", indices_data, _CACHE_TTL_INDICES)
+            result["indices"] = True
+
+        air_data = fetcher.fetch_airquality()
+        if air_data:
+            cache.set("air", air_data, _CACHE_TTL_AIR)
+            result["air"] = True
+
+        minutely_data = fetcher.fetch_minutely()
+        if minutely_data:
+            cache.set("minutely", minutely_data, _CACHE_TTL_MINUTELY)
+            result["minutely"] = True
     except Exception as exc:
         logger.error(f"[天气] 刷新全部缓存失败: {exc}")
         result["error"] = str(exc)
@@ -777,7 +878,7 @@ def refresh_all_cache() -> dict:
 def register_tasks(scheduler, app) -> None:
     """将天气相关定时任务注册到 APScheduler 实例。
 
-    注册 5 个任务：
+    注册 9 个任务：
     1. weather_update_now     — interval 30min — update_weather_now
     2. weather_update_hourly  — interval 60min — update_weather_hourly
     3. weather_update_alert   — interval 10min — update_weather_alert
@@ -825,6 +926,54 @@ def register_tasks(scheduler, app) -> None:
         misfire_grace_time=60,
     )
     logger.info("[天气] 预警更新任务已注册: 每 10 分钟")
+
+    # 6. 逐天预报更新（每 3 小时）
+    scheduler.add_job(
+        update_weather_daily,
+        trigger="interval",
+        hours=3,
+        id="weather_update_daily",
+        name="天气逐天预报更新",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+    logger.info("[天气] 逐天预报更新任务已注册: 每 3 小时")
+
+    # 7. 生活指数更新（每 6 小时）
+    scheduler.add_job(
+        update_weather_indices,
+        trigger="interval",
+        hours=6,
+        id="weather_update_indices",
+        name="天气生活指数更新",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+    logger.info("[天气] 生活指数更新任务已注册: 每 6 小时")
+
+    # 8. 空气质量更新（每 30 分钟）
+    scheduler.add_job(
+        update_weather_air,
+        trigger="interval",
+        minutes=30,
+        id="weather_update_air",
+        name="天气空气质量更新",
+        replace_existing=True,
+        misfire_grace_time=120,
+    )
+    logger.info("[天气] 空气质量更新任务已注册: 每 30 分钟")
+
+    # 9. 分钟级降水更新（每 30 分钟）
+    scheduler.add_job(
+        update_weather_minutely,
+        trigger="interval",
+        minutes=30,
+        id="weather_update_minutely",
+        name="天气分钟级降水更新",
+        replace_existing=True,
+        misfire_grace_time=120,
+    )
+    logger.info("[天气] 分钟级降水更新任务已注册: 每 30 分钟")
 
     # 4. 每日晨报
     # 优先从数据库读取推送时间（key: weather.schedule_daily），回退到 Config.WEATHER_SCHEDULE_DAILY

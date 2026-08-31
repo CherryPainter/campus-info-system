@@ -29,6 +29,7 @@ import Push from "@/pages/Push";
 import Processes from "@/pages/Processes";
 import Webhooks from "@/pages/Webhooks";
 import HolidayMode from "@/pages/HolidayMode";
+import Announcements from "@/pages/Announcements";
 import Settings from "@/pages/Settings";
 import Profile from "@/pages/Profile";
 import AccessControl from "@/pages/AccessControl";
@@ -126,6 +127,14 @@ export default function App() {
                     element={
                       <AdminGuard>
                         <HolidayMode />
+                      </AdminGuard>
+                    }
+                  />
+                  <Route
+                    path="/announcements"
+                    element={
+                      <AdminGuard>
+                        <Announcements />
                       </AdminGuard>
                     }
                   />

@@ -65,9 +65,10 @@ export const authApi = {
 
   /**
    * 刷新访问令牌
-   * 后端从 httpOnly cookie 中读取 refresh_token，无需传参
+   * refresh_token 由 httpOnly cookie 携带（request 实例已开启 withCredentials），无需请求体；
+   * 后端从 cookie 取出并轮换，响应体仅返回新的 access_token。
    */
-  refresh: () => request.post<any, ApiResponse>("/auth/refresh"),
+  refresh: () => request.post<any, ApiResponse>("/auth/refresh", {}),
 
   /**
    * 用户登出

@@ -47,7 +47,12 @@ def derive_current_semester() -> dict[str, Any]:
     elif 1 <= m <= 2:
         # 仍属上一学年秋季学期（第一学期）
         start, term = y - 1, 1
-    else:  # 3 ~ 8 月为春季学期（第二学期）
+    elif m == 8:
+        # 8 月为暑假，下一学期为秋季学期（第一学期），属学年 Y-(Y+1)。
+        # 此前误把 3~8 月整体算作春季学期，导致 8 月「当前学期」错判为
+        # 已结束的春季（开学日 3/2），课表表头显示 3 月日期。
+        start, term = y, 1
+    else:  # 3 ~ 7 月为春季学期（第二学期）
         start, term = y - 1, 2
     academic_year = f"{start}-{start + 1}"
     return {
@@ -56,6 +61,71 @@ def derive_current_semester() -> dict[str, Any]:
         "academic_year": academic_year,
         "term": term,
     }
+
+
+def get_current_semester_id() -> int:
+    """当前学期 DB id（单一真相源，与网页端 /course/timetable 口径一致）。
+
+    优先读 cqie-course-timetable 爬虫产出的 course_meta.json 的
+    current_semester_name（爬虫成功运行后写入，代表真实在用的学期）；
+    缺省/异常/解析失败则回退到按当前日期推导的学期
+    （derive_current_semester），避免拿到 None 而显示空白课表。
+
+    注意：小程序 /api/miniapp/schedule/* 与网页端 /course/timetable 必须
+    解析到同一个学期，否则两端课表数据对不上（小程序显示错误/假数据）。
+    """
+    import json as _json
+    import os as _os
+
+    meta_path = _os.path.join(
+        _os.path.dirname(_os.path.abspath(__file__)),
+        "..",
+        "cqie-course-timetable",
+        "output",
+        "course-data",
+        "raw",
+        "course_meta.json",
+    )
+    if _os.path.exists(meta_path):
+        try:
+            with open(meta_path, encoding="utf-8") as f:
+                meta = _json.load(f)
+            name = meta.get("current_semester_name")
+            if name:
+                parts = str(name).split("-")
+                year = int(parts[0])
+                term = int(parts[-1])
+                return year * 10 + term
+        except Exception:
+            pass
+    # 候选学期：course_meta.json 当前学期 或 按日期推导学期
+    candidate = derive_current_semester()["semester_id"]
+    # 兜底：若候选学期在库中没有任何课程（典型场景：处于寒暑假空档期，
+    # 推导出的新学期尚未爬取），则回退到库里实际存有课表数据的学期，
+    # 避免小程序/网页端显示空白或错误（假）数据。
+    try:
+        from app.core.database import get_db
+        from sqlalchemy import text
+
+        session = get_db()
+        try:
+            rows = session.execute(
+                text(
+                    "SELECT semester_id, COUNT(*) AS c FROM courses "
+                    "WHERE is_deleted=0 GROUP BY semester_id ORDER BY c DESC"
+                )
+            ).fetchall()
+            if rows:
+                best_id, best_count = rows[0].semester_id, rows[0].c
+                # 仅当候选学期确实无课、且库中存在有课的学期时才替换
+                has_candidate = any(r.semester_id == candidate and r.c > 0 for r in rows)
+                if not has_candidate and best_count > 0:
+                    return int(best_id)
+        finally:
+            session.close()
+    except Exception:
+        pass
+    return candidate
 
 
 def semester_info_from_id(semester_id: int) -> dict[str, Any]:

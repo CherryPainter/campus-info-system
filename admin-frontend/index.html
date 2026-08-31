@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 内容安全策略：拦截注入脚本（防 localStorage 中的 token 被 XSS 窃取）；
+         script-src 仅 'self'（禁用 inline/eval）；style-src 允许 'unsafe-inline' 以兼容 Antd 内联样式；
+         connect-src 'self' 覆盖同源 API 与 Vite HMR 长连接。 -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'self'"
+    />
     <title>校园信息聚合与智能推送系统管理后台</title>
   </head>
   <body>

@@ -102,6 +102,7 @@ class ElectricityRepository:
         start_time: datetime | None = None,
         end_time: datetime | None = None,
         limit: int = 1000,
+        offset: int = 0,
     ) -> list[ElectricityRecord]:
         """
         查询用电记录
@@ -112,6 +113,7 @@ class ElectricityRepository:
             start_time: 开始时间
             end_time: 结束时间
             limit: 返回条数限制
+            offset: 跳过的条数（用于分页）
 
         Returns:
             List[ElectricityRecord]: 用电记录列表
@@ -125,7 +127,36 @@ class ElectricityRepository:
         if end_time:
             query = query.filter(ElectricityRecord.record_time <= end_time)
 
-        return query.order_by(desc(ElectricityRecord.record_time)).limit(limit).all()
+        return (
+            query.order_by(desc(ElectricityRecord.record_time))
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def count_records(
+        session: Session,
+        meter: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> int:
+        """
+        统计用电记录总数（与 get_records 相同的过滤条件，用于分页 total）
+
+        Returns:
+            int: 记录总数
+        """
+        query = session.query(func.count(ElectricityRecord.id))
+
+        if meter:
+            query = query.filter(ElectricityRecord.meter == meter)
+        if start_time:
+            query = query.filter(ElectricityRecord.record_time >= start_time)
+        if end_time:
+            query = query.filter(ElectricityRecord.record_time <= end_time)
+
+        return query.scalar() or 0
 
     @staticmethod
     def get_daily_statistics(

@@ -20,6 +20,7 @@ import {
   UserOutlined,
   ProfileOutlined,
   CalendarOutlined,
+  NotificationOutlined,
 } from "@ant-design/icons";
 import { authApi } from "@/api/auth";
 import { tokenStorage } from "@/utils/token";
@@ -74,6 +75,7 @@ export default function AdminLayout() {
         { path: "/processes", name: "进程管理", icon: <PlayCircleOutlined /> },
         { path: "/webhooks", name: "Webhook 管理", icon: <LinkOutlined /> },
         { path: "/holiday", name: "推送静默", icon: <CalendarOutlined /> },
+        { path: "/announcements", name: "校园通知", icon: <NotificationOutlined /> },
         { path: "/settings", name: "系统设置", icon: <SettingOutlined /> },
         { path: "/profile", name: "个人设置", icon: <ProfileOutlined /> },
       ]

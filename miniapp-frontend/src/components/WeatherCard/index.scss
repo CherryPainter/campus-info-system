@@ -1,0 +1,55 @@
+// 天气小卡（嵌入首页头部右侧），无外层 .card 容器
+.weather-mini {
+  background: $card-background;
+  border-radius: $radius-large;
+  padding: $spacing-md $spacing-lg;
+  box-shadow: $shadow-card;
+  min-width: 240rpx;
+
+  .weather-mini-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .weather-mini-temp {
+    font-size: 56rpx;
+    font-weight: 600;
+    color: $text-primary;
+    line-height: 1.1;
+
+    &.weather-mini-temp-dim {
+      color: $text-tertiary;
+      font-size: 48rpx;
+    }
+  }
+
+  .weather-mini-emoji {
+    font-size: 48rpx;
+    line-height: 1;
+  }
+
+  .weather-mini-bottom {
+    margin-top: $spacing-xs;
+    display: flex;
+    flex-direction: column;
+
+    .weather-mini-text {
+      font-size: $font-size-sm;
+      color: $text-primary;
+    }
+  }
+
+  &.weather-mini-skeleton,
+  &.weather-mini-error {
+    .weather-mini-main {
+      display: block;
+    }
+  }
+
+  &.weather-mini-error {
+    .weather-mini-text {
+      color: $primary-color;
+    }
+  }
+}

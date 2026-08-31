@@ -1,0 +1,79 @@
+@import '../../styles/variables.scss';
+
+// 校园卡：上半部蓝色块 + 下半部白色块（拼接圆角卡，原型图样式）
+.campus-card {
+  margin: $spacing-md $spacing-md 0;
+  border-radius: $radius-large;
+  overflow: hidden; // 子块圆角跟随外层
+  box-shadow: $shadow-card;
+
+  // 上半部：蓝色渐变
+  .campus-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: $spacing-lg;
+    background: linear-gradient(135deg, #4a8cf7 0%, #1a73e8 100%);
+    color: $text-inverse;
+
+    .campus-title {
+      display: block;
+      font-size: $font-size-md;
+      font-weight: 600;
+    }
+
+    .campus-no {
+      display: block;
+      margin-top: $spacing-xs;
+      font-size: $font-size-xs;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .campus-balance {
+      text-align: right;
+
+      .campus-balance-label {
+        display: block;
+        font-size: $font-size-xs;
+        color: rgba(255, 255, 255, 0.85);
+      }
+
+      .campus-balance-value {
+        font-size: 48rpx;
+        font-weight: 700;
+        color: $text-inverse;
+        line-height: 1.2;
+        margin-top: $spacing-xs;
+      }
+    }
+  }
+
+  // 下半部：白色块，三个操作横排（图标左、文字右）
+  .campus-actions {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: $spacing-md $spacing-sm;
+    background: #ffffff;
+
+    .campus-action {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      padding: $spacing-xs $spacing-sm;
+
+      .campus-action-icon {
+        font-size: 40rpx;
+        color: $primary-color;
+        line-height: 1;
+        margin-right: $spacing-sm;
+      }
+
+      .campus-action-text {
+        font-size: $font-size-md;
+        color: $text-primary;
+        line-height: 1;
+      }
+    }
+  }
+}

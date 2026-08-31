@@ -1,0 +1,541 @@
+@import '../../styles/variables.scss';
+
+.ct-page {
+  // 背景：白色 + 顶部蓝色渐变向下溶解（与首页/时间轴页同款）
+  background:
+    radial-gradient(
+      circle at 18% 0%,
+      rgba(122, 167, 255, 0.26) 0%,
+      rgba(122, 167, 255, 0.14) 30%,
+      rgba(122, 167, 255, 0.06) 55%,
+      rgba(122, 167, 255, 0) 75%
+    ),
+    #ffffff;
+  background-color: #ffffff;
+  min-height: 100vh;
+  padding-top: 24rpx;
+
+  // 视图切换 Tab（课表 / 日程）
+  .ct-tabs {
+    display: flex;
+    margin-left: $spacing-lg;
+    margin-right: $spacing-lg;
+    margin-bottom: $spacing-md;
+    background: #f0f2f5;
+    border-radius: 999rpx;
+    padding: 6rpx;
+  }
+
+  .ct-tab {
+    flex: 1;
+    text-align: center;
+    font-size: 28rpx;
+    color: $text-secondary;
+    padding: 14rpx 0;
+    border-radius: 999rpx;
+    transition: all 0.2s ease;
+
+    &.ct-tab-active {
+      background: #fff;
+      color: $primary-color;
+      font-weight: 600;
+      box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+    }
+  }
+}
+
+/* ============ 周历卡片（与 schedule 同款视觉，自包含） ============ */
+
+// 顶部：周次选择器触发区 + 今天快捷键
+.schedule-week-picker {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  &:active { opacity: 0.7; }
+}
+
+.schedule-month-text {
+  font-size: $font-size-lg;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.schedule-month-arrow {
+  margin-left: 6rpx;
+  font-size: 24rpx;
+  color: $text-secondary;
+  line-height: 1;
+  transition: transform 0.3s ease;
+
+  &.rotated {
+    transform: rotate(180deg);
+  }
+}
+
+.schedule-today-btn {
+  font-size: $font-size-md;
+  color: $primary-color;
+  padding: 4rpx 12rpx;
+}
+
+.week-calendar {
+  margin: 0 $spacing-lg;
+  padding: $spacing-md $spacing-sm;
+  border-radius: $radius-large;
+
+  .week-calendar-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 $spacing-sm;
+    margin-bottom: $spacing-md;
+  }
+
+  .week-calendar-badge {
+    display: inline-block;
+    margin-left: $spacing-sm;
+    padding: 4rpx 14rpx;
+    border-radius: $radius-full;
+    background: rgba(26, 115, 232, 0.08);
+
+    .week-calendar-badge-text {
+      font-size: 20rpx;
+      color: $primary-color;
+      line-height: 1.4;
+    }
+  }
+
+  // 假期提示（非教学周真实周视图）
+  .week-calendar-hint {
+    margin: 0 $spacing-sm $spacing-md;
+    padding: 12rpx 18rpx;
+    border-radius: $radius-medium;
+    background: rgba(250, 173, 20, 0.08);
+    border-left: 4rpx solid #faad14;
+
+    .week-calendar-hint-text {
+      font-size: 20rpx;
+      color: #ad6800;
+      line-height: 1.5;
+    }
+  }
+
+  .week-swiper {
+    height: 138rpx;
+  }
+
+  .week-calendar-days {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .week-cell {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    .week-cell-label {
+      font-size: $font-size-xs;
+      color: $text-tertiary;
+
+      &.week-cell-active {
+        color: $primary-color;
+        font-weight: 500;
+      }
+    }
+
+    .week-cell-day {
+      margin-top: $spacing-xs;
+      width: 64rpx;
+      height: 64rpx;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      &.week-cell-day-today {
+        background: $primary-color;
+      }
+    }
+
+    .week-cell-day-text-active {
+      color: $text-inverse;
+      font-weight: 600;
+    }
+
+    .week-cell-day-text-selected {
+      color: $primary-color;
+      font-weight: 600;
+    }
+
+    &.week-cell-day-selected {
+      background: rgba(26, 115, 232, 0.12);
+      border: 2rpx solid $primary-color;
+    }
+  }
+
+  .week-cell-dot-row {
+    margin-top: 6rpx;
+    height: 14rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .week-cell-dot {
+    width: 8rpx;
+    height: 8rpx;
+    border-radius: 50%;
+    background: $primary-color;
+
+    &.week-cell-dot-empty {
+      background: transparent;
+    }
+  }
+}
+
+/* ============ 课程表网格版式 ============ */
+
+.ct-table {
+  margin: $spacing-md $spacing-lg 0;
+}
+
+.ct-table-inner {
+  display: flex;
+  border-radius: $radius-large;
+  overflow: hidden;
+  background: #fff;
+  border: 1rpx solid #eef0f2;
+}
+
+// 固定节次列（不随横向滚动）
+.ct-col-period {
+  width: 60rpx;
+  flex-shrink: 0;
+  background: #fafbfc;
+}
+
+.ct-cols {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+
+.ct-col {
+  flex: 1;
+  min-width: 0;
+}
+
+// 通用格（细网格线）
+.ct-cell {
+  box-sizing: border-box;
+  border-right: 1rpx solid #eef0f2;
+  border-bottom: 1rpx solid #eef0f2;
+}
+
+.ct-corner {
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ct-corner-text {
+  font-size: 20rpx;
+  color: $text-tertiary;
+}
+
+.ct-period-cell {
+  height: 130rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ct-period-num {
+  font-size: 20rpx;
+  color: $text-secondary;
+}
+
+// 列头（星期）
+.ct-day-head {
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 22rpx;
+  color: $text-primary;
+}
+
+// ====== 课表骨架屏（加载占位，数据到达后替换为真实卡片） ======
+.ct-skeleton {
+  // 复用 .ct-table 网格布局，仅单元格内是占位块
+}
+
+.ct-skeleton-block {
+  width: 72%;
+  height: 36rpx;
+  border-radius: 8rpx;
+  background: linear-gradient(90deg, #f0f2f5 25%, #e4e7ec 37%, #f0f2f5 63%);
+  background-size: 400% 100%;
+  animation: ctSkeletonShimmer 1.4s ease infinite;
+  margin: 0 auto;
+}
+
+.ct-skeleton-day {
+  width: 48rpx;
+  height: 28rpx;
+}
+
+@keyframes ctSkeletonShimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+// 时间轴骨架：时间列 + 卡片条
+.ct-skeleton-timeline {
+  padding: 24rpx;
+}
+
+.ct-skeleton-tl-item {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f2f3f5;
+}
+
+.ct-skeleton-tl-time {
+  width: 140rpx;
+  flex-shrink: 0;
+  padding-right: 24rpx;
+}
+
+.ct-skeleton-tl-body {
+  flex: 1;
+}
+
+.ct-skeleton-tl-body .ct-skeleton-block {
+  height: 48rpx;
+  width: 100%;
+}
+
+
+// 今天列：整列淡蓝底 + 星期标签蓝色实心圆高亮（与时间轴周历一致）
+.ct-col-today {
+  background: rgba(26, 115, 232, 0.04);
+
+  .ct-day-text {
+    width: 44rpx;
+    height: 44rpx;
+    line-height: 44rpx;
+    border-radius: 50%;
+    background: $primary-color;
+    color: #fff;
+    text-align: center;
+    display: inline-block;
+  }
+}
+
+// 空占位格（维持网格行高）
+.ct-cell-empty {
+  height: 130rpx;
+}
+
+// 课程格（精确移植自网页端 Course.tsx renderCourseCell isMobile 分支）
+// 网页端：padding:3px, borderRadius:4px, borderLeft:3px solid
+// 小程序 rpx 约双倍 → padding:6rpx, borderRadius:8rpx, borderLeft:3rpx
+.ct-course-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 6rpx;
+  border-radius: 8rpx;
+  border-left-style: solid;
+  border-left-width: 3rpx;
+  margin: 2rpx 0;
+  overflow: hidden;
+  // 背景色过渡（对齐网页端 transition: background-color 1s ease）
+  transition: background-color 0.8s ease;
+
+  &.ct-course-ongoing {
+    // 进行中：由 inline style 控制渐变背景 + 红色左边框
+    border-left-color: #ff4d4f !important;
+  }
+
+  &.ct-course-finished {
+    opacity: 0.5;
+  }
+}
+
+// 进行中徽章（对齐网页端移动端 "正在上课" 标签）
+// 网页端：渐变红底 + 白字 + 圆角 + fontSize:9/11
+.ct-ongoing-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #ff4d4f, #ff7875);
+  color: #fff;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  font-size: 18rpx;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 4rpx;
+  align-self: flex-start;
+}
+
+.ct-ongoing-badge-text {
+  color: #fff;
+  line-height: 1.4;
+}
+
+.ct-course-name {
+  // 网页端 isMobile fontSize:11 fontWeight:bold color:baseColor lineHeight:1.2 marginBottom:2
+  font-size: 22rpx;
+  font-weight: bold;
+  line-height: 1.2;
+  text-align: left;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 4rpx;
+  word-break: break-all;
+}
+
+// 教师和地点容器（网页端 isMobile fontSize:10 color:#666 flex:1 lineHeight:1.2）
+.ct-course-row {
+  display: flex;
+  align-items: center;
+  line-height: 1.25;
+  margin-top: 2rpx;
+  min-width: 0;
+}
+
+.ct-course-icon {
+  font-size: 16rpx;
+  color: #999;
+  margin-right: 4rpx;
+  flex-shrink: 0;
+}
+
+.ct-course-info {
+  font-size: 20rpx;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+// 时间（网页端 isMobile fontSize:9 color:#999 marginTop:auto）
+.ct-course-time {
+  font-size: 18rpx;
+  color: #999;
+  margin-top: auto;
+  padding-top: 4rpx;
+}
+
+// 节数标签（网页端 isMobile fontSize:9 color:#999 marginTop:2）
+.ct-course-periods {
+  font-size: 18rpx;
+  color: #999;
+  margin-top: 2rpx;
+}
+
+/* ============ 时间轴版式间距 ============ */
+
+.timeline-list {
+  margin-top: $spacing-lg;
+}
+
+.schedule-empty-card {
+  margin-top: $spacing-lg;
+}
+
+.ct-empty-card {
+  margin-top: $spacing-lg;
+}
+
+/* ============ 底部弹出周次选择（与 schedule 同款） ============ */
+
+.week-picker-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.week-picker-modal {
+  background: #fff;
+  border-radius: 24rpx 24rpx 0 0;
+  overflow: hidden;
+  animation: pickerSlideUp 0.25s ease-out;
+
+  @keyframes pickerSlideUp {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+}
+
+.week-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.week-picker-cancel {
+  font-size: 30rpx;
+  color: $text-tertiary;
+  padding: 8rpx 16rpx;
+}
+
+.week-picker-title {
+  font-size: 28rpx;
+  color: $text-secondary;
+  font-weight: 500;
+}
+
+.week-picker-confirm {
+  font-size: 30rpx;
+  color: $primary-color;
+  font-weight: 600;
+  padding: 8rpx 16rpx;
+}
+
+.week-picker-divider {
+  height: 1rpx;
+  background: #f5f5f5;
+}
+
+.week-picker-body {
+  padding: 0 $spacing-md;
+}
+
+.week-picker-view {
+  height: 440rpx;
+}
+
+.week-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  line-height: 88rpx;
+}
+
+.week-picker-item-text {
+  font-size: 32rpx;
+  color: $text-primary;
+}

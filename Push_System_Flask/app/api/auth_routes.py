@@ -621,15 +621,22 @@ def login():
     resp_kwargs = {}
     if _require_mfa_setup:
         resp_kwargs["mfa_setup_required"] = True
-    response, _ = api_success(user=user.to_dict(), **resp_kwargs)
+    # 标准 JWT 流程：access_token 经响应体返回，前端以 Authorization: Bearer 头携带；
+    # refresh_token 仅写入 httpOnly cookie（JS 不可读，抗 XSS），刷新时由浏览器自动携带，不进响应体。
+    response, _ = api_success(
+        user=user.to_dict(),
+        access_token=tokens["access_token"],
+        **resp_kwargs,
+    )
 
     # 设置 httpOnly cookie（防止 XSS）
 
-    # 根据环境决定是否启用 secure（HTTP 环境下不启用）
+    # 根据环境决定是否启用 secure（HTTPS 环境下启用，否则不启用）
     is_https = current_app.config.get("FORCE_HTTPS", False)
-    # 本地开发使用宽松设置，服务器使用严格设置
+    # 同源部署（dev Vite 代理 / prod Nginx 反代）下 samesite=Lax 即可，且不需 Secure；
+    # 若用 "None" 则必须配 Secure，否则 Chrome 会拒绝种 cookie，导致 dev 下鉴权失效。
     cookie_secure = is_https
-    cookie_samesite = "Lax" if is_https else None
+    cookie_samesite = "Lax"
 
     # access_token cookie - 1小时
     response.set_cookie(
@@ -688,11 +695,15 @@ def refresh():
             "message": "刷新令牌无效或已过期"
         }
     """
-    # 从 cookie 读取 refresh_token
-    refresh_token = request.cookies.get("refresh_token", "").strip()
+    # 读取 refresh_token：优先 httpOnly cookie（当前标准流程），兼容旧请求体方式。
+    # refresh_token 不暴露给前端 JS，抗 XSS。
+    data = request.get_json(silent=True) or {}
+    refresh_token = (data.get("refresh_token") or "").strip() or request.cookies.get(
+        "refresh_token", ""
+    ).strip()
 
     if not refresh_token:
-        logger.warning("Token 刷新失败: refresh_token cookie 为空")
+        logger.warning("Token 刷新失败: refresh_token 缺失（cookie 与请求体均为空）")
         return api_error(message="请提供 refresh_token", http_status=401)
 
     jwt_manager = _get_jwt_manager()
@@ -755,11 +766,16 @@ def refresh():
     logger.info("access_token 刷新成功")
 
     # 设置新的 access_token cookie
-    response, _ = api_success(message="令牌已刷新")
+    # 响应体仅返回新的 access_token（前端据此更新本地存储）；
+    # refresh_token 只通过下方 httpOnly cookie 轮换下发，绝不进响应体。
+    response, _ = api_success(
+        message="令牌已刷新",
+        access_token=new_access_token,
+    )
 
     is_https = current_app.config.get("FORCE_HTTPS", False)
     cookie_secure = is_https
-    cookie_samesite = "Lax" if is_https else None
+    cookie_samesite = "Lax"
 
     response.set_cookie(
         "access_token",
@@ -1050,12 +1066,17 @@ def login_mfa():
     logger.info(f"{role_display}登录成功（MFA验证通过）: user={username}")
 
     # 创建响应
-    response, _ = api_success(user=user.to_dict())
+    # 标准 JWT 流程：access_token 经响应体返回（前端 Bearer 头携带）；
+    # refresh_token 仅写入 httpOnly cookie，不进响应体。
+    response, _ = api_success(
+        user=user.to_dict(),
+        access_token=tokens["access_token"],
+    )
 
     # 设置 httpOnly cookie
     is_https = current_app.config.get("FORCE_HTTPS", False)
     cookie_secure = is_https
-    cookie_samesite = "Lax" if is_https else None
+    cookie_samesite = "Lax"
 
     response.set_cookie(
         "access_token",

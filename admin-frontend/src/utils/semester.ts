@@ -18,7 +18,8 @@ export function getSemesterStartDate(semesterId?: number): Date {
     if (today >= springStart && today <= new Date(year, 6, 19)) return springStart;
     if (today >= fallStart) return fallStart;
     if (today < springStart) return new Date(year - 1, 8, 1);
-    return springStart;
+    // 7-20 ~ 8-31 为暑假真空期：下一学期是当年秋季（9/1 开学），而非春季
+    return fallStart;
   }
   const year = Math.floor(semesterId / 10);
   const term = semesterId % 10;

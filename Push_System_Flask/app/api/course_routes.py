@@ -440,6 +440,11 @@ def create_or_update_course():
             if _cid is not None:
                 _sem = semester_info_from_id(_cid)
         if _sem is None:
+            from app.repository.course_repository import get_current_semester_id as _repo_fallback1
+            _cid = _repo_fallback1()
+            if _cid:
+                _sem = semester_info_from_id(_cid)
+        if _sem is None:
             _sem = derive_current_semester()
 
         for p in periods:
@@ -799,34 +804,19 @@ def _semester_name_to_id(name: str):
 
 
 def _get_current_semester_id():
-    """读取 course_meta.json 的当前学期名称，转换为 DB 格式 semester_id。
+    """当前学期 ID。
 
-    若 course_meta.json 缺失（首次部署、爬虫尚未成功运行），回退到按当前
-    日期推导的学期，避免上层过滤拿到 None 而显示空白课表。
+    与小程序端共用同一套解析逻辑
+    （app.repository.course_repository.get_current_semester_id）：
+    优先读取 course_meta.json 的真实学期，缺失时按当前日期推导，并额外增加
+    「库内实际有课学期」兜底——避免寒暑假空档期推导出尚未爬取的新学期
+    （如 20261）导致网页端/小程序端默认展示空白或假数据。
+
+    返回 int 学期 ID（如 20252）。
     """
-    import json as _json
-    import os as _os
+    from app.repository.course_repository import get_current_semester_id as _repo_get
 
-    meta_path = _os.path.join(
-        _os.path.dirname(_os.path.abspath(__file__)),
-        "..",
-        "cqie-course-timetable",
-        "output",
-        "course-data",
-        "raw",
-        "course_meta.json",
-    )
-    if not _os.path.exists(meta_path):
-        return derive_current_semester()["semester_id"]
-    try:
-        with open(meta_path, encoding="utf-8") as f:
-            meta = _json.load(f)
-        name = meta.get("current_semester_name")
-        if name:
-            return _semester_name_to_id(name)
-    except Exception:
-        return derive_current_semester()["semester_id"]
-    return derive_current_semester()["semester_id"]
+    return _repo_get()
 
 
 @course_bp.route("/semesters", methods=["GET"])
@@ -870,9 +860,12 @@ def get_semesters():
         except Exception:
             pass
 
-        # 当前学期（权威）
-        inferred = derive_current_semester()
-        cur_db_id = inferred["semester_id"]
+        # 当前学期（权威）：统一使用带库内数据兜底的解析，
+        # 与 /timetable 和 /api/miniapp/* 口径一致，避免"当前学期"分裂。
+        from app.repository.course_repository import get_current_semester_id as _repo_get
+
+        cur_db_id = _repo_get()
+        inferred = semester_info_from_id(cur_db_id)
 
         # 候选学期（保证下拉有完整选项）
         from app.repository.course_repository import candidate_semester_pairs
@@ -903,8 +896,12 @@ def get_semesters():
         )
     except Exception as e:
         logger.error(f"[课程] 获取学期列表失败: {e}")
-        inferred = derive_current_semester()
-        db_id = inferred["semester_id"]
+        from app.repository.course_repository import get_current_semester_id as _repo_get_fallback
+        from app.repository.course_repository import semester_info_from_id as _info_fallback
+
+        cur_db_id = _repo_get_fallback()
+        inferred = _info_fallback(cur_db_id)
+        db_id = cur_db_id
         return api_success(
             data={
                 "semesters": [

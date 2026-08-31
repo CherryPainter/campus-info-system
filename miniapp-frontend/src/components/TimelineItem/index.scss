@@ -1,0 +1,247 @@
+@import '../../styles/variables.scss';
+
+// 时间轴条目
+.timeline-item {
+  display: flex;
+  align-items: center; // 时间、圆点、卡片垂直居中对齐
+  margin-bottom: $spacing-md;
+  // 左右 padding 一致（$spacing-lg），左侧时间列和右侧卡片距屏边等宽
+  padding: 0 $spacing-lg;
+  overflow: visible; // 允许贯穿竖线延伸到 item 外部
+
+  // 左列：时间 + 节次（紧凑列宽，避免挤占卡片空间）
+  .timeline-time-col {
+    width: 92rpx;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .timeline-time {
+    display: block;
+    font-size: 32rpx;
+    font-weight: 700;
+    color: $text-primary;
+    line-height: 1.2;
+  }
+
+  .timeline-periods {
+    display: block;
+    margin-top: 4rpx;
+    font-size: 20rpx;
+    color: $text-tertiary;
+    line-height: 1.2;
+  }
+
+  // 中列：圆点（实心）+ 竖线
+  .timeline-rail {
+    width: 32rpx;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    overflow: visible; // 允许竖线向下延伸出 rail 范围
+  }
+
+  // 双层圆点：外层淡色环 + 内层同色空心圆（颜色按 courseColorKey）
+  .timeline-dot-outer {
+    position: relative;
+    z-index: 1; // 浮在贯穿竖线之上
+    width: 36rpx;
+    height: 36rpx;
+    border-radius: 50%;
+    background: transparent;
+    border-width: 2rpx;
+    border-style: solid;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-sizing: border-box;
+
+    &.dot-color-green {
+      border-color: rgba(52, 199, 89, 0.3);
+      background: rgba(52, 199, 89, 0.08);
+      .timeline-dot-inner { border-color: #34c759; }
+    }
+    &.dot-color-blue {
+      border-color: rgba(26, 115, 232, 0.3);
+      background: rgba(26, 115, 232, 0.08);
+      .timeline-dot-inner { border-color: $primary-color; }
+    }
+    &.dot-color-orange {
+      border-color: rgba(255, 143, 31, 0.3);
+      background: rgba(255, 143, 31, 0.08);
+      .timeline-dot-inner { border-color: #ff8f1f; }
+    }
+    &.dot-color-purple {
+      border-color: rgba(160, 85, 220, 0.3);
+      background: rgba(160, 85, 220, 0.08);
+      .timeline-dot-inner { border-color: #a055dc; }
+    }
+    &.dot-color-pink {
+      border-color: rgba(230, 60, 130, 0.3);
+      background: rgba(230, 60, 130, 0.08);
+      .timeline-dot-inner { border-color: #e63c82; }
+    }
+  }
+
+  // 内层空心圆（与卡片同色边框）
+  .timeline-dot-inner {
+    width: 12rpx;
+    height: 12rpx;
+    border-radius: 50%;
+    border-width: 3rpx;
+    border-style: solid;
+    background: #ffffff;
+    flex-shrink: 0;
+    box-sizing: border-box;
+  }
+
+  // 贯穿竖线：从圆心出发，大幅向下延伸穿过 item 间距，连到下一项
+  .timeline-line {
+    position: absolute;
+    top: 18rpx; // 圆点中心（36rpx/2）
+    bottom: -200rpx; // 大幅延伸，确保跨过整个 item 高度 + margin-bottom 间距
+    left: 50%;
+    width: 2rpx;
+    transform: translateX(-50%);
+    background: #d0d5dd;
+    z-index: 0;
+  }
+
+  // 右列：课程卡片
+  .timeline-body {
+    flex: 1;
+    min-width: 0;
+    padding-bottom: 0;
+    padding-left: $spacing-sm; // 圆点与卡片之间间距（适度，不挤）
+  }
+
+  .timeline-card {
+    background: #ffffff;
+    border-radius: $radius-large;
+    border: 2rpx solid;
+    padding: $spacing-md $spacing-lg;
+    box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.03);
+
+    // 卡片颜色按 courseColorKey（每门课固定一个颜色）
+    &.card-color-green {
+      background: rgba(52, 199, 89, 0.04);
+      border-color: rgba(52, 199, 89, 0.35);
+    }
+    &.card-color-blue {
+      background: rgba(26, 115, 232, 0.04);
+      border-color: rgba(26, 115, 232, 0.35);
+    }
+    &.card-color-orange {
+      background: rgba(255, 143, 31, 0.04);
+      border-color: rgba(255, 143, 31, 0.35);
+    }
+    &.card-color-purple {
+      background: rgba(160, 85, 220, 0.04);
+      border-color: rgba(160, 85, 220, 0.35);
+    }
+    &.card-color-pink {
+      background: rgba(230, 60, 130, 0.04);
+      border-color: rgba(230, 60, 130, 0.35);
+    }
+  }
+
+  .timeline-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: $spacing-sm;
+  }
+
+  .timeline-title {
+    flex: 1;
+    display: block;
+    font-size: 32rpx;
+    font-weight: 700;
+    color: $text-primary;
+    line-height: 1.3;
+  }
+
+  .timeline-title-periods {
+    font-size: 24rpx;
+    font-weight: 400;
+    color: $text-tertiary;
+    margin-left: 6rpx;
+  }
+
+  // 状态标签：彩底彩字（颜色跟随卡片 courseColorKey，而非状态）
+  .timeline-tag {
+    flex-shrink: 0;
+    font-size: 22rpx;
+    padding: 4rpx 14rpx;
+    border-radius: $radius-medium; // 圆角矩形（非胶囊）
+    line-height: 1.4;
+    font-weight: 500;
+    border-width: 1rpx;
+    border-style: solid;
+
+    &.tag-color-green {
+      background: rgba(52, 199, 89, 0.08);
+      color: #34c759;
+      border-color: rgba(52, 199, 89, 0.3);
+    }
+    &.tag-color-blue {
+      background: rgba(26, 115, 232, 0.08);
+      color: $primary-color;
+      border-color: rgba(26, 115, 232, 0.3);
+    }
+    &.tag-color-orange {
+      background: rgba(255, 143, 31, 0.08);
+      color: #ff8f1f;
+      border-color: rgba(255, 143, 31, 0.3);
+    }
+    &.tag-color-purple {
+      background: rgba(160, 85, 220, 0.08);
+      color: #a055dc;
+      border-color: rgba(160, 85, 220, 0.3);
+    }
+    &.tag-color-pink {
+      background: rgba(230, 60, 130, 0.08);
+      color: #e63c82;
+      border-color: rgba(230, 60, 130, 0.3);
+    }
+  }
+
+  .timeline-location {
+    display: block;
+    margin-top: $spacing-sm;
+    font-size: 24rpx;
+    color: $text-secondary;
+    line-height: 1.5;
+    // 教室与教师用"·"分隔，超宽自动换行（Text 默认支持 word-wrap）
+    word-break: break-all;
+  }
+
+  // 已结束：整体降灰（时间淡、圆点灰、卡片去色）
+  &.timeline-item-finished {
+    .timeline-time { color: $text-tertiary; }
+    .timeline-periods { color: $text-tertiary; opacity: 0.6; }
+    .timeline-dot-outer {
+      border-color: rgba(0, 0, 0, 0.12);
+      background: rgba(0, 0, 0, 0.04);
+      .timeline-dot-inner { border-color: #bbb; }
+    }
+    .timeline-card {
+      background: #f8f9fa;
+      border-color: #e8eaed;
+      box-shadow: none;
+    }
+    .timeline-title { color: $text-secondary; font-weight: 500; }
+    .timeline-location { color: $text-tertiary; }
+    // 状态标签也降灰
+    .timeline-tag {
+      background: rgba(0, 0, 0, 0.04);
+      color: $text-tertiary;
+      border-color: rgba(0, 0, 0, 0.1);
+    }
+  }
+}

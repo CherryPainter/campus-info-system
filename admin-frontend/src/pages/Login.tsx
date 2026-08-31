@@ -14,6 +14,7 @@ import {
 } from "@ant-design/icons";
 import { authApi } from "@/api/auth";
 import { useUser } from "@/contexts/UserContext";
+import { tokenStorage } from "@/utils/token";
 import request from "@/api/request";
 import Footer from "@/components/Footer";
 import { APP_VERSION } from "@/version";
@@ -97,9 +98,13 @@ export default function Login() {
         return;
       }
 
-      // 使用 httpOnly cookie，后端不再返回 token
+      // 标准 JWT Bearer 流程：登录成功时把后端返回的 token 存入本地，后续请求经 Authorization 头携带
       if (res.status === "success") {
         message.success("登录成功");
+        // 持久化 access_token（refresh_token 由后端以 httpOnly cookie 下发，前端不接触）
+        if (res.access_token) {
+          tokenStorage.setTokens(res.access_token);
+        }
         // 更新 UserContext 状态
         if (res.user) {
           loginSuccess(res.user);
@@ -162,6 +167,10 @@ export default function Login() {
       if (res.status === "success") {
         message.success("登录成功");
         setMfaVisible(false);
+        // 持久化 access_token（refresh_token 由后端以 httpOnly cookie 下发，前端不接触）
+        if (res.access_token) {
+          tokenStorage.setTokens(res.access_token);
+        }
         // 更新 UserContext 状态
         if (res.user) {
           loginSuccess(res.user);

@@ -1,0 +1,199 @@
+@import '../../styles/variables.scss';
+
+.cd-page {
+  background: #f5f6fa;
+  min-height: 100vh;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 40rpx);
+}
+
+/* ====== 蓝色头部卡片 ====== */
+.cd-header {
+  margin: $spacing-lg;
+  padding: 36rpx 32rpx;
+  border-radius: 24rpx;
+  color: #fff;
+
+  .cd-header-title {
+    display: block;
+    font-size: 38rpx;
+    font-weight: 700;
+    line-height: 1.4;
+    margin-bottom: 12rpx;
+  }
+
+  .cd-header-sub {
+    display: block;
+    font-size: 26rpx;
+    opacity: 0.9;
+    margin-bottom: 24rpx;
+  }
+
+  .cd-header-meta {
+    display: flex;
+    gap: 32rpx;
+    margin-bottom: 16rpx;
+
+    .cd-header-meta-item {
+      display: flex;
+      align-items: center;
+      gap: 8rpx;
+    }
+  }
+
+  .cd-header-location {
+    display: flex;
+    align-items: center;
+    gap: 8rpx;
+  }
+
+  .cd-header-icon {
+    font-size: 28rpx;
+    opacity: 0.85;
+  }
+
+  .cd-header-meta-text {
+    font-size: 26rpx;
+    opacity: 0.95;
+  }
+}
+
+/* ====== 区块 ====== */
+.cd-section {
+  margin: 0 $spacing-lg $spacing-lg;
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 28rpx 32rpx;
+
+  .cd-section-title {
+    display: block;
+    font-size: 32rpx;
+    font-weight: 700;
+    color: $text-primary;
+    margin-bottom: 20rpx;
+  }
+}
+
+/* ====== 课程描述 ====== */
+.cd-desc {
+  font-size: 27rpx;
+  color: $text-secondary;
+  line-height: 1.7;
+}
+
+/* ====== 课表信息键值列表 ====== */
+.cd-info-list {
+  .cd-info-row {
+    display: flex;
+    align-items: flex-start;
+    padding: 16rpx 0;
+    border-bottom: 1rpx solid #f0f0f0;
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  .cd-info-label {
+    width: 160rpx;
+    flex-shrink: 0;
+    font-size: 27rpx;
+    color: $text-tertiary;
+  }
+
+  .cd-info-value {
+    flex: 1;
+    font-size: 27rpx;
+    color: $text-primary;
+    word-break: break-all;
+  }
+}
+
+/* ====== 课程安排（本周周几有课） ====== */
+.cd-week-list {
+  .cd-week-item {
+    display: flex;
+    align-items: center;
+    padding: 18rpx 0;
+    border-bottom: 1rpx solid #f5f5f5;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &-active {
+      background: rgba(24, 144, 255, 0.03);
+      margin: 0 -32rpx;
+      padding-left: 32rpx;
+      padding-right: 32rpx;
+      border-radius: 8rpx;
+      border-bottom: none;
+    }
+  }
+
+  .cd-week-dow {
+    width: 100rpx;
+    flex-shrink: 0;
+    font-size: 28rpx;
+    color: $text-tertiary;
+
+    &-active {
+      color: #1890ff;
+      font-weight: 600;
+    }
+  }
+
+  .cd-week-course-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6rpx;
+  }
+
+  .cd-week-name {
+    font-size: 27rpx;
+    color: $text-primary;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // 课程名下一行：授课地点（左）+ 教师（右）
+  .cd-week-sub {
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
+  }
+
+  .cd-week-loc {
+    flex: 1;
+    min-width: 0;
+    font-size: 23rpx;
+    color: $text-secondary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+  }
+
+  // 教师名：flex 容器垂直居中（Text 为 inline 元素，需转 flex 才可靠居中）
+  .cd-week-meta {
+    font-size: 23rpx;
+    color: $text-tertiary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .cd-week-empty {
+    flex: 1;
+    font-size: 26rpx;
+    color: $text-tertiary;
+  }
+}

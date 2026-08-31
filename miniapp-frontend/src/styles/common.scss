@@ -1,0 +1,32 @@
+// ============================================================
+// 通用样式：reset + 全局基础
+// ============================================================
+
+@import './variables.scss';
+
+page {
+  background: $background;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  color: $text-primary;
+  font-size: $font-size-md;
+  -webkit-font-smoothing: antialiased;
+}
+
+view,
+text,
+button,
+input {
+  box-sizing: border-box;
+}
+
+// 去除按钮默认样式
+button::after {
+  border: none;
+}
+
+// NutUI 主题色对齐
+:root {
+  --nut-primary-color: #{$primary-color};
+  --nut-primary-color-end: #{$primary-color};
+}

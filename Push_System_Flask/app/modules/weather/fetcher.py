@@ -71,10 +71,14 @@ def generate_qweather_jwt_ed25519(
 class WeatherFetcher:
     """和风天气数据采集器
 
-    封装和风天气 3 类 API:
-    - /v7/weather/now  实时天气
-    - /v7/weather/24h  24 小时逐时预报
-    - /weatheralert/v1/current/{lat}/{lon}  天气预警
+    封装和风天气 7 类 API:
+    - /v7/weather/now                      实时天气
+    - /v7/weather/24h                      24 小时逐时预报
+    - /weatheralert/v1/current/{lat}/{lon} 天气预警
+    - /v7/weather/{n}d                     逐天预报（默认 7 天）
+    - /v7/indices/1d                       生活指数
+    - /airquality/v1/current/{lat}/{lon}   实时空气质量 AQI
+    - /v7/minutely/5m                      分钟级降水
 
     使用 Ed25519 (EdDSA) 算法进行 JWT 身份认证
     """
@@ -269,3 +273,175 @@ class WeatherFetcher:
                 }
             )
         return result
+
+    def fetch_daily(self, days: int = 7) -> list[dict]:
+        """获取逐天预报（默认 7 天）
+
+        Returns:
+            列表，每项含 fx_date/temp_max/temp_min/text_day/text_night/pop 等
+            API 失败时返回空列表
+        """
+        url = f"{self._api_host}/v7/weather/{days}d"
+        params = {"location": self._location}
+        headers = {"Authorization": f"Bearer {self._get_jwt_token()}"}
+
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=10)
+            data = resp.json()
+        except Exception as exc:
+            logger.error(f"[天气] fetch_daily 请求异常: {exc}")
+            return []
+
+        if data.get("code") != "200":
+            logger.error(
+                f'[天气] fetch_daily API 返回错误: code={data.get("code")}, response={data}'
+            )
+            return []
+
+        result = []
+        for d in data.get("daily", []):
+            result.append(
+                {
+                    "fx_date": d.get("fxDate", ""),
+                    "temp_max": d.get("tempMax", ""),
+                    "temp_min": d.get("tempMin", ""),
+                    "text_day": d.get("textDay", ""),
+                    "text_night": d.get("textNight", ""),
+                    "icon_day": d.get("iconDay", ""),
+                    "pop": d.get("precipProb", "") or d.get("pop", ""),
+                    "wind_dir_day": d.get("windDirDay", ""),
+                    "wind_scale_day": d.get("windScaleDay", ""),
+                }
+            )
+        return result
+
+    def fetch_indices(self, types: str = "1,2,3,5,8,9,14,15,16") -> list[dict]:
+        """获取生活指数（默认常用一组）
+
+        Args:
+            types: 指数类型，逗号分隔
+                   （1 穿衣 / 2 洗车 / 3 感冒 / 5 运动 / 8 紫外线 /
+                    9 空调 / 12 防晒 / 13 钓鱼 / 15 晾晒）
+
+        Returns:
+            列表，每项含 type/name/category/text
+            API 失败时返回空列表
+        """
+        url = f"{self._api_host}/v7/indices/1d"
+        params = {"location": self._location, "type": types}
+        headers = {"Authorization": f"Bearer {self._get_jwt_token()}"}
+
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=10)
+            data = resp.json()
+        except Exception as exc:
+            logger.error(f"[天气] fetch_indices 请求异常: {exc}")
+            return []
+
+        if data.get("code") != "200":
+            logger.error(
+                f'[天气] fetch_indices API 返回错误: code={data.get("code")}, response={data}'
+            )
+            return []
+
+        result = []
+        # 和风 /v7/indices/1d 返回字段为 daily（实测，非 indices）
+        for it in data.get("daily", data.get("indices", [])):
+            result.append(
+                {
+                    "type": it.get("type", ""),
+                    "name": it.get("name", ""),
+                    "category": it.get("category", ""),
+                    "text": it.get("text", ""),
+                }
+            )
+        return result
+
+    def fetch_airquality(self) -> dict | None:
+        """获取实时空气质量（AQI，和风 GeoAPI /airquality/v1/current/{lat}/{lon}）
+
+        注意：和风空气质量走 GeoAPI v1 风格（与 weatheralert 同系列），
+        而非 /v7/airquality/now。成功返回可能为 {"now": {...}} 或顶层扁平，
+        此处两者兼容。
+
+        Returns:
+            标准化字典（aqi/category/primary/level/pm2p5/pm10/update_time）
+            API 失败时返回 None
+        """
+        # 从 location 解析经纬度 (格式: "longitude,latitude")
+        loc_parts = self._location.split(",")
+        if len(loc_parts) >= 2:
+            longitude = loc_parts[0].strip()
+            latitude = loc_parts[1].strip()
+        else:
+            longitude = "106.55"
+            latitude = "29.56"
+
+        url = f"{self._api_host}/airquality/v1/current/{latitude}/{longitude}"
+        headers = {"Authorization": f"Bearer {self._get_jwt_token()}"}
+
+        try:
+            resp = requests.get(url, headers=headers, timeout=10)
+            data = resp.json()
+        except Exception as exc:
+            logger.error(f"[天气] fetch_airquality 请求异常: {exc}")
+            return None
+
+        # GeoAPI 风格：错误时返回 {"error": {...}}（无 code 字段）
+        if "error" in data:
+            logger.error(f"[天气] fetch_airquality API 返回错误: response={data}")
+            return None
+
+        # 和风 GeoAPI v1 空气质量返回结构：indexes[]（aqi/category/level/primaryPollutant）
+        # + pollutants[]（pm2p5/pm10 等，浓度在 concentration.value）
+        # 顶层无 now 字段，故不从 data.now 取值
+        indexes = data.get("indexes", [])
+        idx0 = indexes[0] if indexes else {}
+        pollutants = {p.get("code"): p for p in data.get("pollutants", [])}
+        pm25 = pollutants.get("pm2p5", {}).get("concentration", {}).get("value", "")
+        pm10 = pollutants.get("pm10", {}).get("concentration", {}).get("value", "")
+        return {
+            "aqi": idx0.get("aqi", ""),
+            "category": idx0.get("category", ""),
+            "primary": idx0.get("primaryPollutant") or "",
+            "level": idx0.get("level", ""),
+            "pm2p5": pm25,
+            "pm10": pm10,
+            "update_time": data.get("updateTime", ""),
+        }
+
+    def fetch_minutely(self) -> dict | None:
+        """获取分钟级降水（未来 1-2 小时，每 5 分钟粒度）
+
+        Returns:
+            字典 { summary, minutely: [{fx_time, precip, type}] }
+            API 失败时返回 None
+        """
+        url = f"{self._api_host}/v7/minutely/5m"
+        params = {"location": self._location}
+        headers = {"Authorization": f"Bearer {self._get_jwt_token()}"}
+
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=10)
+            data = resp.json()
+        except Exception as exc:
+            logger.error(f"[天气] fetch_minutely 请求异常: {exc}")
+            return None
+
+        if data.get("code") != "200":
+            logger.error(
+                f'[天气] fetch_minutely API 返回错误: code={data.get("code")}, response={data}'
+            )
+            return None
+
+        return {
+            "summary": data.get("summary", ""),
+            "minutely": [
+                {
+                    "fx_time": m.get("fxTime", ""),
+                    "precip": m.get("precip", ""),
+                    "type": m.get("type", ""),
+                }
+                for m in data.get("minutely", [])
+            ],
+        }

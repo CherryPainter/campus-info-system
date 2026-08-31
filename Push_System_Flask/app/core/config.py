@@ -121,7 +121,7 @@ class Config:
 
         # 应用
         cls.APP_NAME = os.getenv("APP_NAME", "校园信息聚合与智能推送系统")
-        cls.APP_VERSION = os.getenv("APP_VERSION", "6.15.3")
+        cls.APP_VERSION = os.getenv("APP_VERSION", "6.16.0")
         cls.DEBUG = os.getenv("DEBUG", "false").lower() == "true"
         cls.HOST = os.getenv("HOST", "0.0.0.0")
         cls.PORT = int(os.getenv("PORT", "29528"))
@@ -182,6 +182,16 @@ class Config:
         # 企业微信（支持多 webhook，用逗号分隔）
         cls.WECOM_WEBHOOK = os.getenv("WECOM_WEBHOOK", "")
         cls.WECOM_STATUS_WEBHOOK = os.getenv("WECOM_STATUS_WEBHOOK", "")
+
+        # ============================================================
+        # 微信小程序（第二客户端认证）
+        # ============================================================
+        # AppID / AppSecret 从小程序后台「开发管理-开发设置」获取；
+        # AppSecret 只允许存在服务端环境变量，严禁放入小程序前端代码。
+        cls.WECHAT_MINIAPP_APPID = os.getenv("WECHAT_MINIAPP_APPID", "")
+        cls.WECHAT_MINIAPP_SECRET = os.getenv("WECHAT_MINIAPP_SECRET", "")
+        # 小程序会话闲置超时（秒），默认 259200（3天），与 JWT refresh idle 默认一致
+        cls.WECHAT_SESSION_TIMEOUT = int(os.getenv("WECHAT_SESSION_TIMEOUT", "259200"))
 
         # 班级
         cls.CLASS_NAME = os.getenv("CLASS_NAME", "ZK2401")

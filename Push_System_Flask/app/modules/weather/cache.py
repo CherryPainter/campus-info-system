@@ -16,6 +16,10 @@ logger = get_logger(__name__)
 NOW_TTL = 1800  # 实时天气缓存 30 分钟
 HOURLY_TTL = 3600  # 24h 预报缓存 60 分钟
 ALERT_TTL = 600  # 天气预警缓存 10 分钟
+DAILY_TTL = 10800  # 逐天预报缓存 3 小时
+INDICES_TTL = 21600  # 生活指数缓存 6 小时
+AIR_TTL = 1800  # 空气质量缓存 30 分钟
+MINUTELY_TTL = 1800  # 分钟级降水缓存 30 分钟
 
 
 class WeatherCache:

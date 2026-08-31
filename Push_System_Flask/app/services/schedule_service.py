@@ -13,12 +13,12 @@
 """
 
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from app.core.database import get_db
 from app.core.logger import get_logger
-from app.repository.course_repository import CourseRepository, derive_current_semester
+from app.repository.course_repository import CourseRepository, derive_current_semester, get_current_semester_id
 
 # 使用统一日志系统
 logger = get_logger(__name__)
@@ -81,9 +81,10 @@ class ScheduleService:
                 # 从数据库获取当前学期的课程
                 # 隐患修复：get_all 原本不过滤学期，会把所有学期课程一并加载并按
                 # week_number 排到本周日期推送，导致新旧学期同周次课程重复推送。
-                # 这里只加载"当前学期"（按日期推导的 semester_id），与前端默认学期一致。
+                # 这里只加载"当前学期"，与网页端 /course/timetable 口径一致：
+                # 优先读 course_meta.json 的真实在用学期，回退按日期推导。
                 courses = CourseRepository.get_all(
-                    session, semester_id=derive_current_semester()["semester_id"]
+                    session, semester_id=get_current_semester_id()
                 )
 
                 # 转换为推送服务需要的格式
@@ -180,6 +181,11 @@ class ScheduleService:
         """
         根据星期几和周次计算日期
 
+        锚定规则（与前端周历口径一致）：以「当前真实日历周一」为基准，
+        按 (week_number − 当前教学周) 做相对偏移。这样切换周只是"围绕当前时间
+        查看那个周的课程"，不会把日期跳到教学周真实日历（如第2周跳到 03-09），
+        且 getWeek 返回的 full_date 与前端周历显示日期天然对齐。
+
         Args:
             week_day: 星期几 (1-7)
             week_number: 周次
@@ -187,32 +193,22 @@ class ScheduleService:
         Returns:
             Optional[date]: 计算出的日期
         """
-        if week_number is None:
-            # 如果没有周次，使用本周
-            today = date.today()
-            days_ahead = week_day - today.isoweekday()
-            return today + __import__("datetime").timedelta(days=days_ahead)
-
-        # 计算学期第一周周一的日期（假设第1周从9月1日开始）
-        # 这里需要根据实际情况调整
         today = date.today()
+        if week_number is None:
+            days_ahead = week_day - today.isoweekday()
+            return today + timedelta(days=days_ahead)
+
         current_weekday = today.isoweekday()  # 1=周一, 7=周日
-
-        # 计算本周周一
         days_since_monday = current_weekday - 1
-        this_monday = today - __import__("datetime").timedelta(days=days_since_monday)
+        this_monday = today - timedelta(days=days_since_monday)
 
-        # 计算目标周次的周一
         current_week_number = self._get_current_week_number()
         if current_week_number is None:
             current_week_number = 1
 
         weeks_diff = week_number - current_week_number
-        target_monday = this_monday + __import__("datetime").timedelta(weeks=weeks_diff)
-
-        # 计算目标日期
-        target_date = target_monday + __import__("datetime").timedelta(days=week_day - 1)
-
+        target_monday = this_monday + timedelta(weeks=weeks_diff)
+        target_date = target_monday + timedelta(days=week_day - 1)
         return target_date
 
     def _get_current_week_number(self) -> int | None:
@@ -291,19 +287,24 @@ class ScheduleService:
             schedules = list(self._schedules)
         return self._enrich_is_today(schedules)
 
-    def get_today_schedules(self, force_reload: bool = False) -> list[dict[str, Any]]:
+    def get_today_schedules(
+        self, force_reload: bool = False, target_date: str | None = None
+    ) -> list[dict[str, Any]]:
         """
-        获取今日课表
+        获取指定日期课表（默认今天）
 
         Args:
             force_reload: 是否强制重新加载
+            target_date: 目标日期（YYYY-MM-DD），缺省今天
 
         Returns:
-            List[Dict]: 今日课表列表
+            List[Dict]: 该日期课表列表（按 extra_info.full_date 精确匹配）
         """
-        today = date.today().strftime("%Y-%m-%d")
+        target = target_date or date.today().strftime("%Y-%m-%d")
         return [
-            s for s in self.get_schedules(force_reload) if s["extra_info"]["full_date"] == today
+            s
+            for s in self.get_schedules(force_reload)
+            if s["extra_info"]["full_date"] == target
         ]
 
     def get_upcoming_courses(

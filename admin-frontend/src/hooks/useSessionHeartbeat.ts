@@ -19,7 +19,11 @@ export function useSessionHeartbeat(enabled: boolean, intervalMs: number = POLL_
       // request 拦截器已解包一层，res 即 { valid, reason, ip, time }
       const res: any = await request.get("/auth/session/status");
       if (res && res.valid === false) {
-        notifySessionExpired({ reason: res.reason, ip: res.ip, time: res.time });
+        // 标准 JWT Bearer 流程下不再依赖 session_id cookie；reason=no_session
+        // 仅表示未走 cookie 会话，并非会话失效，不应弹"会话过期"框。
+        if (res.reason !== "no_session") {
+          notifySessionExpired({ reason: res.reason, ip: res.ip, time: res.time });
+        }
       }
     } catch {
       // 网络抖动忽略，不因一次探测失败就把用户踢出

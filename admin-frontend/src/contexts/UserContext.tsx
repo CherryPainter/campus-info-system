@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { useLocation } from "react-router-dom";
 import { authApi } from "@/api/auth";
 import type { User } from "@/types/user";
+import { tokenStorage } from "@/utils/token";
 
 interface UserContextType {
   user: User | null;
@@ -75,6 +76,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
    * 退出登录时调用此方法重置状态
    */
   const logout = () => {
+    // 清除本地 token（Bearer 流程核心清理）
+    tokenStorage.clearTokens();
     setUser(null);
     setAuthenticated(false);
     setLoading(false);

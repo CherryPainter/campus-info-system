@@ -217,28 +217,72 @@ class WeatherService:
             if records:
                 # 检查数据是否过期（超过60分钟）
                 latest_record = max(records, key=lambda r: r.created_at)
-                if (
-                    latest_record.created_at
-                    and datetime.utcnow() - latest_record.created_at < timedelta(minutes=60)
-                ):
-                    return [r.to_dict() for r in records]
-                else:
-                    # 数据已过期，先返回旧数据，然后异步刷新
-                    old_data = [r.to_dict() for r in records]
-                    # 在后台线程中刷新数据，不阻塞当前请求
-                    import threading
-
-                    thread = threading.Thread(
-                        target=self.fetch_and_save_hourly, args=(city_name,), daemon=True
+                # 跨天判定：缓存数据是「昨天或更早」写入的，说明还停留在跨零点之前的旧批次，
+                # 必须刷新（否则 00:05 仍返回「昨天→今天00:00」的倒序脏数据）
+                latest_date = (latest_record.created_at or datetime.min).date()
+                is_stale = (
+                    latest_record.created_at is None
+                    or datetime.utcnow() - latest_record.created_at >= timedelta(minutes=60)
+                )
+                is_cross_day = latest_date < datetime.now().date()
+                if is_stale or is_cross_day:
+                    # 过期或跨天：同步刷新（跨天时刻必须拿到「今天」的数据，不能返回旧批次）
+                    logger.info(
+                        "[WeatherService] 24h预报%s，同步刷新",
+                        "已过期" if is_stale else "跨天需更新",
                     )
-                    thread.start()
-                    logger.info("[WeatherService] 24h预报数据已过期，返回旧数据并在后台刷新")
-                    return old_data
-
-            # 数据库无数据，重新获取
-            return self.fetch_and_save_hourly(city_name)
+                    hourly = self.fetch_and_save_hourly(city_name)
+                else:
+                    hourly = [r.to_dict() for r in records]
+            else:
+                # 数据库无数据，重新获取
+                hourly = self.fetch_and_save_hourly(city_name)
         finally:
             session.close()
+
+        # 以实时为主：把折线里「当前小时」那条记录的温度覆盖为实况温度（仅改返回，不落库）
+        return self._overlay_realtime_temp(hourly, city_name)
+
+    def _overlay_realtime_temp(
+        self, hourly: list[dict[str, Any]], city_name: str = "重庆"
+    ) -> list[dict[str, Any]]:
+        """将 24h 折线中「当前小时」那条记录的温度覆盖为实况温度（实时为主）。
+
+        仅修改返回给前端的数据，不写入数据库，避免污染历史 hourly 记录。
+        """
+        try:
+            now_weather = self.get_now_weather(city_name)
+            if not now_weather or now_weather.get("temp") is None:
+                return hourly
+            live_temp = now_weather["temp"]
+            now = datetime.now()
+            # 找时间最接近当前时刻的那条 hourly 记录
+            target_idx = -1
+            min_diff: float | None = None
+            for i, item in enumerate(hourly):
+                t = item.get("time") or item.get("fx_time")
+                if not t:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(str(t).replace("Z", "+00:00"))
+                    if ts.tzinfo is not None:
+                        ts = ts.replace(tzinfo=None)
+                except (ValueError, TypeError):
+                    continue
+                diff = abs((ts - now).total_seconds())
+                if min_diff is None or diff < min_diff:
+                    min_diff = diff
+                    target_idx = i
+            if target_idx >= 0:
+                hourly[target_idx] = {**hourly[target_idx], "temp": live_temp}
+                logger.info(
+                    "[WeatherService] 24h折线当前小时温度已覆盖为实况: idx=%s temp=%s",
+                    target_idx,
+                    live_temp,
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"[WeatherService] 覆盖当前小时温度失败: {e}")
+        return hourly
 
     def fetch_and_save_alerts(self, city_name: str = "重庆") -> list[dict[str, Any]]:
         """

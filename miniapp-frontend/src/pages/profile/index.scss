@@ -1,0 +1,267 @@
+@import '../../styles/variables.scss';
+
+.profile-page {
+  position: relative;
+  // 径向蓝渐变直接写在页面背景上（保留右上原生胶囊按钮，不再用绝对定位层）
+  background:
+    radial-gradient(
+      circle at 18% 0%,
+      rgba(122, 167, 255, 0.26) 0%,
+      rgba(122, 167, 255, 0.14) 30%,
+      rgba(122, 167, 255, 0.06) 55%,
+      rgba(122, 167, 255, 0) 75%
+    ),
+    $background;
+
+  // 资料头部
+  .profile-header {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    padding: $spacing-lg $spacing-lg $spacing-md;
+    gap: $spacing-md;
+
+    .profile-avatar {
+      width: 128rpx;
+      height: 128rpx;
+      border-radius: 50%;
+      border: 4rpx solid rgba(255, 255, 255, 0.5);
+      flex-shrink: 0;
+
+      &.profile-avatar-placeholder {
+        background: rgba(255, 255, 255, 0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .profile-avatar-text {
+        font-size: 56rpx;
+        color: $text-primary;
+        font-weight: 600;
+      }
+    }
+
+    .profile-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .profile-name {
+      display: block;
+      font-size: 40rpx;
+      font-weight: 600;
+      color: $text-primary;
+    }
+
+    .profile-sub {
+      display: block;
+      margin-top: $spacing-xs;
+      font-size: $font-size-sm;
+      color: $text-tertiary;
+    }
+
+    .profile-header-actions {
+      display: flex;
+      flex-direction: column;
+      gap: $spacing-sm;
+    }
+
+    .profile-qr,
+    .profile-more {
+      width: 56rpx;
+      height: 56rpx;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1rpx solid $border-color;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .profile-qr-icon,
+    .profile-more-icon {
+      font-size: 36rpx;
+      color: $text-secondary;
+      line-height: 1;
+    }
+
+    .profile-more-icon {
+      font-size: 40rpx;
+    }
+  }
+
+  // 宿舍用电卡
+  .dorm-card {
+    margin-top: $spacing-md;
+
+    .dorm-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: $spacing-md;
+
+      .card-title {
+        font-size: $font-size-lg;
+        font-weight: 600;
+        color: $text-primary;
+      }
+
+      .card-more {
+        font-size: $font-size-sm;
+        color: $text-tertiary;
+      }
+
+      // 标题右侧：楼栋信息 + 更多› 横向排列
+      .dorm-header-right {
+        display: flex;
+        align-items: center;
+      }
+
+      .dorm-room {
+        font-size: $font-size-sm;
+        color: $text-tertiary;
+        margin-right: $spacing-md;
+        line-height: 1;
+      }
+    }
+
+    .dorm-stats {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: $spacing-md $spacing-xs;
+    }
+
+    .dorm-stat {
+      flex: 1;
+      // 重要：Text 在 WXSS 中默认是 inline-block，会水平排版；
+      // 上下排版必须给 Text 显式 display:block
+      .dorm-stat-label {
+        display: block;
+        font-size: $font-size-xs;
+        color: $text-tertiary;
+        line-height: 1.2;
+      }
+
+      .dorm-stat-value {
+        display: block;
+        margin-top: $spacing-sm;
+        font-size: 68rpx;
+        font-weight: 700;
+        color: $text-primary;
+        line-height: 1.1;
+      }
+
+      // 剩余电量用绿色突出（原型图）
+      .dorm-stat-value-remaining {
+        color: #34c759;
+      }
+
+      // 本月已用为深色（原型图）
+      .dorm-stat-value-used {
+        color: $text-primary;
+      }
+    }
+
+    .dorm-stat-divider {
+      // 竖线两侧留出间距，避免与数字重叠
+      margin: 0 $spacing-md;
+      width: 1rpx;
+      height: 80rpx;
+      background: $border-color;
+      flex-shrink: 0;
+    }
+
+    .dorm-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: $spacing-md;
+    }
+
+    .dorm-foot-time {
+      font-size: $font-size-xs;
+      color: $text-tertiary;
+    }
+
+    .dorm-foot-btn {
+      padding: 10rpx 24rpx;
+      border-radius: $radius-full;
+      // 浅蓝边框按钮（原型图）
+      border: 1rpx solid #d6e4ff;
+      background: #f0f6ff;
+      font-size: $font-size-sm;
+      color: $primary-color;
+    }
+  }
+
+  // 功能列表（带中文首字图标块）
+  .profile-list {
+    padding: 0 $spacing-lg;
+    margin-top: $spacing-md;
+
+    .profile-item {
+      display: flex;
+      align-items: center;
+      padding: $spacing-md 0;
+      border-bottom: 1rpx solid $border-color;
+
+      &:last-child {
+        border-bottom: none;
+      }
+
+      .profile-item-icon-wrap {
+        width: 56rpx;
+        height: 56rpx;
+        border-radius: $radius-medium;
+        background: $primary-light;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        margin-right: $spacing-md;
+      }
+
+      .profile-item-icon {
+        font-size: 36rpx;
+        color: $primary-color;
+        line-height: 1;
+      }
+
+      .profile-label {
+        flex: 1;
+        font-size: $font-size-md;
+        color: $text-primary;
+      }
+
+      .profile-arrow {
+        font-size: 32rpx;
+        color: $text-tertiary;
+      }
+    }
+  }
+
+  .logout-btn {
+    margin: $spacing-lg $spacing-md 0;
+    padding: $spacing-md;
+    border-radius: $radius-large;
+    background: $card-background;
+    text-align: center;
+
+    .logout-text {
+      font-size: $font-size-md;
+      color: $error;
+    }
+  }
+
+  .profile-version {
+    display: block;
+    margin-top: $spacing-lg;
+    margin-bottom: $spacing-xl;
+    text-align: center;
+    font-size: $font-size-xs;
+    color: $text-tertiary;
+  }
+}

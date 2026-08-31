@@ -1,0 +1,49 @@
+export default defineAppConfig({
+  // 页面注册顺序：第一个为首页
+  pages: [
+    'pages/home/index',
+    'pages/schedule/index',
+    'pages/coursetable/index',
+    'pages/coursedetail/index',
+    'pages/profile/index',
+    'pages/electricity/index',
+    'pages/login/index',
+    'pages/weather/index',
+  ],
+  // 底部 TabBar：3 项（首页 / 时间轴 / 我的）
+  // 图标由 iconfont 字体渲染成 PNG（96x96）：src/assets/tabbar/ 下
+  // 微信 tabBar 图标只支持图片文件（不支持字体图标），所以走 PNG 路线
+  tabBar: {
+    color: '#8a8f99',
+    selectedColor: '#1a73e8',
+    backgroundColor: '#ffffff',
+    borderStyle: 'black',
+    list: [
+      {
+        pagePath: 'pages/home/index',
+        text: '首页',
+        iconPath: 'assets/tabbar/home.png',
+        selectedIconPath: 'assets/tabbar/home-active.png',
+      },
+      {
+        pagePath: 'pages/schedule/index',
+        text: '时间轴',
+        iconPath: 'assets/tabbar/timeline.png',
+        selectedIconPath: 'assets/tabbar/timeline-active.png',
+      },
+      {
+        pagePath: 'pages/profile/index',
+        text: '我的',
+        iconPath: 'assets/tabbar/profile.png',
+        selectedIconPath: 'assets/tabbar/profile-active.png',
+      },
+    ],
+  },
+  window: {
+    backgroundTextStyle: 'light',
+    navigationBarBackgroundColor: '#f6f7fb',
+    navigationBarTitleText: '校园宜知行',
+    navigationBarTextStyle: 'black',
+    backgroundColor: '#f6f7fb',
+  },
+});

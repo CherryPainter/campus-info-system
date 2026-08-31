@@ -1,0 +1,380 @@
+{
+  "id": "5227727",
+  "name": "校园宜知行",
+  "font_family": "iconfont",
+  "css_prefix_text": "icon-",
+  "description": "",
+  "glyphs": [
+    {
+      "icon_id": "5387798",
+      "name": "温湿度传感器_o",
+      "font_class": "wenshiduchuanganqi_o",
+      "unicode": "eb5b",
+      "unicode_decimal": 60251
+    },
+    {
+      "icon_id": "6677858",
+      "name": "风向",
+      "font_class": "fengxiang",
+      "unicode": "e608",
+      "unicode_decimal": 58888
+    },
+    {
+      "icon_id": "7335548",
+      "name": "气压",
+      "font_class": "qiya",
+      "unicode": "eb31",
+      "unicode_decimal": 60209
+    },
+    {
+      "icon_id": "35252440",
+      "name": "晾晒",
+      "font_class": "liangyifu",
+      "unicode": "e639",
+      "unicode_decimal": 58937
+    },
+    {
+      "icon_id": "45652961",
+      "name": "体感温度",
+      "font_class": "tiganwendu",
+      "unicode": "e607",
+      "unicode_decimal": 58887
+    },
+    {
+      "icon_id": "47829863",
+      "name": "能见度",
+      "font_class": "nengjiandu",
+      "unicode": "e65c",
+      "unicode_decimal": 58972
+    },
+    {
+      "icon_id": "47829883",
+      "name": "风力",
+      "font_class": "fengli",
+      "unicode": "e65d",
+      "unicode_decimal": 58973
+    },
+    {
+      "icon_id": "1011",
+      "name": "口红",
+      "font_class": "kouhong",
+      "unicode": "e601",
+      "unicode_decimal": 58881
+    },
+    {
+      "icon_id": "1032",
+      "name": "空调",
+      "font_class": "kongdiao",
+      "unicode": "e602",
+      "unicode_decimal": 58882
+    },
+    {
+      "icon_id": "1355",
+      "name": "防晒",
+      "font_class": "fangshai",
+      "unicode": "e603",
+      "unicode_decimal": 58883
+    },
+    {
+      "icon_id": "1619263",
+      "name": "衣服",
+      "font_class": "tubiao-",
+      "unicode": "e610",
+      "unicode_decimal": 58896
+    },
+    {
+      "icon_id": "5175711",
+      "name": "跑步",
+      "font_class": "paobu",
+      "unicode": "e61c",
+      "unicode_decimal": 58908
+    },
+    {
+      "icon_id": "5755704",
+      "name": "洗车-粗线条",
+      "font_class": "xiche-cuxiantiao",
+      "unicode": "e697",
+      "unicode_decimal": 59031
+    },
+    {
+      "icon_id": "6868198",
+      "name": "旅游发布",
+      "font_class": "lvyoufabu",
+      "unicode": "e604",
+      "unicode_decimal": 58884
+    },
+    {
+      "icon_id": "11758501",
+      "name": "雨伞",
+      "font_class": "yusan",
+      "unicode": "e790",
+      "unicode_decimal": 59280
+    },
+    {
+      "icon_id": "13885292",
+      "name": "5879314 - breath breathing health respiratory",
+      "font_class": "-breathbreathinghealthrespiratory",
+      "unicode": "e605",
+      "unicode_decimal": 58885
+    },
+    {
+      "icon_id": "15431877",
+      "name": "交通灯",
+      "font_class": "jiaotongdeng",
+      "unicode": "e693",
+      "unicode_decimal": 59027
+    },
+    {
+      "icon_id": "17626050",
+      "name": "太阳镜",
+      "font_class": "taiyangjing",
+      "unicode": "e616",
+      "unicode_decimal": 58902
+    },
+    {
+      "icon_id": "21237419",
+      "name": "紫外线",
+      "font_class": "ziwaixian",
+      "unicode": "e641",
+      "unicode_decimal": 58945
+    },
+    {
+      "icon_id": "22613458",
+      "name": "雾霾",
+      "font_class": "wumai",
+      "unicode": "e634",
+      "unicode_decimal": 58932
+    },
+    {
+      "icon_id": "34430291",
+      "name": "感冒药物-copy",
+      "font_class": "ganmaoyaowu",
+      "unicode": "e606",
+      "unicode_decimal": 58886
+    },
+    {
+      "icon_id": "35177964",
+      "name": "舒适度温度",
+      "font_class": "shushiduwendu",
+      "unicode": "e6d4",
+      "unicode_decimal": 59092
+    },
+    {
+      "icon_id": "47616891",
+      "name": "钓鱼竿",
+      "font_class": "diaoyugan",
+      "unicode": "e632",
+      "unicode_decimal": 58930
+    },
+    {
+      "icon_id": "13769356",
+      "name": "登录-微信登录",
+      "font_class": "denglu-weixindenglu",
+      "unicode": "e629",
+      "unicode_decimal": 58921
+    },
+    {
+      "icon_id": "7549367",
+      "name": "加",
+      "font_class": "RectangleCopy",
+      "unicode": "e6a5",
+      "unicode_decimal": 59045
+    },
+    {
+      "icon_id": "7549819",
+      "name": "报表",
+      "font_class": "RectangleCopy1",
+      "unicode": "e6a7",
+      "unicode_decimal": 59047
+    },
+    {
+      "icon_id": "15838508",
+      "name": "more",
+      "font_class": "more",
+      "unicode": "e679",
+      "unicode_decimal": 59001
+    },
+    {
+      "icon_id": "33987002",
+      "name": "返回",
+      "font_class": "fanhui",
+      "unicode": "e61e",
+      "unicode_decimal": 58910
+    },
+    {
+      "icon_id": "33987013",
+      "name": "关闭",
+      "font_class": "guanbi",
+      "unicode": "e61f",
+      "unicode_decimal": 58911
+    },
+    {
+      "icon_id": "33987016",
+      "name": "上传图片",
+      "font_class": "shangchuantupian",
+      "unicode": "e620",
+      "unicode_decimal": 58912
+    },
+    {
+      "icon_id": "33987020",
+      "name": "分享 2",
+      "font_class": "a-fenxiang2",
+      "unicode": "e621",
+      "unicode_decimal": 58913
+    },
+    {
+      "icon_id": "33987164",
+      "name": "下拉",
+      "font_class": "a-xiala2",
+      "unicode": "e622",
+      "unicode_decimal": 58914
+    },
+    {
+      "icon_id": "33987167",
+      "name": "编辑",
+      "font_class": "bianji",
+      "unicode": "e623",
+      "unicode_decimal": 58915
+    },
+    {
+      "icon_id": "33987169",
+      "name": "进入",
+      "font_class": "jinru",
+      "unicode": "e624",
+      "unicode_decimal": 58916
+    },
+    {
+      "icon_id": "33987171",
+      "name": "提示",
+      "font_class": "tishi",
+      "unicode": "e625",
+      "unicode_decimal": 58917
+    },
+    {
+      "icon_id": "1167181",
+      "name": "设置",
+      "font_class": "shezhi",
+      "unicode": "e643",
+      "unicode_decimal": 58947
+    },
+    {
+      "icon_id": "1363650",
+      "name": "校园卡-01",
+      "font_class": "xiaoyuanqia-",
+      "unicode": "e668",
+      "unicode_decimal": 58984
+    },
+    {
+      "icon_id": "1766497",
+      "name": "符号-时间轴",
+      "font_class": "shijianzhou",
+      "unicode": "e69a",
+      "unicode_decimal": 59034
+    },
+    {
+      "icon_id": "2380665",
+      "name": "天气",
+      "font_class": "tianqi",
+      "unicode": "e61a",
+      "unicode_decimal": 58906
+    },
+    {
+      "icon_id": "4848073",
+      "name": "二维码",
+      "font_class": "erweima",
+      "unicode": "e614",
+      "unicode_decimal": 58900
+    },
+    {
+      "icon_id": "5092023",
+      "name": "电池",
+      "font_class": "dianchi",
+      "unicode": "e711",
+      "unicode_decimal": 59153
+    },
+    {
+      "icon_id": "5270852",
+      "name": "收 藏-产品详情",
+      "font_class": "shoucang",
+      "unicode": "e613",
+      "unicode_decimal": 58899
+    },
+    {
+      "icon_id": "9233009",
+      "name": "意见与反馈",
+      "font_class": "yijianyufankui",
+      "unicode": "e642",
+      "unicode_decimal": 58946
+    },
+    {
+      "icon_id": "11372686",
+      "name": "日历",
+      "font_class": "rili",
+      "unicode": "e8b4",
+      "unicode_decimal": 59572
+    },
+    {
+      "icon_id": "16563022",
+      "name": "收 藏",
+      "font_class": "xz",
+      "unicode": "e600",
+      "unicode_decimal": 58880
+    },
+    {
+      "icon_id": "21242885",
+      "name": "通知",
+      "font_class": "tongzhi",
+      "unicode": "e640",
+      "unicode_decimal": 58944
+    },
+    {
+      "icon_id": "27993652",
+      "name": "首页",
+      "font_class": "shouye-shouye",
+      "unicode": "e615",
+      "unicode_decimal": 58901
+    },
+    {
+      "icon_id": "36135019",
+      "name": "空闲教室",
+      "font_class": "kongxianjiaoshi",
+      "unicode": "e619",
+      "unicode_decimal": 58905
+    },
+    {
+      "icon_id": "36924400",
+      "name": "更多功能_24",
+      "font_class": "gengduogongneng_24",
+      "unicode": "e7bb",
+      "unicode_decimal": 59323
+    },
+    {
+      "icon_id": "40198742",
+      "name": "收藏",
+      "font_class": "a-rongqi2231x",
+      "unicode": "e67c",
+      "unicode_decimal": 59004
+    },
+    {
+      "icon_id": "43159414",
+      "name": "我的·",
+      "font_class": "a-wode",
+      "unicode": "e612",
+      "unicode_decimal": 58898
+    },
+    {
+      "icon_id": "46092296",
+      "name": "账户挂失",
+      "font_class": "zhanghuguashi",
+      "unicode": "e727",
+      "unicode_decimal": 59175
+    },
+    {
+      "icon_id": "534378",
+      "name": "课程表",
+      "font_class": "kechengbiao",
+      "unicode": "e62c",
+      "unicode_decimal": 58924
+    }
+  ]
+}

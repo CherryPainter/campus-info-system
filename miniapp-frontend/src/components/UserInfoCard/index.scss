@@ -1,0 +1,55 @@
+@import '../../styles/variables.scss';
+
+.user-card {
+  display: flex;
+  align-items: center;
+  padding: $spacing-xl $spacing-lg;
+  margin: $spacing-md;
+  border-radius: $radius-large;
+  background: linear-gradient(135deg, #4a8cf7 0%, #1a73e8 100%);
+  box-shadow: $shadow-card;
+
+  .user-avatar {
+    width: 120rpx;
+    height: 120rpx;
+    border-radius: 50%;
+    border: 4rpx solid rgba(255, 255, 255, 0.4);
+    flex-shrink: 0;
+
+    &.user-avatar-placeholder {
+      background: rgba(255, 255, 255, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .avatar-text {
+      font-size: 48rpx;
+      color: $text-inverse;
+      font-weight: 600;
+    }
+  }
+
+  .user-info {
+    margin-left: $spacing-lg;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .user-name {
+    display: block;
+    font-size: $font-size-xl;
+    font-weight: 600;
+    color: $text-inverse;
+  }
+
+  .user-sub {
+    display: block;
+    margin-top: $spacing-xs;
+    font-size: $font-size-sm;
+    color: rgba(255, 255, 255, 0.85);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

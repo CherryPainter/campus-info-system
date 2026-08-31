@@ -1,0 +1,273 @@
+@import '../../styles/variables.scss';
+
+.schedule-page {
+    // 背景：白色 + 顶部蓝色渐变向下溶解（首页/我的页同款风格）
+    background:
+      radial-gradient(
+        circle at 18% 0%,
+        rgba(122, 167, 255, 0.26) 0%,
+        rgba(122, 167, 255, 0.14) 30%,
+        rgba(122, 167, 255, 0.06) 55%,
+        rgba(122, 167, 255, 0) 75%
+      ),
+      #ffffff;
+    background-color: #ffffff;
+    min-height: 100vh;
+
+    // 自定义导航栏标题：左对齐粗体大字（与首页"校园宜知行"同款）
+    .schedule-nav-title {
+        display: block;
+        padding: $spacing-md $spacing-lg $spacing-lg;
+        font-size: 44rpx;
+        font-weight: 700;
+        color: $text-primary;
+        line-height: 1.2;
+    }
+}
+
+// 顶部：周次选择器触发区 + 今天快捷键
+.schedule-week-picker {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    &:active { opacity: 0.7; }
+}
+
+.schedule-month-text {
+    font-size: $font-size-lg;
+    font-weight: 600;
+    color: $text-primary;
+}
+
+// 下箭头：展开时旋转 180 度
+.schedule-month-arrow {
+    margin-left: 6rpx;
+    font-size: 24rpx;
+    color: $text-secondary;
+    line-height: 1;
+    transition: transform 0.3s ease;
+
+    &.rotated {
+        transform: rotate(180deg);
+    }
+}
+
+.schedule-today-btn {
+    font-size: $font-size-md;
+    color: $primary-color;
+    padding: 4rpx 12rpx;
+}
+
+// 白色圆角矩形卡：头部行 + 周历行
+.week-calendar {
+    margin: 0 $spacing-lg;
+    padding: $spacing-md $spacing-sm;
+    border-radius: $radius-large;
+
+    // 头部行：第 X 周 + 教学周胶囊 + 旋转箭头（左），今天（右）
+    .week-calendar-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 $spacing-sm;
+        margin-bottom: $spacing-md;
+    }
+
+    // 教学周胶囊
+    .week-calendar-badge {
+        display: inline-block;
+        margin-left: $spacing-sm;
+        padding: 4rpx 14rpx;
+        border-radius: $radius-full;
+        background: rgba(26, 115, 232, 0.08);
+
+        .week-calendar-badge-text {
+            font-size: 20rpx;
+            color: $primary-color;
+            line-height: 1.4;
+        }
+    }
+
+    // 周历 Swiper：左右滑动切换周（高度容纳标签+日期圆+圆点行）
+    .week-swiper {
+        height: 138rpx;
+    }
+
+    // 周历行：周一 ~ 周日（每页内横排 7 天）
+    .week-calendar-days {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+    }
+
+    .week-cell {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+
+        .week-cell-label {
+            font-size: $font-size-xs;
+            color: $text-tertiary;
+
+            &.week-cell-active {
+                color: $primary-color;
+                font-weight: 500;
+            }
+        }
+
+        .week-cell-day {
+            margin-top: $spacing-xs;
+            width: 64rpx;
+            height: 64rpx;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            &.week-cell-day-today {
+                background: $primary-color;
+            }
+        }
+
+        // 今天：蓝色实心圆 + 白字
+        .week-cell-day-text-active {
+            color: $text-inverse;
+            font-weight: 600;
+        }
+
+        // 选中非今天：浅蓝底 + 蓝色圆环，文字用蓝色
+        .week-cell-day-text-selected {
+            color: $primary-color;
+            font-weight: 600;
+        }
+
+        // 选中非今天日期的样式（蓝色圆环 + 浅蓝底）
+        &.week-cell-day-selected {
+            background: rgba(26, 115, 232, 0.12);
+            border: 2rpx solid $primary-color;
+        }
+    }
+
+    // 选中态整格可点击反馈
+    &.week-cell-selected {
+        cursor: pointer;
+    }
+
+    // 周历每格底部的有课标记行
+    .week-cell-dot-row {
+        margin-top: 6rpx;
+        height: 14rpx;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    // 有课圆点
+    .week-cell-dot {
+        width: 8rpx;
+        height: 8rpx;
+        border-radius: 50%;
+        background: $primary-color;
+
+        &.week-cell-dot-empty {
+            background: transparent;
+        }
+    }
+}
+
+/* 时间轴列表与周历卡之间的留白 */
+.timeline-list {
+    margin-top: $spacing-lg;
+}
+
+// 空状态卡片：白色背景 + 与上方日历卡间距
+.schedule-empty-card {
+    margin-top: $spacing-lg;
+}
+
+/* ========== 底部弹出周次选择模态框（经典 picker 风格）========== */
+
+// 全屏半透明遮罩
+.week-picker-mask {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+// 底部弹出的面板容器
+.week-picker-modal {
+    background: #fff;
+    border-radius: 24rpx 24rpx 0 0;
+    overflow: hidden;
+    animation: pickerSlideUp 0.25s ease-out;
+
+    @keyframes pickerSlideUp {
+        from { transform: translateY(100%); }
+        to   { transform: translateY(0); }
+    }
+}
+
+// 标题栏：取消 | 学期名 | 确定
+.week-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 28rpx 32rpx;
+    border-bottom: 1rpx solid #f0f0f0;
+}
+
+.week-picker-cancel {
+    font-size: 30rpx;
+    color: $text-tertiary;
+    padding: 8rpx 16rpx;
+}
+
+.week-picker-title {
+    font-size: 28rpx;
+    color: $text-secondary;
+    font-weight: 500;
+}
+
+.week-picker-confirm {
+    font-size: 30rpx;
+    color: $primary-color;
+    font-weight: 600;
+    padding: 8rpx 16rpx;
+}
+
+// 标题下方细分隔线
+.week-picker-divider {
+    height: 1rpx;
+    background: #f5f5f5;
+}
+
+// PickerView 容器
+.week-picker-body {
+    padding: 0 $spacing-md;
+}
+
+.week-picker-view {
+    height: 440rpx;
+}
+
+// 滚轮内每一项
+.week-picker-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 88rpx;
+    line-height: 88rpx;
+}
+
+.week-picker-item-text {
+    font-size: 32rpx;
+    color: $text-primary;
+}

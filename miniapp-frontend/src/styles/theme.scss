@@ -1,0 +1,111 @@
+// ============================================================
+// 主题样式：基于 Design Token 的通用组件样式
+// ============================================================
+
+@import './variables.scss';
+
+// 页面容器：浅灰底、左右留白、底部为 TabBar 让出安全区
+.page {
+  min-height: 100vh;
+  background: $background;
+  box-sizing: border-box;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+// 通用卡片
+.card {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  padding: $spacing-lg;
+  margin: 0 $spacing-md $spacing-md;
+}
+
+// 卡片标题行（标题 + 右侧入口）
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $spacing-md;
+
+  .card-title {
+    font-size: $font-size-lg;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  .card-more {
+    font-size: $font-size-sm;
+    color: $text-tertiary;
+  }
+
+  // 带 iconfont + 右箭头的"更多"按钮（如首页"全部课程"）
+  .card-more-btn {
+    display: flex;
+    align-items: center;
+  }
+
+  .card-more-icon {
+    font-size: 28rpx;
+    color: $primary-color;
+    margin-right: 6rpx;
+  }
+
+  .card-more-text {
+    font-size: $font-size-sm;
+    color: $text-tertiary;
+  }
+
+  .card-more-arrow {
+    font-size: 28rpx;
+    color: $text-tertiary;
+    margin-left: 2rpx;
+    line-height: 1;
+  }
+}
+
+// 空状态 / 加载 / 错误通用文案
+.state-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-xl 0;
+
+  .state-title {
+    font-size: $font-size-md;
+    color: $text-secondary;
+    margin-top: $spacing-sm;
+  }
+
+  .state-desc {
+    font-size: $font-size-sm;
+    color: $text-tertiary;
+    margin-top: $spacing-xs;
+  }
+}
+
+// 状态标签（未开始/进行中/已结束）
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4rpx 16rpx;
+  border-radius: $radius-full;
+  font-size: $font-size-xs;
+  line-height: 1.4;
+
+  &.tag-success {
+    color: $success;
+    background: rgba(0, 181, 120, 0.1);
+  }
+
+  &.tag-warning {
+    color: $warning;
+    background: rgba(255, 143, 31, 0.12);
+  }
+
+  &.tag-default {
+    color: $text-tertiary;
+    background: rgba(138, 143, 153, 0.12);
+  }
+}

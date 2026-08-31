@@ -1,0 +1,40 @@
+@import '../../styles/variables.scss';
+
+.quick-access {
+  .quick-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: $spacing-md $spacing-sm;
+    margin-top: $spacing-sm;
+  }
+
+  .quick-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: $spacing-sm 0;
+
+    .quick-icon-wrap {
+      width: 80rpx;
+      height: 80rpx;
+      border-radius: $radius-medium;
+      background: $primary-light;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: $spacing-xs;
+
+      .iconfont {
+        font-size: 44rpx;
+        color: $primary-color;
+        line-height: 1;
+      }
+    }
+
+    .quick-label {
+      font-size: $font-size-xs;
+      color: $text-primary;
+      text-align: center;
+    }
+  }
+}

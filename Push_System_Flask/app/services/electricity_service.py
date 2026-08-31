@@ -10,6 +10,8 @@
 """
 
 import logging
+import re
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -41,6 +43,9 @@ class ElectricityService:
         self._crawler = crawler
         self._meter = meter
         self._capacity_manager = get_capacity_manager(meter)
+        # 轻量刷新冷却状态（秒）：防频繁爬取被反爬
+        self._last_remaining_refresh: float | None = None
+        self._remaining_refresh_cooldown: float = 60.0
 
     def _get_crawler(self) -> ElectricityCrawler:
         """获取或创建 crawler"""
@@ -49,6 +54,50 @@ class ElectricityService:
 
             self._crawler = _make_crawler()
         return self._crawler
+
+    @staticmethod
+    def clean_meter(raw: Any) -> str:
+        """
+        清洗电表名：去掉爬虫可能附加的 "电表:" 前缀和 "照明" 后缀等噪声，
+        统一为楼栋+寝室号（如 "31栋512"）。空值兜底 "default"。
+
+        历史脏数据格式（爬虫 _parse_json 拼前缀 / _parse_html 原文本）：
+          - "电表: 31栋512照明" → "31栋512"
+          - "电表: 310512" → "310512"
+          - "31栋512照明" → "31栋512"
+          - "310512" → "310512"
+        """
+        if raw is None:
+            return "default"
+        s = str(raw).strip()
+        if not s or s == "default":
+            return "default"
+        # 去掉 "电表:" "电表：" 前缀
+        s = re.sub(r"^电表[:：]\s*", "", s)
+        # 去掉 "照明" 后缀
+        s = re.sub(r"照明\s*$", "", s)
+        s = s.strip()
+        return s if s else "default"
+
+    @staticmethod
+    def _utc_to_local(ts: Any) -> Any:
+        """
+        把 electricity_remaining.recorded_at（UTC 存储）转成本地时间（Asia/Shanghai, UTC+8）。
+        输入为 to_dict 输出的 "%Y-%m-%d %H:%M:%S" 字符串或 datetime；解析失败原样返回。
+        """
+        if not ts:
+            return ts
+        try:
+            if isinstance(ts, datetime):
+                dt = ts
+            else:
+                dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+                # 移除时区信息后按 UTC 处理（库内为 naive UTC）
+                if dt.tzinfo is not None:
+                    dt = dt.replace(tzinfo=None)
+            return (dt + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            return ts
 
     def fetch_and_save_data(self, max_pages: int | None = None) -> tuple[bool, str]:
         """
@@ -94,7 +143,7 @@ class ElectricityService:
                     low_power_threshold=10.0,
                 )
 
-                # 批量保存用电记录
+                # 批量保存用电记录（meter 经 clean_meter 统一清洗写入，避免污染）
                 record_tuples = []
                 for r in records:
                     record_time = None
@@ -110,7 +159,7 @@ class ElectricityService:
                         (
                             record_time,
                             float(r.get("usage", 0)) if r.get("usage") else 0.0,
-                            r.get("meter", "default"),
+                            self.clean_meter(r.get("meter", "")),
                         )
                     )
 
@@ -132,6 +181,59 @@ class ElectricityService:
             logger.error(f"[ElectricityService] 获取并保存电量数据失败: {e}")
             return False, f"获取失败: {str(e)}"
 
+    def refresh_remaining_power(self, force: bool = False) -> dict[str, Any] | None:
+        """
+        轻量刷新剩余电量：只爬一次 remaining（1 个请求，快），不爬全量用电记录。
+
+        带冷却保护（默认 60s）：冷却期内重复调用直接返回最新缓存，避免用户频繁
+        打开电量页/我的页导致对学校接口的频繁请求被反爬。
+
+        Args:
+            force: 为 True 时跳过冷却，强制爬取一次
+
+        Returns:
+            最新剩余电量数据（同 get_remaining_power 结构），失败返回缓存或 None
+        """
+        now = time.time()
+        if (
+            not force
+            and self._last_remaining_refresh
+            and now - self._last_remaining_refresh < self._remaining_refresh_cooldown
+        ):
+            return self.get_remaining_power()
+
+        crawler = self._get_crawler()
+        remaining = crawler.fetch_remaining_power()
+        if remaining:
+            remaining_value = remaining.get("default", 0) if isinstance(remaining, dict) else remaining
+            try:
+                remaining_float = float(remaining_value) if remaining_value else 0.0
+            except (TypeError, ValueError):
+                remaining_float = 0.0
+            session = get_db()
+            try:
+                ElectricityRepository.create_remaining(
+                    session=session,
+                    remaining=remaining_float,
+                    meter=self._meter,
+                )
+                session.commit()
+                self._capacity_manager.update_remaining(
+                    current_remaining=remaining_float,
+                    low_power_threshold=10.0,
+                )
+                self._last_remaining_refresh = now
+                logger.info(f"[ElectricityService] 轻量刷新剩余电量成功: {remaining_float} 度")
+            except Exception as exc:
+                session.rollback()
+                logger.error(f"[ElectricityService] 轻量刷新剩余电量保存失败: {exc}")
+            finally:
+                session.close()
+        else:
+            logger.warning("[ElectricityService] 轻量刷新剩余电量失败（爬取为空），返回缓存")
+
+        return self.get_remaining_power()
+
     def get_remaining_power(self, meter: str = None) -> dict[str, Any] | None:
         """
         获取最新剩余电量（包含百分比信息）
@@ -148,12 +250,19 @@ class ElectricityService:
             record = ElectricityRepository.get_latest_remaining(session, target_meter)
             if record:
                 data = record.to_dict()
+                # recorded_at 以 UTC 存储（create_remaining 用 datetime.utcnow），
+                # 转成本地时间（Asia/Shanghai, UTC+8）再返回，避免前端显示比本地慢 8 小时
+                data["recorded_at"] = self._utc_to_local(data.get("recorded_at"))
                 # 获取容量管理器的状态信息
                 capacity_status = self._capacity_manager.get_current_status()
                 # 合并容量信息到返回数据
                 data["total_capacity"] = capacity_status.get("total_capacity", 100.0)
                 data["percentage"] = capacity_status.get("percentage", 0.0)
                 data["is_low_power"] = capacity_status.get("is_low_power", False)
+                # 写入真实楼栋名（remaining 表 meter 恒为 default，楼栋需从历史记录解析）
+                building = self.get_building_meter()
+                if building:
+                    data["meter"] = building
                 return data
             return None
         finally:
@@ -164,6 +273,7 @@ class ElectricityService:
         meter: str | None = None,
         days: int | None = 30,
         limit: int = 1000,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         """
         获取用电记录
@@ -197,8 +307,102 @@ class ElectricityService:
                 start_time=start_time,
                 end_time=end_time,
                 limit=limit,
+                offset=offset,
             )
             return [r.to_dict() for r in records]
+        finally:
+            session.close()
+
+    def count_usage_records(
+        self,
+        meter: str | None = None,
+        days: int | None = 30,
+    ) -> int:
+        """
+        统计用电记录总数（与 get_usage_records 一致的过滤条件，用于列表分页 total）
+
+        Args:
+            meter: 电表名称筛选
+            days: 最近多少天；为 None 时不做时间过滤
+
+        Returns:
+            int: 记录总数
+        """
+        session = get_db()
+        try:
+            start_time = None
+            end_time = None
+            if days is not None:
+                end_time = datetime.utcnow()
+                start_time = end_time - timedelta(days=days)
+            return ElectricityRepository.count_records(
+                session=session,
+                meter=meter,
+                start_time=start_time,
+                end_time=end_time,
+            )
+        finally:
+            session.close()
+
+    def get_usage_trend(self, days: int = 30) -> list[dict[str, Any]]:
+        """
+        获取最近 days 天每日用电量聚合（含用电为 0 的日期，按天补齐）
+
+        返回列表按日期升序（旧 -> 新），每项 {"date": "YYYY-MM-DD", "usage": float}。
+        用于小程序用电趋势折线图，仅传输聚合后的少量点，避免一次性拉取全部明细。
+
+        时区说明：入库 record_time 为北京本地时间（naive），此处用服务器本地时间
+        now 作为"今天"近似（服务与设备均在中国时区），并以 days+1 的窗口兜底，
+        避免 UTC/北京约 8 小时偏差造成边界日漏统计。
+        """
+        from collections import defaultdict
+
+        session = get_db()
+        try:
+            now = datetime.now()
+            start_pad = now - timedelta(days=days + 1)
+            end_pad = now + timedelta(days=1)
+            records = ElectricityRepository.get_records(
+                session=session,
+                start_time=start_pad,
+                end_time=end_pad,
+                limit=100000,
+            )
+            daily = defaultdict(float)
+            for r in records:
+                d = r.record_time.strftime("%Y-%m-%d") if r.record_time else None
+                if d:
+                    daily[d] += float(r.usage or 0)
+
+            points: list[dict[str, Any]] = []
+            for i in range(days - 1, -1, -1):
+                d = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+                points.append({"date": d, "usage": round(daily.get(d, 0.0), 2)})
+            return points
+        finally:
+            session.close()
+
+    def get_building_meter(self) -> str | None:
+        """
+        获取该宿舍真实楼栋名（优先可读的「照明」变体，如「31栋512照明」）
+
+        用电记录的 meter 字段即为楼栋寝室信息（如「31栋512照明」或原始「310512」），
+        两者交替出现。优先返回带「照明」后缀的可读名称，供前端直接展示。
+        """
+        session = get_db()
+        try:
+            recent = ElectricityRepository.get_records(session=session, limit=50)
+            # 优先：含「照明」或「栋」的可读楼栋名
+            for r in recent:
+                m = (r.meter or "").strip()
+                if m and m != "default" and (m.endswith("照明") or "栋" in m):
+                    return m
+            # 兜底：任意非默认 meter
+            for r in recent:
+                m = (r.meter or "").strip()
+                if m and m != "default":
+                    return m
+            return None
         finally:
             session.close()
 
