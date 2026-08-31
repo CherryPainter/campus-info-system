@@ -30,6 +30,8 @@ import Processes from "@/pages/Processes";
 import Webhooks from "@/pages/Webhooks";
 import HolidayMode from "@/pages/HolidayMode";
 import Announcements from "@/pages/Announcements";
+import Messages from "@/pages/Messages";
+import MessageEditor from "@/pages/MessageEditor";
 import Settings from "@/pages/Settings";
 import Profile from "@/pages/Profile";
 import AccessControl from "@/pages/AccessControl";
@@ -97,14 +99,34 @@ export default function App() {
                       </AdminGuard>
                     }
                   />
+                  {/* ===== 消息中心（合并原推送 + 公告）===== */}
                   <Route
-                    path="/push"
+                    path="/messages"
                     element={
                       <AdminGuard>
-                        <Push />
+                        <Messages />
                       </AdminGuard>
                     }
                   />
+                  <Route
+                    path="/messages/create"
+                    element={
+                      <AdminGuard>
+                        <MessageEditor />
+                      </AdminGuard>
+                    }
+                  />
+                  <Route
+                    path="/messages/edit/:id"
+                    element={
+                      <AdminGuard>
+                        <MessageEditor />
+                      </AdminGuard>
+                    }
+                  />
+                  {/* 旧路径兼容重定向 → 消息中心 */}
+                  <Route path="/push" element={<Navigate to="/messages?tab=push" replace />} />
+                  <Route path="/announcements" element={<Navigate to="/messages?tab=announcement" replace />} />
                   <Route
                     path="/processes"
                     element={
@@ -127,14 +149,6 @@ export default function App() {
                     element={
                       <AdminGuard>
                         <HolidayMode />
-                      </AdminGuard>
-                    }
-                  />
-                  <Route
-                    path="/announcements"
-                    element={
-                      <AdminGuard>
-                        <Announcements />
                       </AdminGuard>
                     }
                   />

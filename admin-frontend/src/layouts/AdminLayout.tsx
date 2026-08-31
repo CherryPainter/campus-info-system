@@ -71,11 +71,10 @@ export default function AdminLayout() {
         { path: "/electricity", name: "电量管理", icon: <ThunderboltOutlined /> },
         { path: "/course", name: "课程管理", icon: <BookOutlined /> },
         { path: "/tasks", name: "任务管理", icon: <ScheduleOutlined /> },
-        { path: "/push", name: "自定义推送", icon: <SendOutlined /> },
+        { path: "/messages", name: "消息中心", icon: <SendOutlined /> },
         { path: "/processes", name: "进程管理", icon: <PlayCircleOutlined /> },
         { path: "/webhooks", name: "Webhook 管理", icon: <LinkOutlined /> },
         { path: "/holiday", name: "推送静默", icon: <CalendarOutlined /> },
-        { path: "/announcements", name: "校园通知", icon: <NotificationOutlined /> },
         { path: "/settings", name: "系统设置", icon: <SettingOutlined /> },
         { path: "/profile", name: "个人设置", icon: <ProfileOutlined /> },
       ]

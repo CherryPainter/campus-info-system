@@ -4,6 +4,30 @@
 
 ---
 
+## Unreleased
+
+> 类型：**功能重构（未发版）**。消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）。
+
+### 消息中心三合一重构（管理端）
+- **列表页合并**：新增 `src/pages/Messages.tsx`，一个页面用 Tab 切换「公告 / 推送」两种消息，顶部统计卡片（通知总数 / 已发布 / 推送记录 / 待发送）复用原 `Announcements` + `Push` 列表逻辑，统一 dataSource / columns 断言解决两种类型不兼容；编辑跳转 `/messages/edit/:id?type=announcement|push`，支持从 URL 读取初始 Tab。
+- **独立富文本编辑页**：新增 `src/pages/MessageEditor.tsx`（非 Modal），路由 `/messages/create?type=xxx` 与 `/messages/edit/:id?type=xxx`；富文本采用 **WangEditor v5**（`@wangeditor/editor` + `@wangeditor/editor-for-react`），以动态 `import()` 加载并在失败时降级到纯 `TextArea`，避免编辑器模块加载失败拖垮整页。公告模式含标题 + 富文本 + 分类 + 部门 + 置顶 + 过期时间 + 摘要 + 附件；推送模式含标题 + 富文本/图片/模板 + 推送类型（即时 / 定时 / 周期）。
+- **路由与菜单合并**：`src/App.tsx` 新增 `/messages`、`/messages/create`、`/messages/edit/:id` 路由（AdminGuard 包裹），旧 `/push`、`/announcements` 路由改为 `<Navigate>` 重定向到 `/messages?tab=...`；`src/layouts/AdminLayout.tsx` 侧边栏删除「自定义推送」「校园通知」两项，合并为单一「消息中心」入口（SendOutlined 图标）。
+- **依赖**：`admin-frontend/package.json` 新增 `@wangeditor/editor@^5.1.23`、`@wangeditor/editor-for-react@^1.0.6`（此前安装成功但漏写回 package.json，本次补录以保证可重现构建）。
+
+### 小程序校园通知卡片接入真实数据
+- `miniapp-frontend/src/components/NoticeCard/index.tsx` 移除「通知功能开发中，敬请期待」硬编码占位，改为调用 `notificationApi.getUpcoming({ limit: 3 })` 拉取真实即将到来的通知；`normalizeItem()` 统一兼容 list / events / 数组多种响应结构，`formatRelativeTime()` 输出相对时间；「查看更多」暂以 Toast 占位（后续建 `pages/notification/index` 列表页）。
+- `index.scss` 重写：修正原不存在的 SCSS 变量（`$radius-md`→`$radius-medium`、`$text-quaternary`→`$text-tertiary`），新增 loading / list / item 样式。
+
+### 修复：小程序端 401
+- `miniapp-frontend/config/index.ts` 新增 `loadTaroEnv()`，读取 `.env` 的 `TARO_APP_*` 经 `defineConstants` 注入编译产物（等价 @tarojs/plugin-dotenv 但零依赖）；`defineConstants: loadTaroEnv()` 替换原空对象，使 `TARO_APP_DEV_TOKEN` 进入小程序包，解决 `/api/miniapp/*` 因缺 Bearer token 返回 401 的问题。
+
+### 验证
+- 前端：`tsc --noEmit` 零类型错误；`vite build` 成功（含 WangEditor，约 10s）。
+- 小程序：`build:weapp:clean` 编译成功（约 10s）。
+- 401 修复实测：小程序包含 dev token 后，活接口（天气/课表）带 token 请求 29528 返回 200。
+
+---
+
 ## v6.16.0 (2026-08-27)
 
 > 发版类型：**新功能（minor）**。微信小程序第二客户端落地（第一 + 第二阶段）：`student` 角色 + `StudentProfile` / `WechatAccount` 模型 + 微信 code 登录 + JWT 双 Token 签发 + `student_required` 权限装饰器 + 小程序用户/学生资料 API + 课表/天气/电量只读接口。遵循《微信小程序扩展开发指南》红线：不重写 JWT、不动管理员 MFA、管理端认证流程零改动、业务逻辑一律复用现有 Service。

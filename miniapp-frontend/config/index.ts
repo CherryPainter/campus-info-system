@@ -1,7 +1,34 @@
+import fs from 'fs';
 import path from 'path';
 import type { UserConfigExport } from '@tarojs/cli';
 import devConfig from './dev';
 import prodConfig from './prod';
+
+/**
+ * 读取项目根目录 .env 中 TARO_APP_ 前缀变量，注入到编译产物。
+ *
+ * 背景：storage.ts / request.ts 通过 process.env.TARO_APP_* 读取 dev token 与后端地址，
+ * 但 Taro 默认不会把 .env 注入小程序包（未装 @tarojs/plugin-dotenv，defineConstants 为空），
+ * 导致 dev token 永远是 undefined → 请求不带 Authorization 头 → 接口 401。
+ * 这里用 defineConstants 在构建期把变量替换成字面量，与官方 dotenv 插件行为一致，
+ * 且不引入额外依赖。如需更完整的 .env 解析，可改回 @tarojs/plugin-dotenv。
+ */
+function loadTaroEnv(): Record<string, string> {
+  const envPath = path.resolve(__dirname, '..', '.env');
+  const result: Record<string, string> = {};
+  if (!fs.existsSync(envPath)) return result;
+  const content = fs.readFileSync(envPath, 'utf-8');
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const m = trimmed.match(/^(TARO_APP_\w+)\s*=\s*(.*)$/);
+    if (m) {
+      const value = m[2].replace(/^["']|["']$/g, '').trim();
+      result[`process.env.${m[1]}`] = JSON.stringify(value);
+    }
+  }
+  return result;
+}
 
 const config: UserConfigExport = {
   projectName: 'miniapp-frontend',
@@ -14,7 +41,7 @@ const config: UserConfigExport = {
   alias: {
     '@': path.resolve(__dirname, '..', 'src'),
   },
-  defineConstants: {},
+  defineConstants: loadTaroEnv(),
   copy: {
     patterns: [],
     options: {},
