@@ -12,7 +12,8 @@ import {
   ArrowDownOutlined,
 } from "@ant-design/icons";
 import ReactECharts from "echarts-for-react";
-import { electricityApi, type ElectricityStatistics, type RangeType } from "@/api/electricity";
+import { adminApi, type ElectricityStatisticsData } from "@/api/admin";
+import type { RangeType } from "@/api/electricity";
 import dayjs from "dayjs";
 
 const { Text } = Typography;
@@ -29,17 +30,25 @@ const RANGE_OPTIONS = [
   { label: "上月", value: "last_month" },
 ];
 
-export default function ElectricityChart() {
+interface ElectricityChartProps {
+  /** 学生用户ID（必传；未提供时展示空态提示先选择学生） */
+  userId: number | null;
+}
+
+export default function ElectricityChart({ userId }: ElectricityChartProps) {
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<ElectricityStatistics | null>(null);
+  const [data, setData] = useState<ElectricityStatisticsData | null>(null);
   const [rangeType, setRangeType] = useState<RangeType>("month");
   const [customDates, setCustomDates] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 
   const fetchData = async () => {
+    if (!userId) return;
     if (rangeType === "custom") return; // 自定义日期单独处理
     setLoading(true);
     try {
-      const res = await electricityApi.getStatistics(rangeType);
+      const res = await adminApi.getStudentElectricityStatistics(userId, {
+        range_type: rangeType,
+      });
       if (res.status === "success" && res.data) setData(res.data);
     } catch (error) {
       console.error("加载用电统计失败:", error);
@@ -49,9 +58,11 @@ export default function ElectricityChart() {
   };
 
   useEffect(() => {
+    setData(null);
+    setCustomDates(null);
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rangeType]);
+  }, [userId, rangeType]);
 
   // 处理时间范围切换
   const handleRangeChange = (e: any) => {
@@ -75,13 +86,14 @@ export default function ElectricityChart() {
 
   // 获取自定义日期范围的数据
   const fetchCustomData = async (dates: [dayjs.Dayjs, dayjs.Dayjs]) => {
+    if (!userId) return;
     setLoading(true);
     try {
-      const res = await electricityApi.getStatistics(
-        "custom",
-        dates[0].format("YYYY-MM-DD"),
-        dates[1].format("YYYY-MM-DD")
-      );
+      const res = await adminApi.getStudentElectricityStatistics(userId, {
+        range_type: "custom",
+        start_date: dates[0].format("YYYY-MM-DD"),
+        end_date: dates[1].format("YYYY-MM-DD"),
+      });
       if (res.status === "success" && res.data) setData(res.data);
     } catch (error) {
       console.error("加载用电统计失败:", error);
@@ -90,13 +102,20 @@ export default function ElectricityChart() {
     }
   };
 
+  if (!userId)
+    return (
+      <Empty
+        description="请先在「学生总览」中选择一名学生，查看其用电统计"
+        style={{ padding: 40 }}
+      />
+    );
   if (loading)
     return (
       <div style={{ textAlign: "center", padding: 50 }}>
         <Spin size="large" />
       </div>
     );
-  if (!data || !data.daily.length) return <Empty description="暂无用电数据，请先触发数据采集" />;
+  if (!data || !data.daily.length) return <Empty description="该学生暂无用电数据" />;
 
   const { daily, by_meter, summary, range } = data;
 

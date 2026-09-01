@@ -846,20 +846,16 @@ POST /api/auth/login
 
 ### 电量 API -- `/api/electricity`
 
+> 用户化说明（2026-09-01）：电量数据按用户（学生）隔离后，原全局视图查询接口
+> （`/remaining`、`/records`、`/statistics`）与管理端旧 Cookie 接口已删除；
+> 学生维度查询统一走 `/api/admin/electricity/students/<id>/...`（见管理后台 API）。
+
 | 端点                                    | 方法   | 认证              | 说明                                             |
 | --------------------------------------- | ------ | ----------------- | ------------------------------------------------ |
 | `/api/electricity/health`               | GET    | 无                | 电量模块健康检查                                 |
-| `/api/electricity/status`               | GET    | `@admin_required` | 电量模块状态（Cookie 配置、数据存在、配置信息）  |
-| `/api/electricity/remaining`            | GET    | `@jwt_required`   | 获取最新剩余电量（含百分比、总量、低电量标志）   |
-| `/api/electricity/records`              | GET    | `@jwt_required`   | 获取用电记录（30 天内最多 1000 条）              |
-| `/api/electricity/statistics`           | GET    | `@jwt_required`   | 获取用电统计（支持周/月/自定义范围，UTC+8 时区） |
-| `/api/electricity/update_cookie`        | POST   | `@admin_required` | 更新电量爬虫 Cookie                              |
-| `/api/electricity/trigger/daily`        | POST   | `@admin_required` | 手动触发每日用电报告推送                         |
-| `/api/electricity/trigger/weekly`       | POST   | `@admin_required` | 手动触发每周用电报告推送                         |
-| `/api/electricity/trigger/monthly`      | POST   | `@admin_required` | 手动触发每月用电报告推送                         |
-| `/api/electricity/trigger/cookie_check` | POST   | `@admin_required` | 手动触发 Cookie 有效性检测                       |
-| `/api/electricity/trigger/fetch_all`    | POST   | `@admin_required` | 手动触发全量爬取（强制爬取所有历史数据）         |
-| `/api/electricity/records`              | DELETE | `@admin_required` | 删除全部用电记录                                 |
+| `/api/electricity/status`               | GET    | `@admin_required` | 电量模块状态（已配置学生数、数据存在、配置信息） |
+| `/api/electricity/trigger/fetch_all`    | POST   | `@admin_required` | 手动触发全量爬取（遍历已配置 Cookie 的学生）     |
+| `/api/electricity/records`              | DELETE | `@admin_required` | 删除全部用电记录（慎用，清空所有用户数据）       |
 
 ---
 
@@ -883,14 +879,15 @@ POST /api/auth/login
 
 #### 电量模块管理
 
-| 端点                               | 方法 | 说明                                  |
-| ---------------------------------- | ---- | ------------------------------------- |
-| `/api/admin/electricity/config`    | GET  | 获取电量模块配置（Cookie 脱敏）       |
-| `/api/admin/electricity/config`    | PUT  | 更新电量模块配置                      |
-| `/api/admin/electricity/trigger`   | POST | 手动触发电量任务（支持 6 种任务类型） |
-| `/api/admin/electricity/cookie`    | PUT  | 更新电量爬虫 Cookie                   |
-| `/api/admin/electricity/records`   | GET  | 获取用电记录（`?limit=50`，1-500）    |
-| `/api/admin/electricity/remaining` | GET  | 获取剩余电量                          |
+| 端点                                                  | 方法 | 说明                                                          |
+| ----------------------------------------------------- | ---- | ------------------------------------------------------------- |
+| `/api/admin/electricity/config`                       | GET  | 获取电量模块配置（含已配置 Cookie 学生数）                    |
+| `/api/admin/electricity/config`                       | PUT  | 更新电量模块配置                                              |
+| `/api/admin/electricity/trigger`                      | POST | 手动触发电量任务（采集/推送/Cookie 检测/低电量检测等 6 种）   |
+| `/api/admin/electricity/students`                     | GET  | 学生电量总览（全部学生 + 配置状态 + 最新剩余电量/低电量标记） |
+| `/api/admin/electricity/students/<id>/remaining`      | GET  | 指定学生最新剩余电量（含百分比、电表楼栋）                    |
+| `/api/admin/electricity/students/<id>/records`        | GET  | 指定学生用电记录（`?limit=&offset=&meter_filter=` 分页）       |
+| `/api/admin/electricity/students/<id>/statistics`     | GET  | 指定学生用电统计（`?range_type=&start_date=&end_date=`）       |
 
 #### 课程推送管理
 

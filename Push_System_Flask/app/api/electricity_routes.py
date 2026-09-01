@@ -9,9 +9,14 @@
 - 数据访问委托给 Repository 层
 
 认证方式：统一使用 JWT Bearer Token
-- @jwt_required: 需要登录即可访问（查询数据、触发任务）
-- @admin_required: 需要管理员权限（模块状态、Cookie 更新、配置管理）
+- @admin_required: 需要管理员权限（模块状态、全量爬取、清空数据）
 - 无装饰器: 公开端点（健康检查）
+
+用户化说明（2026-09-01）：
+- 电量数据按用户隔离后，原全局视图查询接口（/remaining、/records、/statistics）
+  已随管理端改版删除；学生维度查询统一走 /api/admin/electricity/students/<id>/...。
+- 手动触发推送（daily/weekly/monthly/cookie_check）已无前端引用，一并删除；
+  管理端触发统一走 /api/admin/electricity/trigger。
 """
 
 import threading
@@ -20,7 +25,7 @@ from flask import Blueprint, current_app, g, request
 
 from app.core.api_response import api_error, api_success
 from app.core.logger import get_logger
-from app.utils.auth_middleware import admin_required, jwt_required
+from app.utils.auth_middleware import admin_required
 
 logger = get_logger(__name__)
 
@@ -59,175 +64,6 @@ def status():
             "weekly_push_day": current_app.config.get("ELECTRICITY_SCHEDULE_WEEKLY_DAY", "mon"),
         },
     )
-
-
-@electricity_bp.route("/remaining")
-@jwt_required
-def get_remaining():
-    """
-    获取最新剩余电量（从数据库读取）
-
-    返回数据包含：
-    - remaining: 剩余电量（度）
-    - total_capacity: 总量（度）
-    - percentage: 百分比（0-100）
-    - is_low_power: 是否低电量
-    """
-    from app.services.electricity_service import electricity_service
-
-    svc = electricity_service
-    data = svc.get_remaining_power()
-    if data is None:
-        return api_success(data=None, message="暂无数据，请先触发数据采集")
-
-    # 格式化返回数据，便于前端使用
-    response_data = {
-        "default": data.get("remaining", 0),
-        "total_capacity": data.get("total_capacity", 100.0),
-        "percentage": data.get("percentage", 0.0),
-        "is_low_power": data.get("is_low_power", False),
-        "recorded_at": data.get("recorded_at"),
-    }
-    return api_success(data=response_data)
-
-
-@electricity_bp.route("/records")
-@jwt_required
-def get_records():
-    """获取用电记录（从数据库读取）
-
-    展示全部记录列表，不做时间窗口过滤，仅按 limit 返回最新记录，
-    避免入库本地时间与 UTC 上界错配导致最近记录被截断。
-    """
-    from app.services.electricity_service import electricity_service
-
-    svc = electricity_service
-    records = svc.get_usage_records(days=None, limit=1000)
-    return api_success(data=records)
-
-
-@electricity_bp.route("/statistics")
-@jwt_required
-def get_statistics():
-    """
-    获取用电统计数据（按日聚合 + 按电表聚合）
-
-    查询参数：
-    - range_type: 时间范围类型 (week-本周, last_week-上周, month-本月, last_month-上月, custom-自定义)
-    - start_date: 自定义开始日期 (YYYY-MM-DD)，range_type=custom 时必填
-    - end_date: 自定义结束日期 (YYYY-MM-DD)，range_type=custom 时必填
-    """
-    from datetime import datetime, timedelta
-
-    from app.services.electricity_service import electricity_service
-
-    # 获取查询参数
-    range_type = request.args.get("range_type", "month")  # 默认本月
-    start_date_str = request.args.get("start_date")
-    end_date_str = request.args.get("end_date")
-
-    # 计算日期范围（使用本地时间，中国时区 UTC+8）
-    now = datetime.utcnow()
-    # UTC+8 转换：本地时间 = UTC时间 + 8小时
-    local_now = now + timedelta(hours=8)
-    today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    if range_type == "week":
-        # 本周（周一到今天）
-        weekday = today.weekday()  # 0=周一, 6=周日
-        start_time = today - timedelta(days=weekday)
-        end_time = today + timedelta(days=1)
-    elif range_type == "last_week":
-        # 上周（上周一到上周日）
-        weekday = today.weekday()
-        end_time = today - timedelta(days=weekday)  # 本周一
-        start_time = end_time - timedelta(days=7)  # 上周一
-        end_time = end_time  # 本周一作为结束（不包含）
-    elif range_type == "month":
-        # 本月（1号到今天）
-        start_time = today.replace(day=1)
-        end_time = today + timedelta(days=1)
-    elif range_type == "last_month":
-        # 上月（1号到月底）
-        end_time = today.replace(day=1)  # 本月1号
-        last_month_end = end_time - timedelta(days=1)  # 上月最后一天
-        start_time = last_month_end.replace(day=1)  # 上月1号
-        end_time = end_time  # 本月1号作为结束
-    elif range_type == "custom" and start_date_str and end_date_str:
-        # 自定义日期范围
-        try:
-            start_time = datetime.strptime(start_date_str, "%Y-%m-%d")
-            end_time = datetime.strptime(end_date_str, "%Y-%m-%d") + timedelta(days=1)
-        except ValueError:
-            return api_error(message="日期格式错误，请使用 YYYY-MM-DD", http_status=400)
-    else:
-        # 默认本月
-        start_time = today.replace(day=1)
-        end_time = today + timedelta(days=1)
-
-    # 将本地时间转换回UTC时间用于数据库查询
-    start_time_utc = start_time - timedelta(hours=8)
-    end_time_utc = end_time - timedelta(hours=8)
-
-    svc = electricity_service
-    stats = svc.get_statistics_by_range(start_time_utc, end_time_utc, start_time, end_time)
-
-    # 过滤测试电表数据
-    by_meter = [m for m in stats.get("by_meter", []) if "测试" not in m.get("meter", "")]
-
-    # 补充前端需要的 summary 字段
-    daily = stats.get("daily", [])
-    total_usage = sum(m.get("usage", 0) for m in by_meter)
-
-    summary = {
-        "total_records": sum(d.get("count", 0) for d in daily),
-        "total_usage": round(total_usage, 2),
-        "avg_daily": round(total_usage / max(len(daily), 1), 2),
-        "max_daily": round(max((d.get("usage", 0) for d in daily), default=0), 2),
-        "min_daily": round(min((d.get("usage", 0) for d in daily), default=0), 2),
-        "meter_count": len(by_meter),
-    }
-
-    return api_success(
-        data={
-            "daily": daily,
-            "by_meter": by_meter,
-            "summary": summary,
-            "range": {
-                "type": range_type,
-                "start_date": start_time.strftime("%Y-%m-%d"),
-                "end_date": (end_time - timedelta(days=1)).strftime("%Y-%m-%d"),
-            },
-        }
-    )
-
-
-@electricity_bp.route("/trigger/daily", methods=["POST"])
-@admin_required
-def trigger_daily():
-    """手动触发每日用电报告推送（仅管理员）"""
-    return _trigger_task("push_electricity_daily", "每日用电报告")
-
-
-@electricity_bp.route("/trigger/weekly", methods=["POST"])
-@admin_required
-def trigger_weekly():
-    """手动触发每周用电报告推送（仅管理员）"""
-    return _trigger_task("push_electricity_weekly", "每周用电报告")
-
-
-@electricity_bp.route("/trigger/monthly", methods=["POST"])
-@admin_required
-def trigger_monthly():
-    """手动触发每月用电报告推送（仅管理员）"""
-    return _trigger_task("push_electricity_monthly", "每月用电报告")
-
-
-@electricity_bp.route("/trigger/cookie_check", methods=["POST"])
-@admin_required
-def trigger_cookie_check():
-    """手动触发 Cookie 有效性检测（仅管理员）"""
-    return _trigger_task("check_cookie_validity", "Cookie 检测")
 
 
 @electricity_bp.route("/trigger/fetch_all", methods=["POST"])
@@ -307,24 +143,3 @@ def delete_all_records():
         return api_error(message=f"删除失败: {exc}", http_status=500)
     finally:
         session.close()
-
-
-# ------------------------------------------------------------------
-# 辅助函数
-# ------------------------------------------------------------------
-
-
-def _trigger_task(func_name: str, label: str):
-    """通用手动触发逻辑（JWT 认证由装饰器保证）"""
-    try:
-        import app.modules.electricity.tasks as elec_tasks
-
-        task_func = getattr(elec_tasks, func_name)
-        thread = threading.Thread(target=task_func, daemon=True)
-        thread.start()
-        user = g.get("current_user", {})
-        logger.info(f'[电量] {user.get("username")} 手动触发 {label}')
-        return api_success(message=f"{label} 任务已触发")
-    except Exception as exc:
-        logger.error(f"[电量] 触发 {label} 失败: {exc}")
-        return api_error(message=f"触发失败: {exc}", http_status=500)

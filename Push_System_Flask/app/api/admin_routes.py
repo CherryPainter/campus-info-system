@@ -13,9 +13,10 @@
 - GET  /api/admin/electricity/config     — 获取电量模块配置
 - PUT  /api/admin/electricity/config     — 更新电量模块配置
 - POST /api/admin/electricity/trigger   — 手动触发电量任务
-- PUT  /api/admin/electricity/cookie    — 更新电量爬虫 Cookie
-- GET  /api/admin/electricity/records   — 获取用电记录
-- GET  /api/admin/electricity/remaining  — 获取剩余电量
+- GET  /api/admin/electricity/students  — 学生电量总览（全部学生 + 配置/低电量状态）
+- GET  /api/admin/electricity/students/<id>/remaining  — 指定学生最新剩余电量
+- GET  /api/admin/electricity/students/<id>/records    — 指定学生用电记录（分页）
+- GET  /api/admin/electricity/students/<id>/statistics — 指定学生用电统计
 - GET  /api/admin/schedules               — 获取课表数据
 - POST /api/admin/tasks/spider            — 手动触发爬虫
 - GET  /api/admin/tasks/spider/status    — 爬虫状态
@@ -23,7 +24,6 @@
 - POST /api/admin/system/reload          — 热重载配置
 """
 
-import json
 import os
 import threading
 from datetime import datetime
@@ -969,6 +969,231 @@ def trigger_electricity_task():
         return api_error(message=f"触发失败: {e}", http_status=500)
 
 
+@admin_bp.route("/electricity/students")
+@admin_required
+def get_electricity_students():
+    """
+    学生电量总览（全部学生）
+
+    返回全部 role=student 的微信端学生（含未配置 Cookie 的），并附配置状态与最新剩余电量。
+
+    响应示例：
+        {
+            "status": "success",
+            "data": {
+                "summary": {
+                    "total_students": 12,
+                    "configured_students": 5,
+                    "low_power_count": 1
+                },
+                "students": [
+                    {
+                        "user_id": 3,
+                        "display_name": "张三",
+                        "student_number": "20260101",
+                        "class_name": "计科2301",
+                        "configured": true,
+                        "remaining": 8.5,
+                        "recorded_at": "2026-09-01 00:31:22",
+                        "is_low_power": true
+                    }
+                ]
+            }
+        }
+    """
+    from app.core.database import get_db
+    from app.model.student_profile import StudentProfile
+    from app.model.user import User
+    from app.repository.electricity_repository import ElectricityRepository
+    from app.services.electricity_service import ElectricityService
+
+    session = get_db()
+    try:
+        rows = (
+            session.query(User, StudentProfile)
+            .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
+            .filter(User.role == "student")
+            .order_by(User.id)
+            .all()
+        )
+
+        threshold = float(
+            current_app.config.get("ELECTRICITY_LOW_POWER_THRESHOLD", 10.0)
+        )
+        students = []
+        configured_count = 0
+        low_power_count = 0
+
+        for user, profile in rows:
+            cookie = (profile.electricity_cookie or "").strip() if profile else ""
+            configured = bool(cookie)
+            if configured:
+                configured_count += 1
+
+            remaining = None
+            recorded_at = None
+            is_low_power = False
+            if configured:
+                rec = ElectricityRepository.get_latest_remaining(
+                    session, "default", user_id=user.id
+                )
+                if rec:
+                    remaining = rec.remaining
+                    recorded_at = ElectricityService._utc_to_local(rec.recorded_at)
+                    is_low_power = remaining < threshold
+                    if is_low_power:
+                        low_power_count += 1
+
+            display_name = ""
+            if profile:
+                display_name = profile.nickname or profile.real_name or user.username or ""
+            if not display_name:
+                display_name = user.username or ""
+
+            students.append(
+                {
+                    "user_id": user.id,
+                    "display_name": display_name,
+                    "student_number": profile.student_number if profile else None,
+                    "class_name": profile.class_name if profile else None,
+                    # 不返回 avatar（多为 base64 大图，总览列表会显著放大响应体），前端用首字母头像
+                    "configured": configured,
+                    "remaining": remaining,
+                    "recorded_at": recorded_at,
+                    "is_low_power": is_low_power,
+                }
+            )
+
+        return api_success(
+            data={
+                "summary": {
+                    "total_students": len(students),
+                    "configured_students": configured_count,
+                    "low_power_count": low_power_count,
+                },
+                "students": students,
+            }
+        )
+    finally:
+        session.close()
+
+
+@admin_bp.route("/electricity/students/<int:user_id>/remaining")
+@admin_required
+def get_student_electricity_remaining(user_id: int):
+    """
+    指定学生最新剩余电量（含百分比，按用户隔离）
+
+    响应结构与小程序端一致，额外带楼栋名：
+        remaining / total_capacity / percentage / is_low_power / recorded_at / meter
+    """
+    from app.services.electricity_service import get_electricity_service
+
+    svc = get_electricity_service(user_id=user_id, meter="default")
+    data = svc.get_remaining_power()
+    if data is None:
+        return api_success(data=None, message="该学生暂无电量数据")
+    return api_success(
+        data={
+            "remaining": data.get("remaining", 0),
+            "total_capacity": data.get("total_capacity", 100.0),
+            "percentage": data.get("percentage", 0.0),
+            "is_low_power": data.get("is_low_power", False),
+            "recorded_at": data.get("recorded_at"),
+            "meter": data.get("meter"),
+        }
+    )
+
+
+@admin_bp.route("/electricity/students/<int:user_id>/records")
+@admin_required
+def get_student_electricity_records(user_id: int):
+    """
+    指定学生用电记录（分页，按用户隔离）
+
+    查询参数：
+        limit (int): 每页条数，默认 20，上限 200
+        offset (int): 偏移量，默认 0
+        meter_filter (str): 电表名筛选（可选，精确匹配）
+
+    响应：
+        { "records": [...], "total": N, "limit": 20, "offset": 0 }
+    """
+    from app.services.electricity_service import get_electricity_service
+
+    limit = min(max(request.args.get("limit", 20, type=int), 1), 200)
+    offset = max(request.args.get("offset", 0, type=int), 0)
+    meter_filter = request.args.get("meter_filter", "").strip() or None
+
+    svc = get_electricity_service(user_id=user_id, meter="default")
+    records = svc.get_usage_records(
+        meter=meter_filter, days=None, limit=limit, offset=offset
+    )
+    total = svc.count_usage_records(meter=meter_filter, days=None)
+    return api_success(data={"records": records, "total": total, "limit": limit, "offset": offset})
+
+
+@admin_bp.route("/electricity/students/<int:user_id>/statistics")
+@admin_required
+def get_student_electricity_statistics(user_id: int):
+    """
+    指定学生用电统计（按用户隔离）
+
+    查询参数：
+        range_type: week-本周 / last_week-上周 / month-本月 / last_month-上月 / custom-自定义（默认 month）
+        start_date / end_date: custom 时必填（YYYY-MM-DD）
+
+    响应结构与旧 /electricity/statistics 一致：daily / by_meter / summary / range
+    """
+    from datetime import timedelta
+
+    from app.services.electricity_service import ElectricityService, get_electricity_service
+
+    range_type = request.args.get("range_type", "month")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+
+    try:
+        start_time_utc, end_time_utc, local_start, local_end = (
+            ElectricityService.parse_statistics_range(
+                range_type, start_date_str, end_date_str
+            )
+        )
+    except ValueError as exc:
+        return api_error(message=str(exc), http_status=400)
+
+    svc = get_electricity_service(user_id=user_id, meter="default")
+    stats = svc.get_statistics_by_range(
+        start_time_utc, end_time_utc, local_start, local_end
+    )
+
+    by_meter = [m for m in stats.get("by_meter", []) if "测试" not in m.get("meter", "")]
+    daily = stats.get("daily", [])
+    total_usage = sum(m.get("usage", 0) for m in by_meter)
+
+    summary = {
+        "total_records": sum(d.get("count", 0) for d in daily),
+        "total_usage": round(total_usage, 2),
+        "avg_daily": round(total_usage / max(len(daily), 1), 2),
+        "max_daily": round(max((d.get("usage", 0) for d in daily), default=0), 2),
+        "min_daily": round(min((d.get("usage", 0) for d in daily), default=0), 2),
+        "meter_count": len(by_meter),
+    }
+
+    return api_success(
+        data={
+            "daily": daily,
+            "by_meter": by_meter,
+            "summary": summary,
+            "range": {
+                "type": range_type,
+                "start_date": local_start.strftime("%Y-%m-%d"),
+                "end_date": (local_end - timedelta(days=1)).strftime("%Y-%m-%d"),
+            },
+        }
+    )
+
+
 @admin_bp.route("/course/trigger", methods=["POST"])
 @admin_required
 def trigger_course_task():
@@ -1075,90 +1300,6 @@ def trigger_course_task():
     except Exception as e:
         logger.error(f"[管理后台] 触发课程任务失败: {e}")
         return api_error(message=f"触发失败: {e}", http_status=500)
-
-
-@admin_bp.route("/electricity/records")
-@admin_required
-def get_electricity_records():
-    """
-    获取用电记录
-
-    查询参数：
-        limit (int): 返回记录数量限制，默认 50
-
-    响应示例：
-        {
-            "status": "success",
-            "count": 50,
-            "records": [...]
-        }
-    """
-    try:
-        from app.core.config import Config
-
-        records_path = os.path.join(
-            getattr(Config, "ELECTRICITY_DATA_DIR", ""), "usage_records.json"
-        )
-
-        if not os.path.exists(records_path):
-            return api_success(count=0, records=[], message="暂无用电记录数据")
-
-        with open(records_path, encoding="utf-8") as f:
-            records = json.load(f)
-
-        # 兼容嵌套列表结构
-        if isinstance(records, list) and records and isinstance(records[0], list):
-            flat = []
-            for sub in records:
-                if isinstance(sub, list):
-                    flat.extend(sub)
-                else:
-                    flat.append(sub)
-            records = flat
-
-        # 限制返回数量
-        limit = request.args.get("limit", 50, type=int)
-        limit = min(max(limit, 1), 500)  # 限制在 1-500 之间
-        records = records[-limit:]  # 返回最新的记录
-
-        return api_success(count=len(records), records=records)
-    except Exception as e:
-        logger.error(f"[管理后台] 获取用电记录失败: {e}")
-        return api_error(message=f"读取数据失败: {e}", http_status=500)
-
-
-@admin_bp.route("/electricity/remaining")
-@admin_required
-def get_electricity_remaining():
-    """
-    获取剩余电量
-
-    响应示例：
-        {
-            "status": "success",
-            "data": {
-                "default": "123.45",
-                ...
-            }
-        }
-    """
-    try:
-        from app.core.config import Config
-
-        remaining_path = os.path.join(
-            getattr(Config, "ELECTRICITY_DATA_DIR", ""), "remaining_power.json"
-        )
-
-        if not os.path.exists(remaining_path):
-            return api_success(data=None, message="暂无剩余电量数据")
-
-        with open(remaining_path, encoding="utf-8") as f:
-            data = json.load(f)
-
-        return api_success(data=data)
-    except Exception as e:
-        logger.error(f"[管理后台] 获取剩余电量失败: {e}")
-        return api_error(message=f"读取数据失败: {e}", http_status=500)
 
 
 # ============================================================

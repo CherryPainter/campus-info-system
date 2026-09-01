@@ -1,7 +1,14 @@
 /**
- * 电量管理页面
+ * 电量管理页面（管理端改版 2026-09-01）
+ *
+ * 用户化改造后，电量数据按学生（user_id）隔离，本页改为学生维度管理：
+ * - 学生总览：全部微信端学生 + 配置状态 + 最新剩余电量/低电量标记（未配置标灰）
+ * - 用电明细：选中学生后切换到此 Tab，查看剩余电量 / 用电记录 / 统计图表
+ * - 模块配置：模块级通用配置（Cookie 由学生在小程序自配，本页不再管理全局 Cookie）
+ *
+ * 历史全局数据（user_id 为 NULL）已完全移除展示，不再提供全量爬取/清空记录入口。
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Card,
   Tabs,
@@ -13,16 +20,14 @@ import {
   Input,
   Button,
   Spin,
-  Progress,
-  Popconfirm,
-  Space,
-  Badge,
-  App,
   Tag,
+  Avatar,
+  Space,
+  App,
   Grid,
+  Empty,
+  Typography,
 } from "antd";
-import { useRunningTasksPolling } from "@/hooks/useRunningTasksPolling";
-import { useTaskPolling } from "@/hooks/useTaskPolling";
 import ResponsiveTable from "@/components/ResponsiveTable";
 import {
   ThunderboltOutlined,
@@ -30,18 +35,23 @@ import {
   PlayCircleOutlined,
   SettingOutlined,
   LineChartOutlined,
-  DeleteOutlined,
-  CloudDownloadOutlined,
-  LoadingOutlined,
+  TeamOutlined,
+  ArrowLeftOutlined,
+  CheckCircleOutlined,
+  MinusCircleOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
-import { adminApi, processApi, type TaskProcess } from "@/api/admin";
 import {
-  electricityApi,
-  type ElectricityRemaining,
-  type ElectricityRecord,
-} from "@/api/electricity";
+  adminApi,
+  type ElectricityStudent,
+  type ElectricityStudentsOverview,
+  type StudentElectricityRemaining,
+  type StudentElectricityRecords,
+} from "@/api/admin";
 import ElectricityChart from "@/components/ElectricityChart";
 import { useUser } from "@/contexts/UserContext";
+
+const { Text } = Typography;
 
 export default function Electricity() {
   const { isAdmin } = useUser();
@@ -49,42 +59,122 @@ export default function Electricity() {
   // 移动端断点：收缩外层/内层 Card 的 body padding，避免 Card→Tabs→Card 三层留白累加
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
-  const [activeTab, setActiveTab] = useState("remaining");
-  const [loading, setLoading] = useState(false);
-  const [remaining, setRemaining] = useState<ElectricityRemaining | null>(null);
-  const [records, setRecords] = useState<ElectricityRecord[]>([]);
-  const [config, setConfig] = useState<Record<string, any>>({});
-  const [form] = Form.useForm();
-  // 列表轮询开关（触发电量采集任务时开启）与全量爬取按 id 轮询
-  const [listPolling, setListPolling] = useState(false);
-  const [fullTaskId, setFullTaskId] = useState<number | null>(null);
 
-  const fetchRemaining = async () => {
-    setLoading(true);
+  // 三个 Tab：students（学生总览）/ detail（用电明细）/ config（模块配置）
+  const [activeTab, setActiveTab] = useState("students");
+  const [overview, setOverview] = useState<ElectricityStudentsOverview | null>(null);
+  const [students, setStudents] = useState<ElectricityStudent[]>([]);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  // 明细：当前选中学生 + 剩余电量 + 记录分页
+  const [selected, setSelected] = useState<ElectricityStudent | null>(null);
+  const [remaining, setRemaining] = useState<StudentElectricityRemaining | null>(null);
+  const [records, setRecords] = useState<StudentElectricityRecords | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [recordPage, setRecordPage] = useState(1);
+  const [recordPageSize, setRecordPageSize] = useState(10);
+  const [fetchAllLoading, setFetchAllLoading] = useState(false);
+
+  // ============ 学生总览 ============
+  const fetchOverview = useCallback(async () => {
+    setOverviewLoading(true);
     try {
-      const res = await electricityApi.getRemaining();
-      if (res.status === "success" && res.data) setRemaining(res.data);
+      const res = await adminApi.getElectricityStudents();
+      if (res.status === "success" && res.data) {
+        setOverview(res.data);
+        setStudents(res.data.students ?? []);
+      }
+    } catch (error) {
+      console.error("加载学生电量总览失败:", error);
+    } finally {
+      setOverviewLoading(false);
+    }
+  }, []);
+
+  // ============ 用电明细 ============
+  const fetchRemaining = useCallback(async (userId: number) => {
+    try {
+      const res = await adminApi.getStudentElectricityRemaining(userId);
+      if (res.status === "success") setRemaining(res.data);
     } catch (error) {
       console.error("加载剩余电量失败:", error);
+      setRemaining(null);
+    }
+  }, []);
+
+  const fetchRecords = useCallback(
+    async (userId: number, page: number, pageSize: number) => {
+      setDetailLoading(true);
+      try {
+        const res = await adminApi.getStudentElectricityRecords(userId, {
+          limit: pageSize,
+          offset: (page - 1) * pageSize,
+        });
+        if (res.status === "success" && res.data) setRecords(res.data);
+      } catch (error) {
+        console.error("加载用电记录失败:", error);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    []
+  );
+
+  // 选中学生：切入「用电明细」Tab 并加载其数据
+  const handleSelectStudent = (student: ElectricityStudent) => {
+    setSelected(student);
+    setRemaining(null);
+    setRecords(null);
+    setRecordPage(1);
+    setActiveTab("detail");
+  };
+
+  // 返回学生总览
+  const handleBack = () => {
+    setSelected(null);
+    setActiveTab("students");
+    fetchOverview();
+  };
+
+  // 明细 Tab 数据加载（选中学生变化 / 记录翻页时）
+  useEffect(() => {
+    if (activeTab === "detail" && selected) {
+      fetchRemaining(selected.user_id);
+      fetchRecords(selected.user_id, recordPage, recordPageSize);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, selected, recordPage, recordPageSize]);
+
+  // ============ 触发采集（全部已配置学生） ============
+  const handleTriggerFetch = async () => {
+    try {
+      setFetchAllLoading(true);
+      const res = await adminApi.triggerElectricity("fetch_electricity_data");
+      if ((res as any).skipped) {
+        message.warning(res.message || "假期静默中，已跳过");
+        return;
+      }
+      message.success((res.message as string) || "采集任务已触发，可在「进程管理」查看进度");
+      // 触发后稍候刷新总览，低电量/剩余电量可能有变化
+      setTimeout(() => fetchOverview(), 3000);
+    } catch (error) {
+      message.error("触发采集失败");
     } finally {
-      setLoading(false);
+      setFetchAllLoading(false);
     }
   };
 
-  const fetchRecords = async () => {
-    setLoading(true);
-    try {
-      const res = await electricityApi.getRecords();
-      if (res.status === "success" && res.data) setRecords(res.data);
-    } catch (error) {
-      console.error("加载用电记录失败:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // 挂载时加载总览
+  useEffect(() => {
+    fetchOverview();
+  }, [fetchOverview]);
+
+  // ============ 模块配置 ============
+  const [config, setConfig] = useState<Record<string, any>>({});
+  const [configLoading, setConfigLoading] = useState(false);
+  const [form] = Form.useForm();
 
   const fetchConfig = async () => {
-    setLoading(true);
+    setConfigLoading(true);
     try {
       const res = await adminApi.getElectricityConfig();
       // 后端统一返回 data 包裹（历史版本曾顶层返回 config，兼容读取）
@@ -96,7 +186,7 @@ export default function Electricity() {
     } catch (error) {
       console.error("加载配置失败:", error);
     } finally {
-      setLoading(false);
+      setConfigLoading(false);
     }
   };
 
@@ -112,122 +202,105 @@ export default function Electricity() {
     }
   };
 
-  // 任务完成后刷新数据
-  const refreshAllData = () => {
-    if (activeTab === "remaining") {
-      fetchRemaining();
-    } else if (activeTab === "records") {
-      fetchRecords();
-    } else if (activeTab === "chart") {
-      // 图表组件内部会自己刷新
-    }
-  };
-
-  // 列表轮询：触发电量采集任务后，轮询“运行中任务列表”，空则视为完成
-  const listPoll = useRunningTasksPolling({
-    fetcher: () => processApi.getRunning(),
-    filter: (t) => t.task_type === "electricity",
-    enabled: listPolling,
-    onIdle: () => {
-      message.success("任务已完成，数据已刷新");
-      refreshAllData();
-    },
-  });
-
-  // 全量爬取按 id 轮询（统一任务模型 Hook）
-  const taskPoll = useTaskPolling<TaskProcess>(fullTaskId, {
-    fetcher: (id) => processApi.getTaskStatus(id),
-    resolve: (d) => ({ status: d.status, message: d.error_message ?? undefined }),
-    onDone: () => {
-      message.success("全量爬取任务已完成！正在刷新数据...");
-      refreshAllData();
-    },
-    onFailed: (d) => message.error(`全量爬取失败: ${d.error_message || "未知错误"}`),
-  });
-
-  // 组合轮询状态供徽标 / 告警展示
-  const isPolling = listPoll.isPolling || taskPoll.isPolling;
-  const runningTasks = listPoll.running;
-
-  // 仅触发电量采集：开启列表轮询
-  const handleTrigger = async (taskType: string) => {
-    try {
-      const res = await adminApi.triggerElectricity(taskType);
-      // 假期静默拦截：后端返回 skipped，提示已跳过且不开启「已完成」轮询
-      if ((res as any).skipped) {
-        message.warning(res.message || "假期静默中，已跳过");
-        return;
-      }
-      message.success(res.message || "任务已触发");
-      setListPolling(true);
-    } catch (error) {
-      message.error("触发任务失败");
-    }
-  };
-
-  // 挂载时检查是否已有运行中的电量任务，有则接管轮询
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await processApi.getRunning();
-        if (res.status === "success" && res.data?.data) {
-          const hasRunning = res.data.data.some((t) => t.task_type === "electricity");
-          if (hasRunning) setListPolling(true);
-        }
-      } catch (error) {
-        console.error("检查运行中电量任务失败:", error);
-      }
-    })();
-  }, []);
-
-  /** 全量爬取 */
-  const handleFetchAll = async () => {
-    try {
-      const res = await electricityApi.triggerFetchAll();
-      if (res.status === "success") {
-        const taskId = res.data?.task_id;
-        message.success("全量爬取任务已启动，正在后台执行...");
-        // 统一任务模型：有 task_id 走按 id 轮询，否则走列表轮询
-        if (taskId != null) {
-          setFullTaskId(taskId);
-        } else {
-          setListPolling(true);
-        }
-      } else {
-        message.error(res.message || "全量爬取触发失败");
-      }
-    } catch (error) {
-      message.error("全量爬取触发失败");
-    }
-  };
-
-  /** 删除全部用电记录 */
-  const handleDeleteAll = async () => {
-    try {
-      const res = await electricityApi.deleteAllRecords();
-      if (res.status === "success") {
-        const d = res.data;
-        message.success(`已清空全部数据（用电记录 ${d?.deleted_records} 条）`);
-        setRecords([]);
-        setRemaining(null);
-      }
-    } catch (error) {
-      message.error("删除失败");
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === "remaining") fetchRemaining();
-    else if (activeTab === "records") fetchRecords();
-    else if (activeTab === "config") fetchConfig();
+    if (activeTab === "config") fetchConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  const [pageSize, setPageSize] = useState(10);
+  // ============ 学生总览表格列 ============
+  const studentColumns = [
+    {
+      title: "学生",
+      dataIndex: "display_name",
+      key: "display_name",
+      width: "26%",
+      ellipsis: true,
+      render: (_: string, record: ElectricityStudent) => (
+        <Space>
+          <Avatar
+            size="small"
+            style={{ backgroundColor: record.configured ? "#1890ff" : "#bfbfbf" }}
+          >
+            {(record.display_name || "?").slice(0, 1)}
+          </Avatar>
+          <span
+            style={{ color: record.configured ? undefined : "#bfbfbf" }}
+          >
+            {record.display_name || `用户 #${record.user_id}`}
+          </span>
+        </Space>
+      ),
+    },
+    {
+      title: "学号 / 班级",
+      dataIndex: "student_number",
+      key: "class_info",
+      width: "20%",
+      ellipsis: true,
+      render: (_: string, record: ElectricityStudent) =>
+        record.student_number || record.class_name
+          ? `${record.student_number || "-"} / ${record.class_name || "-"}`
+          : "-",
+    },
+    {
+      title: "配置状态",
+      dataIndex: "configured",
+      key: "configured",
+      width: "14%",
+      render: (configured: boolean) =>
+        configured ? (
+          <Tag color="success" icon={<CheckCircleOutlined />}>
+            已配置
+          </Tag>
+        ) : (
+          <Tag color="default" icon={<MinusCircleOutlined />}>
+            未配置
+          </Tag>
+        ),
+    },
+    {
+      title: "剩余电量",
+      dataIndex: "remaining",
+      key: "remaining",
+      width: "16%",
+      render: (_: number | null, record: ElectricityStudent) => {
+        if (!record.configured) return <span style={{ color: "#bfbfbf" }}>未配置</span>;
+        if (record.remaining == null) return <span style={{ color: "#bfbfbf" }}>暂无数据</span>;
+        return (
+          <span style={{ color: record.is_low_power ? "#cf1322" : "#3f8600", fontWeight: 500 }}>
+            {record.remaining} 度
+            {record.is_low_power && (
+              <Tag color="error" icon={<WarningOutlined />} style={{ marginLeft: 6 }}>
+                低电量
+              </Tag>
+            )}
+          </span>
+        );
+      },
+    },
+    {
+      title: "记录时间",
+      dataIndex: "recorded_at",
+      key: "recorded_at",
+      width: "14%",
+      ellipsis: true,
+      render: (v: string | null) => v || "-",
+    },
+    {
+      title: "操作",
+      key: "action",
+      width: "10%",
+      render: (_: unknown, record: ElectricityStudent) => (
+        <Button type="link" size="small" onClick={() => handleSelectStudent(record)}>
+          查看明细
+        </Button>
+      ),
+    },
+  ];
 
-  // 用电记录列：列少且窄屏也能一行放下，移动端保留原生表格。
-  // 用百分比宽度铺满容器 + ellipsis，超长内容以省略号截断（桌面端悬浮显示完整值）。
+  // 用电记录列（与旧版保持一致，数据来自分页接口）
   const recordColumns = [
-    { title: "日期", dataIndex: "time", key: "time", width: "40%", ellipsis: true },
+    { title: "日期", dataIndex: "record_time", key: "record_time", width: "40%", ellipsis: true },
     {
       title: "用电量",
       dataIndex: "usage",
@@ -239,228 +312,234 @@ export default function Electricity() {
     { title: "电表", dataIndex: "meter", key: "meter", width: "38%", ellipsis: true },
   ];
 
-  /**
-   * 获取电量百分比
-   * 优先使用后端计算的百分比，如果没有则返回0
-   */
-  const getPercent = () => {
-    if (!remaining) return 0;
-    // 使用后端计算的百分比
-    return Math.min(Math.max(remaining.percentage || 0, 0), 100);
+  const recordsWithKeys = (records?.records ?? []).map((item, idx) => ({
+    ...item,
+    _uid: `${item.record_time}-${idx}`,
+  }));
+
+  // ============ 学生总览 Tab ============
+  const studentsTab = {
+    key: "students",
+    label: "学生总览",
+    icon: <TeamOutlined />,
+    children: (
+      <div>
+        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+          <Col xs={12} sm={8}>
+            <Card size="small">
+              <Statistic title="学生总数" value={overview?.summary.total_students ?? 0} suffix="人" />
+            </Card>
+          </Col>
+          <Col xs={12} sm={8}>
+            <Card size="small">
+              <Statistic
+                title="已配置电表"
+                value={overview?.summary.configured_students ?? 0}
+                suffix="人"
+                valueStyle={{ color: "#1890ff" }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={8}>
+            <Card size="small">
+              <Statistic
+                title="低电量"
+                value={overview?.summary.low_power_count ?? 0}
+                suffix="人"
+                valueStyle={{ color: overview?.summary.low_power_count ? "#cf1322" : "#3f8600" }}
+              />
+            </Card>
+          </Col>
+        </Row>
+        <Alert
+          type="info"
+          showIcon
+          message="电表 Cookie 由学生在小程序「设置 - 电表配置」自行配置；未配置的学生不产生电量数据。"
+          style={{ marginBottom: 16 }}
+        />
+        <Space style={{ marginBottom: 16 }}>
+          <Button icon={<ReloadOutlined />} onClick={fetchOverview} disabled={overviewLoading}>
+            刷新
+          </Button>
+          {isAdmin && (
+            <Button
+              type="primary"
+              icon={<PlayCircleOutlined />}
+              onClick={handleTriggerFetch}
+              loading={fetchAllLoading}
+            >
+              触发数据采集
+            </Button>
+          )}
+        </Space>
+        {overviewLoading ? (
+          <div style={{ textAlign: "center", padding: 40 }}>
+            <Spin />
+          </div>
+        ) : students.length === 0 ? (
+          <Empty description="暂无学生用户（学生首次登录微信小程序后才会出现在此）" />
+        ) : (
+          <ResponsiveTable
+            dataSource={students}
+            columns={studentColumns}
+            rowKey="user_id"
+            mobileNativeTable
+            tableLayout="fixed"
+            pagination={{
+              pageSize: 10,
+              pageSizeOptions: ["10", "20", "50"],
+              showSizeChanger: true,
+            }}
+            size="small"
+          />
+        )}
+      </div>
+    ),
   };
 
-  // 为 records 数据生成唯一 key（避免重复 time 导致 key 冲突）
-  const recordsWithKeys = records.map((item, idx) => ({ ...item, _uid: `${item.time}-${idx}` }));
-
-  // 构建标签页数组，仅管理员显示配置标签
-  const tabs = [
-    {
-      key: "remaining",
-      label: <Space>剩余电量{isPolling && <Badge dot offset={[4, -4]} />}</Space>,
-      icon: <ThunderboltOutlined />,
-      children: (
-        <div>
-          {isPolling && (
+  // ============ 用电明细 Tab ============
+  const detailTab = {
+    key: "detail",
+    label: "用电明细",
+    icon: <LineChartOutlined />,
+    children: !selected ? (
+      <Empty
+        description="请先在「学生总览」中选择一名学生"
+        style={{ padding: 40 }}
+      />
+    ) : (
+      <div>
+        <Space style={{ marginBottom: 16 }} wrap>
+          <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>
+            返回学生列表
+          </Button>
+          <Avatar style={{ backgroundColor: "#1890ff" }}>
+            {(selected.display_name || "?").slice(0, 1)}
+          </Avatar>
+          <Text strong>{selected.display_name || `用户 #${selected.user_id}`}</Text>
+          {selected.student_number && <Text type="secondary">学号 {selected.student_number}</Text>}
+          {selected.class_name && <Text type="secondary">班级 {selected.class_name}</Text>}
+          {selected.configured ? (
+            <Tag color="success" icon={<CheckCircleOutlined />}>
+              已配置
+            </Tag>
+          ) : (
+            <Tag color="default" icon={<MinusCircleOutlined />}>
+              未配置
+            </Tag>
+          )}
+          {!selected.configured && (
             <Alert
-              message={
-                <Space>
-                  <LoadingOutlined spin />
-                  <span>任务运行中，自动刷新...</span>
-                </Space>
-              }
-              type="info"
-              showIcon={false}
-              style={{ marginBottom: 16 }}
+              type="warning"
+              showIcon
+              message="该学生未配置电表 Cookie，暂无电量数据。请引导学生在小程序「设置 - 电表配置」完成配置。"
+              style={{ width: "100%" }}
             />
           )}
-          {loading ? (
-            <Spin />
-          ) : remaining ? (
-            <div>
-              <Row gutter={[16, 16]}>
-                <Col xs={24} sm={12}>
-                  <Card styles={{ body: { padding: isMobile ? 12 : 24 } }}>
-                    <Statistic
-                      title="剩余电量"
-                      value={remaining.default}
-                      suffix="度"
-                      prefix={<ThunderboltOutlined />}
-                      valueStyle={{ color: remaining.is_low_power ? "#cf1322" : "#3f8600" }}
-                    />
-                    <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>
-                      总量: {remaining.total_capacity} 度
-                    </div>
-                    <Progress
-                      percent={getPercent()}
-                      status={remaining.is_low_power ? "exception" : "active"}
-                      style={{ marginTop: 16 }}
-                      format={(percent) => `${percent?.toFixed(1)}%`}
-                    />
-                    {remaining.is_low_power && (
-                      <Alert
-                        message="电量不足，请及时充值"
-                        type="warning"
-                        showIcon
-                        style={{ marginTop: 16 }}
+        </Space>
+
+        {selected.configured && (
+          <>
+            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+              <Col xs={24} sm={12}>
+                <Card size="small" styles={{ body: { padding: isMobile ? 12 : 24 } }}>
+                  {remaining ? (
+                    <>
+                      <Statistic
+                        title="最新剩余电量"
+                        value={remaining.remaining}
+                        suffix="度"
+                        prefix={<ThunderboltOutlined />}
+                        valueStyle={{ color: remaining.is_low_power ? "#cf1322" : "#3f8600" }}
                       />
-                    )}
-                  </Card>
-                </Col>
-              </Row>
-              <Space style={{ marginTop: 16 }}>
-                <Button icon={<ReloadOutlined />} onClick={fetchRemaining} disabled={isPolling}>
-                  刷新数据
-                </Button>
-                {isAdmin && (
-                  <Button
-                    type="primary"
-                    icon={<PlayCircleOutlined />}
-                    onClick={() => handleTrigger("fetch_electricity_data")}
-                    disabled={isPolling}
-                    loading={isPolling}
-                  >
-                    触发数据采集
-                  </Button>
-                )}
-              </Space>
-            </div>
-          ) : (
-            <div style={{ textAlign: "center", padding: 40 }}>
-              <Alert message="暂无数据，请先触发数据采集" type="info" />
-              {isAdmin && (
-                <Button
-                  type="primary"
-                  icon={<PlayCircleOutlined />}
-                  onClick={() => handleTrigger("fetch_electricity_data")}
-                  style={{ marginTop: 16 }}
-                  disabled={isPolling}
-                  loading={isPolling}
-                >
-                  触发数据采集
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: "records",
-      label: <Space>用电记录{isPolling && <Badge dot offset={[4, -4]} />}</Space>,
-      children: (
-        <div>
-          {isPolling && (
-            <Alert
-              message={
-                <div>
-                  <Space>
-                    <LoadingOutlined spin />
-                    <span>任务运行中，自动刷新...</span>
-                  </Space>
-                  {runningTasks.length > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      {runningTasks.map((task) => (
-                        <div key={task.id} style={{ marginBottom: 4 }}>
-                          <Tag color="processing">{task.task_type}</Tag>
-                          <span style={{ fontSize: 12, color: "#666" }}>
-                            {task.message || "正在执行..."}
-                          </span>
-                          {task.progress !== undefined && (
-                            <Progress
-                              percent={task.progress}
-                              size="small"
-                              style={{ marginTop: 4 }}
-                              status={task.status === "failed" ? "exception" : "active"}
-                            />
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                      <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>
+                        总量: {remaining.total_capacity} 度
+                        {remaining.meter ? ` | 电表: ${remaining.meter}` : ""}
+                        {remaining.recorded_at ? ` | 记录于 ${remaining.recorded_at}` : ""}
+                      </div>
+                      {remaining.is_low_power && (
+                        <Alert
+                          message="电量不足，请提醒学生及时充值"
+                          type="warning"
+                          showIcon
+                          style={{ marginTop: 16 }}
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <Empty description="暂无剩余电量数据" />
                   )}
-                </div>
-              }
-              type="info"
-              showIcon={false}
-              style={{ marginBottom: 16 }}
-            />
-          )}
-          {loading ? (
-            <Spin />
-          ) : (
-            <div>
-              <Space style={{ marginBottom: 16 }}>
-                <Button icon={<ReloadOutlined />} onClick={fetchRecords} disabled={isPolling}>
-                  刷新
-                </Button>
-                {isAdmin && (
-                  <>
-                    <Button
-                      icon={<CloudDownloadOutlined />}
-                      onClick={handleFetchAll}
-                      disabled={isPolling}
-                    >
-                      全量爬取
-                    </Button>
-                    <Popconfirm
-                      title="确定要删除全部用电记录吗？"
-                      description="此操作不可恢复，删除后需要重新爬取数据。"
-                      onConfirm={handleDeleteAll}
-                      okText="确定删除"
-                      cancelText="取消"
-                      okButtonProps={{ danger: true }}
-                    >
-                      <Button danger icon={<DeleteOutlined />} disabled={isPolling}>
-                        清空全部记录
-                      </Button>
-                    </Popconfirm>
-                  </>
-                )}
-              </Space>
-              <ResponsiveTable
-                dataSource={recordsWithKeys}
-                columns={recordColumns}
-                rowKey="_uid"
-                mobileNativeTable
-                tableLayout="fixed"
-                pagination={{
-                  pageSize,
-                  pageSizeOptions: ["10", "20", "50"],
-                  showSizeChanger: true,
-                  onShowSizeChange: (_current, size) => setPageSize(size),
-                }}
-                size="small"
-              />
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: "chart",
-      label: "数据可视化",
-      icon: <LineChartOutlined />,
-      children: <ElectricityChart />,
-    },
-  ];
+                </Card>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Card size="small" styles={{ body: { padding: isMobile ? 12 : 24 } }}>
+                  <Statistic
+                    title="用电记录总数"
+                    value={records?.total ?? 0}
+                    suffix="条"
+                    prefix={<ThunderboltOutlined />}
+                  />
+                  <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>
+                    统计图表见下方「数据可视化」
+                  </div>
+                </Card>
+              </Col>
+            </Row>
 
-  // 仅管理员添加配置标签
-  if (isAdmin) {
-    tabs.push({
-      key: "config",
-      label: "模块配置",
-      icon: <SettingOutlined />,
-      children: loading ? (
-        <Spin />
-      ) : (
-        <div style={{ maxWidth: 600 }}>
-          <Alert
-            type="info"
-            showIcon
-            message="电表 Cookie 由学生在小程序「设置 - 电表配置」自行配置"
-            description={`当前已有 ${config.configured_students ?? 0} 名学生配置了电表 Cookie，系统将按用户分别采集并推送。`}
-            style={{ marginBottom: 16 }}
-          />
-          <Form form={form} layout="vertical" onFinish={handleSaveConfig}>
+            <Card title="用电记录" size="small" style={{ marginBottom: 16 }}>
+              {detailLoading ? (
+                <div style={{ textAlign: "center", padding: 30 }}>
+                  <Spin />
+                </div>
+              ) : (
+                <ResponsiveTable
+                  dataSource={recordsWithKeys}
+                  columns={recordColumns}
+                  rowKey="_uid"
+                  mobileNativeTable
+                  tableLayout="fixed"
+                  pagination={{
+                    current: recordPage,
+                    pageSize: recordPageSize,
+                    total: records?.total ?? 0,
+                    showSizeChanger: true,
+                    pageSizeOptions: ["10", "20", "50"],
+                    onChange: (page, size) => {
+                      setRecordPage(page);
+                      setRecordPageSize(size);
+                    },
+                  }}
+                  size="small"
+                />
+              )}
+            </Card>
+
+            <Card title="数据可视化" size="small">
+              <ElectricityChart userId={selected.user_id} />
+            </Card>
+          </>
+        )}
+      </div>
+    ),
+  };
+
+  // ============ 模块配置 Tab（仅管理员） ============
+  const configTab = {
+    key: "config",
+    label: "模块配置",
+    icon: <SettingOutlined />,
+    children: configLoading ? (
+      <Spin />
+    ) : (
+      <div style={{ maxWidth: 600 }}>
+        <Alert
+          type="info"
+          showIcon
+          message="电表 Cookie 由学生在小程序「设置 - 电表配置」自行配置"
+          description={`当前已有 ${config.configured_students ?? 0} 名学生配置了电表 Cookie，系统将按用户分别采集并推送。`}
+          style={{ marginBottom: 16 }}
+        />
+        <Form form={form} layout="vertical" onFinish={handleSaveConfig}>
           <Form.Item name="low_power_threshold" label="低电量阈值">
             <Input type="number" placeholder="如：10" suffix="度" />
           </Form.Item>
@@ -475,11 +554,13 @@ export default function Electricity() {
               保存配置
             </Button>
           </Form.Item>
-          </Form>
-        </div>
-      ),
-    });
-  }
+        </Form>
+      </div>
+    ),
+  };
+
+  const tabs: any[] = [studentsTab, detailTab];
+  if (isAdmin) tabs.push(configTab);
 
   return (
     <div>

@@ -128,6 +128,71 @@ class ElectricityService:
         except (ValueError, TypeError):
             return ts
 
+    @staticmethod
+    def parse_statistics_range(
+        range_type: str,
+        start_date_str: str | None = None,
+        end_date_str: str | None = None,
+    ) -> tuple[datetime, datetime, datetime, datetime]:
+        """
+        解析统计时间范围（本地时间 + 对应 UTC 时间）
+
+        供路由层（electricity_routes / admin_routes）共用，避免两端重复实现。
+
+        Args:
+            range_type: 时间范围类型
+                (week-本周, last_week-上周, month-本月, last_month-上月, custom-自定义)
+            start_date_str: 自定义开始日期 (YYYY-MM-DD)，range_type=custom 时必填
+            end_date_str: 自定义结束日期 (YYYY-MM-DD)，range_type=custom 时必填
+
+        Returns:
+            (start_time_utc, end_time_utc, local_start_time, local_end_time)
+            前两个为 UTC 时间（数据库查询用），后两个为本地时间（展示用）
+
+        Raises:
+            ValueError: 自定义日期格式错误
+        """
+        # 计算日期范围（使用本地时间，中国时区 UTC+8）
+        now = datetime.utcnow()
+        local_now = now + timedelta(hours=8)
+        today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        if range_type == "week":
+            # 本周（周一到今天）
+            weekday = today.weekday()  # 0=周一, 6=周日
+            start_time = today - timedelta(days=weekday)
+            end_time = today + timedelta(days=1)
+        elif range_type == "last_week":
+            # 上周（上周一到上周日）
+            weekday = today.weekday()
+            end_time = today - timedelta(days=weekday)  # 本周一
+            start_time = end_time - timedelta(days=7)  # 上周一
+        elif range_type == "month":
+            # 本月（1号到今天）
+            start_time = today.replace(day=1)
+            end_time = today + timedelta(days=1)
+        elif range_type == "last_month":
+            # 上月（1号到月底）
+            end_time = today.replace(day=1)  # 本月1号
+            last_month_end = end_time - timedelta(days=1)  # 上月最后一天
+            start_time = last_month_end.replace(day=1)  # 上月1号
+        elif range_type == "custom" and start_date_str and end_date_str:
+            # 自定义日期范围
+            try:
+                start_time = datetime.strptime(start_date_str, "%Y-%m-%d")
+                end_time = datetime.strptime(end_date_str, "%Y-%m-%d") + timedelta(days=1)
+            except ValueError as exc:
+                raise ValueError("日期格式错误，请使用 YYYY-MM-DD") from exc
+        else:
+            # 默认本月
+            start_time = today.replace(day=1)
+            end_time = today + timedelta(days=1)
+
+        # 将本地时间转换回 UTC 时间用于数据库查询
+        start_time_utc = start_time - timedelta(hours=8)
+        end_time_utc = end_time - timedelta(hours=8)
+        return start_time_utc, end_time_utc, start_time, end_time
+
     def fetch_and_save_data(self, max_pages: int | None = None) -> tuple[bool, str]:
         """
         获取并保存电量数据（按当前用户隔离落库）

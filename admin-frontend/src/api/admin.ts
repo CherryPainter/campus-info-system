@@ -168,14 +168,36 @@ export const adminApi = {
 
   // ========== 电量模块 ==========
   /** 获取电量配置 */
-  getElectricityConfig: () => request.get<any, AdminApiResponse>("/admin/electricity/config"),
+  getElectricityConfig: () => request.get<any, AdminApiResponse<ElectricityConfig>>("/admin/electricity/config"),
   /** 更新电量配置 */
-  updateElectricityConfig: (data: any) =>
+  updateElectricityConfig: (data: Partial<ElectricityConfig>) =>
     request.put<any, ApiResponse>("/admin/electricity/config", data),
-  /** 获取用电记录 */
-  getElectricityRecords: () => request.get<any, ApiResponse>("/admin/electricity/records"),
-  /** 获取剩余电量 */
-  getElectricityRemaining: () => request.get<any, ApiResponse>("/admin/electricity/remaining"),
+  /** 学生电量总览（全部学生 + 配置/低电量状态） */
+  getElectricityStudents: () =>
+    request.get<any, ApiResponse<ElectricityStudentsOverview>>("/admin/electricity/students"),
+  /** 指定学生最新剩余电量 */
+  getStudentElectricityRemaining: (userId: number) =>
+    request.get<any, ApiResponse<StudentElectricityRemaining>>(
+      `/admin/electricity/students/${userId}/remaining`
+    ),
+  /** 指定学生用电记录（分页） */
+  getStudentElectricityRecords: (
+    userId: number,
+    params?: { limit?: number; offset?: number; meter_filter?: string }
+  ) =>
+    request.get<any, ApiResponse<StudentElectricityRecords>>(
+      `/admin/electricity/students/${userId}/records`,
+      { params }
+    ),
+  /** 指定学生用电统计 */
+  getStudentElectricityStatistics: (
+    userId: number,
+    params?: { range_type?: string; start_date?: string; end_date?: string }
+  ) =>
+    request.get<any, ApiResponse<ElectricityStatisticsData>>(
+      `/admin/electricity/students/${userId}/statistics`,
+      { params }
+    ),
   /** 触发电量任务 */
   triggerElectricity: (taskType: string) =>
     request.post<any, ApiResponse>("/admin/electricity/trigger", { task_type: taskType }),
@@ -199,6 +221,86 @@ export const adminApi = {
   /** 热重载配置 */
   reloadConfig: () => request.post<any, ApiResponse>("/admin/system/reload"),
 };
+
+/** 电量模块配置 */
+export interface ElectricityConfig {
+  configured_students?: number;
+  base_url?: string;
+  max_pages?: number;
+  low_power_threshold?: number;
+  low_power_interval_hours?: number;
+  daily_push_time?: string;
+  weekly_push_time?: string;
+  weekly_push_day?: string;
+  monthly_push_time?: string;
+  monthly_push_day?: number;
+  cookie_check_time?: string;
+}
+
+/** 学生电量总览项 */
+export interface ElectricityStudent {
+  user_id: number;
+  display_name: string;
+  student_number: string | null;
+  class_name: string | null;
+  // avatar 不返回（多为 base64 大图），前端用首字母头像
+  configured: boolean;
+  remaining: number | null;
+  recorded_at: string | null;
+  is_low_power: boolean;
+}
+
+/** 学生电量总览响应 */
+export interface ElectricityStudentsOverview {
+  summary: {
+    total_students: number;
+    configured_students: number;
+    low_power_count: number;
+  };
+  students: ElectricityStudent[];
+}
+
+/** 指定学生最新剩余电量 */
+export interface StudentElectricityRemaining {
+  remaining: number;
+  total_capacity: number;
+  percentage: number;
+  is_low_power: boolean;
+  recorded_at: string | null;
+  meter: string | null;
+}
+
+/** 指定学生用电记录（分页） */
+export interface StudentElectricityRecords {
+  records: Array<{
+    id: number;
+    record_time: string;
+    usage: number;
+    meter: string;
+  }>;
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** 指定学生用电统计（与旧全局 /electricity/statistics 结构一致） */
+export interface ElectricityStatisticsData {
+  daily: Array<{ date: string; usage: number; count: number }>;
+  by_meter: Array<{ meter: string; usage: number }>;
+  summary: {
+    total_records: number;
+    total_usage: number;
+    avg_daily: number;
+    max_daily: number;
+    min_daily: number;
+    meter_count: number;
+  };
+  range: {
+    type: string;
+    start_date: string;
+    end_date: string;
+  };
+}
 
 /** 消息模板 */
 export interface PushTemplate {

@@ -86,7 +86,6 @@ export default function AdminLayout() {
     : [
         { path: "/welcome", name: "首页", icon: <HomeOutlined /> },
         { path: "/weather", name: "天气管理", icon: <CloudOutlined /> },
-        { path: "/electricity", name: "电量管理", icon: <ThunderboltOutlined /> },
         { path: "/course", name: "课程管理", icon: <BookOutlined /> },
         { path: "/profile", name: "个人设置", icon: <ProfileOutlined /> },
       ];

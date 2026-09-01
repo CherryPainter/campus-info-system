@@ -24,6 +24,22 @@
 - **管理端**：`Electricity.tsx` 模块配置 Tab 移除「爬虫 Cookie」表单，改为提示"Cookie 由学生在小程序自配"+ 展示已配置学生数；`admin.ts` 删除已废弃的 `updateElectricityCookie`；Dashboard 电量模块状态由 "Cookie: 已配置/未配置" 改为 "已配置: N 人"。
 - 验证：后端 `py_compile` 通过；小程序 `build:weapp:clean` 编译成功；管理端 `vite build` 成功。
 
+### 管理端电量页改版（2026-09-01）
+- **背景**：电量用户化后，管理端旧电量页仍读全局视图（用户化前单电表、NULL 归属）与废弃 JSON 文件（`usage_records.json` / `remaining_power.json`），与学生维度数据完全脱节；普通用户（网页端 `role=user`）无任何学生数据可看。本次按学生维度整体改版。
+- **用户决策**：① 学生总览范围 = 全部学生（含未配置，标灰 +「未配置」标记，顶部统计卡：总人数 / 已配置数 / 低电量数）；② 历史全局数据（NULL）完全移除展示（数据留库不展示）；③ 明细形式 = 独立 Tab 切换（选中学生切入「用电明细」，返回按钮回列表）。
+- **后端**：
+  - `app/services/electricity_service.py` 新增 `parse_statistics_range(range_type, start_date_str, end_date_str)` 静态方法（把原 `electricity_routes.py::get_statistics` 的时间范围解析抽为共用，供 admin 新统计接口复用）。
+  - `app/api/admin_routes.py` 新增 4 个学生维度接口（均 `@admin_required`）：`GET /api/admin/electricity/students`（全部 `role=student` 用户 + `student_profiles` 外连，返回 summary 统计 + 每人配置状态/最新剩余电量/低电量标记，不返回 base64 头像避免响应体膨胀）、`GET /students/<id>/remaining`、`GET /students/<id>/records`（`limit/offset/meter_filter` 分页）、`GET /students/<id>/statistics`（复用 `parse_statistics_range`，响应结构与旧全局统计一致，供图表无缝切换）。
+  - `app/api/admin_routes.py` 删除读废弃 JSON 的死接口 `GET /electricity/records`、`GET /electricity/remaining`（用户化后数据全走 MySQL，两接口已死）；清理多余 `json` import。
+  - `app/api/electricity_routes.py` 删除全局视图查询接口 `GET /remaining`、`GET /records`、`GET /statistics` 与无前端引用的 `POST /trigger/daily|weekly|monthly|cookie_check`（管理端触发统一走 `/api/admin/electricity/trigger`）；保留 `/health`、`/status`、`POST /trigger/fetch_all`（进程管理页运维入口）、`DELETE /records`；删除随之失去引用的 `_trigger_task` 辅助函数与 `jwt_required` import。
+- **管理端前端**：
+  - `src/pages/Electricity.tsx` 重构为 3 Tab「学生总览 / 用电明细 / 模块配置」：总览 = 顶部统计卡 + ResponsiveTable（首字母 Avatar + 配置状态 Tag + 剩余电量/低电量红色标记，未配置标灰）+「触发数据采集」按钮（全量爬取/清空记录入口与列表轮询已移除）；明细 = 返回按钮 + 学生信息头 + 剩余电量卡片 + 用电记录分页表 + 数据可视化（`ElectricityChart` 传入 `userId`）；配置 Tab 保持模块级配置。
+  - `src/components/ElectricityChart.tsx` 增加 `userId` prop，改调 `adminApi.getStudentElectricityStatistics`；未选学生时显示空态提示。
+  - `src/api/admin.ts` 新增 `getElectricityStudents` / `getStudentElectricityRemaining` / `getStudentElectricityRecords` / `getStudentElectricityStatistics` 与对应类型（`ElectricityConfig` 字段补全），删除 `getElectricityRecords` / `getElectricityRemaining`。
+  - `src/api/electricity.ts` 删除全局视图方法（`getRemaining` / `getRecords` / `getStatistics` / `deleteAllRecords`）与无引用类型，保留 `triggerFetchAll`（进程管理页仍在用）。
+  - `src/layouts/AdminLayout.tsx` 普通用户（非管理员）菜单移除「电量管理」入口；`src/App.tsx` 的 `/electricity` 路由补 `AdminGuard`（用户化后普通用户无学生数据可看，仅管理员可访问）。
+- 验证：后端 `py_compile` 通过、路由注册核验（4 个新接口在、6 个被删接口消失）；test_client 冒烟测试通过（总览/remaining/records/statistics/非法日期 400/无 token 401）；管理端 `vite build` 成功。
+
 ### 数据库工具修复：手动 init_db 命令失效（2026-09-01）
 - **背景**：排查新表迁移时发现 `_import_all_models()` / `_ensure_all_models()` 是空壳——只 `from app.core.database import Base` 并返回，从未真正导入 `app.model`（docstring 与实现不符）。后果：手动执行 `python init_db.py migrate` 时 `Base.metadata` 为空（0 张表），迁移恒判定"所有表已存在"什么都不做；`fingerprint/check` 定义侧 schema 恒空，所有实例表被判为"多余表"，`cleanup` 甚至可能建议 DROP 全部表。生产此前未受影响是因为启动路径（`bootstrap.py` 导入模型）metadata 完整，自动迁移正常——即"重启后端=自动迁移"一直有效，手动命令从未真正生效。
 - **修复**：

@@ -186,7 +186,15 @@ export default function App() {
 
                   {/* 功能页面 - 所有用户可访问 */}
                   <Route path="/weather" element={<Weather />} />
-                  <Route path="/electricity" element={<Electricity />} />
+                  {/* 电量管理 - 用户化后仅管理员可见（侧边栏已按角色控制） */}
+                  <Route
+                    path="/electricity"
+                    element={
+                      <AdminGuard>
+                        <Electricity />
+                      </AdminGuard>
+                    }
+                  />
                   <Route path="/profile" element={<Profile />} />
                 </Route>
 
