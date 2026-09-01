@@ -21,7 +21,7 @@
 - GET  /api/miniapp/weather/minutely           分钟级降水
 - GET  /api/miniapp/electricity/current        剩余电量（按用户隔离）
 - GET  /api/miniapp/electricity/refresh        轻量刷新剩余电量（未配置 Cookie 时引导）
-- GET  /api/miniapp/electricity/history        用电记录
+- GET  /api/miniapp/electricity/history        用电记录（该学生无任何记录时自动懒采集一次全量爬取，响应含 fetch_triggered）
 - GET  /api/miniapp/electricity/trend          用电趋势
 - GET  /api/miniapp/electricity/cookie         电表 Cookie 配置状态（脱敏）
 - PUT  /api/miniapp/electricity/cookie         保存本人电表 Cookie
@@ -500,8 +500,13 @@ def electricity_history():
           "records": [...],
           "total": <满足条件的记录总数>,
           "offset": <本次偏移>,
-          "limit": <本次每页>
+          "limit": <本次每页>,
+          "fetch_triggered": <bool, 该学生此前无任何记录且已配置 Cookie 时自动触发首次全量采集>
         }
+
+    说明：学生第一次进入电量详情页（管理员尚未手动触发、定时任务未覆盖）时，
+    若其用电记录为空，后端自动为其触发一次全量爬取补全记录（异步执行，
+    本次仍返回空列表，前端应提示"正在首次采集，请稍后刷新"）。
     """
     from app.services.electricity_service import get_electricity_service
 
@@ -516,7 +521,25 @@ def electricity_history():
 
     records = svc.get_usage_records(days=days, limit=limit, offset=offset)
     total = svc.count_usage_records(days=days)
-    return api_success(data={"records": records, "total": total, "offset": offset, "limit": limit})
+
+    # 懒采集：该学生从未有过任何用电记录（管理员未手动触发、定时任务尚未覆盖）时，
+    # 自动为其触发一次全量爬取补全记录。异步执行不阻塞本次响应，
+    # 前端据 fetch_triggered 提示"正在首次采集，请稍后刷新"。
+    fetch_triggered = False
+    if total == 0:
+        from app.modules.electricity.tasks import lazy_fetch_for_user
+
+        fetch_triggered = lazy_fetch_for_user(user_id)
+
+    return api_success(
+        data={
+            "records": records,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "fetch_triggered": fetch_triggered,
+        }
+    )
 
 
 @miniapp_bp.route("/electricity/trend", methods=["GET"])

@@ -95,6 +95,11 @@ export default function ElectricityPage() {
       setRecords(recs);
       setTotal(hRes?.data?.total ?? recs.length);
       setTrendData(tRes?.data?.points ?? []);
+      // 后端懒采集：该学生首次进入（无任何记录）且已配置 Cookie 时已自动触发全量爬取，
+      // 本次仍返回空数据，提示稍后下拉刷新查看
+      if (hRes?.data?.fetch_triggered) {
+        Taro.showToast({ title: '正在首次采集电量数据，请稍后下拉刷新查看', icon: 'none', duration: 2500 });
+      }
       // 本月已用：累加本月用电记录（按 record_time / time 判断月份）
       const monthStart = dayjs().startOf('month');
       const used = recs.reduce((acc, r) => {

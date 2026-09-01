@@ -256,6 +256,8 @@ export interface ElectricityHistoryResult extends ApiSuccess {
     total: number;
     offset: number;
     limit: number;
+    /** 后端懒采集标记：该学生此前无任何记录且已配置 Cookie 时，本次已自动触发首次全量采集 */
+    fetch_triggered?: boolean;
   };
 }
 

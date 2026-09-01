@@ -12,6 +12,8 @@
 """
 
 import os
+import threading
+import time
 from datetime import datetime, timedelta
 
 from app.core.logger import get_logger
@@ -127,6 +129,47 @@ def _has_data(user_id: int) -> bool:
         return count > 0
     finally:
         session.close()
+
+
+# 懒采集冷却窗口（秒）：同一用户短时间内的多次请求只触发一次首次采集
+_LAZY_FETCH_COOLDOWN_SECONDS = 300
+# {user_id: 上次触发时间戳}，仅内存（单机部署；后端重启后自动失效，最多重复触发一次）
+_lazy_fetch_cooldown: dict[int, float] = {}
+
+
+def lazy_fetch_for_user(user_id: int) -> bool:
+    """
+    按需懒采集：用户首次进入电量页且从未有过任何用电记录时，
+    自动为其触发一次全量爬取补全记录（避免依赖管理员手动触发/定时任务先跑）。
+
+    - 未配置电表 Cookie：不触发（前端会引导去设置），返回 False
+    - 已有用电记录：无需补全，返回 False
+    - 冷却窗口内已触发过：不重复触发，返回 False
+    - 触发成功返回 True（爬取在后台线程执行，不阻塞本次响应）
+
+    注意：爬取是异步的，调用方（接口）应把 fetch_triggered 带给前端提示"稍后刷新"。
+    """
+    from app.core.database import get_db
+    from app.model.student_profile import StudentProfile
+
+    db = get_db()
+    try:
+        profile = db.query(StudentProfile).filter_by(user_id=user_id).first()
+        cookie = (profile.electricity_cookie or "").strip() if profile else ""
+    finally:
+        db.close()
+    if not cookie:
+        return False
+    if _has_data(user_id):
+        return False
+    now = time.time()
+    if now - _lazy_fetch_cooldown.get(user_id, 0) < _LAZY_FETCH_COOLDOWN_SECONDS:
+        logger.info(f"[电量] 用户 {user_id} 懒采集冷却期内，跳过重复触发")
+        return False
+    _lazy_fetch_cooldown[user_id] = now
+    logger.info(f"[电量] 用户 {user_id} 首次进入电量页，后台触发全量采集")
+    threading.Thread(target=_fetch_and_save, args=(user_id, cookie), daemon=True).start()
+    return True
 
 
 def _fetch_and_save(user_id: int, cookie: str, max_pages: int | None = None) -> tuple:

@@ -54,6 +54,14 @@
   - `ElectricityStudent` 类型新增 `avatar?: string | null`；顺手修复 `fetchRemaining` 缺失的 `res.data` 空值检查（`ApiResponse.data` 为可选，`setRemaining(res.data)` 会触发 TS2345）。
 - **验证**：后端 test_client 冒烟——`GET /admin/electricity/students` 200 且学生项含 `avatar`（`data:image/jpeg;base64,...`）；`POST /admin/electricity/trigger {fetch_electricity_data}` 200「电量数据采集 任务已触发」；管理端 `vite build` 成功（14.35s）。
 
+### 小程序电量：首次进入自动懒采集补全记录（2026-09-01）
+- **背景**：学生第一次进电量详情页时若管理员从未手动触发过采集、定时任务尚未覆盖，`history` 接口返回空记录，学生以为功能坏了。需在用户侧首次访问时自动补一次全量爬取。
+- **后端**（`app/modules/electricity/tasks.py` + `app/api/miniapp_routes.py`）：
+  - `tasks.py` 新增 `lazy_fetch_for_user(user_id)`：未配置 Cookie（前端已有引导）或有任何用电记录时不触发；冷却窗口（300 秒，内存字典，单机部署）内不重复触发；触发则后台线程执行 `_fetch_and_save(user_id, cookie)`（首次=全量 50 页，与既有策略一致），异步不阻塞响应。
+  - `GET /api/miniapp/electricity/history`：`total == 0` 时调用 `lazy_fetch_for_user`，响应新增 `fetch_triggered` 布尔字段（本次是否已自动触发首次采集）。
+- **小程序端**：`src/pages/electricity/index.tsx` 首屏 `getHistory` 返回 `fetch_triggered=true` 时 Toast 提示「正在首次采集电量数据，请稍后下拉刷新查看」；`src/types/api.ts` `ElectricityHistoryResult` 新增 `fetch_triggered?: boolean`。
+- **验证**：py_compile 通过；单测 4 分支——无 profile 不触发 / mock 无记录有 Cookie 触发（`_fetch_and_save` 收到真实 Cookie 参数）/ 冷却期内不重复触发 / 有记录不触发（user 75 现有 752 条，返回 `fetch_triggered=false`）；`GET /history` 200 且响应含 `fetch_triggered` 字段；小程序 `build:weapp` 编译成功（16.04s，dist 已清空重建）。测试后冷却字典与 mock 已清理，未对真实数据产生爬取。
+
 ### 数据库工具修复：手动 init_db 命令失效（2026-09-01）
 - **背景**：排查新表迁移时发现 `_import_all_models()` / `_ensure_all_models()` 是空壳——只 `from app.core.database import Base` 并返回，从未真正导入 `app.model`（docstring 与实现不符）。后果：手动执行 `python init_db.py migrate` 时 `Base.metadata` 为空（0 张表），迁移恒判定"所有表已存在"什么都不做；`fingerprint/check` 定义侧 schema 恒空，所有实例表被判为"多余表"，`cleanup` 甚至可能建议 DROP 全部表。生产此前未受影响是因为启动路径（`bootstrap.py` 导入模型）metadata 完整，自动迁移正常——即"重启后端=自动迁移"一直有效，手动命令从未真正生效。
 - **修复**：
