@@ -257,7 +257,8 @@ class Config:
         cls.ELECTRICITY_CRAWLER_BASE_URL = os.getenv(
             "ELECTRICITY_CRAWLER_BASE_URL", "http://dk.cqie.cn"
         )
-        # 敏感：从环境变量读取
+        # 敏感：从环境变量读取（已弃用：2026-09-01 起电表 Cookie 由学生在小程序自配，
+        # 存 student_profiles.electricity_cookie，不再使用全局 Cookie；保留仅为向后兼容）
         cls.ELECTRICITY_CRAWLER_COOKIE = os.getenv("ELECTRICITY_CRAWLER_COOKIE", "")
         cls.ELECTRICITY_CRAWLER_USER_AGENT = os.getenv(
             "ELECTRICITY_CRAWLER_USER_AGENT",

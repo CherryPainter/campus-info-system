@@ -7,6 +7,11 @@
 - 电量统计分析与推送业务逻辑
 - 协调 Repository 完成数据操作
 - 集成容量管理器，提供百分比计算
+
+用户化说明（2026-09-01）：
+- 每宿舍独立电表，数据按 user_id 隔离（NULL=历史全局数据/管理员视图）。
+- 爬虫 Cookie 由学生在小程序自行配置，存 student_profiles.electricity_cookie；
+  本服务构造 crawler 时使用用户 Cookie，不再读全局 Config.ELECTRICITY_CRAWLER_COOKIE。
 """
 
 import logging
@@ -32,27 +37,51 @@ class ElectricityService:
     封装所有电量相关的业务逻辑
     """
 
-    def __init__(self, crawler: ElectricityCrawler | None = None, meter: str = "default") -> None:
+    def __init__(
+        self,
+        crawler: ElectricityCrawler | None = None,
+        meter: str = "default",
+        user_id: int | None = None,
+        cookie: str = "",
+    ) -> None:
         """
         初始化服务
 
         Args:
             crawler: 电量爬虫，为 None 时自动创建
-            meter: 电表名称，默认为'default'
+            meter: 电表名称，默认为'default'（用户维度下每宿舍一个电表）
+            user_id: 归属用户ID（None=历史全局/管理员视图）
+            cookie: 用户自行配置的电表爬虫 Cookie（留空则爬虫无 Cookie，仅可读历史库）
         """
         self._crawler = crawler
         self._meter = meter
-        self._capacity_manager = get_capacity_manager(meter)
+        self._user_id = user_id
+        self._cookie = cookie
+        self._capacity_manager = get_capacity_manager(meter, user_id=user_id)
         # 轻量刷新冷却状态（秒）：防频繁爬取被反爬
         self._last_remaining_refresh: float | None = None
         self._remaining_refresh_cooldown: float = 60.0
 
-    def _get_crawler(self) -> ElectricityCrawler:
-        """获取或创建 crawler"""
-        if self._crawler is None:
-            from app.modules.electricity.tasks import _make_crawler
+    def set_cookie(self, cookie: str) -> None:
+        """
+        运行时更新用户 Cookie，crawler 立即生效
 
-            self._crawler = _make_crawler()
+        学生在小程序修改电表配置后调用，无需重建实例。
+        """
+        self._cookie = cookie or ""
+        if self._crawler is not None:
+            self._crawler.set_cookie(self._cookie)
+
+    def _get_crawler(self) -> ElectricityCrawler:
+        """获取或创建 crawler（使用用户自配 Cookie）"""
+        if self._crawler is None:
+            from app.core.config import Config
+
+            self._crawler = ElectricityCrawler(
+                base_url=getattr(Config, "ELECTRICITY_CRAWLER_BASE_URL", "http://dk.cqie.cn"),
+                cookie=self._cookie,
+                max_pages=getattr(Config, "ELECTRICITY_CRAWLER_MAX_PAGES", 50),
+            )
         return self._crawler
 
     @staticmethod
@@ -101,7 +130,7 @@ class ElectricityService:
 
     def fetch_and_save_data(self, max_pages: int | None = None) -> tuple[bool, str]:
         """
-        获取并保存电量数据
+        获取并保存电量数据（按当前用户隔离落库）
 
         Args:
             max_pages: 爬取页数，None 时使用默认值（50页）
@@ -134,6 +163,7 @@ class ElectricityService:
                     session=session,
                     remaining=remaining_float,
                     meter=self._meter,
+                    user_id=self._user_id,
                 )
 
                 # 更新容量管理器，检测充值和低电量
@@ -163,11 +193,14 @@ class ElectricityService:
                         )
                     )
 
-                ElectricityRepository.create_records_batch(session, record_tuples)
+                ElectricityRepository.create_records_batch(
+                    session, record_tuples, user_id=self._user_id
+                )
 
                 session.commit()
                 logger.info(
-                    f"[ElectricityService] 电量数据已保存: {len(records)} 条记录，剩余 {remaining} 度"
+                    f"[ElectricityService] 电量数据已保存(user_id={self._user_id}): "
+                    f"{len(records)} 条记录，剩余 {remaining} 度"
                 )
                 return True, f"成功保存 {len(records)} 条用电记录"
 
@@ -216,6 +249,7 @@ class ElectricityService:
                     session=session,
                     remaining=remaining_float,
                     meter=self._meter,
+                    user_id=self._user_id,
                 )
                 session.commit()
                 self._capacity_manager.update_remaining(
@@ -223,7 +257,10 @@ class ElectricityService:
                     low_power_threshold=10.0,
                 )
                 self._last_remaining_refresh = now
-                logger.info(f"[ElectricityService] 轻量刷新剩余电量成功: {remaining_float} 度")
+                logger.info(
+                    f"[ElectricityService] 轻量刷新剩余电量成功(user_id={self._user_id}): "
+                    f"{remaining_float} 度"
+                )
             except Exception as exc:
                 session.rollback()
                 logger.error(f"[ElectricityService] 轻量刷新剩余电量保存失败: {exc}")
@@ -236,7 +273,7 @@ class ElectricityService:
 
     def get_remaining_power(self, meter: str = None) -> dict[str, Any] | None:
         """
-        获取最新剩余电量（包含百分比信息）
+        获取最新剩余电量（包含百分比信息，按用户隔离）
 
         Args:
             meter: 电表名称，为None时使用初始化时的meter
@@ -247,7 +284,9 @@ class ElectricityService:
         target_meter = meter or self._meter
         session = get_db()
         try:
-            record = ElectricityRepository.get_latest_remaining(session, target_meter)
+            record = ElectricityRepository.get_latest_remaining(
+                session, target_meter, user_id=self._user_id
+            )
             if record:
                 data = record.to_dict()
                 # recorded_at 以 UTC 存储（create_remaining 用 datetime.utcnow），
@@ -276,7 +315,7 @@ class ElectricityService:
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         """
-        获取用电记录
+        获取用电记录（按用户隔离）
 
         Args:
             meter: 电表名称筛选
@@ -308,6 +347,7 @@ class ElectricityService:
                 end_time=end_time,
                 limit=limit,
                 offset=offset,
+                user_id=self._user_id,
             )
             return [r.to_dict() for r in records]
         finally:
@@ -340,13 +380,14 @@ class ElectricityService:
                 meter=meter,
                 start_time=start_time,
                 end_time=end_time,
+                user_id=self._user_id,
             )
         finally:
             session.close()
 
     def get_usage_trend(self, days: int = 30) -> list[dict[str, Any]]:
         """
-        获取最近 days 天每日用电量聚合（含用电为 0 的日期，按天补齐）
+        获取最近 days 天每日用电量聚合（含用电为 0 的日期，按天补齐，按用户隔离）
 
         返回列表按日期升序（旧 -> 新），每项 {"date": "YYYY-MM-DD", "usage": float}。
         用于小程序用电趋势折线图，仅传输聚合后的少量点，避免一次性拉取全部明细。
@@ -367,6 +408,7 @@ class ElectricityService:
                 start_time=start_pad,
                 end_time=end_pad,
                 limit=100000,
+                user_id=self._user_id,
             )
             daily = defaultdict(float)
             for r in records:
@@ -384,14 +426,16 @@ class ElectricityService:
 
     def get_building_meter(self) -> str | None:
         """
-        获取该宿舍真实楼栋名（优先可读的「照明」变体，如「31栋512照明」）
+        获取该用户宿舍真实楼栋名（优先可读的「照明」变体，如「31栋512照明」）
 
         用电记录的 meter 字段即为楼栋寝室信息（如「31栋512照明」或原始「310512」），
         两者交替出现。优先返回带「照明」后缀的可读名称，供前端直接展示。
         """
         session = get_db()
         try:
-            recent = ElectricityRepository.get_records(session=session, limit=50)
+            recent = ElectricityRepository.get_records(
+                session=session, limit=50, user_id=self._user_id
+            )
             # 优先：含「照明」或「栋」的可读楼栋名
             for r in recent:
                 m = (r.meter or "").strip()
@@ -408,7 +452,7 @@ class ElectricityService:
 
     def get_statistics(self, days: int = 30) -> dict[str, Any]:
         """
-        获取用电统计
+        获取用电统计（按用户隔离）
 
         Args:
             days: 统计最近多少天
@@ -419,7 +463,9 @@ class ElectricityService:
         session = get_db()
         try:
             # 按电表统计
-            by_meter = ElectricityRepository.get_usage_by_meter(session, days)
+            by_meter = ElectricityRepository.get_usage_by_meter(
+                session, days, user_id=self._user_id
+            )
 
             # 计算汇总
             total_usage = sum(usage for _, usage in by_meter)
@@ -429,7 +475,9 @@ class ElectricityService:
             daily = []
             for i in range(min(days, 7)):
                 target_date = datetime.utcnow() - timedelta(days=i)
-                total, count = ElectricityRepository.get_daily_statistics(session, target_date)
+                total, count = ElectricityRepository.get_daily_statistics(
+                    session, target_date, user_id=self._user_id
+                )
                 daily.append(
                     {
                         "date": target_date.strftime("%Y-%m-%d"),
@@ -457,7 +505,7 @@ class ElectricityService:
         meter: str | None = None,
     ) -> dict[str, Any]:
         """
-        获取指定时间范围的用电统计
+        获取指定时间范围的用电统计（按用户隔离）
 
         Args:
             start_time: 开始时间（UTC，用于数据库查询）
@@ -477,6 +525,7 @@ class ElectricityService:
                 start_time=start_time,
                 end_time=end_time,
                 meter=meter,
+                user_id=self._user_id,
             )
 
             # 计算汇总
@@ -501,6 +550,7 @@ class ElectricityService:
                     meter=meter,
                     start_time=utc_day_start,
                     end_time=utc_day_end,
+                    user_id=self._user_id,
                 )
                 day_total = sum(r.usage for r in day_records)
                 day_count = len(day_records)
@@ -530,7 +580,7 @@ class ElectricityService:
         self, threshold: float = 10.0, meter: str = "default"
     ) -> tuple[bool, float]:
         """
-        检查是否低电量
+        检查是否低电量（按用户隔离）
 
         Args:
             threshold: 低电量阈值
@@ -541,7 +591,9 @@ class ElectricityService:
         """
         session = get_db()
         try:
-            record = ElectricityRepository.get_latest_remaining(session, meter)
+            record = ElectricityRepository.get_latest_remaining(
+                session, meter, user_id=self._user_id
+            )
             if not record:
                 return False, 0.0
 
@@ -552,5 +604,33 @@ class ElectricityService:
             session.close()
 
 
-# 模块级单例：供路由与任务模块直接引用，避免每次调用重复实例化
+# 模块级单例：供路由与任务模块直接引用（user_id=None=全局/管理员视图）
 electricity_service = ElectricityService()
+
+# 按 (user_id, meter) 缓存的服务实例：避免每次请求重复实例化，且冷却状态按用户独立
+_service_cache: dict[tuple[int | None, str], ElectricityService] = {}
+
+
+def get_electricity_service(
+    user_id: int | None = None, meter: str = "default", cookie: str = ""
+) -> ElectricityService:
+    """
+    按用户+电表获取服务实例（缓存复用）
+
+    Args:
+        user_id: 归属用户ID（None=全局/管理员视图）
+        meter: 电表名称
+        cookie: 用户自配 Cookie；提供时同步到实例（crawler 立即生效）
+
+    Returns:
+        ElectricityService: 电量服务实例
+    """
+    global _service_cache
+    key = (user_id, meter)
+    svc = _service_cache.get(key)
+    if svc is None:
+        svc = ElectricityService(meter=meter, user_id=user_id, cookie=cookie)
+        _service_cache[key] = svc
+    elif cookie:
+        svc.set_cookie(cookie)
+    return svc

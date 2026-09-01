@@ -1,0 +1,112 @@
+@import '../../styles/variables.scss';
+
+.msg-page {
+  min-height: 100vh;
+  background: $background;
+  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+/* 头部：未读统计 + 全部已读 */
+.msg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-xs $spacing-sm $spacing-md;
+}
+
+.msg-head-count {
+  font-size: $font-size-sm;
+  color: $text-secondary;
+}
+
+.msg-head-num {
+  font-size: $font-size-sm;
+  color: $primary-color;
+  font-weight: 600;
+  margin-left: $spacing-xs;
+}
+
+.msg-head-btn {
+  font-size: $font-size-sm;
+  color: $primary-color;
+}
+
+.msg-head-btn.disabled {
+  color: $text-tertiary;
+}
+
+/* 消息条目 */
+.msg-item {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  padding: $spacing-md $spacing-lg;
+  margin-bottom: $spacing-md;
+}
+
+.msg-item.unread {
+  border-left: 6rpx solid $primary-color;
+}
+
+.msg-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $spacing-xs;
+}
+
+.msg-item-cat {
+  font-size: $font-size-xs;
+  color: $primary-color;
+  background: $primary-light;
+  border-radius: $radius-small;
+  padding: 4rpx 12rpx;
+}
+
+.msg-item-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: $error;
+}
+
+.msg-item-title {
+  display: block;
+  font-size: $font-size-md;
+  font-weight: 600;
+  color: $text-primary;
+  line-height: 1.5;
+}
+
+.msg-item-content {
+  display: block;
+  margin-top: $spacing-xs;
+  font-size: $font-size-sm;
+  color: $text-secondary;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.msg-item-time {
+  display: block;
+  margin-top: $spacing-sm;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}
+
+/* 分页 / 空态 */
+.msg-empty-wrap {
+  padding-top: $spacing-xl;
+}
+
+.msg-more {
+  padding: $spacing-md 0;
+  text-align: center;
+}
+
+.msg-more-text {
+  font-size: $font-size-sm;
+  color: $text-tertiary;
+}

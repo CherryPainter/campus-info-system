@@ -90,14 +90,16 @@ class ElectricityCapacityManager:
     # 低电量警告阈值
     LOW_POWER_WARNING_THRESHOLD: float = 10.0
 
-    def __init__(self, meter: str = "default") -> None:
+    def __init__(self, meter: str = "default", user_id: int | None = None) -> None:
         """
         初始化容量管理器
 
         Args:
-            meter: 电表名称，默认为'default'
+            meter: 电表名称，默认为'default'（用户维度下可传 str(user_id) 作 key）
+            user_id: 归属用户ID（None=历史全局/管理员视图），容量记录会写该列
         """
         self._meter = meter
+        self._user_id = user_id
         self._cache: CapacityRecord | None = None
         self._cache_time: datetime | None = None
         self._cache_ttl: timedelta = timedelta(minutes=5)  # 缓存5分钟
@@ -130,7 +132,7 @@ class ElectricityCapacityManager:
         try:
             # 获取上一次记录的剩余电量（取第二条，跳过刚插入的最新条）
             last_remaining_record = ElectricityRepository.get_previous_remaining(
-                session, self._meter
+                session, self._meter, user_id=self._user_id
             )
             last_remaining = last_remaining_record.remaining if last_remaining_record else None
 
@@ -196,7 +198,9 @@ class ElectricityCapacityManager:
         session = get_db()
         try:
             # 获取最新剩余电量
-            remaining_record = ElectricityRepository.get_latest_remaining(session, self._meter)
+            remaining_record = ElectricityRepository.get_latest_remaining(
+                session, self._meter, user_id=self._user_id
+            )
             remaining = remaining_record.remaining if remaining_record else 0.0
 
             # 获取当前容量
@@ -296,15 +300,13 @@ class ElectricityCapacityManager:
         session = get_db()
         try:
             cutoff_time = datetime.utcnow() - timedelta(days=days)
-            records = (
-                session.query(ElectricityTotalCapacity)
-                .filter(
-                    ElectricityTotalCapacity.meter == self._meter,
-                    ElectricityTotalCapacity.recorded_at >= cutoff_time,
-                )
-                .order_by(ElectricityTotalCapacity.recorded_at.desc())
-                .all()
+            q = session.query(ElectricityTotalCapacity).filter(
+                ElectricityTotalCapacity.meter == self._meter,
+                ElectricityTotalCapacity.recorded_at >= cutoff_time,
             )
+            if self._user_id is not None:
+                q = q.filter(ElectricityTotalCapacity.user_id == self._user_id)
+            records = q.order_by(ElectricityTotalCapacity.recorded_at.desc()).all()
 
             return [
                 CapacityRecord(
@@ -347,6 +349,7 @@ class ElectricityCapacityManager:
             remaining_at_record=remaining_at_record,
             record_reason=reason,
             recorded_at=datetime.utcnow(),
+            user_id=self._user_id,
         )
         session.add(db_record)
         session.commit()
@@ -381,9 +384,10 @@ class ElectricityCapacityManager:
         record = (
             session.query(ElectricityTotalCapacity)
             .filter(ElectricityTotalCapacity.meter == self._meter)
-            .order_by(ElectricityTotalCapacity.recorded_at.desc())
-            .first()
         )
+        if self._user_id is not None:
+            record = record.filter(ElectricityTotalCapacity.user_id == self._user_id)
+        record = record.order_by(ElectricityTotalCapacity.recorded_at.desc()).first()
 
         if record:
             capacity_record = CapacityRecord(
@@ -410,16 +414,14 @@ class ElectricityCapacityManager:
             Optional[CapacityRecord]: 低电量记录或None
         """
         cutoff_time = datetime.utcnow() - timedelta(hours=24)
-        record = (
-            session.query(ElectricityTotalCapacity)
-            .filter(
-                ElectricityTotalCapacity.meter == self._meter,
-                ElectricityTotalCapacity.record_reason == RecordReason.LOW_POWER.value,
-                ElectricityTotalCapacity.recorded_at >= cutoff_time,
-            )
-            .order_by(ElectricityTotalCapacity.recorded_at.desc())
-            .first()
+        q = session.query(ElectricityTotalCapacity).filter(
+            ElectricityTotalCapacity.meter == self._meter,
+            ElectricityTotalCapacity.record_reason == RecordReason.LOW_POWER.value,
+            ElectricityTotalCapacity.recorded_at >= cutoff_time,
         )
+        if self._user_id is not None:
+            q = q.filter(ElectricityTotalCapacity.user_id == self._user_id)
+        record = q.order_by(ElectricityTotalCapacity.recorded_at.desc()).first()
 
         if record:
             return CapacityRecord(
@@ -448,21 +450,25 @@ class ElectricityCapacityManager:
         return max(0.0, min(100.0, percentage))
 
 
-# 单例实例（便于全局使用）
-_default_manager: ElectricityCapacityManager | None = None
+# 实例缓存（按 (user_id, meter) 区分，避免多用户共用同一管理器导致容量/百分比串数据）
+_manager_cache: dict[tuple[int | None, str], ElectricityCapacityManager] = {}
 
 
-def get_capacity_manager(meter: str = "default") -> ElectricityCapacityManager:
+def get_capacity_manager(meter: str = "default", user_id: int | None = None) -> ElectricityCapacityManager:
     """
     获取容量管理器实例
 
     Args:
         meter: 电表名称
+        user_id: 归属用户ID（None=历史全局/管理员视图）
 
     Returns:
         ElectricityCapacityManager: 容量管理器实例
     """
-    global _default_manager
-    if _default_manager is None or _default_manager._meter != meter:
-        _default_manager = ElectricityCapacityManager(meter)
-    return _default_manager
+    global _manager_cache
+    key = (user_id, meter)
+    manager = _manager_cache.get(key)
+    if manager is None:
+        manager = ElectricityCapacityManager(meter, user_id=user_id)
+        _manager_cache[key] = manager
+    return manager

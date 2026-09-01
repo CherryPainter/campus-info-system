@@ -31,6 +31,8 @@ export default function ProfilePage() {
 
   const [statusBarHeight, setStatusBarHeight] = useState(20);
   const [electricity, setElectricity] = useState<ElectricityCurrent | null>(null);
+  // 是否已配置电表 Cookie（false = 未配置，宿舍用电卡片引导去设置；null = 未知）
+  const [cookieConfigured, setCookieConfigured] = useState<boolean | null>(null);
   const [monthUsed, setMonthUsed] = useState<number | null>(null);
   const [updateTime, setUpdateTime] = useState<string | null>(null);
   // 楼栋信息：取自电量接口的 meter 字段（真实库值为"电表: 31栋512照明"），清洗后展示
@@ -50,8 +52,12 @@ export default function ProfilePage() {
     const [eRes, hRes, pRes] = await Promise.all([
       electricityApi
         .getCurrent()
-        .then((r) => ({ ok: true as const, d: r.data.electricity }))
-        .catch(() => ({ ok: false as const, d: null })),
+        .then((r) => ({
+          ok: true as const,
+          d: r.data.electricity,
+          configured: r.data.cookie_configured ?? null,
+        }))
+        .catch(() => ({ ok: false as const, d: null, configured: null })),
       electricityApi
         .getHistory(1000)
         .then((r) => {
@@ -82,6 +88,7 @@ export default function ProfilePage() {
     ]);
 
     setElectricity(eRes.ok ? eRes.d : null);
+    if (eRes.configured != null) setCookieConfigured(eRes.configured);
     setMonthUsed(hRes.ok ? hRes.d.sum : 0);
     // 更新时间统一显示"访问这一刻"（本次请求已确认数据真实性），覆盖后端爬取时间戳
     if (eRes.ok && eRes.d) setUpdateTime(dayjs().format('YYYY-MM-DD HH:mm:ss'));
@@ -111,6 +118,10 @@ export default function ProfilePage() {
   // 电量轻量刷新（后台触发，成功后更新展示值；更新时间显示"访问这一刻"）
   const refreshElectricity = () => {
     electricityApi.refresh().then((r) => {
+      // 刷新返回的 cookie_configured 与 current 一致，一并同步（未配置时为 false）
+      if (r?.data?.cookie_configured != null) {
+        setCookieConfigured(r.data.cookie_configured);
+      }
       const e = r?.data?.electricity;
       if (e) {
         setElectricity(e);
@@ -260,15 +271,29 @@ export default function ProfilePage() {
           </View>
         </View>
         <View className="dorm-foot">
-          <Text className="dorm-foot-time">
-            {updateTime ? `更新时间：${updateTime}` : '暂无更新'}
-          </Text>
-          <View
-            className="dorm-foot-btn"
-            onClick={() => Taro.navigateTo({ url: '/pages/electricity/index' })}
-          >
-            <Text>用电详情</Text>
-          </View>
+          {cookieConfigured === false ? (
+            <>
+              <Text className="dorm-foot-time">未配置电表 Cookie</Text>
+              <View
+                className="dorm-foot-btn"
+                onClick={() => Taro.navigateTo({ url: '/pages/electricity-config/index' })}
+              >
+                <Text>去设置</Text>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text className="dorm-foot-time">
+                {updateTime ? `更新时间：${updateTime}` : '暂无更新'}
+              </Text>
+              <View
+                className="dorm-foot-btn"
+                onClick={() => Taro.navigateTo({ url: '/pages/electricity/index' })}
+              >
+                <Text>用电详情</Text>
+              </View>
+            </>
+          )}
         </View>
       </View>
 

@@ -73,6 +73,14 @@ export default function SettingsPage() {
     Taro.navigateTo({ url: '/pages/profile-edit/index' });
   };
 
+  const goElectricityConfig = () => {
+    Taro.navigateTo({ url: '/pages/electricity-config/index' });
+  };
+
+  const goMessages = () => {
+    Taro.navigateTo({ url: '/pages/messages/index' });
+  };
+
   return (
     <View className="set-page">
       {/* 账号设置入口（跳转独立页） */}
@@ -80,6 +88,19 @@ export default function SettingsPage() {
       <View className="set-card" style={{ marginTop: '8rpx' }}>
         <View className="set-cell" onClick={goAccountEdit}>
           <Text className="set-cell-label">账号设置</Text>
+          <Text className="set-arrow">›</Text>
+        </View>
+      </View>
+
+      {/* 服务：电表配置（学生自行配置宿舍电表 Cookie）/ 我的消息（电量日报/低电量提醒等站内通知） */}
+      <Text className="set-card-title">服务</Text>
+      <View className="set-card" style={{ marginTop: '8rpx' }}>
+        <View className="set-cell" onClick={goElectricityConfig}>
+          <Text className="set-cell-label">电表配置</Text>
+          <Text className="set-arrow">›</Text>
+        </View>
+        <View className="set-cell" onClick={goMessages}>
+          <Text className="set-cell-label">我的消息</Text>
           <Text className="set-arrow">›</Text>
         </View>
       </View>

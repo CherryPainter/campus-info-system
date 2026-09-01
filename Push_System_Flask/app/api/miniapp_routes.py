@@ -19,8 +19,15 @@
 - GET  /api/miniapp/weather/indices            生活指数
 - GET  /api/miniapp/weather/air                实时空气质量 AQI
 - GET  /api/miniapp/weather/minutely           分钟级降水
-- GET  /api/miniapp/electricity/current        剩余电量
+- GET  /api/miniapp/electricity/current        剩余电量（按用户隔离）
+- GET  /api/miniapp/electricity/refresh        轻量刷新剩余电量（未配置 Cookie 时引导）
 - GET  /api/miniapp/electricity/history        用电记录
+- GET  /api/miniapp/electricity/trend          用电趋势
+- GET  /api/miniapp/electricity/cookie         电表 Cookie 配置状态（脱敏）
+- PUT  /api/miniapp/electricity/cookie         保存本人电表 Cookie
+- POST /api/miniapp/electricity/cookie/test    测试 Cookie 有效性
+- GET  /api/miniapp/notifications/messages     个人站内通知列表（电量日报/低电量/Cookie失效等）
+- POST /api/miniapp/notifications/messages/read 标记已读（指定或全部）
 - GET  /api/miniapp/notifications/upcoming     近期提醒（学校日历事件）
 - GET  /api/miniapp/notifications/all          全部未过期提醒
 - GET  /api/miniapp/announcements              校园通知列表（纯拉取）
@@ -412,21 +419,40 @@ def weather_minutely():
     return api_success(data={"minutely": data})
 
 
-# ==================== 电量（复用 electricity_service，路由薄封装） ====================
+# ==================== 电量（按 JWT 用户隔离，路由薄封装） ====================
+
+
+def _get_student_cookie(user_id: int) -> str:
+    """读取当前学生自配的电表爬虫 Cookie（未配置返回空串）"""
+    from app.core.database import get_db
+    from app.model.student_profile import StudentProfile
+
+    db = get_db()
+    try:
+        profile = db.query(StudentProfile).filter_by(user_id=user_id).first()
+        return (profile.electricity_cookie or "").strip() if profile else ""
+    finally:
+        db.close()
 
 
 @miniapp_bp.route("/electricity/current", methods=["GET"])
 @student_required
 def electricity_current():
     """
-    剩余电量（含百分比/总量/低电量标记，recorded_at 为数据采集时间）
+    剩余电量（含百分比/总量/低电量标记，按 JWT 用户隔离，recorded_at 为数据采集时间）
     """
-    from app.services.electricity_service import electricity_service
+    from app.services.electricity_service import get_electricity_service
 
-    electricity = electricity_service.get_remaining_power()
+    user_id = int(g.current_user["user_id"])
+    cookie = _get_student_cookie(user_id)
+    svc = get_electricity_service(user_id=user_id, cookie=cookie)
+    electricity = svc.get_remaining_power()
     if electricity is None:
-        return api_success(data={"electricity": None}, message="暂无电量数据")
-    return api_success(data={"electricity": electricity})
+        return api_success(
+            data={"electricity": None, "cookie_configured": bool(cookie)},
+            message="暂无电量数据",
+        )
+    return api_success(data={"electricity": electricity, "cookie_configured": bool(cookie)})
 
 
 @miniapp_bp.route("/electricity/refresh", methods=["GET"])
@@ -436,20 +462,33 @@ def electricity_refresh():
     轻量刷新剩余电量：触发一次实时爬取（1 个请求）并返回最新值。
     后端带 60s 冷却，冷却期内重复调用直接返回缓存，避免被学校接口反爬。
     用于小程序打开电量详情页 / 我的页（展示电量）时主动更新数据。
-    """
-    from app.services.electricity_service import electricity_service
 
-    electricity = electricity_service.refresh_remaining_power()
+    未配置电表 Cookie 时不发起爬取，返回 cookie_configured=false 引导去设置。
+    """
+    from app.services.electricity_service import get_electricity_service
+
+    user_id = int(g.current_user["user_id"])
+    cookie = _get_student_cookie(user_id)
+    if not cookie:
+        return api_success(
+            data={"electricity": None, "cookie_configured": False},
+            message="未配置电表 Cookie，请前往设置中配置",
+        )
+    svc = get_electricity_service(user_id=user_id, cookie=cookie)
+    electricity = svc.refresh_remaining_power()
     if electricity is None:
-        return api_success(data={"electricity": None}, message="暂无电量数据")
-    return api_success(data={"electricity": electricity})
+        return api_success(
+            data={"electricity": None, "cookie_configured": True},
+            message="暂无电量数据",
+        )
+    return api_success(data={"electricity": electricity, "cookie_configured": True})
 
 
 @miniapp_bp.route("/electricity/history", methods=["GET"])
 @student_required
 def electricity_history():
     """
-    用电记录（按需分页，前端用多少请求多少）
+    用电记录（按需分页，前端用多少请求多少，按 JWT 用户隔离）
 
     查询参数：
         limit  (int, 可选): 每页条数，默认 30，上限 1000
@@ -464,7 +503,10 @@ def electricity_history():
           "limit": <本次每页>
         }
     """
-    from app.services.electricity_service import electricity_service
+    from app.services.electricity_service import get_electricity_service
+
+    user_id = int(g.current_user["user_id"])
+    svc = get_electricity_service(user_id=user_id)
 
     limit = request.args.get("limit", type=int) or 30
     limit = max(1, min(limit, 1000))
@@ -472,8 +514,8 @@ def electricity_history():
     offset = max(0, offset)
     days = request.args.get("days", type=int)
 
-    records = electricity_service.get_usage_records(days=days, limit=limit, offset=offset)
-    total = electricity_service.count_usage_records(days=days)
+    records = svc.get_usage_records(days=days, limit=limit, offset=offset)
+    total = svc.count_usage_records(days=days)
     return api_success(data={"records": records, "total": total, "offset": offset, "limit": limit})
 
 
@@ -481,7 +523,7 @@ def electricity_history():
 @student_required
 def electricity_trend():
     """
-    用电趋势（按日聚合，仅返回少量点，避免一次性拉取全部明细）
+    用电趋势（按日聚合，仅返回少量点，按 JWT 用户隔离）
 
     查询参数：
         range (str, 可选): "day"(近7天) | "week"(近7天) | "month"(近30天)，默认 "week"
@@ -489,12 +531,173 @@ def electricity_trend():
     返回：
         { "points": [ {"date": "YYYY-MM-DD", "usage": float}, ... ] }  （旧->新，含零值日）
     """
-    from app.services.electricity_service import electricity_service
+    from app.services.electricity_service import get_electricity_service
+
+    user_id = int(g.current_user["user_id"])
+    svc = get_electricity_service(user_id=user_id)
 
     range_param = (request.args.get("range") or "week").lower()
     days = 30 if range_param == "month" else 7
-    points = electricity_service.get_usage_trend(days=days)
+    points = svc.get_usage_trend(days=days)
     return api_success(data={"points": points})
+
+
+@miniapp_bp.route("/electricity/cookie", methods=["GET"])
+@student_required
+def electricity_cookie_get():
+    """
+    获取当前学生电表 Cookie 配置状态（脱敏，不返回完整 Cookie）
+
+    返回：
+        {
+          "configured": bool,          # 是否已配置
+          "cookie_preview": "****..."  # 脱敏预览（前4后2，未配置为空串）
+        }
+    """
+    user_id = int(g.current_user["user_id"])
+    cookie = _get_student_cookie(user_id)
+    preview = ""
+    if cookie:
+        preview = cookie[:4] + "****" + (cookie[-2:] if len(cookie) > 6 else "")
+    return api_success(data={"configured": bool(cookie), "cookie_preview": preview})
+
+
+@miniapp_bp.route("/electricity/cookie", methods=["PUT"])
+@student_required
+def electricity_cookie_put():
+    """
+    保存当前学生电表爬虫 Cookie（仅本人可写，存在 student_profiles.electricity_cookie）
+
+    请求体：
+        { "cookie": "..." }
+    """
+    from app.core.database import get_db
+    from app.model.student_profile import StudentProfile
+
+    user_id = int(g.current_user["user_id"])
+    data = request.get_json(silent=True) or {}
+    cookie = str(data.get("cookie") or "").strip()
+    if not cookie:
+        return api_error(message="Cookie 不能为空", http_status=400)
+    if len(cookie) > 4096:
+        return api_error(message="Cookie 过长（上限 4096 字符）", http_status=400)
+
+    db = get_db()
+    try:
+        profile = db.query(StudentProfile).filter_by(user_id=user_id).first()
+        if not profile:
+            profile = StudentProfile(user_id=user_id)
+            db.add(profile)
+        profile.electricity_cookie = cookie
+        db.commit()
+        logger.info(f"[miniapp] 用户 {user_id} 已更新电表 Cookie")
+        return api_success(message="电表 Cookie 已保存")
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"[miniapp] 保存电表 Cookie 失败 user_id={user_id}: {exc}")
+        return api_error(message="保存失败，请稍后重试", http_status=500)
+    finally:
+        db.close()
+
+
+@miniapp_bp.route("/electricity/cookie/test", methods=["POST"])
+@student_required
+def electricity_cookie_test():
+    """
+    测试电表 Cookie 是否有效（不落库，仅检测）
+
+    请求体：
+        { "cookie": "..." }
+
+    返回：
+        { "valid": bool, "reason": "..." }
+    """
+    from app.modules.electricity.crawler import ElectricityCrawler
+
+    data = request.get_json(silent=True) or {}
+    cookie = str(data.get("cookie") or "").strip()
+    if not cookie:
+        return api_error(message="Cookie 不能为空", http_status=400)
+
+    crawler = ElectricityCrawler(cookie=cookie)
+    is_valid, reason = crawler.check_cookie_valid()
+    return api_success(data={"valid": is_valid, "reason": reason})
+
+
+# ==================== 个人站内通知（user_notifications） ====================
+
+
+@miniapp_bp.route("/notifications/messages", methods=["GET"])
+@student_required
+def user_notifications_list():
+    """
+    个人站内通知列表（电量日报/周报/月报、低电量提醒、Cookie 失效提醒等）
+
+    查询参数：
+        limit       (int, 可选): 每页条数，默认 20，上限 100
+        offset      (int, 可选): 跳过条数，默认 0
+        unread_only (int, 可选): 1 时仅返回未读
+
+    返回：
+        {
+          "notifications": [...],
+          "unread_count": <未读数>,
+          "offset": ...,
+          "limit": ...
+        }
+    """
+    from app.services.user_notification_service import user_notification_service
+
+    user_id = int(g.current_user["user_id"])
+    limit = request.args.get("limit", type=int) or 20
+    limit = max(1, min(limit, 100))
+    offset = request.args.get("offset", type=int) or 0
+    offset = max(0, offset)
+    unread_only = request.args.get("unread_only", type=int) == 1
+
+    notifications = user_notification_service.list_notifications(
+        user_id, limit=limit, offset=offset, unread_only=unread_only
+    )
+    unread_count = user_notification_service.unread_count(user_id)
+    return api_success(
+        data={
+            "notifications": notifications,
+            "unread_count": unread_count,
+            "offset": offset,
+            "limit": limit,
+        }
+    )
+
+
+@miniapp_bp.route("/notifications/messages/read", methods=["POST"])
+@student_required
+def user_notifications_read():
+    """
+    标记个人站内通知已读
+
+    请求体：
+        { "id": int }   标记单条；不传 id 则全部标记已读
+
+    返回：
+        { "affected": <受影响条数>, "unread_count": <剩余未读数> }
+    """
+    from app.services.user_notification_service import user_notification_service
+
+    user_id = int(g.current_user["user_id"])
+    data = request.get_json(silent=True) or {}
+    notification_id = data.get("id")
+    if notification_id is not None:
+        try:
+            notification_id = int(notification_id)
+        except (TypeError, ValueError):
+            return api_error(message="通知 ID 无效", http_status=400)
+
+    affected = user_notification_service.mark_read(user_id, notification_id)
+    unread_count = user_notification_service.unread_count(user_id)
+    return api_success(
+        data={"affected": affected, "unread_count": unread_count},
+        message="已标记已读",
+    )
 
 
 # ============================================================================

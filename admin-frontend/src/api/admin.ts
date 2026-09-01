@@ -54,6 +54,7 @@ export interface DashboardData {
       status: string;
       enabled?: boolean;
       cookie_configured: boolean;
+      configured_students?: number;
       data?: { remaining_exists?: boolean };
     };
   };
@@ -171,9 +172,6 @@ export const adminApi = {
   /** 更新电量配置 */
   updateElectricityConfig: (data: any) =>
     request.put<any, ApiResponse>("/admin/electricity/config", data),
-  /** 更新电量Cookie */
-  updateElectricityCookie: (cookie: string) =>
-    request.put<any, ApiResponse>("/admin/electricity/cookie", { cookie }),
   /** 获取用电记录 */
   getElectricityRecords: () => request.get<any, ApiResponse>("/admin/electricity/records"),
   /** 获取剩余电量 */

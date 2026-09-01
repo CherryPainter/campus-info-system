@@ -6,7 +6,23 @@
 
 ## Unreleased
 
-> 类型：**功能重构（未发版）**。消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）。
+> 类型：**功能重构（未发版）**。电量模块用户化改造：每个宿舍独立电表，爬虫 Cookie 改由学生在小程序自配（不再全局共享），数据按用户隔离存储，推送改为小程序站内通知（企业微信电量推送整体移除）；消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）。
+
+### 电量模块用户化重构（2026-09-01）
+- **背景**：每个宿舍有独立电表，原实现共用一个全局 Cookie（管理员配置），数据与推送不分用户，不适用于多宿舍场景；自动化无法代学生获取 Cookie，故改为学生自配、系统按其配置分别采集与推送。
+- **数据模型**：电量三表（`electricity_records` / `electricity_remaining` / `electricity_total_capacity`）新增 `user_id` 列（NULL = 历史全局数据 / 管理员视图）；`student_profiles` 新增 `electricity_cookie` 列（学生私密凭证，`to_dict()` 不输出，仅本人可读写）；新增 `user_notifications` 站内通知表（user_id / category / title / content / is_read / created_at + 复合索引）。新表/新列由 `init_db.py migrate` 指纹迁移自动补齐。
+- **后端**（按用户隔离）：
+  - `app/services/electricity_service.py` 重写：新增 `get_electricity_service(user_id, meter, cookie)` 实例缓存（按 `(user_id, meter)` 键，避免多用户冷却状态/容量串数据）与 `set_cookie()`；全部方法按 `user_id` 过滤；crawler 用学生自配 Cookie 构造，不再读全局 `Config.ELECTRICITY_CRAWLER_COOKIE`。
+  - `app/repository/electricity_repository.py`：CRUD/统计方法全部加 `user_id` 参数（`create_records_batch` 去重按"用户+时间+电表"，历史全局数据用 `is_(None)` 匹配）。
+  - `app/modules/electricity/capacity_manager.py`：单例改按 `(user_id, meter)` 键缓存，`_get_recent_low_power_record` 加 user_id 过滤。
+  - `app/modules/electricity/tasks.py` 重写：所有定时任务（每日/每周/每月报告、Cookie 检测、低电量检测、全量爬取）遍历"配置了 Cookie 的学生"（`_iter_students_with_cookie()`）为每人独立爬取/落库/通知；无学生配置时任务空转。统计改由 Repository 按用户查询（替代旧 JSON 文件统计）；低电量去重改查该用户最近 `low_power` 站内通知；旧的 `update_cookie_in_memory` / `_send_markdown` / `_send_image` / `_make_stats` 已删除。
+  - `app/modules/electricity/formatter.py` 重写为纯文本（适配站内通知，不再渲染 Markdown）；`format_cookie_invalid` 引导"小程序 - 设置 - 电表配置"。
+  - 通知渠道：新增 `app/model/user_notification.py` + `app/repository/user_notification_repository.py` + `app/services/user_notification_service.py`（单例），**企业微信电量推送整体移除**。
+  - API：`miniapp_routes.py` 电量四接口（current/refresh/history/trend）按 JWT 用户隔离，返回 `cookie_configured` 字段，未配置时不发起爬取；新增 `GET/PUT /electricity/cookie`（脱敏预览前4后2，仅本人读写）、`POST /electricity/cookie/test`（不落库仅检测）、`GET /notifications/messages`（列表+未读数）、`POST /notifications/messages/read`（单条或全部已读）。`admin_routes.py` / `electricity_routes.py` 移除管理端 Cookie 配置接口，模块状态改用 `configured_students`；`admin_user_routes.py` 删除用户时级联清理 `user_notifications`。
+  - `app/core/config.py`：`ELECTRICITY_CRAWLER_COOKIE` 标注弃用（保留向后兼容，代码不再读取）；`scheduler.py` 移除全局 Cookie 判断，电量任务总是注册。
+- **小程序端**：设置页新增「服务」分组（电表配置 / 我的消息 两个入口）；新增 `pages/electricity-config/index`（受控表单 + 测试/保存，展示脱敏预览与获取 Cookie 步骤说明）、`pages/messages/index`（站内通知列表：未读数 / 全部已读 / 点击单条已读 / 触底分页）；电量详情页与「我的」页宿舍用电卡片在未配置 Cookie 时显示引导（"去设置"跳电表配置页）；`src/api/electricity.ts` 新增 getCookieConfig/saveCookie/testCookie，新增 `src/api/notifications.ts`。
+- **管理端**：`Electricity.tsx` 模块配置 Tab 移除「爬虫 Cookie」表单，改为提示"Cookie 由学生在小程序自配"+ 展示已配置学生数；`admin.ts` 删除已废弃的 `updateElectricityCookie`；Dashboard 电量模块状态由 "Cookie: 已配置/未配置" 改为 "已配置: N 人"。
+- 验证：后端 `py_compile` 通过；小程序 `build:weapp:clean` 编译成功；管理端 `vite build` 成功。
 
 ### 管理端用户管理：微信端 / 网页端分流（2026-09-01）
 - **背景**：微信端小程序学生用户（`role=student`，openid 登录）与网页端用户（`admin`/`user`，账号密码 + MFA 登录）是两套认证体系；微信端无账号密码、无 MFA 概念（`password_hash` 为随机 bcrypt 占位哈希，密码登录路径天然关闭）。

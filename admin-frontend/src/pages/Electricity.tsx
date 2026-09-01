@@ -87,9 +87,11 @@ export default function Electricity() {
     setLoading(true);
     try {
       const res = await adminApi.getElectricityConfig();
-      if (res.status === "success" && res.config) {
-        setConfig(res.config);
-        form.setFieldsValue(res.config);
+      // 后端统一返回 data 包裹（历史版本曾顶层返回 config，兼容读取）
+      const cfg = res.data ?? res.config;
+      if (res.status === "success" && cfg) {
+        setConfig(cfg);
+        form.setFieldsValue(cfg);
       }
     } catch (error) {
       console.error("加载配置失败:", error);
@@ -450,10 +452,15 @@ export default function Electricity() {
       children: loading ? (
         <Spin />
       ) : (
-        <Form form={form} layout="vertical" onFinish={handleSaveConfig} style={{ maxWidth: 600 }}>
-          <Form.Item name="cookie" label="爬虫 Cookie">
-            <Input.TextArea rows={3} placeholder="JSESSIONID=xxx; leech_k=xxx" />
-          </Form.Item>
+        <div style={{ maxWidth: 600 }}>
+          <Alert
+            type="info"
+            showIcon
+            message="电表 Cookie 由学生在小程序「设置 - 电表配置」自行配置"
+            description={`当前已有 ${config.configured_students ?? 0} 名学生配置了电表 Cookie，系统将按用户分别采集并推送。`}
+            style={{ marginBottom: 16 }}
+          />
+          <Form form={form} layout="vertical" onFinish={handleSaveConfig}>
           <Form.Item name="low_power_threshold" label="低电量阈值">
             <Input type="number" placeholder="如：10" suffix="度" />
           </Form.Item>
@@ -468,7 +475,8 @@ export default function Electricity() {
               保存配置
             </Button>
           </Form.Item>
-        </Form>
+          </Form>
+        </div>
       ),
     });
   }

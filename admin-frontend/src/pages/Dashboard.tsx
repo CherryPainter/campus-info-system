@@ -401,7 +401,7 @@ export default function Dashboard() {
             <Divider style={{ margin: "12px 0" }} />
             <Space split={<Divider type="vertical" />}>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                Cookie: {data?.modules?.electricity?.cookie_configured ? "已配置" : "未配置"}
+                已配置: {data?.modules?.electricity?.configured_students ?? 0} 人
               </Text>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 数据: {data?.modules?.electricity?.data?.remaining_exists ? "有" : "无"}

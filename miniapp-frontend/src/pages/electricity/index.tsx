@@ -46,6 +46,8 @@ export default function ElectricityPage() {
   const [error, setError] = useState(false);
   const [statusBarHeight, setStatusBarHeight] = useState(20);
   const [current, setCurrent] = useState<ElectricityCurrent | null>(null);
+  // 是否已配置电表 Cookie（false = 未配置，需引导去设置；null = 接口未返回/未知）
+  const [cookieConfigured, setCookieConfigured] = useState<boolean | null>(null);
   const [records, setRecords] = useState<ElectricityRecord[]>([]);
   const [trendTab, setTrendTab] = useState<TrendTab>('week');
 
@@ -81,6 +83,7 @@ export default function ElectricityPage() {
         electricityApi.getHistory(RECORD_PAGE, 0).catch(() => null),
         electricityApi.getTrend(trendTab).catch(() => null),
       ]);
+      setCookieConfigured(cRes?.data?.cookie_configured ?? null);
       setCurrent(cRes?.data?.electricity ?? null);
       // 更新时间统一显示"访问这一刻"（本次请求已确认数据），覆盖后端爬取时间戳
       if (cRes?.data?.electricity) {
@@ -150,6 +153,10 @@ export default function ElectricityPage() {
     // 打开电量页即触发一次轻量刷新（后端 60s 冷却），完成后更新最新值；
     // 更新时间显示"访问这一刻"的时间（本次请求确认了数据真实性），而非后端爬取时间戳
     electricityApi.refresh().then((r) => {
+      // 刷新返回的 cookie_configured 与 current 一致，一并同步（未配置时为 false）
+      if (r?.data?.cookie_configured != null) {
+        setCookieConfigured(r.data.cookie_configured);
+      }
       if (r?.data?.electricity) {
         const e = r.data.electricity;
         // 用客户端当前时间覆盖 recorded_at，作为"更新时间"
@@ -362,6 +369,33 @@ export default function ElectricityPage() {
           <View className="elec-navbar-right" />
         </View>
       </View>
+      </View>
+    );
+  }
+
+  // 未配置电表 Cookie：引导去设置（每个宿舍有独立电表，需学生自配 Cookie 后端才会采集）
+  if (cookieConfigured === false) {
+    return (
+      <View className="page electricity-page" style={{ paddingTop: `${statusBarHeight}px` }}>
+        <View className="elec-navbar" style={{ paddingTop: `${statusBarHeight}px` }}>
+          <View className="elec-navbar-inner">
+            <View className="elec-navbar-left" onClick={() => Taro.navigateBack()}>
+              <Text className="elec-navbar-back">‹</Text>
+            </View>
+            <Text className="elec-navbar-title">电量详情</Text>
+            <View className="elec-navbar-right" />
+          </View>
+        </View>
+        <View className="state-wrap" style={{ paddingTop: '160rpx' }}>
+          <Text className="state-title">未配置电表 Cookie</Text>
+          <Text className="state-desc">每个宿舍有独立的电表，配置后即可自动采集电量数据</Text>
+          <View
+            className="state-retry"
+            onClick={() => Taro.navigateTo({ url: '/pages/electricity-config/index' })}
+          >
+            <Text className="state-retry-text">去设置</Text>
+          </View>
+        </View>
       </View>
     );
   }

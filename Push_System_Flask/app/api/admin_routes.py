@@ -181,19 +181,23 @@ def _get_modules_status():
     except Exception as e:
         modules["weather"] = {"enabled": False, "error": str(e)}
 
-    # 电量模块状态
+    # 电量模块状态（Cookie 由学生在小程序自配，模块始终启用，统计已配置学生数）
     try:
-        from app.services.electricity_service import electricity_service
+        from app.services.electricity_service import get_electricity_service
 
-        electricity_enabled = bool(current_app.config.get("ELECTRICITY_CRAWLER_COOKIE"))
-        svc = electricity_service
+        from app.modules.electricity.tasks import _iter_students_with_cookie
+
+        configured_students = len(_iter_students_with_cookie())
+        electricity_enabled = True
+        svc = get_electricity_service()
         remaining = svc.get_remaining_power()
         records = svc.get_usage_records(days=1, limit=1)
 
         modules["electricity"] = {
             "status": "ok" if electricity_enabled else "disabled",
             "enabled": electricity_enabled,
-            "cookie_configured": electricity_enabled,
+            "cookie_configured": configured_students > 0,
+            "configured_students": configured_students,
             "data": {
                 "records_exists": len(records) > 0,
                 "remaining_exists": remaining is not None,
@@ -798,34 +802,28 @@ def get_electricity_config():
     """
     获取电量模块配置
 
-    返回电量模块的当前配置信息（Cookie 脱敏显示）。
+    说明（2026-09-01）：电表爬虫 Cookie 已改为学生在小程序「设置 - 电表配置」自配
+    （存 student_profiles.electricity_cookie），管理端不再配置全局 Cookie。
+    本接口仅返回模块通用配置与已配置 Cookie 的学生数量。
 
     响应示例：
         {
             "status": "success",
             "data": {
-                "cookie_configured": true,
-                "cookie_preview": "JSESS****",
+                "configured_students": 3,
                 "low_power_threshold": 10.0,
                 "daily_push_time": "00:30",
                 ...
             }
         }
     """
-    cookie = current_app.config.get("ELECTRICITY_CRAWLER_COOKIE", "")
+    from app.modules.electricity.tasks import _iter_students_with_cookie
 
-    # Cookie 脱敏处理
-    cookie_preview = ""
-    if cookie:
-        if len(cookie) > 12:
-            cookie_preview = cookie[:6] + "****" + cookie[-6:]
-        else:
-            cookie_preview = "****"
+    configured_students = len(_iter_students_with_cookie())
 
     return api_success(
         data={
-            "cookie_configured": bool(cookie),
-            "cookie_preview": cookie_preview,
+            "configured_students": configured_students,
             "base_url": current_app.config.get("ELECTRICITY_CRAWLER_BASE_URL", "http://dk.cqie.cn"),
             "max_pages": current_app.config.get("ELECTRICITY_CRAWLER_MAX_PAGES", 50),
             "low_power_threshold": current_app.config.get("ELECTRICITY_LOW_POWER_THRESHOLD", 10.0),
@@ -1077,47 +1075,6 @@ def trigger_course_task():
     except Exception as e:
         logger.error(f"[管理后台] 触发课程任务失败: {e}")
         return api_error(message=f"触发失败: {e}", http_status=500)
-
-
-@admin_bp.route("/electricity/cookie", methods=["PUT"])
-@admin_required
-def update_electricity_cookie():
-    """
-    更新电量爬虫 Cookie
-
-    请求格式：
-        PUT /api/admin/electricity/cookie
-        Content-Type: application/json
-        {
-            "cookie": "JSESSIONID=xxx; leech_k=xxx"
-        }
-    """
-    data = request.get_json(silent=True) or {}
-    new_cookie = data.get("cookie", "").strip()
-
-    if not new_cookie:
-        return api_error(message="请提供 cookie 字段", http_status=400)
-
-    # 基本格式校验
-    if len(new_cookie) < 10 or len(new_cookie) > 4096:
-        return api_error(message="Cookie 长度不合法（10-4096 字符）", http_status=400)
-
-    import re
-
-    if re.search(r"[\'\"<>;]", new_cookie):
-        return api_error(message="Cookie 包含非法字符", http_status=400)
-
-    try:
-        from app.modules.electricity.tasks import update_cookie_in_memory
-
-        success = update_cookie_in_memory(new_cookie)
-        if success:
-            logger.info("[管理后台] 电量 Cookie 更新成功")
-            return api_success(message="Cookie 已更新，爬虫将立即使用新 Cookie")
-        return api_error(message="Cookie 更新失败", http_status=500)
-    except Exception as e:
-        logger.error(f"[管理后台] Cookie 更新异常: {e}")
-        return api_error(message=f"服务器异常: {e}", http_status=500)
 
 
 @admin_bp.route("/electricity/records")

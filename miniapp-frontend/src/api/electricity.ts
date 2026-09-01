@@ -1,5 +1,12 @@
-import { get } from '@/utils/request';
-import type { ElectricityCurrentResult, ElectricityHistoryResult, ElectricityTrendResult } from '@/types/api';
+import { get, post, put } from '@/utils/request';
+import type {
+  ApiSuccess,
+  ElectricityCookieConfigResult,
+  ElectricityCookieTestResult,
+  ElectricityCurrentResult,
+  ElectricityHistoryResult,
+  ElectricityTrendResult,
+} from '@/types/api';
 
 /**
  * 电量 API（/api/miniapp/electricity）
@@ -31,4 +38,19 @@ export function getTrend(
   range: 'day' | 'week' | 'month' = 'week',
 ): Promise<ElectricityTrendResult> {
   return get<ElectricityTrendResult>('/api/miniapp/electricity/trend', { range });
+}
+
+/** 电表 Cookie 配置状态（脱敏：configured + cookie_preview） */
+export function getCookieConfig(): Promise<ElectricityCookieConfigResult> {
+  return get<ElectricityCookieConfigResult>('/api/miniapp/electricity/cookie');
+}
+
+/** 保存本人电表爬虫 Cookie（仅本人可写，存在 student_profiles.electricity_cookie） */
+export function saveCookie(cookie: string): Promise<ApiSuccess> {
+  return put<ApiSuccess>('/api/miniapp/electricity/cookie', { cookie });
+}
+
+/** 测试 Cookie 是否有效（不落库，仅检测） */
+export function testCookie(cookie: string): Promise<ElectricityCookieTestResult> {
+  return post<ElectricityCookieTestResult>('/api/miniapp/electricity/cookie/test', { cookie });
 }

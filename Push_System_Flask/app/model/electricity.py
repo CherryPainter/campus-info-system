@@ -22,12 +22,13 @@ class ElectricityRecord(Base):
     __tablename__ = "electricity_records"
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键ID")
+    user_id = Column(Integer, nullable=True, index=True, comment="归属用户ID（NULL=历史全局数据）")
     record_time = Column(DateTime, nullable=False, index=True, comment="记录时间")
     usage = Column(Float, nullable=False, comment="用电量(度)")
     meter = Column(String(100), nullable=False, comment="电表名称")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
 
-    # 复合索引：按时间和电表查询
+    # 复合索引：按用户/时间和电表查询
     __table_args__ = (Index("idx_time_meter", "record_time", "meter"),)
 
     def __repr__(self) -> str:
@@ -37,6 +38,7 @@ class ElectricityRecord(Base):
         """转换为字典格式，时间格式为 YYYY-MM-DD HH:MM:SS"""
         return {
             "id": self.id,
+            "user_id": self.user_id,
             "time": self.record_time.strftime("%Y-%m-%d %H:%M:%S") if self.record_time else None,
             "usage": self.usage,
             "meter": self.meter,
@@ -56,6 +58,7 @@ class ElectricityRemaining(Base):
     __tablename__ = "electricity_remaining"
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键ID")
+    user_id = Column(Integer, nullable=True, index=True, comment="归属用户ID（NULL=历史全局数据）")
     meter = Column(String(100), nullable=False, default="default", comment="电表名称")
     remaining = Column(Float, nullable=False, comment="剩余电量(度)")
     recorded_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="记录时间")
@@ -70,6 +73,7 @@ class ElectricityRemaining(Base):
         """转换为字典格式，时间格式为 YYYY-MM-DD HH:MM:SS"""
         return {
             "id": self.id,
+            "user_id": self.user_id,
             "meter": self.meter,
             "remaining": self.remaining,
             "recorded_at": self.recorded_at.strftime("%Y-%m-%d %H:%M:%S")
@@ -92,6 +96,7 @@ class ElectricityTotalCapacity(Base):
     __tablename__ = "electricity_total_capacity"
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键ID")
+    user_id = Column(Integer, nullable=True, index=True, comment="归属用户ID（NULL=历史全局数据）")
     meter = Column(String(100), nullable=False, default="default", comment="电表名称")
     total_capacity = Column(Float, nullable=False, comment="总量(度)")
     remaining_at_record = Column(Float, nullable=False, comment="记录时的剩余电量(度)")
@@ -114,6 +119,7 @@ class ElectricityTotalCapacity(Base):
         """转换为字典格式，时间格式为 YYYY-MM-DD HH:MM:SS"""
         return {
             "id": self.id,
+            "user_id": self.user_id,
             "meter": self.meter,
             "total_capacity": self.total_capacity,
             "remaining_at_record": self.remaining_at_record,

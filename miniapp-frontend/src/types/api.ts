@@ -238,7 +238,7 @@ export interface ElectricityCurrent {
 }
 
 export interface ElectricityCurrentResult extends ApiSuccess {
-  data: { electricity: ElectricityCurrent | null };
+  data: { electricity: ElectricityCurrent | null; cookie_configured: boolean };
 }
 
 export interface ElectricityRecord {
@@ -266,6 +266,50 @@ export interface ElectricityTrendPoint {
 
 export interface ElectricityTrendResult extends ApiSuccess {
   data: { points: ElectricityTrendPoint[] };
+}
+
+// ==================== 电表 Cookie 配置（/api/miniapp/electricity/cookie） ====================
+
+export interface ElectricityCookieConfigResult extends ApiSuccess {
+  data: {
+    configured: boolean;
+    cookie_preview: string; // 脱敏预览（前4后2），未配置为空串
+  };
+}
+
+export interface ElectricityCookieTestResult extends ApiSuccess {
+  data: {
+    valid: boolean;
+    reason: string;
+  };
+}
+
+// ==================== 个人站内通知（/api/miniapp/notifications/messages） ====================
+
+export interface UserNotificationItem {
+  id: number;
+  user_id: number;
+  category: string; // electricity_daily / electricity_weekly / electricity_monthly / low_power / cookie_invalid / fetch_error
+  title: string;
+  content: string | null; // 纯文本，\n 换行
+  is_read: boolean;
+  created_at: string | null;
+}
+
+export interface UserNotificationListResult extends ApiSuccess {
+  data: {
+    notifications: UserNotificationItem[];
+    unread_count: number;
+    offset: number;
+    limit: number;
+  };
+}
+
+export interface UserNotificationReadResult extends ApiSuccess {
+  data: {
+    affected: number;
+    unread_count: number;
+  };
 }
 
 // ==================== 近期提醒（v6.16.0 第三阶段）====================

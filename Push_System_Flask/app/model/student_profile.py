@@ -44,6 +44,7 @@ class StudentProfile(Base):
     class_name = Column(String(100), nullable=True, comment="班级")
     grade = Column(String(20), nullable=True, comment="年级")
     phone = Column(String(20), nullable=True, comment="手机号")
+    electricity_cookie = Column(String(4096), nullable=True, comment="电表爬虫Cookie（学生自行配置，仅本人可读写）")
 
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间")
@@ -51,6 +52,8 @@ class StudentProfile(Base):
     user = relationship("User", backref="student_profile")
 
     def to_dict(self):
+        # 注意：electricity_cookie 为敏感字段，不随 to_dict 输出；
+        # 需要读取时由接口层显式脱敏后返回（见 miniapp_routes 电表配置接口）。
         return {
             "user_id": self.user_id,
             "student_number": self.student_number,

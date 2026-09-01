@@ -1,0 +1,155 @@
+@import '../../styles/variables.scss';
+
+.ecfg-page {
+  min-height: 100vh;
+  background: $background;
+  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.ecfg-card {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  padding: $spacing-md $spacing-lg;
+  margin-bottom: $spacing-md;
+}
+
+/* 状态行 */
+.ecfg-status-row {
+  display: flex;
+  align-items: center;
+}
+
+.ecfg-status-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: $success;
+  margin-right: $spacing-sm;
+}
+
+.ecfg-status-dot.warn {
+  background: $warning;
+}
+
+.ecfg-status-text {
+  font-size: $font-size-md;
+  font-weight: 600;
+}
+
+.ecfg-status-text.ok {
+  color: $text-primary;
+}
+
+.ecfg-status-text.empty {
+  color: $warning;
+}
+
+.ecfg-preview {
+  display: block;
+  margin-top: $spacing-sm;
+  font-size: $font-size-sm;
+  color: $text-tertiary;
+  word-break: break-all;
+}
+
+/* 说明步骤 */
+.ecfg-card-title {
+  display: block;
+  font-size: $font-size-md;
+  font-weight: 600;
+  color: $text-primary;
+  margin-bottom: $spacing-sm;
+}
+
+.ecfg-step {
+  display: block;
+  font-size: $font-size-sm;
+  color: $text-secondary;
+  line-height: 1.6;
+  margin-bottom: $spacing-xs;
+}
+
+.ecfg-warn {
+  display: block;
+  margin-top: $spacing-sm;
+  font-size: $font-size-xs;
+  color: $warning;
+  line-height: 1.5;
+}
+
+/* 输入区 */
+.ecfg-input-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $spacing-sm;
+}
+
+.ecfg-card-title {
+  margin-bottom: 0;
+}
+
+.ecfg-counter {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}
+
+.ecfg-textarea {
+  width: 100%;
+  min-height: 200rpx;
+  box-sizing: border-box;
+  font-size: $font-size-sm;
+  color: $text-primary;
+  background: $background;
+  border-radius: $radius-medium;
+  padding: $spacing-sm $spacing-md;
+  line-height: 1.6;
+}
+
+.ecfg-placeholder {
+  color: $text-tertiary;
+}
+
+/* 按钮行 */
+.ecfg-btns {
+  display: flex;
+  gap: $spacing-md;
+  margin-top: $spacing-lg;
+  padding: 0 $spacing-md;
+}
+
+.ecfg-btn {
+  flex: 1;
+  border-radius: $radius-full;
+  padding: $spacing-md 0;
+  text-align: center;
+}
+
+.ecfg-btn-ghost {
+  background: $card-background;
+  border: 1rpx solid $primary-color;
+}
+
+.ecfg-btn-primary {
+  background: $primary-color;
+  box-shadow: 0 4rpx 12rpx rgba(26, 115, 232, 0.25);
+}
+
+.ecfg-btn-disabled {
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+.ecfg-btn-text-ghost {
+  font-size: $font-size-md;
+  color: $primary-color;
+  font-weight: 600;
+}
+
+.ecfg-btn-text-primary {
+  font-size: $font-size-md;
+  color: $text-inverse;
+  font-weight: 600;
+}

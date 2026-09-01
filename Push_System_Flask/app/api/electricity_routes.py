@@ -39,15 +39,19 @@ def health():
 @admin_required
 def status():
     """电量模块状态（需管理员权限）"""
-    from app.services.electricity_service import electricity_service
+    from app.services.electricity_service import get_electricity_service
 
-    svc = electricity_service
+    from app.modules.electricity.tasks import _iter_students_with_cookie
+
+    configured_students = len(_iter_students_with_cookie())
+    svc = get_electricity_service()
     remaining = svc.get_remaining_power()
     records = svc.get_usage_records(days=1, limit=1)
 
     return api_success(
         module="electricity",
-        cookie_configured=bool(current_app.config.get("ELECTRICITY_CRAWLER_COOKIE")),
+        cookie_configured=configured_students > 0,
+        configured_students=configured_students,
         data={"records_exists": len(records) > 0, "remaining_exists": remaining is not None},
         config={
             "low_power_threshold": current_app.config.get("ELECTRICITY_LOW_POWER_THRESHOLD", 10.0),
@@ -198,42 +202,6 @@ def get_statistics():
     )
 
 
-@electricity_bp.route("/update_cookie", methods=["POST"])
-@admin_required
-def update_cookie():
-    """
-    更新电量爬虫 Cookie（需管理员权限）
-
-    Body JSON: {"cookie": "JSESSIONID=xxx; leech_k=xxx"}
-    """
-    data = request.get_json(silent=True) or {}
-    new_cookie = data.get("cookie", "").strip()
-
-    if not new_cookie:
-        return api_error(message="请提供 cookie 字段", http_status=400)
-
-    if len(new_cookie) < 10 or len(new_cookie) > 4096:
-        return api_error(message="Cookie 长度不合法", http_status=400)
-
-    import re
-
-    if re.search(r"[\'\"<>;]", new_cookie):
-        return api_error(message="Cookie 包含非法字符", http_status=400)
-
-    try:
-        from app.modules.electricity.tasks import update_cookie_in_memory
-
-        success = update_cookie_in_memory(new_cookie)
-        if success:
-            user = g.get("current_user", {})
-            logger.info(f'[电量] {user.get("username")} 更新了 Cookie')
-            return api_success(message="Cookie 已更新，爬虫将立即使用新 Cookie")
-        return api_error(message="Cookie 更新失败", http_status=500)
-    except Exception as exc:
-        logger.error(f"[电量] update_cookie 接口异常: {exc}")
-        return api_error(message="服务器异常", http_status=500)
-
-
 @electricity_bp.route("/trigger/daily", methods=["POST"])
 @admin_required
 def trigger_daily():
@@ -268,114 +236,21 @@ def trigger_fetch_all():
     """
     手动触发全量爬取（需管理员权限）
 
-    忽略首次/非首次判断，强制全量爬取所有历史数据。
-    适用场景：数据丢失后重新采集、更换电表后重新导入等。
+    遍历所有已配置电表 Cookie 的学生，为每人强制全量爬取历史数据。
+    适用场景：数据丢失后重新采集、学生更换电表/重新配置 Cookie 后重新导入等。
     """
     try:
-        from app.core.config import Config
-        from app.modules.electricity.crawler import ElectricityCrawler
-        from app.services.process_service import create_task_process
-
-        # 创建任务进程记录
-        pid = create_task_process("电量全量爬取", "electricity", total_items=1)
-
-        # 创建爬虫，强制全量爬取
-        crawler = ElectricityCrawler(
-            base_url=getattr(Config, "ELECTRICITY_CRAWLER_BASE_URL", "http://dk.cqie.cn"),
-            cookie=getattr(Config, "ELECTRICITY_CRAWLER_COOKIE", ""),
-            max_pages=getattr(Config, "ELECTRICITY_CRAWLER_MAX_PAGES", 50),
-        )
+        from app.modules.electricity.tasks import push_electricity_full_crawl
 
         def _do_fetch_all():
-            from app.services.process_service import complete_task_process
-
-            # 爬取数据
-            try:
-                remaining = crawler.fetch_remaining_power()
-                records = crawler.fetch_usage_records(max_pages=50)  # 全量爬取，最多50页
-            except Exception as crawl_exc:
-                logger.error(f"[电量] 爬取数据失败: {crawl_exc}")
-                complete_task_process(pid, "failed", error=str(crawl_exc))
-                return
-
-            # 保存到数据库
-            from datetime import datetime
-
-            from app.core.database import get_db
-            from app.modules.electricity.capacity_manager import get_capacity_manager
-            from app.repository.electricity_repository import ElectricityRepository
-
-            session = get_db()
-            try:
-                # 保存剩余电量
-                remaining_value = remaining
-                if isinstance(remaining, dict):
-                    remaining_value = remaining.get("default", 0)
-                remaining_float = float(remaining_value) if remaining_value else 0.0
-
-                ElectricityRepository.create_remaining(
-                    session=session,
-                    remaining=remaining_float,
-                    meter="default",
-                )
-                session.commit()
-
-                # 更新容量管理器
-                capacity_manager = get_capacity_manager()
-                capacity_manager.update_remaining(
-                    current_remaining=remaining_float,
-                    low_power_threshold=10.0,
-                )
-
-                # 批量保存用电记录
-                record_tuples = []
-                for r in records:
-                    record_time = None
-                    if r.get("time"):
-                        time_str = r["time"]
-                        # 尝试多种时间格式解析
-                        try:
-                            # ISO 格式: 2026-06-29T11:00:00
-                            if "T" in time_str:
-                                record_time = datetime.fromisoformat(
-                                    time_str.replace("Z", "+00:00")
-                                )
-                            # 空格分隔格式: 2026-06-29 11:00:00
-                            else:
-                                record_time = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
-                        except Exception as time_exc:
-                            logger.warning(f"[电量] 时间解析失败: {time_str}, 错误: {time_exc}")
-                            record_time = datetime.utcnow()
-                    else:
-                        record_time = datetime.utcnow()
-
-                    record_tuples.append(
-                        (
-                            record_time,
-                            float(r.get("usage", 0)) if r.get("usage") else 0.0,
-                            r.get("meter", "default"),
-                        )
-                    )
-
-                created = ElectricityRepository.create_records_batch(session, record_tuples)
-                session.commit()
-                logger.info(f"[电量] 全量爬取完成: {created} 条记录，剩余 {remaining}")
-                complete_task_process(pid, "completed", f"全量爬取完成，{created} 条记录")
-            except Exception as inner_exc:
-                logger.error(f"[电量] 全量爬取执行失败: {inner_exc}")
-                try:
-                    complete_task_process(pid, "failed", error=str(inner_exc))
-                except Exception:
-                    pass
-            finally:
-                session.close()
+            push_electricity_full_crawl()
 
         thread = threading.Thread(target=_do_fetch_all, daemon=True)
         thread.start()
 
         user = g.get("current_user", {})
         logger.info(f'[电量] {user.get("username")} 手动触发全量爬取')
-        return api_success(message="全量爬取任务已触发，正在后台执行", data={"task_id": pid})
+        return api_success(message="全量爬取任务已触发，正在后台执行")
     except Exception as exc:
         logger.error(f"[电量] 全量爬取触发失败: {exc}")
         return api_error(message=f"触发失败: {exc}", http_status=500)

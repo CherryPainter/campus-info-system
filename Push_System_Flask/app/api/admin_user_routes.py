@@ -547,6 +547,7 @@ def delete_user(user_id):
     from app.model.user import User
     from app.model.wechat_account import WechatAccount
     from app.model.student_profile import StudentProfile
+    from app.model.user_notification import UserNotification
 
     session = get_db()
     try:
@@ -568,10 +569,11 @@ def delete_user(user_id):
 
         username = user.username
 
-        # 级联清理微信端用户的子表记录（wechat_accounts / student_profiles），
-        # 两个子表 FK 均无 ondelete 级联，直接删 User 会因外键约束失败或留下孤儿数据
+        # 级联清理微信端用户的子表记录（wechat_accounts / student_profiles / user_notifications），
+        # 子表 FK 均无 ondelete 级联，直接删 User 会因外键约束失败或留下孤儿数据
         session.query(WechatAccount).filter_by(user_id=user.id).delete()
         session.query(StudentProfile).filter_by(user_id=user.id).delete()
+        session.query(UserNotification).filter_by(user_id=user.id).delete()
 
         session.delete(user)
         session.commit()

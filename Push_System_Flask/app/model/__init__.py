@@ -29,6 +29,7 @@ from app.model.task_process import TaskProcess
 from app.model.token_blacklist import TokenBlacklist
 from app.model.user import User
 from app.model.user_mfa import UserMFA
+from app.model.user_notification import UserNotification
 from app.model.weather import WeatherAlert, WeatherRecord
 from app.model.webhook import Webhook
 from app.model.wechat_account import WechatAccount
@@ -50,6 +51,7 @@ __all__ = [
     "User",
     "StudentProfile",
     "WechatAccount",
+    "UserNotification",
     "LoginLog",
     "ModuleConfig",
     "Notification",

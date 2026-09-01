@@ -163,17 +163,14 @@ def start_scheduler(app):
     scheduler_state._scheduler.start()
     logger.info("定时任务调度器已启动")
 
-    # 注册电量监控模块定时任务（Cookie 已配置时才注册）
-    if app.config.get("ELECTRICITY_CRAWLER_COOKIE"):
-        try:
-            from app.modules.electricity.tasks import register_tasks as register_electricity_tasks
+    # 注册电量监控模块定时任务（Cookie 由学生在小程序自配，任务内部遍历，无需全局 Cookie）
+    try:
+        from app.modules.electricity.tasks import register_tasks as register_electricity_tasks
 
-            register_electricity_tasks(scheduler_state._scheduler, app)
-            logger.info("电量监控模块定时任务已注册")
-        except Exception as exc:
-            logger.warning(f"电量监控模块任务注册失败（可忽略，Cookie 可能暂未配置）: {exc}")
-    else:
-        logger.info("ELECTRICITY_CRAWLER_COOKIE 未配置，跳过电量监控定时任务注册")
+        register_electricity_tasks(scheduler_state._scheduler, app)
+        logger.info("电量监控模块定时任务已注册")
+    except Exception as exc:
+        logger.warning(f"电量监控模块任务注册失败: {exc}")
 
     # 注册天气模块定时任务（凭据已配置时才注册）
     if app.config.get("QWEATHER_CREDENTIAL_ID") or app.config.get("QWEATHER_API_KEY"):
@@ -384,17 +381,14 @@ def reload_scheduler(app):
         replace_existing=True,
     )
 
-    # 重新注册电量监控模块任务（如果配置了）
-    if app.config.get("ELECTRICITY_CRAWLER_COOKIE"):
-        try:
-            from app.modules.electricity.tasks import register_tasks as register_electricity_tasks
+    # 重新注册电量监控模块任务（Cookie 由学生自配，任务内部遍历，无需全局 Cookie）
+    try:
+        from app.modules.electricity.tasks import register_tasks as register_electricity_tasks
 
-            register_electricity_tasks(scheduler_state._scheduler, app)
-            logger.info("电量监控模块定时任务已重新注册")
-        except Exception as exc:
-            logger.warning(f"电量监控模块任务重新注册失败: {exc}")
-    else:
-        logger.info("ELECTRICITY_CRAWLER_COOKIE 未配置，跳过电量监控模块")
+        register_electricity_tasks(scheduler_state._scheduler, app)
+        logger.info("电量监控模块定时任务已重新注册")
+    except Exception as exc:
+        logger.warning(f"电量监控模块任务重新注册失败: {exc}")
 
     # 重新注册天气模块任务（如果配置了）
     if app.config.get("QWEATHER_CREDENTIAL_ID") or app.config.get("QWEATHER_API_KEY"):
