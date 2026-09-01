@@ -62,6 +62,14 @@
 - **小程序端**：`src/pages/electricity/index.tsx` 首屏 `getHistory` 返回 `fetch_triggered=true` 时 Toast 提示「正在首次采集电量数据，请稍后下拉刷新查看」；`src/types/api.ts` `ElectricityHistoryResult` 新增 `fetch_triggered?: boolean`。
 - **验证**：py_compile 通过；单测 4 分支——无 profile 不触发 / mock 无记录有 Cookie 触发（`_fetch_and_save` 收到真实 Cookie 参数）/ 冷却期内不重复触发 / 有记录不触发（user 75 现有 752 条，返回 `fetch_triggered=false`）；`GET /history` 200 且响应含 `fetch_triggered` 字段；小程序 `build:weapp` 编译成功（16.04s，dist 已清空重建）。测试后冷却字典与 mock 已清理，未对真实数据产生爬取。
 
+### 小程序端：修复 3 处历史 TypeScript 类型错误（2026-09-01）
+- **背景**：小程序端 `tsc --noEmit` 长期存在 3 处类型错误（webpack 构建不受影响，但类型不安全、IDE 红波浪）。
+- **修复**：
+  - `src/api/feedback.ts`：`FeedbackCreateParams as Record<string, unknown>` 直接断言类型不重叠（缺索引签名）→ `as unknown as` 双重断言。
+  - `src/pages/coursedetail/index.tsx`：`<EmptyState text=...>` prop 名错误（组件定义是 `title`）→ 改 `title`，避免文案丢失。
+  - `src/pages/weather/index.tsx`：`setPressedIndex(it.type || it.name)` 可能传 `undefined` 与 `string | null` 状态不符 → 补 `|| null`。
+- **验证**：`tsc --noEmit` 0 错误退出（此前 3 处）；`build:weapp` 编译成功（14.48s）。
+
 ### 数据库工具修复：手动 init_db 命令失效（2026-09-01）
 - **背景**：排查新表迁移时发现 `_import_all_models()` / `_ensure_all_models()` 是空壳——只 `from app.core.database import Base` 并返回，从未真正导入 `app.model`（docstring 与实现不符）。后果：手动执行 `python init_db.py migrate` 时 `Base.metadata` 为空（0 张表），迁移恒判定"所有表已存在"什么都不做；`fingerprint/check` 定义侧 schema 恒空，所有实例表被判为"多余表"，`cleanup` 甚至可能建议 DROP 全部表。生产此前未受影响是因为启动路径（`bootstrap.py` 导入模型）metadata 完整，自动迁移正常——即"重启后端=自动迁移"一直有效，手动命令从未真正生效。
 - **修复**：

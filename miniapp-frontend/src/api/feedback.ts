@@ -31,7 +31,7 @@ export interface FeedbackListParams {
 
 /** 提交反馈 */
 export function create(data: FeedbackCreateParams): Promise<FeedbackCreateResult> {
-  return post<FeedbackCreateResult>('/api/miniapp/feedback', data as Record<string, unknown>);
+  return post<FeedbackCreateResult>('/api/miniapp/feedback', data as unknown as Record<string, unknown>);
 }
 
 /** 我的反馈列表（分页） */

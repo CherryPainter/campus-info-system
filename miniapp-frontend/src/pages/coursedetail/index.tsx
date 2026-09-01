@@ -102,7 +102,7 @@ export default function CourseDetailPage() {
   );
 
   if (loading) return <LoadingState />;
-  if (!currentCourse) return <EmptyState text="课程信息不存在" />;
+  if (!currentCourse) return <EmptyState title="课程信息不存在" />;
 
   const colorIdx = getCourseColorIndex(currentCourse.course_name);
   const baseColor = COURSE_COLORS[colorIdx];

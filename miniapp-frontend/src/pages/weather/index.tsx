@@ -1213,7 +1213,7 @@ export default function WeatherPage() {
               <View
                 className="index-card"
                 key={it.type || it.name}
-                onLongPress={() => setPressedIndex(it.type || it.name)}
+                onLongPress={() => setPressedIndex(it.type || it.name || null)}
                 onTouchEnd={() => setPressedIndex(null)}
               >
                 {isPressed ? (
