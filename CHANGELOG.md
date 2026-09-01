@@ -8,6 +8,17 @@
 
 > 类型：**功能重构（未发版）**。消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）。
 
+### 管理端用户管理：微信端 / 网页端分流（2026-09-01）
+- **背景**：微信端小程序学生用户（`role=student`，openid 登录）与网页端用户（`admin`/`user`，账号密码 + MFA 登录）是两套认证体系；微信端无账号密码、无 MFA 概念（`password_hash` 为随机 bcrypt 占位哈希，密码登录路径天然关闭）。
+- **后端**（`app/api/admin_user_routes.py`）：
+  - `GET /api/admin/user/users` 每个用户新增 `source` 计算字段（`student → wechat`，其余 `→ web`），前端据此分流展示。
+  - `reset-password` 对 `student` 返回 403「微信端用户无需密码，不可重置」；`reset-mfa` 对 `student` 返回 400「微信端用户不启用MFA」——双保险防 API 直调。
+  - `update_user` 对 `student` 锁定身份字段：`role` 只接受 student（忽略其它值，避免前端禁用项提交触发白名单 400）、`username`（openid）不可改、`is_primary` 不可设。
+  - `delete_user` 级联清理 `wechat_accounts` / `student_profiles` 子表（两 FK 均无 ondelete 级联，直接删 User 会外键失败）。
+- **管理端**（`UserManagement.tsx` + `types/user.ts`）：列表新增「来源」列（微信端绿 Tag / 网页端默认）；微信端用户行隐藏「重置密码」「重置MFA」操作；编辑弹窗对微信端用户锁定用户名与角色（显示"微信端用户"）、隐藏主管理员选项；移动端卡片同步加来源 Tag、隐藏密码/MFA 操作。
+- **决策**：不设密码（微信端用户维持随机占位哈希，管理端不提供密码重置入口）；分流复用 `role` 判断（不加 `source` 列、不改表迁移）。
+- 验证：后端 `py_compile` 通过；管理端 `vite build` 成功，dist 含「微信端」分流逻辑。
+
 ### 小程序设置页（账号设置 + 通用）
 - **后端数据模型**：`student_profiles` 新增 `nickname`（昵称，展示名优先于真实姓名）列，启动指纹迁移自动补列，不破坏现有表结构。
 - **后端接口**：`PUT /api/miniapp/student/profile` 白名单扩展 `nickname` 字段；新增 `PUT /api/miniapp/user/avatar`（`@student_required`）——data URI 形式，复用管理端 `validate_avatar_data_uri` 校验（MIME 白名单显式拒绝 SVG / 文件头 Magic Bytes 防伪造 / 解码后 2MB 上限），学生端不套用管理端「一年 3 次」修改配额，成功落 `users.avatar` 并返回最新用户信息。

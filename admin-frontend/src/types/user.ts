@@ -14,6 +14,8 @@ export interface User {
   is_active: boolean;
   is_primary: boolean;
   mfa_enabled: boolean;
+  /** 登录来源分流：wechat=微信端小程序（openid 登录，无密码/MFA），web=网页端 */
+  source?: "wechat" | "web";
   last_login?: string;
   last_login_ip?: string;
   created_at?: string;

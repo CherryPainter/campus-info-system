@@ -160,6 +160,9 @@ export default function UserManagement() {
     setPasswordModalVisible(true);
   };
 
+  // 微信端用户：openid 登录，无账号密码/MFA 概念，相关操作不展示
+  const isWechatUser = (user: User) => user.source === "wechat" || user.role === "student";
+
   // 判断是否可以删除用户
   const canDeleteUser = (user: User) => {
     // 不能删除自己
@@ -233,6 +236,13 @@ export default function UserManagement() {
       ),
     },
     {
+      title: "来源",
+      dataIndex: "source",
+      key: "source",
+      render: (_: string, record: User) =>
+        isWechatUser(record) ? <Tag color="green">微信端</Tag> : <Tag>网页端</Tag>,
+    },
+    {
       title: "MFA状态",
       dataIndex: "mfa_enabled",
       key: "mfa_enabled",
@@ -268,16 +278,20 @@ export default function UserManagement() {
             >
               编辑
             </Button>
-            <Button
-              type="link"
-              size="small"
-              icon={<KeyOutlined />}
-              onClick={() => openPasswordModal(record)}
-            >
-              重置密码
-            </Button>
-            {/* 重置MFA：主管理员可重置任何非主管理员用户，非主管理员只能重置普通用户 */}
-            {canResetMfa(record) &&
+            {/* 微信端用户无账号密码，隐藏重置密码 */}
+            {!isWechatUser(record) && (
+              <Button
+                type="link"
+                size="small"
+                icon={<KeyOutlined />}
+                onClick={() => openPasswordModal(record)}
+              >
+                重置密码
+              </Button>
+            )}
+            {/* 重置MFA：主管理员可重置任何非主管理员用户，非主管理员只能重置普通用户；微信端用户无 MFA */}
+            {!isWechatUser(record) &&
+              canResetMfa(record) &&
               (record.mfa_enabled ? (
                 <Popconfirm
                   title="确认重置MFA"
@@ -388,6 +402,9 @@ export default function UserManagement() {
                           <Tag color={u.role === "admin" ? "blue" : "default"}>
                             {u.role === "admin" ? "管理员" : "普通用户"}
                           </Tag>
+                          <Tag color={isWechatUser(u) ? "green" : undefined}>
+                            {isWechatUser(u) ? "微信端" : "网页端"}
+                          </Tag>
                           <Tag color={u.mfa_enabled ? "green" : "default"}>
                             {u.mfa_enabled ? "MFA已开启" : "MFA未开启"}
                           </Tag>
@@ -406,14 +423,17 @@ export default function UserManagement() {
                       <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(u)}>
                         编辑
                       </Button>
-                      <Button
-                        size="small"
-                        icon={<KeyOutlined />}
-                        onClick={() => openPasswordModal(u)}
-                      >
-                        密码
-                      </Button>
-                      {canResetMfa(u) &&
+                      {!isWechatUser(u) && (
+                        <Button
+                          size="small"
+                          icon={<KeyOutlined />}
+                          onClick={() => openPasswordModal(u)}
+                        >
+                          密码
+                        </Button>
+                      )}
+                      {!isWechatUser(u) &&
+                        canResetMfa(u) &&
                         (u.mfa_enabled ? (
                           <Popconfirm
                             title="确认重置MFA"
@@ -538,12 +558,25 @@ export default function UserManagement() {
               { min: 3, max: 50, message: "用户名长度应在3-50个字符之间" },
             ]}
           >
-            <Input placeholder="请输入用户名" />
+            {selectedUser && isWechatUser(selectedUser) ? (
+              <Input disabled value={selectedUser.username} />
+            ) : (
+              <Input placeholder="请输入用户名" />
+            )}
           </Form.Item>
 
           <Form.Item label="角色" name="role" rules={[{ required: true, message: "请选择角色" }]}>
-            {selectedUser && !canEditRole(selectedUser) ? (
-              <Input disabled value={selectedUser.role === "admin" ? "管理员" : "普通用户"} />
+            {selectedUser && (isWechatUser(selectedUser) || !canEditRole(selectedUser)) ? (
+              <Input
+                disabled
+                value={
+                  isWechatUser(selectedUser)
+                    ? "微信端用户"
+                    : selectedUser.role === "admin"
+                      ? "管理员"
+                      : "普通用户"
+                }
+              />
             ) : (
               <Select>
                 <Option value="user">普通用户</Option>
@@ -552,7 +585,7 @@ export default function UserManagement() {
             )}
           </Form.Item>
 
-          {isPrimary && selectedUser && !selectedUser.is_primary && (
+          {isPrimary && selectedUser && !selectedUser.is_primary && !isWechatUser(selectedUser) && (
             <Form.Item label="主管理员权限" name="is_primary" valuePropName="checked">
               <Select>
                 <Option value={false}>否</Option>

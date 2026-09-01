@@ -355,6 +355,8 @@ def get_all_users():
         for user in users:
             user_data = user.to_dict()
             user_data["mfa_enabled"] = mfa_status.get(str(user.id), False)
+            # 登录来源分流：student=微信端小程序（openid 登录，无密码/MFA），其余=网页端
+            user_data["source"] = "wechat" if user.role == "student" else "web"
             result.append(user_data)
 
         return api_success(data=result)
@@ -465,6 +467,15 @@ def update_user(user_id):
             if "role" in data:
                 return api_error(message="超级管理员的角色不可修改", http_status=403)
 
+        # 微信端学生用户的身份字段不可修改（username=openid、role、is_primary 与登录来源绑定）
+        if user.role == "student":
+            if "role" in data and data["role"] != "student":
+                return api_error(message="微信端用户角色不可修改", http_status=403)
+            if "username" in data and data["username"] != user.username:
+                return api_error(message="微信端用户名为微信标识，不可修改", http_status=403)
+            if "is_primary" in data:
+                return api_error(message="微信端用户不可设置为主管理员", http_status=403)
+
         # 只有超级管理员可以修改其他管理员的角色
         if "role" in data and user.role == "admin" and not is_primary_admin:
             return api_error(message="只有超级管理员可以修改其他管理员的角色", http_status=403)
@@ -499,9 +510,13 @@ def update_user(user_id):
             except FileUploadError as e:
                 return api_error(message=str(e), http_status=400)
         if "role" in data:
-            if data["role"] not in ["user", "admin"]:
+            # 微信端学生用户角色锁定：忽略提交值（前端禁用项仍会带 student 值，不做白名单校验）
+            if user.role == "student":
+                pass
+            elif data["role"] not in ["user", "admin"]:
                 return api_error(message="角色只能是user或admin", http_status=400)
-            user.role = data["role"]
+            else:
+                user.role = data["role"]
         if "is_primary" in data:
             user.is_primary = bool(data["is_primary"])
         if "is_active" in data:
@@ -530,6 +545,8 @@ def delete_user(user_id):
 
     from app.core.database import get_db
     from app.model.user import User
+    from app.model.wechat_account import WechatAccount
+    from app.model.student_profile import StudentProfile
 
     session = get_db()
     try:
@@ -550,6 +567,12 @@ def delete_user(user_id):
             return api_error(message="只有超级管理员可以删除其他管理员", http_status=403)
 
         username = user.username
+
+        # 级联清理微信端用户的子表记录（wechat_accounts / student_profiles），
+        # 两个子表 FK 均无 ondelete 级联，直接删 User 会因外键约束失败或留下孤儿数据
+        session.query(WechatAccount).filter_by(user_id=user.id).delete()
+        session.query(StudentProfile).filter_by(user_id=user.id).delete()
+
         session.delete(user)
         session.commit()
 
@@ -591,6 +614,10 @@ def reset_user_password(user_id):
         # 主管理员密码只能由主管理员自己重置
         if user.is_primary and not is_primary_admin:
             return api_error(message="主管理员密码只能由主管理员自己重置", http_status=403)
+
+        # 微信端学生用户没有账号密码概念（password_hash 为随机占位哈希），禁止重置
+        if user.role == "student":
+            return api_error(message="微信端用户无需密码，不可重置", http_status=403)
 
         # 非主管理员不能重置其他管理员的密码
         if user.role == "admin" and not is_primary_admin:
@@ -641,6 +668,10 @@ def reset_user_mfa(user_id):
         # 超级管理员的MFA不可被任何人重置（保护根管理员）
         if user.is_primary:
             return api_error(message="超级管理员的MFA不可被重置", http_status=403)
+
+        # 微信端学生用户不使用 MFA（走 openid 登录体系）
+        if user.role == "student":
+            return api_error(message="微信端用户不启用MFA", http_status=400)
 
         # 非超级管理员只能重置普通用户的MFA，不能重置其他管理员的MFA
         if not is_primary_admin and user.role == "admin":
