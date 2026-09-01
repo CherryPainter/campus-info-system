@@ -44,9 +44,9 @@ export default function FeedbackDetailPage() {
       .then((res) => {
         const fb = res?.data?.feedback || null;
         setDetail(fb);
-        // 管理员已回复（resolved）即视为已查看 → 红点 -1
-        if (fb && fb.reply) {
-          markViewed(fb.id);
+        // 进入详情即视为「看过当前状态」→ 若该状态未再变化则红点 -1
+        if (fb) {
+          markViewed(fb.id, fb.status);
         }
       })
       .catch((e) => {
