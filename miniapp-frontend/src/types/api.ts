@@ -44,11 +44,13 @@ export interface StudentProfile {
   user_id: number;
   student_number: string | null;
   real_name: string | null;
+  nickname: string | null;
   college: string | null;
   major: string | null;
   class_name: string | null;
   grade: string | null;
   phone: string | null;
+  profile_bg: string;
   created_at: string | null;
   updated_at: string | null;
 }

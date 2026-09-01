@@ -1,5 +1,5 @@
 import { get, post, put } from '@/utils/request';
-import type { StudentProfile, StudentProfileResult, UserMeResult } from '@/types/api';
+import type { StudentProfile, StudentProfileResult, UserInfo, UserMeResult } from '@/types/api';
 
 /**
  * 用户 / 学生资料 API（/api/miniapp/user、/api/miniapp/student）
@@ -18,7 +18,12 @@ export function getProfile(): Promise<StudentProfileResult> {
 
 /** 更新本人学生资料（只传需要修改的字段） */
 export function updateProfile(
-  data: Partial<Pick<StudentProfile, 'student_number' | 'real_name' | 'college' | 'major' | 'class_name' | 'grade' | 'phone'>>,
+  data: Partial<Pick<StudentProfile, 'student_number' | 'real_name' | 'nickname' | 'college' | 'major' | 'class_name' | 'grade' | 'phone' | 'profile_bg'>>,
 ): Promise<StudentProfileResult> {
   return put<StudentProfileResult>('/api/miniapp/student/profile', data);
+}
+
+/** 更新本人头像（data URI），返回最新用户信息 */
+export function updateAvatar(avatar: string): Promise<UserMeResult> {
+  return put<UserMeResult>('/api/miniapp/user/avatar', { avatar });
 }

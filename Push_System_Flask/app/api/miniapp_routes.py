@@ -101,11 +101,13 @@ def update_profile():
         {
             "student_number": "学号",
             "real_name": "姓名",
+            "nickname": "昵称",
             "college": "学院",
             "major": "专业",
             "class_name": "班级",
             "grade": "年级",
-            "phone": "手机号"
+            "phone": "手机号",
+            "profile_bg": "我的页背景预设（default/sunset/ocean/forest/night）"
         }
     """
     from app.core.database import get_db
@@ -117,17 +119,23 @@ def update_profile():
     allowed_fields = {
         "student_number",
         "real_name",
+        "nickname",
         "college",
         "major",
         "class_name",
         "grade",
         "phone",
+        "profile_bg",
     }
+    # 我的页背景预设白名单：仅接受已知 key，防止任意字符串注入样式类
+    profile_bg_whitelist = {"default", "sunset", "ocean", "forest", "night"}
     updates = {
         k: (str(v).strip() if v is not None else None)
         for k, v in data.items()
         if k in allowed_fields and isinstance(v, (str, int))
     }
+    if "profile_bg" in updates and updates["profile_bg"] not in profile_bg_whitelist:
+        return api_error(message="不支持的背景主题", http_status=400)
     if not updates:
         return api_error(message="没有可更新的字段", http_status=400)
 
@@ -144,6 +152,44 @@ def update_profile():
         db.refresh(profile)
         logger.info(f"学生资料已更新: user_id={user_id}, fields={list(updates.keys())}")
         return api_success(profile=profile.to_dict())
+    finally:
+        db.close()
+
+
+@miniapp_bp.route("/user/avatar", methods=["PUT"])
+@student_required
+def update_avatar():
+    """
+    更新当前学生用户头像（data URI 形式，复用管理端头像校验，无修改次数配额）
+
+    请求体：
+        {"avatar": "data:image/jpeg;base64,..."}
+
+    防护：validate_avatar_data_uri 校验 MIME 白名单（显式拒绝 SVG）、
+    文件头 Magic Bytes 防伪造、解码后体积上限 2MB。
+    """
+    from app.core.database import get_db
+    from app.model.user import User
+    from app.utils.file_upload_security import FileUploadError, validate_avatar_data_uri
+
+    user_id = int(g.current_user["user_id"])
+    data = request.get_json(silent=True) or {}
+    avatar_raw = data.get("avatar")
+    try:
+        validated = validate_avatar_data_uri(avatar_raw)
+    except FileUploadError as e:
+        return api_error(message=str(e), http_status=400)
+
+    db = get_db()
+    try:
+        user = db.query(User).filter_by(id=user_id).first()
+        if not user:
+            return api_error(message="用户不存在", http_status=404)
+        user.avatar = validated
+        db.commit()
+        db.refresh(user)
+        logger.info(f"学生头像已更新: user_id={user_id}")
+        return api_success(user=user.to_dict())
     finally:
         db.close()
 

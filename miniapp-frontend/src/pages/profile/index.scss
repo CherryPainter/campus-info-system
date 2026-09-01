@@ -13,6 +13,23 @@
     ),
     $background;
 
+  // 我的页背景预设（设置页可选主题，浅色调保证深色文字可读）
+  &.bg-sunset {
+    background: linear-gradient(180deg, #ffe0c2 0%, #ffd0e8 38%, #f6f7fb 70%), $background;
+  }
+
+  &.bg-ocean {
+    background: linear-gradient(180deg, #bfe0ff 0%, #d6f0ff 40%, #f6f7fb 70%), $background;
+  }
+
+  &.bg-forest {
+    background: linear-gradient(180deg, #d3ecd0 0%, #e8f5e0 40%, #f6f7fb 70%), $background;
+  }
+
+  &.bg-night {
+    background: linear-gradient(180deg, #cdd6f0 0%, #e6e9f8 42%, #f6f7fb 72%), $background;
+  }
+
   /* 自定义 TabBar 高度（98rpx + safe-area） */
   padding-bottom: calc(108rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;

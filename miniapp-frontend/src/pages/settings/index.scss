@@ -1,0 +1,178 @@
+@import '../../styles/variables.scss';
+
+.set-page {
+  min-height: 100vh;
+  background: $background;
+  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+/* 分组卡片 */
+.set-card {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  margin-bottom: $spacing-md;
+  overflow: hidden;
+}
+
+.set-card-title {
+  display: block;
+  padding: $spacing-md $spacing-lg 0;
+  font-size: $font-size-sm;
+  color: $text-tertiary;
+}
+
+/* 行条目 */
+.set-row {
+  display: flex;
+  align-items: center;
+  padding: $spacing-md $spacing-lg;
+  border-bottom: 1rpx solid $border-color;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.set-row-label {
+  width: 160rpx;
+  flex-shrink: 0;
+  font-size: $font-size-md;
+  color: $text-primary;
+}
+
+.set-row-input {
+  flex: 1;
+  font-size: $font-size-md;
+  color: $text-primary;
+  text-align: right;
+}
+
+.set-row-placeholder {
+  color: $text-tertiary;
+}
+
+/* 头像行 */
+.set-avatar-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-md $spacing-lg;
+}
+
+.set-avatar-hint {
+  font-size: $font-size-md;
+  color: $text-primary;
+}
+
+.set-avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: $primary-light;
+  border: 2rpx solid $border-color;
+  flex-shrink: 0;
+}
+
+.set-avatar-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.set-avatar-text {
+  font-size: 40rpx;
+  color: $primary-color;
+  font-weight: 500;
+}
+
+/* 背景预设选择 */
+.set-bg-list {
+  display: flex;
+  justify-content: space-between;
+  padding: $spacing-md $spacing-lg $spacing-lg;
+}
+
+.set-bg-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $spacing-xs;
+}
+
+.set-bg-swatch {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: $radius-medium;
+  border: 4rpx solid transparent;
+  box-sizing: border-box;
+}
+
+.set-bg-item-active .set-bg-swatch {
+  border-color: $primary-color;
+}
+
+.set-bg-name {
+  font-size: $font-size-xs;
+  color: $text-secondary;
+
+  .set-bg-item-active & {
+    color: $primary-color;
+    font-weight: 500;
+  }
+}
+
+/* 通用条目（清除缓存 / 关于） */
+.set-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-md $spacing-lg;
+  border-bottom: 1rpx solid $border-color;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.set-cell-label {
+  font-size: $font-size-md;
+  color: $text-primary;
+}
+
+.set-cell-value {
+  font-size: $font-size-md;
+  color: $text-tertiary;
+}
+
+.set-arrow {
+  font-size: $font-size-md;
+  color: $text-tertiary;
+  margin-left: $spacing-xs;
+}
+
+/* 退出登录按钮（沿用我的页样式） */
+.set-logout {
+  margin-top: $spacing-xl;
+}
+
+.set-logout-btn {
+  padding: $spacing-md;
+  border-radius: $radius-large;
+  background: $card-background;
+  text-align: center;
+}
+
+.set-logout-text {
+  font-size: $font-size-md;
+  color: $error;
+}
+
+.set-version {
+  display: block;
+  margin-top: $spacing-lg;
+  text-align: center;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}

@@ -159,10 +159,10 @@ export default function ProfilePage() {
 
   const handleMore = () => {
     Taro.showActionSheet({
-      itemList: ['消息设置', '帮助反馈', '关于', '退出登录'],
+      itemList: ['设置', '帮助反馈', '关于', '退出登录'],
       success: (res) => {
         if (res.tapIndex === 0) {
-          Taro.showToast({ title: '功能开发中', icon: 'none' });
+          Taro.navigateTo({ url: '/pages/settings/index' });
           return;
         }
         if (res.tapIndex === 1) {
@@ -187,14 +187,15 @@ export default function ProfilePage() {
     });
   };
 
-  const name = profile?.real_name || user?.username || '同学';
+  // 展示名优先级：昵称 → 真实姓名 → 用户名 → 兜底
+  const name = profile?.nickname || profile?.real_name || user?.username || '同学';
   const majorGrade = [profile?.major, profile?.grade ? `${profile.grade}级` : '']
     .filter(Boolean)
     .join(' · ');
 
   return (
     <View
-      className="page profile-page"
+      className={`page profile-page bg-${profile?.profile_bg || 'default'}`}
       style={{ paddingTop: `${statusBarHeight + 44}px` }}
     >
       {/* 资料头部：头像 + 姓名 + 专业年级 + 右上…/二维码（背景由 .profile-page CSS class 的径向渐变提供） */}
@@ -299,7 +300,7 @@ export default function ProfilePage() {
         </View>
         <View
           className="profile-item"
-          onClick={() => Taro.showToast({ title: '功能开发中', icon: 'none' })}
+          onClick={() => Taro.navigateTo({ url: '/pages/settings/index' })}
         >
           <View className="profile-item-icon-wrap">
             <Text className="iconfont icon-shezhi profile-item-icon" />
