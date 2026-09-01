@@ -64,6 +64,8 @@
   background: $primary-light;
   border: 2rpx solid $border-color;
   flex-shrink: 0;
+  // flex auto margin：把头像推到 .pedit-avatar-row 右端，让 label 居左、箭头紧跟头像
+  margin-left: auto;
 }
 
 .pedit-avatar-placeholder {
