@@ -39,6 +39,14 @@
     padding: $spacing-lg $spacing-lg $spacing-md;
     gap: $spacing-md;
 
+    .profile-header-info {
+      display: flex;
+      align-items: center;
+      gap: $spacing-md;
+      flex: 1;
+      min-width: 0;
+    }
+
     .profile-avatar {
       width: 128rpx;
       height: 128rpx;

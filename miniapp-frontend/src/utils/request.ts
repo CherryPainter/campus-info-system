@@ -192,3 +192,16 @@ export function post<T = unknown>(url: string, data?: Record<string, unknown>, o
 export function put<T = unknown>(url: string, data?: Record<string, unknown>, options?: Partial<RequestOptions>): Promise<T> {
   return request<T>({ url, method: 'PUT', data, ...options });
 }
+
+/** DELETE 便捷方法：query 参数拼到 URL（Taro.request 的 data 走 body 不走 query） */
+export function del<T = unknown>(url: string, params?: Record<string, unknown>, options?: Partial<RequestOptions>): Promise<T> {
+  let finalUrl = url;
+  if (params && Object.keys(params).length > 0) {
+    const qs = Object.entries(params)
+      .filter(([, v]) => v != null && v !== '')
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join('&');
+    if (qs) finalUrl += (url.includes('?') ? '&' : '?') + qs;
+  }
+  return request<T>({ url: finalUrl, method: 'DELETE', ...options });
+}

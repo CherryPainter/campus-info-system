@@ -30,6 +30,14 @@
 - **回归测试**（新建 `tests/test_admin_roster_routes.py`）：断言 `/api/admin/roster/schools` 响应顶层含 `schools` 数组且包含「重庆科创职业学院」；学生 token 访问被 admin_required 拦截 403。全量 `pytest` **160 passed**。
 - **验证**：`npm run build` 成功（16.86s）。
 
+### 安全加固：bind 防重复绑定 + 账号注销 + 个人详情页（2026-09-01）
+- **背景**：用户自查发现测试账号学校字段未填也能正常使用，「小程序只管绑定那一次，如果利用非法手段就没事了吗？」——审计确认 `POST /student/bind` 可被**重复调用**：已绑定用户再次调 bind 会用新提交的学号/班级**覆盖**原身份，绕过「只绑一次」的预期。
+- **修复 1：bind 防重复绑定**（`app/api/miniapp_routes.py`）：`bind_student()` 开头（名单校验之前）先查当前用户 `StudentProfile.student_number`，已绑定直接 403 `code=ALREADY_BOUND`（提示「已绑定身份，不可重复绑定。如需换绑请联系管理员」），杜绝重复 bind 覆盖为他人学号；换绑仅能由管理员后台处理。
+- **修复 2：账号注销**（`app/api/miniapp_auth_routes.py` 新增 `DELETE /api/miniapp/auth/user/me`，`@student_required`）：软删 `users.is_active=False`（保留数据）+ 撤销 access token（reason=`account_delete`）+ 可选撤销 refresh token（query 传 `refresh_token`）双保险；`wechat_auth_service` 登录时已检测 `is_active`，注销后同微信号无法重新登录。
+- **修复 3：个人详情页**（`miniapp-frontend/src/pages/profile-detail/` 三件套新建）：「我的」页头部（头像+昵称区域）点击跳转详情页；详情页展示身份信息（学号/班级/学校只读）+ 基础资料（校园卡号/学院/专业/年级/手机 + 编辑入口）+ 底部红色「注销账号」按钮（二次确认 → `deleteAccount(refreshToken)` → 清登录态 reLaunch 登录页）。
+- **前端支撑**：`request.ts` 新增 `del` 便捷方法（DELETE query 参数手动编码拼 URL）；`src/api/user.ts` 新增 `deleteAccount(refreshToken?)`；`app.config.ts` 注册 `pages/profile-detail/index`。
+- **回归测试**（新建 `tests/test_bind_and_delete_account.py` 4 用例）：首次绑定成功；已绑定重复 bind → 403 `ALREADY_BOUND` 且 `student_number` 未被覆盖（安全核心断言）；注销后 `user.is_active is False` + access token 进入 TokenBlacklist；注销后携原 token 访问保护接口 → 401。全量 `pytest` **164 passed**；`build:weapp:clean` 成功。
+
 ### 修复：小程序请求层 access token 预刷新，消除过期后首请求 401 噪音（2026-09-01）
 - **背景**：微信开发者工具控制台出现 `GET /api/miniapp/feedback|weather/current|weather/hourly|schedule/today 401` 红字。排查（后端日志 + 实测）：**非功能性 bug**——storage 里的旧 access token 超 1 小时过期后，页面初始化并发请求带旧 token → 全部 401「token 已过期」→ `request.ts` 单飞锁自动 `refreshOnce()` **刷新成功**（日志 20:20:34,115 生成新 token、旧 refresh 撤销）→ 4 个请求全部重放成功（天气/课表/反馈/电量数据均正常落库返回）。401 红字是微信开发者工具网络层固有日志，即使应用层自动刷新重放成功也无法抑制，仅造成"报错"错觉。
 - **改动**（`miniapp-frontend/src/utils/storage.ts` + `request.ts`，最小改动）：

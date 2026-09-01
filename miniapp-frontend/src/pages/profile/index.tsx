@@ -201,16 +201,22 @@ export default function ProfilePage() {
         style={{ paddingTop: `calc(${statusBarHeight}px + 80rpx)` }}
       >
         <View className="profile-header">
-          {user?.avatar ? (
-            <Image src={user.avatar} className="profile-avatar" mode="aspectFill" />
-          ) : (
-            <View className="profile-avatar profile-avatar-placeholder">
-              <Text className="profile-avatar-text">{name.slice(0, 1)}</Text>
+          {/* 左侧：头像 + 昵称（可点跳详情页）；右侧：二维码 + 消息 */}
+          <View
+            className="profile-header-info"
+            onClick={() => Taro.navigateTo({ url: '/pages/profile-detail/index' })}
+          >
+            {user?.avatar ? (
+              <Image src={user.avatar} className="profile-avatar" mode="aspectFill" />
+            ) : (
+              <View className="profile-avatar profile-avatar-placeholder">
+                <Text className="profile-avatar-text">{name.slice(0, 1)}</Text>
+              </View>
+            )}
+            <View className="profile-info">
+              <Text className="profile-name">{name}</Text>
+              {majorGrade ? <Text className="profile-sub">{majorGrade}</Text> : null}
             </View>
-          )}
-          <View className="profile-info">
-            <Text className="profile-name">{name}</Text>
-            {majorGrade ? <Text className="profile-sub">{majorGrade}</Text> : null}
           </View>
           <View className="profile-header-actions">
             {/* 二维码（保留在上方） */}

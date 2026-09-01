@@ -17,6 +17,7 @@ from app.core.extensions import RATE_LIMITS, limiter
 from app.core.logger import get_logger
 from app.services.wechat_auth_service import WechatAuthError, wechat_auth_service
 from app.utils.auth_middleware import jwt_required
+from app.utils.student_auth import student_required
 from app.utils.security import get_client_ip
 
 # 使用统一日志系统
@@ -170,3 +171,61 @@ def miniapp_logout():
     username = g.current_user.get("username", "unknown")
     logger.info(f"小程序登出: user={username}")
     return api_success(message="已成功登出")
+
+
+@miniapp_auth_bp.route("/user/me", methods=["DELETE"])
+@student_required
+def delete_account():
+    """
+    注销当前学生账号（自主注销，不可恢复）
+
+    行为：
+    - 软删：users.is_active = False（保留历史数据，微信登录时检测 is_active=False 拒绝）
+    - 撤销当前 access_token（黑名单） + 撤销可选 refresh_token
+    - 写日志（username + IP + user_id 留痕）
+
+    注意：注销后该微信号无法再次登录小程序（同 openid 命中 is_active=False 用户会被拒）。
+    如需恢复请联系管理员在管理端重新启用（users.is_active = True）。
+    """
+    from app.core.database import get_db
+    from app.model.user import User
+
+    try:
+        jwt_manager = _get_jwt_manager()
+    except RuntimeError:
+        return api_error(message="服务器配置错误", http_status=500)
+
+    user_id = int(g.current_user["user_id"])
+    username = g.current_user.get("username", "unknown")
+
+    # 1) 撤销当前 access_token（让本次会话立即失效）
+    auth_header = request.headers.get("Authorization", "")
+    parts = auth_header.split(" ", 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
+        jwt_manager.revoke_token(parts[1].strip(), reason="account_delete")
+
+    # 2) 撤销可选 refresh_token（从 query 传入，避免 DELETE body 不规范）
+    refresh_token = (request.args.get("refresh_token") or "").strip()
+    if refresh_token:
+        jwt_manager.revoke_token(refresh_token, reason="account_delete_refresh")
+
+    # 3) 软删：禁用账号（保留数据，wechat_auth_service 检测 is_active=False 拒绝再次登录）
+    client_ip = get_client_ip()
+    db = get_db()
+    try:
+        user = db.query(User).filter_by(id=user_id).first()
+        if not user:
+            return api_error(message="用户不存在", http_status=404)
+        user.is_active = False
+        db.commit()
+        logger.warning(
+            f"小程序账号注销: user_id={user_id}, username={username}, ip={client_ip}"
+        )
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"小程序账号注销失败: user_id={user_id}: {exc}")
+        return api_error(message="注销失败，请稍后重试", http_status=500)
+    finally:
+        db.close()
+
+    return api_success(message="账号已注销")

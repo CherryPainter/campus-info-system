@@ -131,6 +131,8 @@ def bind_student():
     - 三项均匹配且名单条目 is_active=1 才绑定成功；
     - 绑定成功后 school/student_number/class_name 由本接口管理，
       不再接受 PUT /student/profile 修改（防止绕过名单直接填学号）。
+    - 已绑定学生不可重复调用本接口（防覆盖为他人学号，ALREADY_BOUND 403）；
+      如需解绑/换绑请联系管理员走管理端。
     """
     from app.core.database import get_db
     from app.model.student_profile import StudentProfile
@@ -143,6 +145,30 @@ def bind_student():
     if not school or not student_number or not class_name:
         return api_error(message="学校、学号、班级均不能为空", http_status=400)
 
+    user_id = int(g.current_user["user_id"])
+
+    # 防重复绑定：已绑定身份的学生不可再次调用本接口（防止覆盖为他人学号）
+    db = get_db()
+    try:
+        existing = (
+            db.query(StudentProfile)
+            .filter_by(user_id=user_id)
+            .first()
+        )
+        if existing and existing.student_number:
+            logger.warning(
+                f"身份已绑定拒绝重复bind: user_id={user_id}, "
+                f"current_school={existing.school}, "
+                f"current_student_number={existing.student_number}"
+            )
+            return api_error(
+                message="已绑定身份，不可重复绑定。如需换绑请联系管理员",
+                http_status=403,
+                code="ALREADY_BOUND",
+            )
+    finally:
+        db.close()
+
     ok, _row = StudentRosterService.verify(school, student_number, class_name)
     if not ok:
         logger.warning(
@@ -153,7 +179,6 @@ def bind_student():
             message="身份校验未通过，请联系管理员确认名单", http_status=403
         )
 
-    user_id = int(g.current_user["user_id"])
     db = get_db()
     try:
         profile = db.query(StudentProfile).filter_by(user_id=user_id).first()

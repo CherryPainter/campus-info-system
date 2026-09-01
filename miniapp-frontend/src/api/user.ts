@@ -1,4 +1,4 @@
-import { get, post, put } from '@/utils/request';
+import { del, get, post, put } from '@/utils/request';
 import type {
   BindResult,
   BindStatusResult,
@@ -55,4 +55,16 @@ export function bindStudent(data: {
   class_name: string;
 }): Promise<BindResult> {
   return post<BindResult>('/api/miniapp/student/bind', data);
+}
+
+/**
+ * 注销当前账号（DELETE /api/miniapp/auth/user/me）
+ * - 后端软删 users.is_active=False + 撤销当前 access_token + 可选撤销 refresh_token
+ * - 注销后该微信号无法再次登录小程序（同 openid 命中 is_active=False 用户会被拒）
+ * - refresh_token 通过 query 传入（避免 DELETE body 不规范）
+ */
+export function deleteAccount(refreshToken?: string): Promise<{ status: string; message: string }> {
+  const params: Record<string, string> = {};
+  if (refreshToken) params.refresh_token = refreshToken;
+  return del('/api/miniapp/auth/user/me', params);
 }
