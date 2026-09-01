@@ -12,9 +12,20 @@
 }
 
 // 顶部 hero 区：资料头部 + 校园卡
+// 默认渐变：浅蓝径向（仅作视觉氛围，深色文字可读），不再让用户切换主题
+// 顶部 paddingTop=80rpx 用于避开系统胶囊按钮（statusBar 44px + capsule 32px + buffer ≈ 80px）
 .profile-hero {
   position: relative;
-  padding: 0 $spacing-lg $spacing-lg;
+  padding: 80rpx $spacing-lg $spacing-lg;
+  background:
+    radial-gradient(
+      circle at 18% 0%,
+      rgba(122, 167, 255, 0.32) 0%,
+      rgba(122, 167, 255, 0.18) 30%,
+      rgba(122, 167, 255, 0.08) 55%,
+      rgba(122, 167, 255, 0) 75%
+    ),
+    $background;
 
   // 资料头部（hero 内部子元素，保持嵌套）
   .profile-header {
