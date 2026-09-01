@@ -241,9 +241,10 @@ export interface ElectricityConfig {
 export interface ElectricityStudent {
   user_id: number;
   display_name: string;
+  /** 头像 data URI（小程序上传）；无头像时为空串，前端用首字母兜底 */
+  avatar?: string | null;
   student_number: string | null;
   class_name: string | null;
-  // avatar 不返回（多为 base64 大图），前端用首字母头像
   configured: boolean;
   remaining: number | null;
   recorded_at: string | null;

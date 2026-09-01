@@ -1054,9 +1054,10 @@ def get_electricity_students():
                 {
                     "user_id": user.id,
                     "display_name": display_name,
+                    # 头像：data URI（小程序上传，压缩后数十 KB），无头像时为空串，前端用首字母兜底
+                    "avatar": user.avatar or "",
                     "student_number": profile.student_number if profile else None,
                     "class_name": profile.class_name if profile else None,
-                    # 不返回 avatar（多为 base64 大图，总览列表会显著放大响应体），前端用首字母头像
                     "configured": configured,
                     "remaining": remaining,
                     "recorded_at": recorded_at,

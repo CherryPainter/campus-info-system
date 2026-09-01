@@ -6,7 +6,8 @@
  * - 用电明细：选中学生后切换到此 Tab，查看剩余电量 / 用电记录 / 统计图表
  * - 模块配置：模块级通用配置（Cookie 由学生在小程序自配，本页不再管理全局 Cookie）
  *
- * 历史全局数据（user_id 为 NULL）已完全移除展示，不再提供全量爬取/清空记录入口。
+ * 历史全局数据（user_id 为 NULL）已完全移除展示；提供「全量爬取」入口（遍历所有已配置电表 Cookie 的学生），
+ * 清空记录入口已移除。学生有头像（小程序上传）时优先显示头像，无头像用首字母兜底。
  */
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -55,7 +56,7 @@ const { Text } = Typography;
 
 export default function Electricity() {
   const { isAdmin } = useUser();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   // 移动端断点：收缩外层/内层 Card 的 body padding，避免 Card→Tabs→Card 三层留白累加
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
@@ -94,7 +95,7 @@ export default function Electricity() {
   const fetchRemaining = useCallback(async (userId: number) => {
     try {
       const res = await adminApi.getStudentElectricityRemaining(userId);
-      if (res.status === "success") setRemaining(res.data);
+      if (res.status === "success" && res.data) setRemaining(res.data);
     } catch (error) {
       console.error("加载剩余电量失败:", error);
       setRemaining(null);
@@ -144,23 +145,32 @@ export default function Electricity() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, selected, recordPage, recordPageSize]);
 
-  // ============ 触发采集（全部已配置学生） ============
-  const handleTriggerFetch = async () => {
-    try {
-      setFetchAllLoading(true);
-      const res = await adminApi.triggerElectricity("fetch_electricity_data");
-      if ((res as any).skipped) {
-        message.warning(res.message || "假期静默中，已跳过");
-        return;
-      }
-      message.success((res.message as string) || "采集任务已触发，可在「进程管理」查看进度");
-      // 触发后稍候刷新总览，低电量/剩余电量可能有变化
-      setTimeout(() => fetchOverview(), 3000);
-    } catch (error) {
-      message.error("触发采集失败");
-    } finally {
-      setFetchAllLoading(false);
-    }
+  // ============ 全量爬取（遍历所有已配置电表 Cookie 的学生） ============
+  const handleTriggerFetch = () => {
+    const configuredCount = overview?.summary.configured_students ?? 0;
+    modal.confirm({
+      title: "全量爬取电量数据",
+      content: `将爬取所有已配置电表 Cookie 的学生（${configuredCount} 人）的电量数据；未配置的学生不会爬取。任务在后台执行，进度可在「进程管理」查看。`,
+      okText: "开始爬取",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          setFetchAllLoading(true);
+          const res = await adminApi.triggerElectricity("fetch_electricity_data");
+          if ((res as any).skipped) {
+            message.warning(res.message || "假期静默中，已跳过");
+            return;
+          }
+          message.success((res.message as string) || "全量爬取任务已触发，可在「进程管理」查看进度");
+          // 触发后稍候刷新总览，低电量/剩余电量可能有变化
+          setTimeout(() => fetchOverview(), 3000);
+        } catch (error) {
+          message.error("触发全量爬取失败");
+        } finally {
+          setFetchAllLoading(false);
+        }
+      },
+    });
   };
 
   // 挂载时加载总览
@@ -217,12 +227,16 @@ export default function Electricity() {
       ellipsis: true,
       render: (_: string, record: ElectricityStudent) => (
         <Space>
-          <Avatar
-            size="small"
-            style={{ backgroundColor: record.configured ? "#1890ff" : "#bfbfbf" }}
-          >
-            {(record.display_name || "?").slice(0, 1)}
-          </Avatar>
+          {record.avatar ? (
+            <Avatar size="small" src={record.avatar} />
+          ) : (
+            <Avatar
+              size="small"
+              style={{ backgroundColor: record.configured ? "#1890ff" : "#bfbfbf" }}
+            >
+              {(record.display_name || "?").slice(0, 1)}
+            </Avatar>
+          )}
           <span
             style={{ color: record.configured ? undefined : "#bfbfbf" }}
           >
@@ -368,7 +382,7 @@ export default function Electricity() {
               onClick={handleTriggerFetch}
               loading={fetchAllLoading}
             >
-              触发数据采集
+              全量爬取
             </Button>
           )}
         </Space>
@@ -413,9 +427,13 @@ export default function Electricity() {
           <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>
             返回学生列表
           </Button>
-          <Avatar style={{ backgroundColor: "#1890ff" }}>
-            {(selected.display_name || "?").slice(0, 1)}
-          </Avatar>
+          {selected.avatar ? (
+            <Avatar src={selected.avatar} />
+          ) : (
+            <Avatar style={{ backgroundColor: "#1890ff" }}>
+              {(selected.display_name || "?").slice(0, 1)}
+            </Avatar>
+          )}
           <Text strong>{selected.display_name || `用户 #${selected.user_id}`}</Text>
           {selected.student_number && <Text type="secondary">学号 {selected.student_number}</Text>}
           {selected.class_name && <Text type="secondary">班级 {selected.class_name}</Text>}

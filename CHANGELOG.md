@@ -45,6 +45,15 @@
   - `src/layouts/AdminLayout.tsx` 普通用户（非管理员）菜单移除「电量管理」入口；`src/App.tsx` 的 `/electricity` 路由补 `AdminGuard`（用户化后普通用户无学生数据可看，仅管理员可访问）。
 - 验证：后端 `py_compile` 通过、路由注册核验（4 个新接口在、6 个被删接口消失）；test_client 冒烟测试通过（总览/remaining/records/statistics/非法日期 400/无 token 401）；管理端 `vite build` 成功。
 
+### 管理端电量页：全量爬取入口明确化 + 学生头像显示（2026-09-01）
+- **背景**：改版后学生总览页虽有「触发数据采集」按钮（后端 `POST /api/admin/electricity/trigger` → `tasks.fetch_electricity_data` 遍历所有已配置 Cookie 学生爬取保存），但文案不直白、无确认步骤，且文件头注释误写"不再提供全量爬取入口"；学生头像（`users.avatar`，小程序上传的 data URI）未在管理端展示（改版时因响应体大小顾虑刻意不返回）。
+- **后端**（`app/api/admin_routes.py::get_electricity_students`）：总览每名学生新增返回 `avatar` 字段（`user.avatar` data URI，无头像返回空串），供管理端有则显示、无则首字母兜底。
+- **管理端**（`src/pages/Electricity.tsx` + `src/api/admin.ts`）：
+  - 「触发数据采集」按钮明确为「全量爬取」，点击弹 `modal.confirm` 确认（提示将爬取所有已配置学生 N 人、未配置不爬、进度可在「进程管理」查看），避免误触；文件头注释修正。
+  - 学生总览表格与用电明细页学生信息头：有头像（`record.avatar`）时渲染 `<Avatar src>`，无头像回退首字母（未配置仍标灰）。
+  - `ElectricityStudent` 类型新增 `avatar?: string | null`；顺手修复 `fetchRemaining` 缺失的 `res.data` 空值检查（`ApiResponse.data` 为可选，`setRemaining(res.data)` 会触发 TS2345）。
+- **验证**：后端 test_client 冒烟——`GET /admin/electricity/students` 200 且学生项含 `avatar`（`data:image/jpeg;base64,...`）；`POST /admin/electricity/trigger {fetch_electricity_data}` 200「电量数据采集 任务已触发」；管理端 `vite build` 成功（14.35s）。
+
 ### 数据库工具修复：手动 init_db 命令失效（2026-09-01）
 - **背景**：排查新表迁移时发现 `_import_all_models()` / `_ensure_all_models()` 是空壳——只 `from app.core.database import Base` 并返回，从未真正导入 `app.model`（docstring 与实现不符）。后果：手动执行 `python init_db.py migrate` 时 `Base.metadata` 为空（0 张表），迁移恒判定"所有表已存在"什么都不做；`fingerprint/check` 定义侧 schema 恒空，所有实例表被判为"多余表"，`cleanup` 甚至可能建议 DROP 全部表。生产此前未受影响是因为启动路径（`bootstrap.py` 导入模型）metadata 完整，自动迁移正常——即"重启后端=自动迁移"一直有效，手动命令从未真正生效。
 - **修复**：
