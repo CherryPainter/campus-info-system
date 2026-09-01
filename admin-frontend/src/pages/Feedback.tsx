@@ -35,6 +35,7 @@ import {
 } from "@ant-design/icons";
 import { feedbackApi, FEEDBACK_TYPE_OPTIONS, FEEDBACK_STATUS_OPTIONS } from "@/api/feedback";
 import type { FeedbackDetail, FeedbackItem, FeedbackStatus } from "@/api/feedback";
+import { useFeedbackBadge } from "@/contexts/FeedbackBadgeContext";
 import { useMessage } from "@/utils/message";
 
 const { TextArea } = Input;
@@ -61,6 +62,7 @@ export default function FeedbackPage() {
   const [statusFilter, setStatusFilter] = useState<FeedbackStatus | "">("");
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
+  const { refresh: refreshBadge } = useFeedbackBadge();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [current, setCurrent] = useState<FeedbackDetail | null>(null);
@@ -129,6 +131,7 @@ export default function FeedbackPage() {
         message.success(`已标记为「${STATUS_LABEL[status]}」`);
         setCurrent(res.data.feedback);
         fetchList(page);
+        refreshBadge(); // 立即更新侧边栏角标，无需等下一轮轮询
       } else {
         message.error(res.message || "操作失败");
       }
@@ -152,6 +155,7 @@ export default function FeedbackPage() {
         message.success("已回复并标记为已解决");
         setCurrent(res.data.feedback);
         fetchList(page);
+        refreshBadge(); // 立即更新侧边栏角标，无需等下一轮轮询
       } else {
         message.error(res.message || "回复失败");
       }

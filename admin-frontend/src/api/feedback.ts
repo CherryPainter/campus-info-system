@@ -42,6 +42,16 @@ export interface FeedbackListResult {
   page_size: number;
 }
 
+/** 计数返回（供管理端菜单角标） */
+export interface FeedbackCountResult {
+  pending: number;
+  processing: number;
+  resolved: number;
+  total: number;
+  /** 未解决 = 待处理 + 处理中，需要管理员处理的总数 */
+  unresolved: number;
+}
+
 /** 类型中文与色标（与后端 FEEDBACK_TYPES 对齐） */
 export const FEEDBACK_TYPE_OPTIONS: { value: FeedbackType; label: string; color: string }[] = [
   { value: "bug", label: "功能异常", color: "red" },
@@ -61,6 +71,9 @@ export const feedbackApi = {
   /** 管理端列表（分页 / 按状态筛选） */
   list: (params: { page?: number; page_size?: number; status?: FeedbackStatus | "" }) =>
     request.get<any, ApiResponse<FeedbackListResult>>("/admin/feedback", { params }),
+
+  /** 计数（供管理端菜单角标）：各状态数量 + 未解决总数 */
+  count: () => request.get<any, ApiResponse<FeedbackCountResult>>("/admin/feedback/count"),
 
   /** 详情（含回复） */
   detail: (id: number) =>

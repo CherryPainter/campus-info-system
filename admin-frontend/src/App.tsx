@@ -12,6 +12,7 @@ import HomeRedirect from "@/components/HomeRedirect";
 import { ServerStatusProvider } from "@/components/ServerStatusProvider";
 import AdminLayout from "@/layouts/AdminLayout";
 import { UserProvider } from "@/contexts/UserContext";
+import { FeedbackBadgeProvider } from "@/contexts/FeedbackBadgeContext";
 import Login from "@/pages/Login";
 import Terms from "@/pages/Terms";
 import About from "@/pages/About";
@@ -48,6 +49,7 @@ export default function App() {
       <AntdApp>
         <BrowserRouter>
           <UserProvider>
+            <FeedbackBadgeProvider>
             <Routes>
               {/* 登录页 - 完全独立，无需认证 */}
               <Route path="/login" element={<Login />} />
@@ -192,6 +194,7 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>
+            </FeedbackBadgeProvider>
           </UserProvider>
         </BrowserRouter>
       </AntdApp>

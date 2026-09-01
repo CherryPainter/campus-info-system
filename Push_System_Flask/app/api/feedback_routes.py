@@ -14,6 +14,7 @@
     POST   /api/miniapp/feedback/upload     上传反馈截图（字段 file）
   管理侧（@admin_required）
     GET    /api/admin/feedback               全部反馈列表（分页/按状态筛选）
+    GET    /api/admin/feedback/count         各状态计数 + 未解决总数（菜单角标用）
     GET    /api/admin/feedback/<id>          反馈详情
     POST   /api/admin/feedback/<id>/resolve  标记状态（pending/processing/resolved）
     POST   /api/admin/feedback/<id>/reply    回复（并置为已解决/处理中）
@@ -23,7 +24,7 @@ import os
 import json
 
 from flask import Blueprint, request, jsonify, current_app
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from app.core.api_response import api_error, api_success
 from app.core.database import get_db
@@ -236,6 +237,40 @@ def feedback_admin_list():
         )
         items = [r.to_dict(with_reply=False) for r in rows]
         return api_success(data={"items": items, "total": total, "page": page, "page_size": page_size})
+    finally:
+        db.close()
+
+
+@admin_bp.route("/feedback/count", methods=["GET"])
+@admin_required
+def feedback_admin_count():
+    """反馈计数（供管理端菜单角标）
+
+    返回各状态数量与「未解决=待处理+处理中」总数，单次 GROUP BY 查询，轻量。
+    """
+    db = get_db()
+    try:
+        rows = (
+            db.query(Feedback.status, func.count(Feedback.id))
+            .group_by(Feedback.status)
+            .all()
+        )
+        counts = {STATUS_PENDING: 0, STATUS_PROCESSING: 0, STATUS_RESOLVED: 0}
+        for status, c in rows:
+            if status in counts:
+                counts[status] = c
+        pending = counts[STATUS_PENDING]
+        processing = counts[STATUS_PROCESSING]
+        resolved = counts[STATUS_RESOLVED]
+        return api_success(
+            data={
+                "pending": pending,
+                "processing": processing,
+                "resolved": resolved,
+                "total": pending + processing + resolved,
+                "unresolved": pending + processing,
+            }
+        )
     finally:
         db.close()
 

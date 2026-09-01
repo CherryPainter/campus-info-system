@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { ProLayout, PageContainer } from "@ant-design/pro-components";
-import { Dropdown, Avatar, Spin, App, Grid } from "antd";
+import { Dropdown, Avatar, Spin, App, Grid, Badge } from "antd";
 import {
   DashboardOutlined,
   HomeOutlined,
@@ -26,6 +26,7 @@ import {
 import { authApi } from "@/api/auth";
 import { tokenStorage } from "@/utils/token";
 import { useUser } from "@/contexts/UserContext";
+import { useFeedbackBadge } from "@/contexts/FeedbackBadgeContext";
 import Footer from "@/components/Footer";
 
 export default function AdminLayout() {
@@ -33,6 +34,7 @@ export default function AdminLayout() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const { user, loading: userLoading, isAdmin, logout: userLogout } = useUser();
+  const { unresolved: feedbackUnresolved } = useFeedbackBadge();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md; // 小于 md(768px) 视为移动端
 
@@ -146,7 +148,26 @@ export default function AdminLayout() {
       onCollapse={setCollapsed}
       breakpoint="md"
       location={{ pathname: location.pathname }}
-      menuItemRender={(item, dom) => <div onClick={() => navigate(item.path || "/")}>{dom}</div>}
+      menuItemRender={(item, dom) => (
+        <div
+          onClick={() => navigate(item.path || "/")}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            width: "100%",
+          }}
+        >
+          <span style={{ display: "inline-flex", alignItems: "center", minWidth: 0 }}>{dom}</span>
+          {item.path === "/feedback" && feedbackUnresolved > 0 && (
+            <Badge
+              count={feedbackUnresolved}
+              size="small"
+              style={{ backgroundColor: "#ff4d4f", marginRight: 4 }}
+            />
+          )}
+        </div>
+      )}
       menuDataRender={() => menuItems}
       actionsRender={() => [
         <Dropdown key="user" menu={{ items: userMenuItems as any }} placement="bottomRight">
