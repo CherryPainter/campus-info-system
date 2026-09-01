@@ -1,8 +1,10 @@
 @import '../../styles/variables.scss';
 
 // 校园卡：上半部蓝色块 + 下半部白色块（拼接圆角卡，原型图样式）
+// 水平 margin 与页面 .card 基类一致（$spacing-md = 16rpx），
+// 由外层 .profile-hero 的水平 padding 0 让该 margin 生效，避免二次嵌套缩进
 .campus-card {
-  margin: $spacing-md $spacing-md 0;
+  margin: 0 $spacing-md;
   border-radius: $radius-large;
   overflow: hidden; // 子块圆角跟随外层
   box-shadow: $shadow-card;

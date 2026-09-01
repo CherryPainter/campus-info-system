@@ -14,10 +14,12 @@
 // 顶部 hero 区：资料头部 + 校园卡
 // 默认渐变：浅蓝径向（仅作视觉氛围，深色文字可读），不再让用户切换主题
 // 顶部 paddingTop 由 inline style 控制（statusBarHeight + 80rpx 避状态栏与系统胶囊），
-// 渐变从 hero 元素开始铺，覆盖到状态栏下方，避免 page 留白"纯白条"
+// 渐变从 hero 元素开始铺，覆盖到状态栏下方，避免 page 留白"纯白条"。
+// 水平 padding 设 0，让 hero 内部校园卡的左右 margin 生效，避免与 .card 基类（16rpx）二次叠加
+// 让校园卡与下方所有 .card 缩进对齐；.profile-header 自身 padding 仍 32rpx，header 内容相对校园卡内缩
 .profile-hero {
   position: relative;
-  padding: 0 $spacing-lg $spacing-lg;
+  padding: 0 0 $spacing-lg;
   background:
     radial-gradient(
       circle at 18% 0%,
