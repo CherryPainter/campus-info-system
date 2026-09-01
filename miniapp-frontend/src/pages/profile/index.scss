@@ -2,37 +2,46 @@
 
 .profile-page {
   position: relative;
-  // 径向蓝渐变直接写在页面背景上（保留右上原生胶囊按钮，不再用绝对定位层）
-  background:
-    radial-gradient(
-      circle at 18% 0%,
-      rgba(122, 167, 255, 0.26) 0%,
-      rgba(122, 167, 255, 0.14) 30%,
-      rgba(122, 167, 255, 0.06) 55%,
-      rgba(122, 167, 255, 0) 75%
-    ),
-    $background;
-
-  // 我的页背景预设（设置页可选主题，浅色调保证深色文字可读）
-  &.bg-sunset {
-    background: linear-gradient(180deg, #ffe0c2 0%, #ffd0e8 38%, #f6f7fb 70%), $background;
-  }
-
-  &.bg-ocean {
-    background: linear-gradient(180deg, #bfe0ff 0%, #d6f0ff 40%, #f6f7fb 70%), $background;
-  }
-
-  &.bg-forest {
-    background: linear-gradient(180deg, #d3ecd0 0%, #e8f5e0 40%, #f6f7fb 70%), $background;
-  }
-
-  &.bg-night {
-    background: linear-gradient(180deg, #cdd6f0 0%, #e6e9f8 42%, #f6f7fb 72%), $background;
-  }
+  background: $background;
 
   /* 自定义 TabBar 高度（98rpx + safe-area） */
   padding-bottom: calc(108rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
+}
+
+// 顶部 hero 区：自定义背景主题只染这块（资料头部 + 适当留白）
+// 预设主题采用浅色渐变，保证深色文字可读
+.profile-hero {
+  position: relative;
+  padding: 0 $spacing-lg $spacing-lg;
+
+  &.bg-default {
+    background:
+      radial-gradient(
+        circle at 18% 0%,
+        rgba(122, 167, 255, 0.32) 0%,
+        rgba(122, 167, 255, 0.18) 30%,
+        rgba(122, 167, 255, 0.08) 55%,
+        rgba(122, 167, 255, 0) 75%
+      ),
+      $background;
+  }
+
+  &.bg-sunset {
+    background: linear-gradient(180deg, #ffe0c2 0%, #ffd0e8 42%, $background 78%);
+  }
+
+  &.bg-ocean {
+    background: linear-gradient(180deg, #bfe0ff 0%, #d6f0ff 44%, $background 78%);
+  }
+
+  &.bg-forest {
+    background: linear-gradient(180deg, #d3ecd0 0%, #e8f5e0 44%, $background 78%);
+  }
+
+  &.bg-night {
+    background: linear-gradient(180deg, #cdd6f0 0%, #e6e9f8 46%, $background 80%);
+  }
 
   // 资料头部
   .profile-header {

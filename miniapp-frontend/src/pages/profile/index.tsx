@@ -195,37 +195,39 @@ export default function ProfilePage() {
 
   return (
     <View
-      className={`page profile-page bg-${profile?.profile_bg || 'default'}`}
+      className="page profile-page"
       style={{ paddingTop: `${statusBarHeight + 44}px` }}
     >
-      {/* 资料头部：头像 + 姓名 + 专业年级 + 右上…/二维码（背景由 .profile-page CSS class 的径向渐变提供） */}
-      <View className="profile-header">
-        {user?.avatar ? (
-          <Image src={user.avatar} className="profile-avatar" mode="aspectFill" />
-        ) : (
-          <View className="profile-avatar profile-avatar-placeholder">
-            <Text className="profile-avatar-text">{name.slice(0, 1)}</Text>
+      {/* 顶部 hero 区：承载头像/姓名/操作，自定义背景主题只作用于这块 */}
+      <View className={`profile-hero bg-${profile?.profile_bg || 'default'}`}>
+        <View className="profile-header">
+          {user?.avatar ? (
+            <Image src={user.avatar} className="profile-avatar" mode="aspectFill" />
+          ) : (
+            <View className="profile-avatar profile-avatar-placeholder">
+              <Text className="profile-avatar-text">{name.slice(0, 1)}</Text>
+            </View>
+          )}
+          <View className="profile-info">
+            <Text className="profile-name">{name}</Text>
+            {majorGrade ? <Text className="profile-sub">{majorGrade}</Text> : null}
           </View>
-        )}
-        <View className="profile-info">
-          <Text className="profile-name">{name}</Text>
-          {majorGrade ? <Text className="profile-sub">{majorGrade}</Text> : null}
+          <View className="profile-header-actions">
+            <View
+              className="profile-qr"
+              onClick={() => Taro.showToast({ title: '二维码开发中', icon: 'none' })}
+            >
+              <Text className="iconfont icon-erweima profile-qr-icon" />
+            </View>
+            <View className="profile-more" onClick={handleMore}>
+              <Text className="iconfont icon-more profile-more-icon" />
+            </View>
+          </View>
         </View>
-        <View className="profile-header-actions">
-          <View
-            className="profile-qr"
-            onClick={() => Taro.showToast({ title: '二维码开发中', icon: 'none' })}
-          >
-            <Text className="iconfont icon-erweima profile-qr-icon" />
-          </View>
-          <View className="profile-more" onClick={handleMore}>
-            <Text className="iconfont icon-more profile-more-icon" />
-          </View>
-        </View>
-      </View>
 
-      {/* 校园卡（蓝卡，占位：后端无接口） */}
-      <CampusCard studentNumber={profile?.student_number} />
+        {/* 校园卡（蓝卡，占位：后端无接口），放在 hero 区让自定义背景渐变铺到卡下沿 */}
+        <CampusCard studentNumber={profile?.student_number} />
+      </View>
 
       {/* 宿舍用电 */}
       <View className="card dorm-card">
