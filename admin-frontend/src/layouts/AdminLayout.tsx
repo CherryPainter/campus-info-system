@@ -21,6 +21,7 @@ import {
   ProfileOutlined,
   CalendarOutlined,
   NotificationOutlined,
+  CommentOutlined,
 } from "@ant-design/icons";
 import { authApi } from "@/api/auth";
 import { tokenStorage } from "@/utils/token";
@@ -74,6 +75,7 @@ export default function AdminLayout() {
         { path: "/messages", name: "消息中心", icon: <SendOutlined /> },
         { path: "/processes", name: "进程管理", icon: <PlayCircleOutlined /> },
         { path: "/webhooks", name: "Webhook 管理", icon: <LinkOutlined /> },
+        { path: "/feedback", name: "意见与反馈", icon: <CommentOutlined /> },
         { path: "/holiday", name: "推送静默", icon: <CalendarOutlined /> },
         { path: "/settings", name: "系统设置", icon: <SettingOutlined /> },
         { path: "/profile", name: "个人设置", icon: <ProfileOutlined /> },

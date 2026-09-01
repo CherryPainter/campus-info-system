@@ -7,11 +7,13 @@
 - 无装饰器: 公开端点（如健康检查）
 """
 
+import os
 from datetime import datetime
 
-from flask import Blueprint, current_app, g, request
+from flask import Blueprint, current_app, g, request, send_from_directory
 
 from app.core.api_response import api_error, api_success
+from app.core.config import Config
 from app.core.logger import get_logger
 from app.services.adapter_service import adapter_service
 from app.services.rule_service import rule_service
@@ -145,6 +147,39 @@ def get_statistics():
 def get_rules():
     """获取推送规则（需 JWT 认证）"""
     return api_success(rules=rule_service.get_rules())
+
+
+# ==================== 公告正文图片（公开访问）====================
+# 富文本编辑器上传的正文图片存于 output/announcement-images/，
+# 学生端 RichText 渲染正文时也需无鉴权加载，故放公共蓝图。
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+@api_bp.route("/announcement-images/<path:name>")
+def announcement_image(name):
+    """公告正文图片（公开）
+
+    安全：扩展名白名单 + send_from_directory 自带路径穿越防护。
+    """
+    ext = os.path.splitext(name)[1].lower()
+    if ext not in _IMAGE_EXTS:
+        return api_error(message="非法图片路径", http_status=400)
+    root = os.path.abspath(os.path.join(Config.OUTPUT_DIR, "announcement-images"))
+    return send_from_directory(root, name)
+
+
+# ==================== 反馈截图（公开访问）====================
+@api_bp.route("/feedback-images/<path:name>")
+def feedback_image(name):
+    """反馈截图（公开，学生端 / 管理端均可加载）
+
+    安全：扩展名白名单 + send_from_directory 自带路径穿越防护。
+    """
+    ext = os.path.splitext(name)[1].lower()
+    if ext not in _IMAGE_EXTS:
+        return api_error(message="非法图片路径", http_status=400)
+    root = os.path.abspath(os.path.join(Config.OUTPUT_DIR, "feedback-images"))
+    return send_from_directory(root, name)
 
 
 @api_bp.route("/tasks")

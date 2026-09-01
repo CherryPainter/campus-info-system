@@ -1,90 +1,124 @@
-@import '../../styles/variables.scss';
-
+/* ========== 校园通知卡片（首页）========== */
 .notice-card {
-  .notice-loading {
+  background: #fff;
+  border-radius: $radius-medium;
+  padding: $spacing-md;
+
+  .notice-header {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
-    padding: $spacing-lg 0;
+    margin-bottom: $spacing-sm;
+
+    .notice-title {
+      font-size: $font-size-md;
+      font-weight: 600;
+      color: $text-primary;
+    }
+
+    .notice-more {
+      font-size: $font-size-xs;
+      color: $primary-color;
+      cursor: pointer;
+
+      &:active { opacity: 0.7; }
+    }
   }
 
+  .notice-loading,
   .notice-empty {
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: $spacing-lg 0;
-    gap: $spacing-xs;
+    padding: 32rpx 0;
   }
 
-  .notice-text {
+  .notice-empty-text {
     font-size: $font-size-sm;
     color: $text-tertiary;
   }
 
-  .card-more {
-    font-size: $font-size-xs;
-    color: $text-tertiary;
-    margin-left: auto;
-  }
-
+  /* ---------- 列表 ---------- */
   .notice-list {
     display: flex;
     flex-direction: column;
-    gap: $spacing-sm;
-    padding: $spacing-sm 0 0;
   }
 
   .notice-item {
+    padding: 16rpx 0;
+
+    &:not(:last-child) {
+      border-bottom: 1rpx solid #f0f0f0;
+    }
+
+    &:active { opacity: 0.75; }
+  }
+
+  /* 标题行：标签 + 标题 */
+  .notice-item-main {
     display: flex;
-    align-items: flex-start;
-    gap: $spacing-sm;
-    padding: $spacing-sm $spacing-md;
-    background: #fafbfc;
-    border-radius: $radius-medium;
+    align-items: center;
+    gap: 10rpx;
+    line-height: 1.4;
+  }
 
-    .notice-item-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #1677ff;
-      margin-top: 10px;
-      flex-shrink: 0;
-    }
+  /* ====== 标签（与详情页统一样式）====== */
 
-    .notice-item-body {
-      flex: 1;
-      min-width: 0;
+  /* 置顶标签：红字 + 浅红底圆角 */
+  .tag-top {
+    font-size: 22rpx;
+    line-height: 1.4;
+    color: #cf1322;
+    background: rgba(207, 19, 34, 0.08);
+    padding: 2rpx 14rpx;
+    border-radius: 6rpx;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-weight: 500;
+  }
 
-      .notice-item-title {
-        font-size: $font-size-sm;
-        font-weight: 500;
-        color: $text-primary;
-        line-height: 1.4;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        display: block;
-      }
+  /* 分类标签：蓝字 + 浅蓝底圆角（非置顶时显示分类全称） */
+  .tag-cat {
+    font-size: 22rpx;
+    line-height: 1.4;
+    color: #1a73e8;
+    background: rgba(26, 115, 232, 0.1);
+    padding: 2rpx 14rpx;
+    border-radius: 6rpx;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-weight: 500;
+  }
 
-      .notice-item-desc {
-        font-size: $font-size-xs;
-        color: $text-secondary;
-        line-height: 1.5;
-        margin-top: 4px;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
-    }
+  .notice-item-title {
+    font-size: 28rpx;
+    font-weight: 500;
+    color: $text-primary;
+    line-height: 1.5;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
 
-    .notice-item-time {
-      font-size: 10px;
-      color: $text-tertiary;
-      white-space: nowrap;
-      margin-top: 2px;
-      flex-shrink: 0;
-    }
+  /* 元信息行：部门 · 时间，与标题文字左对齐（缩进到标签右侧） */
+  .notice-item-meta {
+    margin-top: 8rpx;
+    margin-left: 0;
+    padding-left: calc(22rpx * 2 + 14rpx * 2 + 10rpx); /* tag 宽度 ≈ 字符*2 + padding*2 + gap */
+    display: flex;
+    align-items: center;
+    gap: 16rpx;
+    font-size: $font-size-xs;
+    color: $text-tertiary;
+  }
+
+  .notice-dept {
+    color: $text-secondary;
+  }
+
+  .notice-time {
+    color: $text-tertiary;
   }
 }

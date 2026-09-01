@@ -542,6 +542,7 @@ def announcements_list():
     page = request.args.get("page", type=int) or 1
     page_size = request.args.get("page_size", type=int) or 20
     only_unread = (request.args.get("only_unread") or "").lower() in ("1", "true", "yes")
+    only_favorite = (request.args.get("only_favorite") or "").lower() in ("1", "true", "yes")
 
     items, total = announcement_service.list_for_user(
         user_id,
@@ -549,6 +550,7 @@ def announcements_list():
         page=page,
         page_size=page_size,
         only_unread=only_unread,
+        only_favorite=only_favorite,
     )
     return api_success(
         data={"items": items, "total": total, "page": page, "page_size": page_size}

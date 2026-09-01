@@ -17,6 +17,7 @@ from app.model.announcement import (
 from app.model.course import Course
 from app.model.custom_push import CustomPush
 from app.model.electricity import ElectricityRecord, ElectricityRemaining, ElectricityTotalCapacity
+from app.model.feedback import Feedback
 from app.model.holiday_period import HolidayPeriod
 from app.model.login_log import LoginLog
 from app.model.module_config import ModuleConfig

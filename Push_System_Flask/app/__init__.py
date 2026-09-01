@@ -288,6 +288,11 @@ def create_app(config_class=None):
 
     app.register_blueprint(holiday_bp, url_prefix="/api/holiday")
 
+    # 注册近期提醒管理蓝图（小程序时间轴「近期提醒」卡片的后台定义）
+    from app.api.notification_routes import notification_bp
+
+    app.register_blueprint(notification_bp, url_prefix="/api/admin/notifications")
+
     # 注册微信小程序认证蓝图（第二客户端，与管理端 /api/auth 隔离）
     from app.api.miniapp_auth_routes import miniapp_auth_bp
 
@@ -297,6 +302,12 @@ def create_app(config_class=None):
     from app.api.miniapp_routes import miniapp_bp
 
     app.register_blueprint(miniapp_bp, url_prefix="/api/miniapp")
+
+    # 注册意见与反馈蓝图（学生提交侧用 /api/miniapp，管理侧用 /api/admin）
+    from app.api.feedback_routes import miniapp_bp as feedback_miniapp_bp, admin_bp as feedback_admin_bp
+
+    app.register_blueprint(feedback_miniapp_bp, url_prefix="/api/miniapp")
+    app.register_blueprint(feedback_admin_bp, url_prefix="/api/admin")
 
     # 注册统一任务查询蓝图（按 ID 查任务状态的单一入口）
     from app.api.task_routes import task_bp

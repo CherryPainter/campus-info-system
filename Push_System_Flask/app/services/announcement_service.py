@@ -344,8 +344,11 @@ class AnnouncementService:
 
     # ==================== 小程序端 ====================
 
-    def list_for_user(self, user_id, category=None, page=1, page_size=20, only_unread=False):
+    def list_for_user(self, user_id, category=None, page=1, page_size=20, only_unread=False, only_favorite=False):
         """小程序列表（仅已发布可见，带 is_read / is_favorite / 附件数）
+
+        Args:
+            only_favorite: True 时仅返回该用户收藏过的通知（用于"我的收藏"页）
 
         Returns:
             (items, total)
@@ -357,6 +360,18 @@ class AnnouncementService:
             query = db.query(Announcement).filter(self._visible_filter())
             if category and category != "all":
                 query = query.filter(Announcement.category == category)
+
+            # 仅收藏：先用 AnnouncementFavorite 取该用户全部收藏 id，再过滤
+            if only_favorite:
+                fav_ids = {
+                    f.announcement_id
+                    for f in db.query(AnnouncementFavorite.announcement_id)
+                    .filter(AnnouncementFavorite.user_id == user_id)
+                    .all()
+                }
+                if not fav_ids:
+                    return [], 0
+                query = query.filter(Announcement.id.in_(fav_ids))
 
             read_ids = {
                 r.announcement_id

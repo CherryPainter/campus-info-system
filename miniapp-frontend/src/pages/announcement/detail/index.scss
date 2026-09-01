@@ -1,0 +1,307 @@
+@import '../../../styles/variables.scss';
+
+.detail-page {
+  min-height: 100vh;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- 加载 / 错误态 ---------- */
+.detail-loading,
+.detail-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 120rpx 0;
+  color: $text-tertiary;
+  font-size: $font-size-sm;
+}
+
+/* ---------- 滚动区 ---------- */
+.detail-scroll {
+  flex: 1;
+  height: calc(100vh - 100rpx);
+}
+
+/* ---------- 标题区 ---------- */
+.detail-header {
+  padding: $spacing-lg $spacing-md $spacing-md;
+  border-bottom: 1rpx solid $border-color;
+
+  .detail-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: $spacing-xs;
+  }
+
+  .detail-top-tag {
+    flex-shrink: 0;
+    font-size: 20rpx;
+    line-height: 1.6;
+    color: $error;
+    background: rgba(230, 60, 50, 0.08);
+    padding: 2rpx 10rpx;
+    border-radius: 4rpx;
+    margin-right: 8rpx;
+  }
+
+  .detail-title {
+    flex: 1;
+    font-size: $font-size-lg;
+    font-weight: 600;
+    color: $text-primary;
+    line-height: 1.5;
+  }
+
+  .detail-edit-icon {
+    flex-shrink: 0;
+    padding: 8rpx;
+
+    .iconfont {
+      font-size: 30rpx;
+      color: #c8ccd4;
+    }
+  }
+
+  /* 第二行：部门 · 时间 */
+  .detail-meta-row {
+    display: flex;
+    align-items: center;
+    margin-top: 12rpx;
+    font-size: $font-size-xs;
+    color: $text-tertiary;
+
+    .meta-sep {
+      margin: 0 6rpx;
+    }
+  }
+
+  /* 第三行：阅读数（独立行，纯文字） */
+  .detail-views-row {
+    margin-top: 8rpx;
+
+    .meta-views {
+      font-size: $font-size-xs;
+      color: $text-tertiary;
+    }
+  }
+}
+
+/* ---------- 正文 ---------- */
+.detail-body {
+  padding: $spacing-lg $spacing-md;
+  font-size: $font-size-sm;
+  color: $text-primary;
+  line-height: 1.8;
+
+  .body-empty {
+    color: $text-tertiary;
+  }
+}
+
+/* ---------- 落款（右对齐，两行） ---------- */
+.detail-signature {
+  padding: 0 $spacing-md $spacing-lg;
+  text-align: right;
+  font-size: $font-size-xs;
+  color: $text-secondary;
+  line-height: 2;
+
+  .sign-dept,
+  .sign-date {
+    display: block;
+  }
+}
+
+/* ---------- 分区（附件/相关推荐）---------- */
+.detail-section {
+  padding: $spacing-md;
+  border-top: 16rpx solid $background;
+
+  .section-title {
+    font-size: $font-size-md;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: $spacing-sm;
+    display: block;
+  }
+}
+
+/* ---------- 附件列表 ---------- */
+.attach-list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.attach-item {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  padding: $spacing-sm $spacing-md;
+  background: #fafbfc;
+  border-radius: $radius-medium;
+
+  .attach-icon {
+    flex-shrink: 0;
+    width: 64rpx;
+    height: 64rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 143, 31, 0.1);
+    border-radius: $radius-small;
+
+    .attach-file-icon {
+      font-size: 32rpx;
+      line-height: 1;
+    }
+  }
+
+  .attach-info {
+    flex: 1;
+    min-width: 0;
+
+    .attach-name {
+      font-size: $font-size-sm;
+      color: $text-primary;
+      line-height: 1.4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: block;
+    }
+
+    .attach-size {
+      font-size: 20rpx;
+      color: $text-tertiary;
+      margin-top: 4rpx;
+      display: block;
+    }
+  }
+
+  .attach-download {
+    flex-shrink: 0;
+    padding: 8rpx;
+
+    .iconfont {
+      font-size: 40rpx;
+      color: $primary-color;
+    }
+  }
+}
+
+/* ---------- 相关推荐 ---------- */
+.related-list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.related-item {
+  display: flex;
+  align-items: baseline;
+  gap: $spacing-sm;
+  padding: $spacing-sm 0;
+  border-bottom: 1rpx solid $border-color;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  .related-tag {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40rpx;
+    height: 40rpx;
+    font-size: 20rpx;
+    line-height: 1;
+    color: #fff;
+    background: $primary-color;
+    border-radius: $radius-small;
+
+    &.tag-urgent {
+      background: $error;
+    }
+
+    &.tag-activity {
+      background: $success;
+    }
+  }
+
+  .related-body {
+    flex: 1;
+    min-width: 0;
+
+    .related-title {
+      font-size: $font-size-sm;
+      font-weight: 500;
+      color: $text-primary;
+      line-height: 1.5;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: block;
+    }
+
+    .related-meta {
+      font-size: 20rpx;
+      color: $text-tertiary;
+      margin-top: 6rpx;
+      display: block;
+    }
+  }
+}
+
+/* ---------- 底部操作栏 ---------- */
+.detail-actions {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: $spacing-sm 0;
+  padding-bottom: calc($spacing-sm + env(safe-area-inset-bottom));
+  background: #fff;
+  border-top: 1rpx solid $border-color;
+  z-index: 10;
+}
+
+.action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  padding: 8rpx 32rpx;
+
+  &.action-active .action-text {
+    color: $primary-color;
+    font-weight: 500;
+  }
+}
+
+.action-text {
+  font-size: 22rpx;
+  color: $text-tertiary;
+}
+
+.action-icon {
+  font-size: 40rpx;
+  line-height: 1;
+  color: $text-tertiary;
+}
+
+.action-btn.action-active .action-icon {
+  color: #faad14;
+}
+
+/* 五角星收藏图标 */
+.action-star {
+  font-size: 40rpx;
+  line-height: 1;
+}

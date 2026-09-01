@@ -35,10 +35,32 @@ from app.utils.file_upload_security import (
     validate_filename,
     validate_file_size,
 )
+import re
 
 logger = get_logger(__name__)
 
 announcement_bp = Blueprint("announcement", __name__)
+
+
+# ==================== 防御性 HTML 清洗 ====================
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_TRUNCATED_IMG_RE = re.compile(r"<img\b[\s\S]*$", re.IGNORECASE)
+
+
+def _strip_html(value):
+    """剥除 HTML 标签，仅保留纯文本。防御性使用：防止富文本 HTML 误入纯文本字段
+    （如 summary）。非破坏性：只剥标签，保留内文（如 '<p>你好</p>' → '你好'）。
+    容错：处理历史脏数据中截断的 <img 标签（缺闭合 >）。"""
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        value = str(value)
+    # 1) 剥除完整的 HTML 标签
+    value = _HTML_TAG_RE.sub("", value)
+    # 2) 剥除截断的 <img ...（无闭合 >，到字符串末尾）
+    value = _TRUNCATED_IMG_RE.sub("", value)
+    return value.strip()
 
 # 附件允许的扩展名（文档 + 图片 + 压缩包，显式白名单）
 ALLOWED_ATTACHMENT_EXTS = {
@@ -124,6 +146,10 @@ def get_announcement(announcement_id):
     data = announcement_service.get_admin_detail(announcement_id)
     if not data:
         return api_error(message="公告不存在", http_status=404)
+    # 读路径防御：剥除脏数据（如历史误存的 <img> 混入 summary），
+    # 保证编辑页回填到表单的字段是纯文本。
+    if isinstance(data, dict) and isinstance(data.get("summary"), str):
+        data["summary"] = _strip_html(data["summary"])
     return api_success(data=data)
 
 
@@ -138,6 +164,8 @@ def create_announcement():
         audience_type, is_top, expired_at, publish (bool，true 则直接发布)
     """
     data = request.get_json(silent=True) or {}
+    # 防御性：summary 是纯文本字段，剥除误塞进来的 HTML（如 <img>）
+    data["summary"] = _strip_html(data.get("summary") or "")
     publish_now = bool(data.get("publish"))
     try:
         item = announcement_service.create(
@@ -153,6 +181,8 @@ def create_announcement():
 def update_announcement(announcement_id):
     """更新公告内容（不改变发布状态）"""
     data = request.get_json(silent=True) or {}
+    # 防御性：summary 剥 HTML
+    data["summary"] = _strip_html(data.get("summary") or "")
     try:
         item = announcement_service.update(announcement_id, data)
     except ValueError as e:
@@ -193,6 +223,78 @@ def delete_announcement(announcement_id):
 
 
 # ==================== 附件 ====================
+
+# 富文本编辑器正文图片（WangEditor v5）专用：与公告附件分离存储
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+IMAGE_MAX_SIZE = 20 * 1024 * 1024
+IMAGE_SUBDIR = "announcement-images"
+
+
+def _image_root():
+    """正文图片存储根目录（不存在则创建）"""
+    root = os.path.join(Config.OUTPUT_DIR, IMAGE_SUBDIR)
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+@announcement_bp.route("/upload-image", methods=["POST"])
+@admin_required
+def upload_editor_image():
+    """富文本编辑器图片上传（WangEditor v5 约定）
+
+    multipart/form-data，字段名 file，图片存 output/announcement-images/。
+    返回 WangEditor 固定格式：{"errno":0,"data":{"url","alt","href"}}。
+
+    图片访问走公共路由 GET /api/announcement-images/<name>（无需鉴权，
+    学生端正文渲染 RichText 也能直接加载）。
+    """
+    from flask import jsonify
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"errno": 1, "message": "未选择文件"}), 400
+
+    try:
+        original_name = validate_filename(file.filename)
+        ext = os.path.splitext(original_name)[1].lower()
+        if ext not in IMAGE_EXTS:
+            return jsonify({"errno": 1, "message": f"不支持的图片类型: {ext}"}), 400
+        validate_file_size(file, IMAGE_MAX_SIZE)
+        stored_name = generate_secure_filename(file, original_name)
+    except FileUploadError as e:
+        return jsonify({"errno": 1, "message": str(e)}), 400
+
+    root = _image_root()
+    abs_path = os.path.join(root, stored_name)
+    try:
+        file.seek(0)
+        file.save(abs_path)
+    except Exception as e:
+        logger.error(f"公告正文图片落盘失败: {e}")
+        return jsonify({"errno": 1, "message": "图片保存失败"}), 500
+
+    # EXIF orientation 校正：iOS/部分安卓相机写入的 EXIF orientation 标记
+    # 会让浏览器/img 标签自动旋转显示，但小程序 RichText/某些 webview
+    # 不读 EXIF，导致同一张图在不同端显示方向不一致。
+    # 此处用 Pillow 自动旋转并保存（去掉 orientation 标记），所有端显示一致。
+    try:
+        from PIL import Image, ImageOps
+
+        with Image.open(abs_path) as img:
+            transposed = ImageOps.exif_transpose(img)
+            if transposed is not None and transposed is not img:
+                save_kwargs = {}
+                fmt = (img.format or "").upper()
+                if fmt == "JPEG":
+                    save_kwargs["quality"] = 95
+                transposed.save(abs_path, format=fmt or None, **save_kwargs)
+                logger.info(f"公告正文图片已 EXIF 校正: {stored_name}")
+    except Exception as e:
+        logger.warning(f"EXIF 校正失败（保留原图）: {stored_name} - {e}")
+
+    url = f"/api/announcement-images/{stored_name}"
+    logger.info(f"公告正文图片已上传: {stored_name}")
+    return jsonify({"errno": 0, "data": {"url": url, "alt": original_name, "href": ""}})
 
 
 @announcement_bp.route("/<int:announcement_id>/attachments", methods=["POST"])

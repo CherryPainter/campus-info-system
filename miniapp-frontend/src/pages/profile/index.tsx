@@ -10,6 +10,8 @@ import { logout as logoutApi } from '@/api/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { useUserStore } from '@/stores/userStore';
 import CampusCard from '@/components/CampusCard';
+import FeedbackBadge from '@/components/FeedbackBadge';
+import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
 import './index.scss';
 
 /**
@@ -23,6 +25,8 @@ import './index.scss';
 export default function ProfilePage() {
   const { user, refreshToken, logout: clearAuth } = useAuthStore();
   const { profile, setProfile } = useUserStore();
+  // 反馈未读红点（已受理未查看的反馈数）
+  const { count: feedbackUnread, refresh: refreshFeedbackBadge } = useFeedbackBadge();
 
   const [statusBarHeight, setStatusBarHeight] = useState(20);
   const [electricity, setElectricity] = useState<ElectricityCurrent | null>(null);
@@ -99,6 +103,8 @@ export default function ProfilePage() {
     loadAll();
     // 打开"我的"页即触发一次电量轻量刷新（后端 60s 冷却），完成后更新最新值
     refreshElectricity();
+    // 反馈未读红点
+    refreshFeedbackBadge();
   });
 
   // 电量轻量刷新（后台触发，成功后更新展示值；更新时间显示"访问这一刻"）
@@ -122,6 +128,8 @@ export default function ProfilePage() {
     }
     loadAll();
     refreshElectricity();
+    // 从反馈详情返回后刷新红点（查看一条即 -1）
+    refreshFeedbackBadge();
   });
 
   const handleLogout = () => {
@@ -147,8 +155,12 @@ export default function ProfilePage() {
     Taro.showActionSheet({
       itemList: ['消息设置', '帮助反馈', '关于', '退出登录'],
       success: (res) => {
-        if (res.tapIndex === 0 || res.tapIndex === 1) {
+        if (res.tapIndex === 0) {
           Taro.showToast({ title: '功能开发中', icon: 'none' });
+          return;
+        }
+        if (res.tapIndex === 1) {
+          Taro.navigateTo({ url: '/pages/feedback/submit/index' });
           return;
         }
         if (res.tapIndex === 2) {
@@ -255,22 +267,23 @@ export default function ProfilePage() {
         </View>
         <View
           className="profile-item"
-          onClick={() => Taro.showToast({ title: '功能开发中', icon: 'none' })}
+          onClick={() => Taro.navigateTo({ url: '/pages/favorites/index' })}
         >
           <View className="profile-item-icon-wrap">
-            <Text className="iconfont icon-shoucang profile-item-icon" />
+            <Text className="profile-item-icon profile-star-icon">{'\u2605'}</Text>
           </View>
           <Text className="profile-label">我的收藏</Text>
           <Text className="profile-arrow">›</Text>
         </View>
         <View
           className="profile-item"
-          onClick={() => Taro.showToast({ title: '功能开发中', icon: 'none' })}
+          onClick={() => Taro.navigateTo({ url: '/pages/feedback/submit/index' })}
         >
           <View className="profile-item-icon-wrap">
             <Text className="iconfont icon-yijianyufankui profile-item-icon" />
           </View>
           <Text className="profile-label">意见反馈</Text>
+          <FeedbackBadge count={feedbackUnread} />
           <Text className="profile-arrow">›</Text>
         </View>
         <View

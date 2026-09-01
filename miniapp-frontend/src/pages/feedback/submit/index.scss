@@ -1,0 +1,234 @@
+@import '../../../styles/variables.scss';
+
+.fb-submit-page {
+  min-height: 100vh;
+  background: $background;
+  padding-bottom: calc(140rpx + env(safe-area-inset-bottom));
+}
+
+/* 顶部：我的反馈入口 */
+.fb-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: $spacing-md $spacing-lg 0;
+}
+
+.fb-topbar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.fb-topbar-text {
+  font-size: $font-size-sm;
+  color: $primary-color;
+}
+
+.fb-topbar-arrow {
+  font-size: $font-size-md;
+  color: $primary-color;
+  margin-left: 4rpx;
+}
+
+/* 表单卡片 */
+.fb-form {
+  margin: $spacing-md $spacing-md 0;
+  background: $card-background;
+  border-radius: $radius-large;
+  padding: $spacing-lg $spacing-md;
+  box-shadow: $shadow-card;
+}
+
+.fb-field {
+  margin-bottom: $spacing-lg;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.fb-label {
+  display: block;
+  font-size: $font-size-md;
+  color: $text-primary;
+  font-weight: 600;
+  margin-bottom: $spacing-sm;
+}
+
+.fb-required {
+  color: $error;
+  margin-left: 4rpx;
+}
+
+/* 类型选择（2x2 网格） */
+.fb-type-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-sm;
+}
+
+.fb-type-chip {
+  flex: 1 1 calc(50% - #{$spacing-sm});
+  box-sizing: border-box;
+  text-align: center;
+  padding: $spacing-sm 0;
+  border: 2rpx solid $border-color;
+  border-radius: $radius-medium;
+  background: #fafbfc;
+  transition: all 0.15s ease;
+}
+
+.fb-type-active {
+  border-color: $primary-color;
+  background: $primary-light;
+
+  .fb-type-label {
+    color: $primary-color;
+    font-weight: 600;
+  }
+}
+
+.fb-type-label {
+  font-size: $font-size-md;
+  color: $text-secondary;
+}
+
+/* 文本域 */
+.fb-textarea-wrap {
+  position: relative;
+  border: 2rpx solid $border-color;
+  border-radius: $radius-medium;
+  background: #fafbfc;
+  padding: $spacing-sm $spacing-md;
+}
+
+.fb-textarea {
+  width: 100%;
+  min-height: 200rpx;
+  font-size: $font-size-md;
+  color: $text-primary;
+  line-height: 1.5;
+}
+
+.fb-counter {
+  display: block;
+  text-align: right;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-top: $spacing-xs;
+}
+
+.fb-placeholder {
+  color: $text-tertiary;
+}
+
+/* 输入框 */
+.fb-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: $spacing-sm $spacing-md;
+  border: 2rpx solid $border-color;
+  border-radius: $radius-medium;
+  background: #fafbfc;
+  font-size: $font-size-md;
+  color: $text-primary;
+}
+
+/* 截图网格 */
+.fb-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-sm;
+}
+
+.fb-img-item {
+  position: relative;
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: $radius-medium;
+  overflow: hidden;
+}
+
+.fb-img {
+  width: 100%;
+  height: 100%;
+}
+
+.fb-img-del {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 36rpx;
+  height: 36rpx;
+  background: rgba(0, 0, 0, 0.55);
+  border-bottom-left-radius: $radius-medium;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fb-img-del-x {
+  color: #fff;
+  font-size: 28rpx;
+  line-height: 1;
+}
+
+.fb-img-add {
+  width: 160rpx;
+  height: 160rpx;
+  border: 2rpx dashed $border-color;
+  border-radius: $radius-medium;
+  background: #fafbfc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.fb-img-add-plus {
+  font-size: 48rpx;
+  color: $text-tertiary;
+  line-height: 1;
+}
+
+.fb-img-add-loading {
+  font-size: 40rpx;
+  color: $text-tertiary;
+}
+
+.fb-img-add-text {
+  margin-top: 8rpx;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}
+
+/* 提交按钮栏 */
+.fb-submit-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: $spacing-md $spacing-lg calc(#{$spacing-md} + env(safe-area-inset-bottom));
+  background: $card-background;
+  border-top: 1rpx solid $border-color;
+}
+
+.fb-submit-btn {
+  height: 88rpx;
+  border-radius: $radius-full;
+  background: $primary-color;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fb-submit-text {
+  color: $text-inverse;
+  font-size: $font-size-lg;
+  font-weight: 600;
+}
+
+.fb-submit-disabled {
+  opacity: 0.6;
+}

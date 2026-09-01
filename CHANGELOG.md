@@ -26,6 +26,20 @@
 - 小程序：`build:weapp:clean` 编译成功（约 10s）。
 - 401 修复实测：小程序包含 dev token 后，活接口（天气/课表）带 token 请求 29528 返回 200。
 
+### 意见与反馈（独立反向通道，与消息中心解耦）
+> 学生 → 管理员 的反馈通道，与「消息中心」（管理员 → 学生推送）是完全不同的业务方向：独立成表、独立页面、独立导航，不并入消息中心。
+
+- **数据模型**：新增 `feedbacks` 表（`app/model/feedback.py`），字段含 user_id / type / content / contact / images(JSON) / status / reply / replied_by / replied_at；`FEEDBACK_TYPES`（功能异常/功能建议/咨询求助/其他）与状态枚举（待处理/处理中/已解决）集中在模型层，`to_dict` 统一输出中文 `type_label` / `status_label` 与解析后的 `images` 数组。
+- **后端接口**：`app/api/feedback_routes.py` 拆为两个蓝图（学生侧 `/api/miniapp/feedback`、管理侧 `/api/admin/feedback`）。学生侧：`POST` 提交（含类型/内容/联系方式/截图 URL 校验，内容 ≤2000 字）、`GET` 我的反馈列表、`GET /<id>` 详情（仅本人）、`POST /upload` 截图上传（WangEditor 约定返回，存 `output/feedback-images/`，EXIF 校正，复用公告图片安全校验）。管理侧：`GET` 列表（按状态筛选）、`GET /<id>` 详情、`POST /<id>/resolve` 标记状态、`POST /<id>/reply` 回复并置已解决。公共访问路由 `GET /api/feedback-images/<name>` 在 `app/api/routes.py` 注册（扩展名白名单 + `send_from_directory`）。
+- **小程序端**：新增 `pages/feedback/submit`（提交页：类型选择 / 内容 / 联系方式 / 截图上传最多 9 张 / 提交后跳我的反馈）、`pages/feedback/list`（我的反馈列表，状态下拉筛选 + 悬浮提交入口）、`pages/feedback/detail`（反馈详情，展示管理员回复）；`src/api/feedback.ts` 封装 create/list/detail 与 `uploadImage`（Taro.uploadFile）；「我的」页「意见与反馈」与右上「帮助反馈」均跳转提交页。
+- **管理端**：新增 `src/pages/Feedback.tsx`（列表按状态 Segmented 筛选 + 详情 Drawer，支持标记处理中/已解决、回复学生）、`src/api/feedback.ts`（list/detail/resolve/reply）、侧边栏「意见与反馈」入口（CommentOutlined，AdminGuard 保护）、`src/App.tsx` 路由 `/feedback`。
+- **未读红点（已受理提醒）**：新增 `src/utils/feedbackBadge.ts`（本地已读集合 + `computeUnread` 计数）、`src/hooks/useFeedbackBadge.ts`（拉取「我的反馈」全量计算红点数）、`src/components/FeedbackBadge`（红色圆形红点，count≤0 不渲染）。「已受理」= 反馈被管理员回复且状态置 `resolved`；用户在详情页查看（确有回复）即写入本地已读集合，红点 -1；计数为 0 不显示。红点同时出现在「我的」页「意见反馈」条目与提交页「我的反馈」顶栏，进入/返回对应页面时刷新。纯前端本地追踪，零后端改动，天然只统计当前用户自己的反馈。
+
+### 验证
+- 后端：`test_client` 伪造合法 JWT 端到端跑通——学生提交→学生列表→管理列表→管理回复(置已解决)→管理详情(含回复)→学生详情(可见回复)，且学生访问管理接口正确返回 403；测试数据已清理。
+- 小程序：`build:weapp:clean` 编译成功。
+- 管理端：`tsc --noEmit` 零类型错误；`vite build` 成功。
+
 ---
 
 ## v6.16.0 (2026-08-27)

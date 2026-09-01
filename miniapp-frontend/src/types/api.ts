@@ -286,3 +286,113 @@ export interface NotificationEvent {
 export interface NotificationListResult extends ApiSuccess {
   data: { events: NotificationEvent[]; count: number };
 }
+
+// ==================== 校园通知（公告）====================
+
+export interface AnnouncementItem {
+  id: number;
+  title: string;
+  category: string;              // notice/activity/urgent/system
+  category_label: string;        // 中文标签，如「通知」
+  summary: string | null;        // 摘要（列表页展示）
+  department: string | null;     // 发布部门
+  is_top: boolean;               // 是否置顶
+  status: string;                // published 等
+  published_at: string | null;   // ISO 时间
+  published_label: string | null; // 已格式化，如「2026-08-31 14:30」
+  expired_at: string | null;
+  view_count: number;
+}
+
+export interface AnnouncementListResult extends ApiSuccess {
+  data: {
+    items: AnnouncementItem[];
+    total: number;
+    page: number;
+    page_size: number;
+  };
+}
+
+/** 公告附件 */
+export interface AnnouncementAttachment {
+  id: number;
+  announcement_id: number;
+  file_name: string;
+  file_size: number;
+  file_size_label: string; // 如 "1.2 MB"
+  file_url: string;
+}
+
+/** 相关推荐条目（详情页底部）*/
+export interface RelatedAnnouncement {
+  id: number;
+  title: string;
+  category: string;
+  published_label: string | null;
+}
+
+/** 公告详情（含正文/附件/相关推荐/收藏状态） */
+export interface AnnouncementDetail extends AnnouncementItem {
+  content: string | null;           // 富文本正文
+  attachments: AnnouncementAttachment[];
+  related: RelatedAnnouncement[];
+  is_favorite: boolean;
+  is_read: boolean;
+}
+
+export interface AnnouncementDetailResult extends ApiSuccess {
+  data: { announcement: AnnouncementDetail };
+}
+
+// ==================== 意见与反馈（/api/miniapp/feedback） ====================
+
+/** 反馈类型（与后端 FEEDBACK_TYPES 一一对应） */
+export type FeedbackType = 'bug' | 'suggest' | 'consult' | 'other';
+
+/** 反馈处理状态 */
+export type FeedbackStatus = 'pending' | 'processing' | 'resolved';
+
+/** 反馈列表项（列表用，with_reply=false，不含管理员回复） */
+export interface FeedbackItem {
+  id: number;
+  user_id: number;
+  type: FeedbackType;
+  type_label: string;
+  content: string;
+  contact: string;
+  images: string[];
+  status: FeedbackStatus;
+  status_label: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 反馈详情（含管理员回复） */
+export interface FeedbackDetail extends FeedbackItem {
+  reply: string;
+  replied_at: string;
+}
+
+export interface FeedbackListResult extends ApiSuccess {
+  data: {
+    items: FeedbackItem[];
+    total: number;
+    page: number;
+    page_size: number;
+  };
+}
+
+export interface FeedbackDetailResult extends ApiSuccess {
+  data: { feedback: FeedbackDetail };
+}
+
+export interface FeedbackCreateResult extends ApiSuccess {
+  data: { id: number };
+}
+
+/** 图片上传返回（WangEditor 约定：{ errno, data:{ url } }） */
+export interface FeedbackUploadResult {
+  errno: number;
+  data: { url: string; alt?: string; href?: string };
+  message?: string;
+}

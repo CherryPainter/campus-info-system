@@ -28,8 +28,10 @@ import Tasks from "@/pages/Tasks";
 import Push from "@/pages/Push";
 import Processes from "@/pages/Processes";
 import Webhooks from "@/pages/Webhooks";
+import Feedback from "@/pages/Feedback";
 import HolidayMode from "@/pages/HolidayMode";
 import Announcements from "@/pages/Announcements";
+import Notifications from "@/pages/Notifications";
 import Messages from "@/pages/Messages";
 import MessageEditor from "@/pages/MessageEditor";
 import Settings from "@/pages/Settings";
@@ -92,6 +94,14 @@ export default function App() {
                   <Route path="/users" element={<Navigate to="/access" replace />} />
                   <Route path="/course" element={<Course />} />
                   <Route
+                    path="/notifications"
+                    element={
+                      <AdminGuard>
+                        <Notifications />
+                      </AdminGuard>
+                    }
+                  />
+                  <Route
                     path="/tasks"
                     element={
                       <AdminGuard>
@@ -141,6 +151,14 @@ export default function App() {
                     element={
                       <AdminGuard>
                         <Webhooks />
+                      </AdminGuard>
+                    }
+                  />
+                  <Route
+                    path="/feedback"
+                    element={
+                      <AdminGuard>
+                        <Feedback />
                       </AdminGuard>
                     }
                   />

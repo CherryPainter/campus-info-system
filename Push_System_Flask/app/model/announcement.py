@@ -84,10 +84,33 @@ class Announcement(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间")
 
     def auto_summary(self, limit: int = 80) -> str:
-        """摘要：优先取 summary 字段，否则从正文截取（去换行）"""
+        """摘要：优先取 summary 字段，否则从正文截取（先剥 HTML 再取纯文本前 N 字）
+
+        注意：正文是富文本 HTML（可能含 <img>/<p> 等），直接截取会把标签
+        当成摘要（如 '<img src=...'）。必须先用正则剥除标签，只保留纯文本。
+        即使 summary 字段已有值，也做防御性 strip（历史可能存入 HTML 脏数据）。
+        """
+        import re
+
+        _strip = lambda s: re.sub(r"<[^>]*>", " ", re.sub(r"<\w[\s\S]*$", "", s or "")).strip()
         if self.summary:
-            return self.summary
-        text = (self.content or "").replace("\r", "").replace("\n", " ").strip()
+            text = _strip(self.summary)
+            if text:
+                return text[:limit]
+
+        text = self.content or ""
+        # 剥除 HTML 标签（含截断的 <img ... 无闭合 >）
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"<img\b[\s\S]*$", "", text)
+        # 常见 HTML 实体还原为空格/字符，避免摘要里残留 &nbsp; 等
+        text = (
+            text.replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", '"')
+        )
+        text = re.sub(r"\s+", " ", text).strip()
         return text[:limit]
 
     def to_dict(self, with_content: bool = False):

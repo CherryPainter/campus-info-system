@@ -1,11 +1,12 @@
 /**
  * 消息中心（统一管理页面）
  *
- * 合并原「校园通知」(announcements) 和「自定义推送」(push) 为单一入口，
- * 通过 Tab 切换两种消息模式。两套后端 API 不变，仅前端统一。
+ * 合并原「校园通知」(announcements)、「自定义推送」(push) 与「近期提醒」(reminder) 为单一入口，
+ * 通过 Tab 切换三种消息模式。后端 API 各自独立，仅前端统一。
  *
  * - 校园通知：结构化公告（分类/状态/发布撤回/阅读量/附件）
- * - 即时推送：灵活消息（文本/图片/模板/定时/周期）
+ * - 自定义推送：管理员编辑消息（文本/图片/模板），经企业微信 Webhook 通道推送，支持立即/定时/周期
+ * - 近期提醒：小程序时间轴「近期提醒」卡片的后台定义（内嵌 Notifications 组件）
  *
  * 编辑操作跳转独立编辑页（MessageEditor），不再使用 Modal 弹窗。
  */
@@ -39,9 +40,12 @@ import {
   PushpinOutlined,
   InfoCircleOutlined,
   NotificationOutlined,
+  BellOutlined,
+  CheckCircleOutlined,
   ThunderboltOutlined,
   EyeOutlined,
   ClockCircleOutlined,
+  CalendarOutlined,
 } from "@ant-design/icons";
 import {
   announcementApi,
@@ -51,7 +55,8 @@ import {
   type AnnouncementCategory,
   type AnnouncementStatus,
 } from "@/api/announcement";
-import { pushApi, type CustomPush } from "@/api/admin";
+import { pushApi, notificationApi, type CustomPush } from "@/api/admin";
+import Notifications from "@/pages/Notifications";
 import { PUSH_STATUS_MAP } from "@/constants/statusMaps";
 import dayjs from "dayjs";
 import { useMessage } from "@/utils/message";
@@ -79,7 +84,7 @@ const msgTypeIconMap: Record<string, { color: string; text: string; icon: React.
   template: { color: "volcano", text: "模板", icon: <ThunderboltOutlined /> },
 };
 
-type ActiveTab = "announcement" | "push";
+type ActiveTab = "announcement" | "push" | "reminder";
 
 export default function Messages() {
   const navigate = useNavigate();
@@ -116,6 +121,7 @@ export default function Messages() {
     annoToday: 0,
     pushTotal: 0,
     pushPending: 0,
+    reminderTotal: 0,
   });
 
   // ==================== 数据加载 ====================
@@ -189,12 +195,22 @@ export default function Messages() {
         /* 推送统计失败不阻塞 */
       }
 
+      // 近期提醒统计：取总数用于顶部总览卡（细分计数交由内嵌 Notifications 表格自身）
+      let reminderTotalCount = 0;
+      try {
+        const listRes = await notificationApi.getList({ page: 1, page_size: 1 });
+        reminderTotalCount = listRes.pagination?.total ?? 0;
+      } catch {
+        /* 提醒统计失败不阻塞 */
+      }
+
       setStats({
         annoTotal: annoTotalCount,
         annoPublished: publishedCount,
         annoToday: publishedCount, // 简化：用已发布数代替
         pushTotal: pushTotalCount,
         pushPending: pushPendingCount,
+        reminderTotal: reminderTotalCount,
       });
     } catch {
       /* 统计失败不阻塞主流程 */
@@ -204,10 +220,13 @@ export default function Messages() {
   useEffect(() => {
     if (activeTab === "announcement") {
       fetchAnnouncements();
-    } else {
+    } else if (activeTab === "push") {
       fetchPushes();
     }
-    fetchStats();
+    // 近期提醒 Tab 由内嵌 <Notifications embedded /> 自管理数据，此处不拉取
+    if (activeTab !== "reminder") {
+      fetchStats();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, annoPage, annoPageSize, annoKeyword, filterCategory, filterStatus, pushPage, pushPageSize]);
 
@@ -517,7 +536,16 @@ export default function Messages() {
       key: "push",
       label: (
         <span>
-          <SendOutlined /> 即时推送
+          <SendOutlined /> 自定义推送
+        </span>
+      ),
+      children: null,
+    },
+    {
+      key: "reminder",
+      label: (
+        <span>
+          <CalendarOutlined /> 近期提醒
         </span>
       ),
       children: null,
@@ -525,10 +553,12 @@ export default function Messages() {
   ];
 
   const isAnno = activeTab === "announcement";
+  const isPush = activeTab === "push";
+  const isReminder = activeTab === "reminder";
 
   return (
     <div>
-      {/* ===== 统计卡片行 ===== */}
+      {/* ===== 统计卡片行（消息中心聚合页总览：固定五项，不随 Tab 变化）===== */}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={8} md={4}>
           <Card size="small" hoverable>
@@ -570,6 +600,16 @@ export default function Messages() {
             />
           </Card>
         </Col>
+        <Col xs={12} sm={8} md={4}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="近期提醒"
+              value={stats.reminderTotal}
+              prefix={<BellOutlined style={{ color: "#eb2f96" }} />}
+              valueStyle={{ fontSize: isMobile ? 18 : 22, color: "#eb2f96" }}
+            />
+          </Card>
+        </Col>
       </Row>
 
       {/* ===== 主内容区 ===== */}
@@ -577,13 +617,15 @@ export default function Messages() {
         styles={{ body: { padding: isMobile ? 12 : 24 } }}
         extra={
           <Space>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => goCreate(isAnno ? "announcement" : "push")}
-            >
-              新建{isAnno ? "通知" : "推送"}
-            </Button>
+            {!isReminder && (
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => goCreate(isAnno ? "announcement" : "push")}
+              >
+                新建{isAnno ? "通知" : "自定义推送"}
+              </Button>
+            )}
           </Space>
         }
       >
@@ -652,34 +694,49 @@ export default function Messages() {
             style={{ marginBottom: 16 }}
           />
         )}
+        {isPush && (
+          <Alert
+            message="自定义推送说明"
+            description="管理员编辑消息（文本 / 图片 / 模板），经已配置的企业微信群机器人 Webhook 通道推送至企业微信，支持立即 / 定时 / 周期三种方式。"
+            type="info"
+            showIcon
+            icon={<SendOutlined />}
+            style={{ marginBottom: 16 }}
+          />
+        )}
 
-        {/* 表格 */}
-        <Table
-          dataSource={(isAnno ? annoList : pushList) as any}
-          columns={(isAnno ? annoColumns : pushColumns) as any}
-          rowKey="id"
-          loading={loading}
-          scroll={{ x: isAnno ? 900 : 1000 }}
-          size="middle"
-          pagination={{
-            current: isAnno ? annoPage : pushPage,
-            pageSize: isAnno ? annoPageSize : pushPageSize,
-            total: isAnno ? annoTotal : pushTotal,
-            showSizeChanger: true,
-            showQuickJumper: !isMobile,
-            showTotal: (t) => `共 ${t} 条`,
-            pageSizeOptions: ["10", "20", "50"],
-            onChange: (p, ps) => {
-              if (isAnno) {
-                setAnnoPage(p);
-                setAnnoPageSize(ps);
-              } else {
-                setPushPage(p);
-                setPushPageSize(ps);
-              }
-            },
-          }}
-        />
+        {/* 表格（公告 / 推送） */}
+        {!isReminder && (
+          <Table
+            dataSource={(isAnno ? annoList : pushList) as any}
+            columns={(isAnno ? annoColumns : pushColumns) as any}
+            rowKey="id"
+            loading={loading}
+            scroll={{ x: isAnno ? 900 : 1000 }}
+            size="middle"
+            pagination={{
+              current: isAnno ? annoPage : pushPage,
+              pageSize: isAnno ? annoPageSize : pushPageSize,
+              total: isAnno ? annoTotal : pushTotal,
+              showSizeChanger: true,
+              showQuickJumper: !isMobile,
+              showTotal: (t) => `共 ${t} 条`,
+              pageSizeOptions: ["10", "20", "50"],
+              onChange: (p, ps) => {
+                if (isAnno) {
+                  setAnnoPage(p);
+                  setAnnoPageSize(ps);
+                } else {
+                  setPushPage(p);
+                  setPushPageSize(ps);
+                }
+              },
+            }}
+          />
+        )}
+
+        {/* 近期提醒（内嵌管理组件，含自己的筛选/表格/新建/编辑弹窗） */}
+        {isReminder && <Notifications embedded />}
       </Card>
     </div>
   );

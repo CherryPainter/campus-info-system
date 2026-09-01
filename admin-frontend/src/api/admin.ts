@@ -397,6 +397,75 @@ export const webhookApi = {
   reload: () => request.post<any, ApiResponse>("/admin/webhooks/reload"),
 };
 
+// ==================== 近期提醒（小程序时间轴卡片后台定义）====================
+
+/** 近期提醒分类 */
+export type NotificationCategory = "exam" | "holiday" | "activity" | "other";
+
+/** 近期提醒项（与后端 Notification.to_dict 对齐） */
+export interface NotificationItem {
+  id: number;
+  title: string;
+  event_date: string;
+  event_date_label: string;
+  category: NotificationCategory;
+  remind_days: number;
+  sort_order: number;
+  is_active: boolean;
+  description: string | null;
+  days_left: number;
+  is_expired: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** 列表分页响应 */
+export interface NotificationPage {
+  items: NotificationItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+/** 近期提醒分类选项 */
+export const NOTIFICATION_CATEGORY_OPTIONS: { label: string; value: NotificationCategory }[] = [
+  { label: "考试", value: "exam" },
+  { label: "节假日", value: "holiday" },
+  { label: "活动", value: "activity" },
+  { label: "其他", value: "other" },
+];
+
+/** 近期提醒管理 API（/api/admin/notifications） */
+export const notificationApi = {
+  /** 列表（分页 / 分类 / 关键词 / 仅启用筛选） */
+  getList: (params?: {
+    page?: number;
+    page_size?: number;
+    category?: NotificationCategory | "";
+    keyword?: string;
+    active?: "true" | "false";
+  }) =>
+    request.get<any, ApiResponse<NotificationItem[]> & { pagination: { total: number } }>(
+      "/admin/notifications",
+      { params }
+    ),
+  /** 详情 */
+  detail: (id: number) =>
+    request.get<any, ApiResponse<NotificationItem>>(`/admin/notifications/${id}`),
+  /** 创建 */
+  create: (data: Partial<NotificationItem>) =>
+    request.post<any, ApiResponse<NotificationItem>>("/admin/notifications", data),
+  /** 更新 */
+  update: (id: number, data: Partial<NotificationItem>) =>
+    request.put<any, ApiResponse<NotificationItem>>(`/admin/notifications/${id}`, data),
+  /** 删除 */
+  remove: (id: number) =>
+    request.delete<any, ApiResponse>(`/admin/notifications/${id}`),
+  /** 启停（翻转 is_active） */
+  toggle: (id: number) =>
+    request.post<any, ApiResponse<NotificationItem>>(`/admin/notifications/${id}/toggle`),
+};
+
 /** 用户信息（统一类型，定义在 @/types/user） */
 export type { User } from "@/types/user";
 
