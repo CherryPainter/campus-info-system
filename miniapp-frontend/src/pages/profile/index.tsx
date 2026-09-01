@@ -196,7 +196,7 @@ export default function ProfilePage() {
   return (
     <View
       className="page profile-page"
-      style={{ paddingTop: `${statusBarHeight + 44}px` }}
+      style={{ paddingTop: `${statusBarHeight}px` }}
     >
       {/* 顶部 hero 区：承载头像/姓名/操作，自定义背景主题只作用于这块 */}
       <View className={`profile-hero bg-${profile?.profile_bg || 'default'}`}>
