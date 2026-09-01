@@ -85,9 +85,8 @@
       gap: $spacing-sm;
     }
 
-    .profile-msg,
-    .profile-more {
-      position: relative;
+    .profile-qr,
+    .profile-msg {
       width: 56rpx;
       height: 56rpx;
       border-radius: 50%;
@@ -98,8 +97,13 @@
       justify-content: center;
     }
 
-    .profile-msg-icon,
-    .profile-more-icon {
+    // 消息图标需相对定位以承载右上角未读角标
+    .profile-msg {
+      position: relative;
+    }
+
+    .profile-qr-icon,
+    .profile-msg-icon {
       font-size: 36rpx;
       color: $text-secondary;
       line-height: 1;
@@ -127,10 +131,6 @@
         line-height: 1;
         font-weight: 600;
       }
-    }
-
-    .profile-more-icon {
-      font-size: 40rpx;
     }
   }
 }

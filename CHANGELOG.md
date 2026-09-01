@@ -24,6 +24,21 @@
   - `CampusCard` prop 由 `studentNumber` 改为 `cardNumber`，展示 `campus_card_number`；未绑定显示「未绑定校园卡号」（弱化样式）；资料编辑页新增「校园卡号」输入行（提示"一卡通号，非学号"）。
 - **验证**：后端冒烟 9 项全过（校园卡号写入/回读/清空、unread-count、messages 附带公告、全部已读联动、造已发布测试公告 → 未读+1 → 消息列表携带 → 全部已读清零 → 已读不再出现 → 物理清理）；前端 `tsc --noEmit` 0 错误、`build:weapp` 成功。
 
+### 修正：「我的」页顶部消息图标位置（2026-09-01）
+- **背景**：上一版误把消息图标替换到顶部**二维码**位置（用户原意是替换**二维码下面**那个图标功能）。本次按用户澄清修正：二维码保留在原位（首位），消息图标移到原「更多」图标位置（二维码下方），依旧带未读角标；同时删除原「更多」ActionSheet（设置/帮助反馈/关于/退出登录的入口在功能列表/底部按钮已有对应覆盖）。
+- **改动**（`miniapp-frontend/src/pages/profile/index.tsx` + `index.scss`）：
+  - JSX：`profile-header-actions` 改为 `profile-qr`（上，`icon-erweima` + `Taro.showToast({title:'二维码开发中'})`） + `profile-msg`（下，带 `profile-msg-badge` 角标，跳 `/pages/messages/index`）。
+  - SCSS：恢复 `.profile-qr` 圆钮样式；`.profile-msg` 加 `position: relative` 承载角标；移除已无引用的 `.profile-more` / `.profile-more-icon` 选择器。
+- **验证**：`tsc --noEmit` 0 错误；`build:weapp` 成功。
+
+### 修正：低电量提醒「充值方式」文案（2026-09-01）
+- **背景**：低电量站内通知模板（`ElectricityFormatter.format_low_power_alert`）旧文案为「关注重庆工程学院公众号 → 智慧校园 - 电费缴纳 → 选择宿舍号进行充值」——学校名错误（应为重庆科创职业学院）、菜单路径错误（实为注册缴费 → 宿舍电费 → 绑定宿舍 → 点击充值缴费）。截图（用户推送卡片）确认推送内容错误，已影响 2026-09-01 20:00 触达学生。
+- **改动**（`app/modules/electricity/formatter.py`，单文件单点）：将 159-162 行三步文案改为：
+  1. 打开「重庆科创职业学院」微信公众号
+  2. 注册缴费 → 宿舍电费 → 绑定宿舍
+  3. 点击充值缴费
+- **未改**：cookie 抓包路径（用户确认沿用同一公众号路径 → 用抓包工具点开用量记录 → 抓 dk.cqie.cn 发送请求的 cookie）；本轮不调整相关文档/UI 提示，保持最小改动。
+
 ### 修复：小程序电表 Cookie 保存/测试被 XSS 中间件误判拦截（2026-09-01）
 - **背景**：小程序「电表配置」页保存/测试 Cookie 报 `PUT /api/miniapp/electricity/cookie 400 (BAD REQUEST)`。日志定位为安全中间件 `Blocked xss attack: XSS in JSON field "cookie"`：XSS 模式 `on\w+\s*=\s*["\']?[^"\'>]+["\']?`（本意拦截 `onclick=` 等 DOM 事件属性）会把 Cookie 中任何以 `on` 开头的正常键值对（如 `online=1`、`onetime=...`）误判为 XSS，`scan_request_for_attacks()` 在路由执行前直接返回 400「Bad Request」（已用 `detect_xss` 实测复现）。此前管理端全局 Cookie 接口（7-20）能保存成功只是因为当时的 Cookie 内容恰好不触发。
 - **修复**（`app/utils/security.py`，最小改动单点处理）：新增 `JSON_SCAN_EXEMPT_FIELDS`（method, path, key 三元组）字段级扫描豁免，对 `PUT /api/miniapp/electricity/cookie` 与 `POST /api/miniapp/electricity/cookie/test` 的 `cookie` 字段跳过 SQL/XSS 检测。豁免依据：该字段是学生爬虫鉴权凭证，仅存库 + 服务端转发给教务系统，`GET` 只返回脱敏预览（前4后2），绝不回显页面，SQL/XSS 检测不适用；且两接口均有 `@student_required` 认证（仅本人可读写）。全局攻击扫描不受影响，其它路径/字段行为不变。

@@ -19,7 +19,7 @@ import './index.scss';
 /**
  * 我的页（按原型图重做）
  * 结构（自上而下）：
- * - 顶部资料头部（大头像 + 姓名 + 专业年级 + 右上消息/二维码…/更多）
+ * - 顶部资料头部（大头像 + 姓名 + 专业年级 + 右上二维码/消息）
  * - 校园卡（蓝卡，展示校园卡号，占位：后端无接口）
  * - 宿舍用电（剩余 + 本月已用，两列）
  * - 功能列表（我的消息/我的课表/收藏/反馈/设置/退出登录）
@@ -185,36 +185,6 @@ export default function ProfilePage() {
     });
   };
 
-  const handleMore = () => {
-    Taro.showActionSheet({
-      itemList: ['设置', '帮助反馈', '关于', '退出登录'],
-      success: (res) => {
-        if (res.tapIndex === 0) {
-          Taro.navigateTo({ url: '/pages/settings/index' });
-          return;
-        }
-        if (res.tapIndex === 1) {
-          Taro.navigateTo({ url: '/pages/feedback/submit/index' });
-          return;
-        }
-        if (res.tapIndex === 2) {
-          Taro.showModal({
-            title: '关于',
-            content: '校园宜知行 · 校园信息聚合与智能推送系统\n微信小程序客户端',
-            showCancel: false,
-          });
-          return;
-        }
-        handleLogout();
-      },
-      // 用户点「取消」或点空白关闭属正常操作，静默忽略，避免抛未捕获异常
-      fail: (err) => {
-        if (err?.errMsg?.includes('cancel')) return;
-        // 其它异常按需上报，这里不打扰用户
-      },
-    });
-  };
-
   // 展示名优先级：昵称 → 真实姓名 → 用户名 → 兜底
   const name = profile?.nickname || profile?.real_name || user?.username || '同学';
   const majorGrade = [profile?.major, profile?.grade ? `${profile.grade}级` : '']
@@ -243,7 +213,14 @@ export default function ProfilePage() {
             {majorGrade ? <Text className="profile-sub">{majorGrade}</Text> : null}
           </View>
           <View className="profile-header-actions">
-            {/* 消息入口（替换原二维码占位）：点击进「我的消息」，右上角红点显示未读数 */}
+            {/* 二维码（保留在上方） */}
+            <View
+              className="profile-qr"
+              onClick={() => Taro.showToast({ title: '二维码开发中', icon: 'none' })}
+            >
+              <Text className="iconfont icon-erweima profile-qr-icon" />
+            </View>
+            {/* 消息入口（替换原「更多」图标位置）：点击进「我的消息」，右上角红点显示未读数 */}
             <View
               className="profile-msg"
               onClick={() => Taro.navigateTo({ url: '/pages/messages/index' })}
@@ -254,9 +231,6 @@ export default function ProfilePage() {
                   <Text className="profile-msg-badge-num">{msgUnread > 99 ? '99+' : msgUnread}</Text>
                 </View>
               )}
-            </View>
-            <View className="profile-more" onClick={handleMore}>
-              <Text className="iconfont icon-more profile-more-icon" />
             </View>
           </View>
         </View>
