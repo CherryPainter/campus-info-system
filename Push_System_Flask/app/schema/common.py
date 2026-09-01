@@ -52,6 +52,12 @@ ALL_TABLES = [
     ('announcement_attachments',     '通知附件',                'AnnouncementAttachment'),
     ('announcement_reads',           '通知已读记录',            'AnnouncementRead'),
     ('announcement_favorites',       '通知收藏记录',            'AnnouncementFavorite'),
+    ('holiday_periods',              '节假日周期',              'HolidayPeriod'),
+    ('notifications',                '站内通知',                'Notification'),
+    ('student_profiles',             '学生资料',                'StudentProfile'),
+    ('wechat_accounts',              '微信账号',                'WechatAccount'),
+    ('feedbacks',                    '意见与反馈',              'Feedback'),
+    ('user_notifications',           '用户站内通知',            'UserNotification'),
 ]
 
 def _ensure_db():
@@ -64,6 +70,12 @@ def _ensure_db():
 def _import_all_models():
     """导入所有模型，确保 Base.metadata 包含全部表"""
     from app.core.database import Base
+
+    # 关键：必须真正导入 app.model 包，触发全部模型类注册进 Base.metadata。
+    # 之前只 import Base 不导入模型，手动执行 init_db.py migrate/check 时
+    # metadata 为空（0 张表），迁移/指纹比对全部失效。
+    import app.model  # noqa: F401
+
     return Base
 
 

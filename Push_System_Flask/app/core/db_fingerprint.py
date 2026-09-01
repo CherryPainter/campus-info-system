@@ -86,13 +86,16 @@ def _col_desc(type_str: str, nullable: bool, pk: bool) -> str:
 
 
 def _ensure_all_models():
-    """导入全部模型，确保 Base.metadata 包含全部 20 张表。
+    """导入全部模型，确保 Base.metadata 包含全部表。
 
-    与 init_db._import_all_models 保持一致的导入清单（电量/天气等子模块模型
-    不会经 `from app import model` 自动注册，必须显式导入，否则定义码会漏表）。
+    与 init_db._import_all_models 保持一致的导入方式：真正 import app.model 包，
+    触发全部模型类注册进 Base.metadata（电量/天气等子模块模型不会经
+    `from app import model` 自动注册，必须显式导入，否则定义码会漏表）。
     不直接 import init_db，避免 `python init_db.py` 以 __main__ 运行时产生循环/重复导入。
     """
     from app.core.database import Base
+
+    import app.model  # noqa: F401
 
     return Base
 

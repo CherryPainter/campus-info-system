@@ -24,6 +24,14 @@
 - **管理端**：`Electricity.tsx` 模块配置 Tab 移除「爬虫 Cookie」表单，改为提示"Cookie 由学生在小程序自配"+ 展示已配置学生数；`admin.ts` 删除已废弃的 `updateElectricityCookie`；Dashboard 电量模块状态由 "Cookie: 已配置/未配置" 改为 "已配置: N 人"。
 - 验证：后端 `py_compile` 通过；小程序 `build:weapp:clean` 编译成功；管理端 `vite build` 成功。
 
+### 数据库工具修复：手动 init_db 命令失效（2026-09-01）
+- **背景**：排查新表迁移时发现 `_import_all_models()` / `_ensure_all_models()` 是空壳——只 `from app.core.database import Base` 并返回，从未真正导入 `app.model`（docstring 与实现不符）。后果：手动执行 `python init_db.py migrate` 时 `Base.metadata` 为空（0 张表），迁移恒判定"所有表已存在"什么都不做；`fingerprint/check` 定义侧 schema 恒空，所有实例表被判为"多余表"，`cleanup` 甚至可能建议 DROP 全部表。生产此前未受影响是因为启动路径（`bootstrap.py` 导入模型）metadata 完整，自动迁移正常——即"重启后端=自动迁移"一直有效，手动命令从未真正生效。
+- **修复**：
+  - `app/schema/common.py` 的 `_import_all_models()` 与 `app/core/db_fingerprint.py` 的 `_ensure_all_models()` 补上 `import app.model`（触发全部模型注册进 `Base.metadata`）。
+  - `app/model/__init__.py` 补注册 3 个此前遗漏的模型：`IPBlacklist` / `IPSecurityEvent`（ip_blacklist 相关）与 `ServerSession`（server_sessions）——否则指纹比对会把这三张生产表误判为"多余表"。
+  - `app/schema/common.py::ALL_TABLES` 补全 6 张新表（holiday_periods / notifications / student_profiles / wechat_accounts / feedbacks / user_notifications）；`init_db.py` HELP_TEXT 更新为 29 张表（并移除不存在的 `course_weeks`）。
+- **验证**：两个导入入口均识别 29 张表且集合一致；本地执行 `python init_db.py status` 精准报出缺失表/列；`migrate` 成功建 `user_notifications` 表、补电量三表 `user_id` 列与索引、补 `student_profiles.electricity_cookie` 列（8 处变更）；`check` 返回 [OK] 一致 exit 0。
+
 ### 管理端用户管理：微信端 / 网页端分流（2026-09-01）
 - **背景**：微信端小程序学生用户（`role=student`，openid 登录）与网页端用户（`admin`/`user`，账号密码 + MFA 登录）是两套认证体系；微信端无账号密码、无 MFA 概念（`password_hash` 为随机 bcrypt 占位哈希，密码登录路径天然关闭）。
 - **后端**（`app/api/admin_user_routes.py`）：

@@ -71,13 +71,15 @@ HELP_TEXT = f"""
   {Style.info('check')}       静默比对模式：一致 exit 0，不一致 exit 1（CI/脚本用）
   {Style.info('cleanup')}     清理数据库多余项：额外表/列/配置键 + 安全类型变更自动修正
 
-覆盖 20 张表:
+覆盖 29 张表:
   users, token_blacklist, user_mfa, login_logs, module_configs,
-  courses, course_weeks, custom_pushes, task_processes,
-  scheduled_crawl_tasks, push_task_queue,
-  weather_records, weather_alerts, electricity_records,
-  electricity_remaining, electricity_total_capacity, webhooks,
-  server_sessions, ip_blacklist, ip_security_events
+  courses, custom_pushes, task_processes, scheduled_crawl_tasks,
+  push_task_queue, weather_records, weather_alerts,
+  electricity_records, electricity_remaining, electricity_total_capacity,
+  webhooks, server_sessions, ip_blacklist, ip_security_events,
+  announcements, announcement_attachments, announcement_reads,
+  announcement_favorites, holiday_periods, notifications,
+  student_profiles, wechat_accounts, feedbacks, user_notifications
 
 环境变量:
   DATABASE_HOST / DATABASE_PORT / DATABASE_USER
