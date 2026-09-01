@@ -11,39 +11,10 @@
   padding-bottom: calc(108rpx + env(safe-area-inset-bottom));
 }
 
-// 顶部 hero 区：自定义背景主题只染这块（资料头部 + 适当留白）
-// 预设主题采用浅色渐变，保证深色文字可读
+// 顶部 hero 区：资料头部 + 校园卡
 .profile-hero {
   position: relative;
   padding: 0 $spacing-lg $spacing-lg;
-
-  &.bg-default {
-    background:
-      radial-gradient(
-        circle at 18% 0%,
-        rgba(122, 167, 255, 0.32) 0%,
-        rgba(122, 167, 255, 0.18) 30%,
-        rgba(122, 167, 255, 0.08) 55%,
-        rgba(122, 167, 255, 0) 75%
-      ),
-      $background;
-  }
-
-  &.bg-sunset {
-    background: linear-gradient(180deg, #ffe0c2 0%, #ffd0e8 42%, $background 78%);
-  }
-
-  &.bg-ocean {
-    background: linear-gradient(180deg, #bfe0ff 0%, #d6f0ff 44%, $background 78%);
-  }
-
-  &.bg-forest {
-    background: linear-gradient(180deg, #d3ecd0 0%, #e8f5e0 44%, $background 78%);
-  }
-
-  &.bg-night {
-    background: linear-gradient(180deg, #cdd6f0 0%, #e6e9f8 46%, $background 80%);
-  }
 
   // 资料头部（hero 内部子元素，保持嵌套）
   .profile-header {

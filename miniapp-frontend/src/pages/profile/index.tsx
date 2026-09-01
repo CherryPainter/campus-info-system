@@ -198,8 +198,8 @@ export default function ProfilePage() {
       className="page profile-page"
       style={{ paddingTop: `${statusBarHeight}px` }}
     >
-      {/* 顶部 hero 区：承载头像/姓名/操作，自定义背景主题只作用于这块 */}
-      <View className={`profile-hero bg-${profile?.profile_bg || 'default'}`}>
+      {/* 顶部 hero 区：承载头像/姓名/操作 */}
+      <View className="profile-hero">
         <View className="profile-header">
           {user?.avatar ? (
             <Image src={user.avatar} className="profile-avatar" mode="aspectFill" />

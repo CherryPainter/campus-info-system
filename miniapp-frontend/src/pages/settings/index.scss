@@ -87,42 +87,6 @@
   font-weight: 500;
 }
 
-/* 背景预设选择 */
-.set-bg-list {
-  display: flex;
-  justify-content: space-between;
-  padding: $spacing-md $spacing-lg $spacing-lg;
-}
-
-.set-bg-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: $spacing-xs;
-}
-
-.set-bg-swatch {
-  width: 88rpx;
-  height: 88rpx;
-  border-radius: $radius-medium;
-  border: 4rpx solid transparent;
-  box-sizing: border-box;
-}
-
-.set-bg-item-active .set-bg-swatch {
-  border-color: $primary-color;
-}
-
-.set-bg-name {
-  font-size: $font-size-xs;
-  color: $text-secondary;
-
-  .set-bg-item-active & {
-    color: $primary-color;
-    font-weight: 500;
-  }
-}
-
 /* 通用条目（清除缓存 / 关于） */
 .set-cell {
   display: flex;

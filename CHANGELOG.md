@@ -8,13 +8,14 @@
 
 > 类型：**功能重构（未发版）**。消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）。
 
-### 小程序设置页（账号设置 + 我的页背景 + 通用）
-- **后端数据模型**：`student_profiles` 新增 `nickname`（昵称，展示名优先于真实姓名）与 `profile_bg`（我的页背景预设）两列，启动指纹迁移自动补列，不破坏现有表结构。
-- **后端接口**：`PUT /api/miniapp/student/profile` 白名单扩展 `nickname` / `profile_bg` 两字段，其中 `profile_bg` 仅接受 `default/sunset/ocean/forest/night` 预设 key（白名单校验，防任意字符串注入样式类）；新增 `PUT /api/miniapp/user/avatar`（`@student_required`）——data URI 形式，复用管理端 `validate_avatar_data_uri` 校验（MIME 白名单显式拒绝 SVG / 文件头 Magic Bytes 防伪造 / 解码后 2MB 上限），学生端不套用管理端「一年 3 次」修改配额，成功落 `users.avatar` 并返回最新用户信息。
-- **小程序端设置页**：新增 `pages/settings/index`（`app.config.ts` 注册）——账号设置（头像 / 昵称 / 学号 / 班级，行内编辑失焦自动保存）、我的页面背景（5 套预设主题色块，切换写入 `profile_bg` 并同步 store）、通用（清除缓存 / 关于 / 退出登录）。
-- **「我的」页接线**：左侧「设置」列表项与右上「更多」弹层首项（原「消息设置」占位改为「设置」）统一跳转设置页，两处「功能开发中」占位消除；展示名优先级改为 昵称 → 真实姓名 → 用户名 → 兜底；页面按 `profile_bg` 套用背景预设渐变（浅色系渐变保证深色文字可读）。
+### 小程序设置页（账号设置 + 通用）
+- **后端数据模型**：`student_profiles` 新增 `nickname`（昵称，展示名优先于真实姓名）列，启动指纹迁移自动补列，不破坏现有表结构。
+- **后端接口**：`PUT /api/miniapp/student/profile` 白名单扩展 `nickname` 字段；新增 `PUT /api/miniapp/user/avatar`（`@student_required`）——data URI 形式，复用管理端 `validate_avatar_data_uri` 校验（MIME 白名单显式拒绝 SVG / 文件头 Magic Bytes 防伪造 / 解码后 2MB 上限），学生端不套用管理端「一年 3 次」修改配额，成功落 `users.avatar` 并返回最新用户信息。
+- **小程序端设置页**：新增 `pages/settings/index`（`app.config.ts` 注册）——账号设置（头像 / 昵称 / 学号 / 班级，行内编辑失焦自动保存）、通用（清除缓存 / 关于 / 退出登录）。
+- **「我的」页接线**：左侧「设置」列表项与右上「更多」弹层首项（原「消息设置」占位改为「设置」）统一跳转设置页，两处「功能开发中」占位消除；展示名优先级改为 昵称 → 真实姓名 → 用户名 → 兜底。
 - **清除缓存边界**：仅清 `feedback.viewedStatus`（反馈红点已读状态）与 `miniapp.user`（学生资料缓存）及内存共享红点计数，保留 `miniapp.auth` 登录态不清登。
-- 验证：后端 `py_compile` 通过；小程序 `build:weapp:clean` 编译成功（无类型错误）。
+- **移除「我的页背景」功能（2026-09-01 用户确认砍掉）**：删除 `student_profiles.profile_bg` 列定义、`PUT` 白名单中 `profile_bg` 及预设 key 白名单校验、设置页背景预设区块、`profile` 页 hero 的 `bg-*` 渐变主题；`student_profiles` 表残留的 `profile_bg` 列不参与任何读写（指纹迁移只补不删，如需彻底删除可在数据库手工 `ALTER TABLE student_profiles DROP COLUMN profile_bg`）。
+- 验证：后端 `py_compile` 通过；小程序 `build:weapp:clean` 编译成功（无类型错误，dist 无 `bg-*`/`profile_bg` 残留）。
 
 ### 消息中心三合一重构（管理端）
 - **列表页合并**：新增 `src/pages/Messages.tsx`，一个页面用 Tab 切换「公告 / 推送」两种消息，顶部统计卡片（通知总数 / 已发布 / 推送记录 / 待发送）复用原 `Announcements` + `Push` 列表逻辑，统一 dataSource / columns 断言解决两种类型不兼容；编辑跳转 `/messages/edit/:id?type=announcement|push`，支持从 URL 读取初始 Tab。

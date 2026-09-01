@@ -13,18 +13,8 @@ import './index.scss';
  * 设置页
  * 结构（自上而下）：
  * - 账号设置（头像 / 昵称 / 学号 / 班级）
- * - 我的页面背景（预设渐变主题）
  * - 通用（清除缓存 / 关于 / 退出登录）
  */
-
-/** 我的页背景预设（key 与后端白名单一致，渐变用于设置页色块预览） */
-const BG_PRESETS: { key: string; name: string; gradient: string }[] = [
-  { key: 'default', name: '默认', gradient: 'radial-gradient(circle at 30% 0%, rgba(122,167,255,0.4) 0%, rgba(122,167,255,0.12) 60%, rgba(122,167,255,0) 78%)' },
-  { key: 'sunset', name: '落日', gradient: 'linear-gradient(135deg, #ffe0c2 0%, #ffd0e8 100%)' },
-  { key: 'ocean', name: '海洋', gradient: 'linear-gradient(135deg, #bfe0ff 0%, #d6f0ff 100%)' },
-  { key: 'forest', name: '森林', gradient: 'linear-gradient(135deg, #d3ecd0 0%, #e8f5e0 100%)' },
-  { key: 'night', name: '夜空', gradient: 'linear-gradient(135deg, #cdd6f0 0%, #e6e9f8 100%)' },
-];
 
 const FIELD_MAXLEN: Record<string, number> = {
   nickname: 20,
@@ -92,19 +82,6 @@ export default function SettingsPage() {
       Taro.showToast({ title: msg, icon: 'none' });
     } finally {
       Taro.hideLoading();
-    }
-  };
-
-  /** 切换我的页背景主题 */
-  const chooseBg = async (key: string) => {
-    if (profile?.profile_bg === key) return;
-    try {
-      const res = await userApi.updateProfile({ profile_bg: key });
-      setProfile(res.profile);
-      Taro.showToast({ title: '背景已更换', icon: 'success' });
-    } catch (e) {
-      const msg = (e as { message?: string })?.message || '切换失败，请重试';
-      Taro.showToast({ title: msg, icon: 'none' });
     }
   };
 
@@ -206,23 +183,6 @@ export default function SettingsPage() {
             maxlength={FIELD_MAXLEN.class_name}
             onBlur={(e) => saveField('class_name', e.detail.value)}
           />
-        </View>
-      </View>
-
-      {/* 我的页面背景 */}
-      <Text className="set-card-title">我的页面背景</Text>
-      <View className="set-card" style={{ marginTop: '8rpx' }}>
-        <View className="set-bg-list">
-          {BG_PRESETS.map((preset) => (
-            <View
-              key={preset.key}
-              className={`set-bg-item${profile?.profile_bg === preset.key ? ' set-bg-item-active' : ''}`}
-              onClick={() => chooseBg(preset.key)}
-            >
-              <View className="set-bg-swatch" style={{ background: preset.gradient }} />
-              <Text className="set-bg-name">{preset.name}</Text>
-            </View>
-          ))}
         </View>
       </View>
 

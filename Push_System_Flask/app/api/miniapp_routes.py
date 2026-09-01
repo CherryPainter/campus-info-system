@@ -106,8 +106,7 @@ def update_profile():
             "major": "专业",
             "class_name": "班级",
             "grade": "年级",
-            "phone": "手机号",
-            "profile_bg": "我的页背景预设（default/sunset/ocean/forest/night）"
+            "phone": "手机号"
         }
     """
     from app.core.database import get_db
@@ -125,17 +124,12 @@ def update_profile():
         "class_name",
         "grade",
         "phone",
-        "profile_bg",
     }
-    # 我的页背景预设白名单：仅接受已知 key，防止任意字符串注入样式类
-    profile_bg_whitelist = {"default", "sunset", "ocean", "forest", "night"}
     updates = {
         k: (str(v).strip() if v is not None else None)
         for k, v in data.items()
         if k in allowed_fields and isinstance(v, (str, int))
     }
-    if "profile_bg" in updates and updates["profile_bg"] not in profile_bg_whitelist:
-        return api_error(message="不支持的背景主题", http_status=400)
     if not updates:
         return api_error(message="没有可更新的字段", http_status=400)
 

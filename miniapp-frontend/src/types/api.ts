@@ -50,7 +50,6 @@ export interface StudentProfile {
   class_name: string | null;
   grade: string | null;
   phone: string | null;
-  profile_bg: string;
   created_at: string | null;
   updated_at: string | null;
 }
