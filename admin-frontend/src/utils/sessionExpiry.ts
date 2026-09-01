@@ -1,20 +1,27 @@
 /**
- * 会话失效统一弹框工具
+ * 会话失效统一处理工具
  *
  * 当用户会话因以下原因失效时，由 request 拦截器（401）或首页心跳（/auth/session/status）
- * 调用本模块，弹出“仅确认”警告框，并在用户点确认后跳登录页：
+ * 调用本模块，直接将页面跳转到登录页（无需用户手动点击确认、也无需手动刷新浏览器）：
  *  - new_login    ：账号已在其他设备登录（附带踢人设备 IP）
  *  - expired      ：会话自然过期
  *  - admin_revoke ：被管理员强制下线
  *  - logout       ：在其他位置主动登出
  *  - unknown      ：其他原因
  *
- * 用模块级 shown 标志保证同一页面生命周期内只弹一次，避免 401 / 心跳 / 多请求并发重复弹框。
+ * 用模块级 shown 标志保证同一页面生命周期内只触发一次跳转，避免 401 / 心跳 / 多请求并发重复跳转。
+ * 失效原因写入 sessionStorage，供登录页挂载时兜底再提示一次“为何被登出”。
  */
 import { Modal } from "antd";
 
 export type SessionRevokeReason =
-  "new_login" | "expired" | "admin_revoke" | "logout" | "unknown" | "no_session" | string;
+  | "new_login"
+  | "expired"
+  | "admin_revoke"
+  | "logout"
+  | "unknown"
+  | "no_session"
+  | string;
 
 export interface SessionExpiryDetail {
   reason?: SessionRevokeReason;
@@ -43,25 +50,37 @@ function buildMessage(detail?: SessionExpiryDetail): string {
 }
 
 /**
- * 弹出会话失效警告框（仅“确认”按钮），点确认后跳登录页。
- * 同时把最终文案写入 sessionStorage，供登录页挂载时兜底再提示一次。
+ * 触发会话失效跳转：直接 replace 到登录页，停留不超 1.8s 让用户看清原因。
+ * 跳转每次都执行（不依赖 shown 标志），确保任何一次 401 / 心跳失效都能落地跳登录页；
+ * 弹窗仅展示一次，避免并发请求重复弹框。失效原因写入 sessionStorage，供登录页兜底提示。
  */
 export function notifySessionExpired(detail?: SessionExpiryDetail): void {
-  if (shown) return;
-  shown = true;
-
   const msg = buildMessage(detail);
 
+  // 兜底：写入 sessionStorage，供登录页挂载时再提示一次“为何被登出”
+  try {
+    sessionStorage.setItem("session_expired_reason", msg);
+  } catch {
+    /* 隐私模式等不可用时忽略 */
+  }
+
+  // 跳转每次都执行：即使用户不点“重新登录”，也定时回到登录页，
+  // 避免停留在已失效会话页面、点啥都无反应（无需手动刷新感知）。
+  window.setTimeout(() => {
+    window.location.replace("/login");
+  }, 1800);
+
+  // 弹窗仅展示一次（shown 只控制弹窗，不控制跳转）
+  if (shown) return;
+  shown = true;
   Modal.warning({
     title: "登录会话已失效",
     content: msg,
-    okText: "确认",
+    okText: "重新登录",
     centered: true,
     closable: false,
     onOk: () => {
-      // 用 replace 替换当前业务页，避免历史栈堆叠 /login 条目：
-      // 会话已失效的页面留在历史里只会让手机左滑返回手势又回到这里，
-      // replace 后左滑可直接退到更早的页面（甚至站外）。
+      // replace 避免失效页残留在历史栈（左滑返回又回到已失效页）
       window.location.replace("/login");
     },
   });

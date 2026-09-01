@@ -2,7 +2,7 @@
  * 登录页面
  * 使用5张云科技风格背景图，每次打开随机显示一张
  */
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Form, Input, Button, Card, Typography, Modal, Divider, Space, App, Checkbox, Alert } from "antd";
 import {
@@ -63,6 +63,7 @@ export default function Login() {
   const [mfaCode, setMfaCode] = useState("");
   const [mfaLoading, setMfaLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [sessionExpiredMsg, setSessionExpiredMsg] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
   const [form] = Form.useForm();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,6 +71,20 @@ export default function Login() {
 
   // 随机选择一张背景图（组件挂载时只执行一次）
   const randomBg = useRandomBackground();
+
+  // 会话失效兜底提示：request 拦截器 / 心跳在跳登录页前会把失效原因写入
+  // sessionStorage，这里读取并展示，随后清除，避免重复提示。
+  useEffect(() => {
+    try {
+      const reason = sessionStorage.getItem("session_expired_reason");
+      if (reason) {
+        setSessionExpiredMsg(reason);
+        sessionStorage.removeItem("session_expired_reason");
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }, []);
   // 是否有可返回的上一页：仅用于"栈底提示条"判断（直达登录页/微信内打开时
   // 左滑手势在栈底只会刷新页面，提示用户没有上一页可退）。
   const [canGoBack] = useState(() => window.history.length > 1);
@@ -286,6 +301,18 @@ export default function Login() {
               管理后台登录
             </Text>
           </div>
+
+          {/* 会话失效兜底提示（request 拦截器 / 心跳自动跳登录页时已写入原因） */}
+          {sessionExpiredMsg && (
+            <Alert
+              type="warning"
+              showIcon
+              closable
+              style={{ marginBottom: 16, textAlign: "left" }}
+              message="登录会话已失效"
+              description={sessionExpiredMsg}
+            />
+          )}
 
           {/* 错误提示 - 左对齐显示 */}
           {errorMessage && (

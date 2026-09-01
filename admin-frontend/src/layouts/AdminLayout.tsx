@@ -34,7 +34,8 @@ export default function AdminLayout() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const { user, loading: userLoading, isAdmin, logout: userLogout } = useUser();
-  const { unresolved: feedbackUnresolved } = useFeedbackBadge();
+  // 侧边栏红点只数「待处理」：标记为「处理中」或「已解决」即从待处理移除，红点随之消除
+  const { pending: feedbackPending } = useFeedbackBadge();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md; // 小于 md(768px) 视为移动端
 
@@ -159,9 +160,9 @@ export default function AdminLayout() {
           }}
         >
           <span style={{ display: "inline-flex", alignItems: "center", minWidth: 0 }}>{dom}</span>
-          {item.path === "/feedback" && feedbackUnresolved > 0 && (
+          {item.path === "/feedback" && feedbackPending > 0 && (
             <Badge
-              count={feedbackUnresolved}
+              count={feedbackPending}
               size="small"
               style={{ backgroundColor: "#ff4d4f", marginRight: 4 }}
             />

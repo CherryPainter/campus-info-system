@@ -85,7 +85,7 @@ export default function FeedbackListPage() {
     <View className="fb-list-page">
       {!loading && loaded && list.length === 0 ? (
         <View className="fb-empty">
-          <Text className="fb-empty-icon">{'💬'}</Text>
+          <Text className="iconfont icon-yijianyufankui fb-empty-icon" />
           <Text className="fb-empty-title">还没有提交过反馈</Text>
           <Text className="fb-empty-tip">遇到问题或有建议？点击右下角「意见反馈」告诉我们</Text>
         </View>

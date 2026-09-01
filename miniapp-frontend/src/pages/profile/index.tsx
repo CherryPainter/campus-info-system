@@ -276,7 +276,7 @@ export default function ProfilePage() {
           onClick={() => Taro.navigateTo({ url: '/pages/favorites/index' })}
         >
           <View className="profile-item-icon-wrap">
-            <Text className="profile-item-icon profile-star-icon">{'\u2605'}</Text>
+            <Text className="profile-item-icon profile-star-icon">{'\u2606'}</Text>
           </View>
           <Text className="profile-label">我的收藏</Text>
           <Text className="profile-arrow">›</Text>

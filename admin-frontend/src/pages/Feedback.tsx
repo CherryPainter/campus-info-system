@@ -131,7 +131,8 @@ export default function FeedbackPage() {
         message.success(`已标记为「${STATUS_LABEL[status]}」`);
         setCurrent(res.data.feedback);
         fetchList(page);
-        refreshBadge(); // 立即更新侧边栏角标，无需等下一轮轮询
+        refreshBadge();
+        setDrawerOpen(false); // 处理后自动关闭详情抽屉
       } else {
         message.error(res.message || "操作失败");
       }
@@ -155,7 +156,8 @@ export default function FeedbackPage() {
         message.success("已回复并标记为已解决");
         setCurrent(res.data.feedback);
         fetchList(page);
-        refreshBadge(); // 立即更新侧边栏角标，无需等下一轮轮询
+        refreshBadge();
+        setDrawerOpen(false); // 回复后自动关闭详情抽屉
       } else {
         message.error(res.message || "回复失败");
       }
@@ -339,15 +341,20 @@ export default function FeedbackPage() {
               <div>
                 <Text strong>截图</Text>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-                  {current.images.map((url, i) => (
-                    <Image
-                      key={url + i}
-                      src={`/api/feedback-images${url.startsWith("/") ? url : "/" + url}`}
-                      width={100}
-                      height={100}
-                      style={{ borderRadius: 8, objectFit: "cover" }}
-                    />
-                  ))}
+                  {current.images.map((url, i) => {
+                    const imgSrc = url.startsWith("/api/")
+                      ? url
+                      : `/api/feedback-images${url.startsWith("/") ? url : "/" + url}`;
+                    return (
+                      <Image
+                        key={url + i}
+                        src={imgSrc}
+                        width={100}
+                        height={100}
+                        style={{ borderRadius: 8, objectFit: "cover" }}
+                      />
+                    );
+                  })}
                 </div>
               </div>
             ) : null}

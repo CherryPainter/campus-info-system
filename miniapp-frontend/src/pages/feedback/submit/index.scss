@@ -100,15 +100,15 @@
   border: 2rpx solid $border-color;
   border-radius: $radius-medium;
   background: #fafbfc;
-  padding: $spacing-sm $spacing-md;
+  padding: $spacing-md;
 }
 
 .fb-textarea {
   width: 100%;
-  min-height: 200rpx;
+  min-height: 320rpx;
   font-size: $font-size-md;
   color: $text-primary;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .fb-counter {
@@ -121,18 +121,20 @@
 
 .fb-placeholder {
   color: $text-tertiary;
+  line-height: 1.6;
 }
 
 /* 输入框 */
 .fb-input {
   width: 100%;
   box-sizing: border-box;
-  padding: $spacing-sm $spacing-md;
+  padding: $spacing-md;
   border: 2rpx solid $border-color;
   border-radius: $radius-medium;
   background: #fafbfc;
   font-size: $font-size-md;
   color: $text-primary;
+  height: 88rpx;
 }
 
 /* 截图网格 */
