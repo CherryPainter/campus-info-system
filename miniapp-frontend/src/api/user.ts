@@ -18,7 +18,7 @@ export function getProfile(): Promise<StudentProfileResult> {
 
 /** 更新本人学生资料（只传需要修改的字段） */
 export function updateProfile(
-  data: Partial<Pick<StudentProfile, 'student_number' | 'real_name' | 'nickname' | 'college' | 'major' | 'class_name' | 'grade' | 'phone'>>,
+  data: Partial<Pick<StudentProfile, 'student_number' | 'campus_card_number' | 'real_name' | 'nickname' | 'college' | 'major' | 'class_name' | 'grade' | 'phone'>>,
 ): Promise<StudentProfileResult> {
   return put<StudentProfileResult>('/api/miniapp/student/profile', data);
 }

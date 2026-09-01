@@ -6,7 +6,23 @@
 
 ## Unreleased
 
-> 类型：**功能重构（未发版）**。电量模块用户化改造：每个宿舍独立电表，爬虫 Cookie 改由学生在小程序自配（不再全局共享），数据按用户隔离存储，推送改为小程序站内通知（企业微信电量推送整体移除）；消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）；修复小程序电表 Cookie 保存/测试被 XSS 中间件误判拦截。
+> 类型：**功能重构（未发版）**。电量模块用户化改造：每个宿舍独立电表，爬虫 Cookie 改由学生在小程序自配（不再全局共享），数据按用户隔离存储，推送改为小程序站内通知（企业微信电量推送整体移除）；消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）；修复小程序电表 Cookie 保存/测试被 XSS 中间件误判拦截；「我的」页消息入口（替换二维码占位 + 未读角标 + 新公告提醒）；修复校园卡误用学号。
+
+### 「我的」页消息中心：入口整合 + 新公告提醒 + 校园卡号修复（2026-09-01）
+- **背景**：小程序「我的消息」此前仅从设置页进入，发现成本高；「我的」页顶部二维码图标为无功能占位（点击仅 toast「二维码开发中」）；消息列表只含电量类站内通知，新发布的校园公告（首页有卡片但无独立提醒）无法在消息里感知；校园卡卡片编号误用学号（`studentNumber` 直传 `profile.student_number`），而校园卡号（一卡通号）与学号不同。
+- **入口整合**（`miniapp-frontend/src/pages/profile/index.tsx` + `index.scss`）：
+  - 顶部右上角二维码占位替换为**消息图标**（`icon-tongzhi`），点击进「我的消息」；右上角红色角标显示未读总数（>99 显示 `99+`，样式自绘于 `profile-msg-badge`，白描边适配 hero 渐变背景）。
+  - 功能列表新增「我的消息」行（图标 + 未读角标，复用 `FeedbackBadge`），与顶部图标双入口，避免找不到。
+  - 未读数 = 站内通知未读 + 公告未读，每次进入/切回「我的」页经轻量接口刷新（`useLoad` + 非首次 `useDidShow`）。
+- **消息功能健全**（后端 `app/api/miniapp_routes.py`、`app/services/announcement_service.py`）：
+  - `GET /api/miniapp/notifications/messages` 首页附带 `announcements`（未读公告，置顶优先最多 5 条）+ `announcement_unread` + `total_unread`（翻页 `offset>0` 不再重复携带）。
+  - 新增轻量接口 `GET /api/miniapp/notifications/unread-count`：`{unread, announcement_unread, total}`，供「我的」页角标。
+  - `POST /api/miniapp/notifications/messages/read` 不传 id（全部已读）时联动 `announcement_service.mark_all_read(user_id)` 清空未读公告（新增方法：把当前可见公告全部写 `announcement_reads`），返回 `announcement_unread` / `total_unread`。
+  - 消息页 `pages/messages/index.tsx` 顶部新增「新公告」区块（置顶红标/分类蓝标 + 标题 + 部门 + 时间），点击进公告详情（详情页自动记已读）；从详情返回时 `useDidShow` 自动刷新区块；「全部已读」一次清空站内通知 + 公告。
+- **校园卡号修复**（后端 `app/model/student_profile.py`、`app/api/miniapp_routes.py`；前端 `CampusCard`、`profile-edit`）：
+  - `student_profiles` 新增 `campus_card_number` 列（指纹迁移自动加列，启动日志可见），`to_dict()` 输出；`PUT /api/miniapp/student/profile` 白名单加入该字段，且显式传 `null`/空串视为清空（存 NULL）。
+  - `CampusCard` prop 由 `studentNumber` 改为 `cardNumber`，展示 `campus_card_number`；未绑定显示「未绑定校园卡号」（弱化样式）；资料编辑页新增「校园卡号」输入行（提示"一卡通号，非学号"）。
+- **验证**：后端冒烟 9 项全过（校园卡号写入/回读/清空、unread-count、messages 附带公告、全部已读联动、造已发布测试公告 → 未读+1 → 消息列表携带 → 全部已读清零 → 已读不再出现 → 物理清理）；前端 `tsc --noEmit` 0 错误、`build:weapp` 成功。
 
 ### 修复：小程序电表 Cookie 保存/测试被 XSS 中间件误判拦截（2026-09-01）
 - **背景**：小程序「电表配置」页保存/测试 Cookie 报 `PUT /api/miniapp/electricity/cookie 400 (BAD REQUEST)`。日志定位为安全中间件 `Blocked xss attack: XSS in JSON field "cookie"`：XSS 模式 `on\w+\s*=\s*["\']?[^"\'>]+["\']?`（本意拦截 `onclick=` 等 DOM 事件属性）会把 Cookie 中任何以 `on` 开头的正常键值对（如 `online=1`、`onetime=...`）误判为 XSS，`scan_request_for_attacks()` 在路由执行前直接返回 400「Bad Request」（已用 `detect_xss` 实测复现）。此前管理端全局 Cookie 接口（7-20）能保存成功只是因为当时的 Cookie 内容恰好不触发。

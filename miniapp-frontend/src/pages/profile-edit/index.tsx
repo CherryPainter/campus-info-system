@@ -10,17 +10,18 @@ import './index.scss';
 const FIELD_MAXLEN: Record<string, number> = {
   nickname: 20,
   student_number: 30,
+  campus_card_number: 30,
   class_name: 30,
 };
 
-type FieldKey = 'nickname' | 'student_number' | 'class_name';
+type FieldKey = 'nickname' | 'student_number' | 'campus_card_number' | 'class_name';
 
 /**
  * 账号设置（独立页）
  * 设计：受控表单 + 显式保存按钮（不沿用之前"blur 即保存"的隐式提交，
  * 避免误触；保存按钮按下前所有改动只在本地预览，不写后端）。
  *
- * 提交策略：一次 updateProfile 提交三个字段（用户一次操作完成全部修改）。
+ * 提交策略：一次 updateProfile 提交全部字段（用户一次操作完成全部修改）。
  */
 export default function ProfileEditPage() {
   const { user, setUser } = useAuthStore();
@@ -30,6 +31,7 @@ export default function ProfileEditPage() {
   const [form, setForm] = useState<Record<FieldKey, string>>({
     nickname: '',
     student_number: '',
+    campus_card_number: '',
     class_name: '',
   });
   const [avatarSrc, setAvatarSrc] = useState<string | null>(user?.avatar || null);
@@ -41,6 +43,7 @@ export default function ProfileEditPage() {
     setForm((f) => ({
       nickname: f.nickname || profile.nickname || '',
       student_number: f.student_number || profile.student_number || '',
+      campus_card_number: f.campus_card_number || profile.campus_card_number || '',
       class_name: f.class_name || profile.class_name || '',
     }));
   }, [profile]);
@@ -76,12 +79,13 @@ export default function ProfileEditPage() {
     }
   };
 
-  /** 显式保存：trim 后三字段全提交；空字段提示并阻止提交 */
+  /** 显式保存：trim 后全字段提交；昵称/学号/班级必填 */
   const handleSave = async () => {
     if (saving) return;
     const payload = {
       nickname: (form.nickname || '').trim(),
       student_number: (form.student_number || '').trim(),
+      campus_card_number: (form.campus_card_number || '').trim(),
       class_name: (form.class_name || '').trim(),
     };
     if (!payload.nickname) {
@@ -150,6 +154,18 @@ export default function ProfileEditPage() {
             placeholderClass="pedit-row-placeholder"
             maxlength={FIELD_MAXLEN.student_number}
             onInput={(e) => setForm((f) => ({ ...f, student_number: e.detail.value }))}
+          />
+        </View>
+
+        <View className="pedit-row">
+          <Text className="pedit-row-label">校园卡号</Text>
+          <Input
+            className="pedit-row-input"
+            value={form.campus_card_number}
+            placeholder="填写校园卡号（一卡通号，非学号）"
+            placeholderClass="pedit-row-placeholder"
+            maxlength={FIELD_MAXLEN.campus_card_number}
+            onInput={(e) => setForm((f) => ({ ...f, campus_card_number: e.detail.value }))}
           />
         </View>
 

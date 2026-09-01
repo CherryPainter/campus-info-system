@@ -26,8 +26,9 @@
 - GET  /api/miniapp/electricity/cookie         电表 Cookie 配置状态（脱敏）
 - PUT  /api/miniapp/electricity/cookie         保存本人电表 Cookie
 - POST /api/miniapp/electricity/cookie/test    测试 Cookie 有效性
-- GET  /api/miniapp/notifications/messages     个人站内通知列表（电量日报/低电量/Cookie失效等）
-- POST /api/miniapp/notifications/messages/read 标记已读（指定或全部）
+- GET  /api/miniapp/notifications/messages     个人站内通知列表（含未读公告提醒）
+- POST /api/miniapp/notifications/messages/read 标记已读（指定或全部，全部联动清公告）
+- GET  /api/miniapp/notifications/unread-count 消息未读统计（站内通知+公告，角标用）
 - GET  /api/miniapp/notifications/upcoming     近期提醒（学校日历事件）
 - GET  /api/miniapp/notifications/all          全部未过期提醒
 - GET  /api/miniapp/announcements              校园通知列表（纯拉取）
@@ -107,6 +108,7 @@ def update_profile():
     请求体（全部可选，只更新传入字段）：
         {
             "student_number": "学号",
+            "campus_card_number": "校园卡号（一卡通号）",
             "real_name": "姓名",
             "nickname": "昵称",
             "college": "学院",
@@ -124,6 +126,7 @@ def update_profile():
 
     allowed_fields = {
         "student_number",
+        "campus_card_number",
         "real_name",
         "nickname",
         "college",
@@ -132,11 +135,12 @@ def update_profile():
         "grade",
         "phone",
     }
-    updates = {
-        k: (str(v).strip() if v is not None else None)
-        for k, v in data.items()
-        if k in allowed_fields and isinstance(v, (str, int))
-    }
+    updates = {}
+    for k, v in data.items():
+        if k not in allowed_fields or not (v is None or isinstance(v, (str, int))):
+            continue
+        # 显式传 null 或空串均视为清空该字段（存 NULL）
+        updates[k] = None if v is None else (str(v).strip() or None)
     if not updates:
         return api_error(message="没有可更新的字段", http_status=400)
 
@@ -655,6 +659,7 @@ def electricity_cookie_test():
 def user_notifications_list():
     """
     个人站内通知列表（电量日报/周报/月报、低电量提醒、Cookie 失效提醒等）
+    + 未读公告提醒（announcements 表中用户未读的已发布公告）
 
     查询参数：
         limit       (int, 可选): 每页条数，默认 20，上限 100
@@ -663,13 +668,17 @@ def user_notifications_list():
 
     返回：
         {
-          "notifications": [...],
-          "unread_count": <未读数>,
+          "notifications": [...],        # 个人站内通知（分页）
+          "announcements": [...],        # 未读公告（置顶优先，最多 5 条）
+          "unread_count": <站内通知未读数>,
+          "announcement_unread": <公告未读数>,
+          "total_unread": <两者之和（角标用）>,
           "offset": ...,
           "limit": ...
         }
     """
     from app.services.user_notification_service import user_notification_service
+    from app.services.announcement_service import announcement_service
 
     user_id = int(g.current_user["user_id"])
     limit = request.args.get("limit", type=int) or 20
@@ -682,10 +691,21 @@ def user_notifications_list():
         user_id, limit=limit, offset=offset, unread_only=unread_only
     )
     unread_count = user_notification_service.unread_count(user_id)
+    # 未读公告提醒：仅当拉取第一页时附带（分页翻页无需重复携带）
+    announcements, announcement_unread = [], 0
+    if offset == 0:
+        announcement_unread = announcement_service.unread_count(user_id)
+        if announcement_unread > 0:
+            announcements, _ = announcement_service.list_for_user(
+                user_id, page=1, page_size=5, only_unread=True
+            )
     return api_success(
         data={
             "notifications": notifications,
+            "announcements": announcements,
             "unread_count": unread_count,
+            "announcement_unread": announcement_unread,
+            "total_unread": unread_count + announcement_unread,
             "offset": offset,
             "limit": limit,
         }
@@ -699,12 +719,14 @@ def user_notifications_read():
     标记个人站内通知已读
 
     请求体：
-        { "id": int }   标记单条；不传 id 则全部标记已读
+        { "id": int }   标记单条；不传 id 则全部标记已读（联动清空未读公告）
 
     返回：
-        { "affected": <受影响条数>, "unread_count": <剩余未读数> }
+        { "affected": <受影响条数>, "unread_count": <剩余站内通知未读数>,
+          "announcement_unread": <剩余公告未读数>, "total_unread": <总未读数> }
     """
     from app.services.user_notification_service import user_notification_service
+    from app.services.announcement_service import announcement_service
 
     user_id = int(g.current_user["user_id"])
     data = request.get_json(silent=True) or {}
@@ -716,10 +738,47 @@ def user_notifications_read():
             return api_error(message="通知 ID 无效", http_status=400)
 
     affected = user_notification_service.mark_read(user_id, notification_id)
+    # 全部已读时联动清空未读公告（消息页「全部已读」语义 = 清空整个收件箱）
+    if notification_id is None:
+        announcement_service.mark_all_read(user_id)
     unread_count = user_notification_service.unread_count(user_id)
+    announcement_unread = announcement_service.unread_count(user_id)
     return api_success(
-        data={"affected": affected, "unread_count": unread_count},
+        data={
+            "affected": affected,
+            "unread_count": unread_count,
+            "announcement_unread": announcement_unread,
+            "total_unread": unread_count + announcement_unread,
+        },
         message="已标记已读",
+    )
+
+
+@miniapp_bp.route("/notifications/unread-count", methods=["GET"])
+@student_required
+def user_notifications_unread_count():
+    """
+    消息未读统计（「我的」页消息图标角标用）
+
+    返回：
+        {
+          "unread": <站内通知未读数>,
+          "announcement_unread": <公告未读数>,
+          "total": <两者之和>
+        }
+    """
+    from app.services.user_notification_service import user_notification_service
+    from app.services.announcement_service import announcement_service
+
+    user_id = int(g.current_user["user_id"])
+    unread = user_notification_service.unread_count(user_id)
+    announcement_unread = announcement_service.unread_count(user_id)
+    return api_success(
+        data={
+            "unread": unread,
+            "announcement_unread": announcement_unread,
+            "total": unread + announcement_unread,
+        }
     )
 
 

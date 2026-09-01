@@ -37,6 +37,7 @@ class StudentProfile(Base):
         comment="关联用户ID（1:1）",
     )
     student_number = Column(String(30), nullable=True, index=True, comment="学号")
+    campus_card_number = Column(String(30), nullable=True, comment="校园卡号（一卡通号，与学号不同，用于校园卡卡片展示）")
     real_name = Column(String(50), nullable=True, comment="真实姓名")
     nickname = Column(String(50), nullable=True, comment="昵称（展示名，优先于真实姓名）")
     college = Column(String(100), nullable=True, comment="学院")
@@ -57,6 +58,7 @@ class StudentProfile(Base):
         return {
             "user_id": self.user_id,
             "student_number": self.student_number,
+            "campus_card_number": self.campus_card_number,
             "real_name": self.real_name,
             "nickname": self.nickname,
             "college": self.college,

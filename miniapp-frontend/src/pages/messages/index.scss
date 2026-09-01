@@ -7,6 +7,89 @@
   box-sizing: border-box;
 }
 
+/* 新公告区块（未读公告提醒，点击进详情自动已读） */
+.msg-announce {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  padding: $spacing-md $spacing-lg;
+  margin-bottom: $spacing-md;
+
+  .msg-announce-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: $spacing-xs;
+  }
+
+  .msg-announce-title {
+    font-size: $font-size-md;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  .msg-announce-count {
+    font-size: $font-size-xs;
+    color: $text-tertiary;
+  }
+
+  .msg-announce-item {
+    padding: $spacing-sm 0;
+    border-bottom: 1rpx solid $border-color;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    .msg-announce-main {
+      display: flex;
+      align-items: center;
+      gap: $spacing-sm;
+    }
+
+    .msg-announce-tag {
+      flex-shrink: 0;
+      font-size: $font-size-xs;
+      padding: 2rpx 10rpx;
+      border-radius: $radius-small;
+      line-height: 1.5;
+
+      &.tag-top {
+        color: $error;
+        background: rgba(232, 56, 15, 0.08);
+      }
+
+      &.tag-cat {
+        color: $primary-color;
+        background: $primary-light;
+      }
+    }
+
+    .msg-announce-title-text {
+      flex: 1;
+      min-width: 0;
+      font-size: $font-size-sm;
+      color: $text-primary;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .msg-announce-meta {
+      display: flex;
+      align-items: center;
+      margin-top: $spacing-xs;
+      gap: $spacing-md;
+    }
+
+    .msg-announce-dept,
+    .msg-announce-time {
+      font-size: $font-size-xs;
+      color: $text-tertiary;
+    }
+  }
+}
+
 /* 头部：未读统计 + 全部已读 */
 .msg-head {
   display: flex;

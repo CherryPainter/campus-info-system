@@ -4,6 +4,7 @@ import Taro, { useLoad, useDidShow } from '@tarojs/taro';
 
 import * as electricityApi from '@/api/electricity';
 import * as userApi from '@/api/user';
+import * as notificationsApi from '@/api/notifications';
 import type { ElectricityCurrent, ElectricityRecord } from '@/types/api';
 import dayjs from 'dayjs';
 import { logout as logoutApi } from '@/api/auth';
@@ -18,16 +19,18 @@ import './index.scss';
 /**
  * 我的页（按原型图重做）
  * 结构（自上而下）：
- * - 顶部资料头部（大头像 + 姓名 + 专业年级 + 右上…/二维码）
- * - 校园卡（蓝卡，占位：后端无接口）
+ * - 顶部资料头部（大头像 + 姓名 + 专业年级 + 右上消息/二维码…/更多）
+ * - 校园卡（蓝卡，展示校园卡号，占位：后端无接口）
  * - 宿舍用电（剩余 + 本月已用，两列）
- * - 功能列表（我的课表/收藏/反馈/设置/退出登录）
+ * - 功能列表（我的消息/我的课表/收藏/反馈/设置/退出登录）
  */
 export default function ProfilePage() {
   const { user, refreshToken, logout: clearAuth } = useAuthStore();
   const { profile, setProfile } = useUserStore();
   // 反馈未读红点（已受理未查看的反馈数）
   const { count: feedbackUnread, refresh: refreshFeedbackBadge } = useFeedbackBadge();
+  // 消息未读（站内通知 + 新公告，消息图标角标）
+  const [msgUnread, setMsgUnread] = useState(0);
 
   const [statusBarHeight, setStatusBarHeight] = useState(20);
   const [electricity, setElectricity] = useState<ElectricityCurrent | null>(null);
@@ -100,6 +103,16 @@ export default function ProfilePage() {
     if (pRes.ok && pRes.d) setProfile(pRes.d);
   };
 
+  // 消息未读统计（站内通知 + 新公告），失败静默不影响主体
+  const loadMsgUnread = async () => {
+    try {
+      const res = await notificationsApi.getUnreadCount();
+      setMsgUnread(res?.data?.total ?? 0);
+    } catch {
+      /* 静默失败 */
+    }
+  };
+
   useLoad(() => {
     // custom 导航栏：读取状态栏高度，避免内容被遮挡
     try {
@@ -113,6 +126,8 @@ export default function ProfilePage() {
     refreshElectricity();
     // 反馈未读红点
     refreshFeedbackBadge();
+    // 消息未读角标
+    loadMsgUnread();
   });
 
   // 电量轻量刷新（后台触发，成功后更新展示值；更新时间显示"访问这一刻"）
@@ -147,6 +162,8 @@ export default function ProfilePage() {
     refreshElectricity();
     // 从反馈详情返回后刷新红点（查看一条即 -1）
     refreshFeedbackBadge();
+    // 从消息页返回后刷新未读角标（已读会减数）
+    loadMsgUnread();
   });
 
   const handleLogout = () => {
@@ -226,11 +243,17 @@ export default function ProfilePage() {
             {majorGrade ? <Text className="profile-sub">{majorGrade}</Text> : null}
           </View>
           <View className="profile-header-actions">
+            {/* 消息入口（替换原二维码占位）：点击进「我的消息」，右上角红点显示未读数 */}
             <View
-              className="profile-qr"
-              onClick={() => Taro.showToast({ title: '二维码开发中', icon: 'none' })}
+              className="profile-msg"
+              onClick={() => Taro.navigateTo({ url: '/pages/messages/index' })}
             >
-              <Text className="iconfont icon-erweima profile-qr-icon" />
+              <Text className="iconfont icon-tongzhi profile-msg-icon" />
+              {msgUnread > 0 && (
+                <View className="profile-msg-badge">
+                  <Text className="profile-msg-badge-num">{msgUnread > 99 ? '99+' : msgUnread}</Text>
+                </View>
+              )}
             </View>
             <View className="profile-more" onClick={handleMore}>
               <Text className="iconfont icon-more profile-more-icon" />
@@ -238,8 +261,8 @@ export default function ProfilePage() {
           </View>
         </View>
 
-        {/* 校园卡（蓝卡，占位：后端无接口），放在 hero 区让自定义背景渐变铺到卡下沿 */}
-        <CampusCard studentNumber={profile?.student_number} />
+        {/* 校园卡（蓝卡，展示校园卡号；占位：后端无余额/交易接口），放在 hero 区让自定义背景渐变铺到卡下沿 */}
+        <CampusCard cardNumber={profile?.campus_card_number} />
       </View>
 
       {/* 宿舍用电 */}
@@ -299,6 +322,18 @@ export default function ProfilePage() {
 
       {/* 功能列表 */}
       <View className="card profile-list">
+        {/* 我的消息：消息图标 + 未读角标（与顶部图标双入口，避免找不到） */}
+        <View
+          className="profile-item"
+          onClick={() => Taro.navigateTo({ url: '/pages/messages/index' })}
+        >
+          <View className="profile-item-icon-wrap">
+            <Text className="iconfont icon-tongzhi profile-item-icon" />
+          </View>
+          <Text className="profile-label">我的消息</Text>
+          <FeedbackBadge count={msgUnread} />
+          <Text className="profile-arrow">›</Text>
+        </View>
         <View className="profile-item" onClick={() => Taro.switchTab({ url: '/pages/schedule/index' })}>
           <View className="profile-item-icon-wrap">
             <Text className="iconfont icon-kechengbiao profile-item-icon" />

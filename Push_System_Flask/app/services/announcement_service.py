@@ -570,6 +570,36 @@ class AnnouncementService:
         finally:
             db.close()
 
+    def mark_all_read(self, user_id):
+        """把当前对用户可见的公告全部标记已读（消息页「全部已读」联动）"""
+        db = get_db()
+        try:
+            rows = (
+                db.query(Announcement.id)
+                .filter(self._visible_filter())
+                .all()
+            )
+            visible_ids = [r.id for r in rows]
+            if not visible_ids:
+                return 0
+            read_ids = {
+                r.announcement_id
+                for r in db.query(AnnouncementRead.announcement_id)
+                .filter(
+                    AnnouncementRead.user_id == user_id,
+                    AnnouncementRead.announcement_id.in_(visible_ids),
+                )
+                .all()
+            }
+            pending = [aid for aid in visible_ids if aid not in read_ids]
+            for aid in pending:
+                db.add(AnnouncementRead(announcement_id=aid, user_id=user_id))
+            if pending:
+                db.commit()
+            return len(pending)
+        finally:
+            db.close()
+
 
 # 全局单例
 announcement_service = AnnouncementService()

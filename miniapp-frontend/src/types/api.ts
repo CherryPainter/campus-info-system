@@ -43,6 +43,7 @@ export interface RefreshResult extends ApiSuccess {
 export interface StudentProfile {
   user_id: number;
   student_number: string | null;
+  campus_card_number: string | null;
   real_name: string | null;
   nickname: string | null;
   college: string | null;
@@ -301,7 +302,11 @@ export interface UserNotificationItem {
 export interface UserNotificationListResult extends ApiSuccess {
   data: {
     notifications: UserNotificationItem[];
-    unread_count: number;
+    /** 未读公告提醒（仅首页附带，最多 5 条；翻页不重复携带） */
+    announcements: AnnouncementItem[];
+    unread_count: number; // 站内通知未读
+    announcement_unread: number; // 公告未读
+    total_unread: number; // 两者之和（角标用）
     offset: number;
     limit: number;
   };
@@ -311,6 +316,17 @@ export interface UserNotificationReadResult extends ApiSuccess {
   data: {
     affected: number;
     unread_count: number;
+    announcement_unread: number;
+    total_unread: number;
+  };
+}
+
+/** 消息未读统计（/api/miniapp/notifications/unread-count，角标用） */
+export interface UnreadCountResult extends ApiSuccess {
+  data: {
+    unread: number; // 站内通知未读
+    announcement_unread: number; // 公告未读
+    total: number; // 两者之和
   };
 }
 

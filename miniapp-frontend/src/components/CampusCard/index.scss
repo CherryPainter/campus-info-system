@@ -31,6 +31,11 @@
       color: rgba(255, 255, 255, 0.85);
     }
 
+    // 未绑定校园卡号时的弱化提示
+    .campus-no-empty {
+      color: rgba(255, 255, 255, 0.55);
+    }
+
     .campus-balance {
       text-align: right;
 

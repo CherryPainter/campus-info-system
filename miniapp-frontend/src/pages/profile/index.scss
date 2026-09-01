@@ -85,8 +85,9 @@
       gap: $spacing-sm;
     }
 
-    .profile-qr,
+    .profile-msg,
     .profile-more {
+      position: relative;
       width: 56rpx;
       height: 56rpx;
       border-radius: 50%;
@@ -97,11 +98,35 @@
       justify-content: center;
     }
 
-    .profile-qr-icon,
+    .profile-msg-icon,
     .profile-more-icon {
       font-size: 36rpx;
       color: $text-secondary;
       line-height: 1;
+    }
+
+    /* 消息未读角标：右上角红色圆角计数（>99 显示 99+） */
+    .profile-msg-badge {
+      position: absolute;
+      top: -8rpx;
+      right: -10rpx;
+      min-width: 30rpx;
+      height: 30rpx;
+      padding: 0 8rpx;
+      border-radius: 15rpx;
+      background: $error;
+      border: 2rpx solid $background;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+
+      .profile-msg-badge-num {
+        font-size: 18rpx;
+        color: #ffffff;
+        line-height: 1;
+        font-weight: 600;
+      }
     }
 
     .profile-more-icon {
