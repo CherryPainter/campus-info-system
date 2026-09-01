@@ -109,7 +109,7 @@ export default function HomePage() {
         <View className="home-hero">
           <View className="hero-text">
             <Text className="hero-greeting">
-              {greeting()}，{profile?.real_name || user?.username || '同学'}
+              {greeting()}，{profile?.nickname || profile?.real_name || user?.username || '同学'}
             </Text>
             <Text className="hero-date">{todayText()}</Text>
           </View>

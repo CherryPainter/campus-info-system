@@ -1,108 +1,22 @@
-import { useEffect, useState } from 'react';
-import { View, Text, Image, Input } from '@tarojs/components';
+import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
-import * as userApi from '@/api/user';
 import { logout as logoutApi } from '@/api/auth';
 import { useAuthStore } from '@/stores/authStore';
-import { useUserStore } from '@/stores/userStore';
 import { setSharedBadgeCount } from '@/utils/feedbackBadge';
+import { useUserStore } from '@/stores/userStore';
 import './index.scss';
 
 /**
- * 设置页
- * 结构（自上而下）：
- * - 账号设置（头像 / 昵称 / 学号 / 班级）
- * - 通用（清除缓存 / 关于 / 退出登录）
+ * 设置页（仅保留「通用」与「退出登录」）
+ * - 账号设置（头像/昵称/学号/班级）已迁到独立页 pages/profile-edit/index：
+ *   受控表单 + 显式保存按钮，避免之前"行内编辑 + blur 即保存"的隐式提交误触。
+ * - 从「我的」页"设置"项可进入账号设置，从本页亦可通过顶部入口跳转。
  */
 
-const FIELD_MAXLEN: Record<string, number> = {
-  nickname: 20,
-  student_number: 30,
-  class_name: 30,
-};
-
 export default function SettingsPage() {
-  const { user, refreshToken, logout: clearAuth, setUser } = useAuthStore();
-  const { profile, setProfile } = useUserStore();
-
-  // 头像本地展示值（上传成功后同步到 authStore，此处仅做切换反馈）
-  const [avatarSrc, setAvatarSrc] = useState<string | null>(user?.avatar || null);
-
-  // 行内编辑表单（受控）：本地维护输入值，onInput 更新、onBlur 保存。
-  // 之前直接绑 value={profile?.xxx} 且无 onInput，属纯受控——Taro 3 原生 Input 输入后
-  // 一旦重渲染会把 value setData 回写旧值，表现为"打不进字/填不了"（纯前端锅）。
-  const [form, setForm] = useState<Record<'nickname' | 'student_number' | 'class_name', string>>({
-    nickname: '',
-    student_number: '',
-    class_name: '',
-  });
-
-  // 资料加载完成/保存成功后回填表单（仅回填空值，不覆盖用户正在编辑的内容）
-  useEffect(() => {
-    if (!profile) return;
-    setForm((f) => ({
-      nickname: f.nickname || profile.nickname || '',
-      student_number: f.student_number || profile.student_number || '',
-      class_name: f.class_name || profile.class_name || '',
-    }));
-  }, [profile]);
-
-  const displayName = profile?.nickname || profile?.real_name || user?.username || '同学';
-
-  /** 行内字段保存：值未变化 / 为空跳过，否则调接口并同步 store */
-  const saveField = async (key: 'nickname' | 'student_number' | 'class_name', value: string) => {
-    const trimmed = (value || '').trim();
-    if (!trimmed) {
-      Taro.showToast({ title: '内容不能为空', icon: 'none' });
-      return;
-    }
-    if (profile && profile[key] === trimmed) return;
-    try {
-      const res = await userApi.updateProfile({ [key]: trimmed });
-      setProfile(res.profile);
-      Taro.showToast({ title: '已保存', icon: 'success' });
-    } catch (e) {
-      const msg = (e as { message?: string })?.message || '保存失败，请重试';
-      Taro.showToast({ title: msg, icon: 'none' });
-    }
-  };
-
-  /** 头像更换：压缩图 → base64 → data URI → 后端校验存储 */
-  const chooseAvatar = async () => {
-    try {
-      const res = await Taro.chooseImage({
-        count: 1,
-        sizeType: ['compressed'],
-        sourceType: ['album', 'camera'],
-      });
-      const filePath = res.tempFilePaths[0];
-      Taro.showLoading({ title: '上传中' });
-      const fs = Taro.getFileSystemManager();
-      const base64 = fs.readFileSync(filePath, 'base64');
-      const ext = (filePath.match(/\.([a-zA-Z0-9]+)$/) || [])[1]?.toLowerCase() || 'jpeg';
-      const mimeMap: Record<string, string> = {
-        jpg: 'jpeg',
-        jpeg: 'jpeg',
-        png: 'png',
-        gif: 'gif',
-        webp: 'webp',
-      };
-      const dataUri = `data:image/${mimeMap[ext] || 'jpeg'};base64,${base64}`;
-      const upd = await userApi.updateAvatar(dataUri);
-      const next = upd.user;
-      setAvatarSrc(next.avatar);
-      setUser(next);
-      Taro.showToast({ title: '头像已更新', icon: 'success' });
-    } catch (e) {
-      // 用户取消选择属正常操作，静默忽略
-      if ((e as { errMsg?: string })?.errMsg?.includes('cancel')) return;
-      const msg = (e as { message?: string })?.message || '头像上传失败，请重试';
-      Taro.showToast({ title: msg, icon: 'none' });
-    } finally {
-      Taro.hideLoading();
-    }
-  };
+  const { refreshToken, logout: clearAuth } = useAuthStore();
+  const { setProfile } = useUserStore();
 
   /** 清除本地缓存（不含登录态 Token / 用户信息） */
   const handleClearCache = () => {
@@ -155,56 +69,18 @@ export default function SettingsPage() {
     });
   };
 
+  const goAccountEdit = () => {
+    Taro.navigateTo({ url: '/pages/profile-edit/index' });
+  };
+
   return (
     <View className="set-page">
-      {/* 账号设置 */}
-      <Text className="set-card-title">账号设置</Text>
+      {/* 账号设置入口（跳转独立页） */}
+      <Text className="set-card-title">账号</Text>
       <View className="set-card" style={{ marginTop: '8rpx' }}>
-        <View className="set-avatar-wrap" onClick={chooseAvatar}>
-          <Text className="set-avatar-hint">头像</Text>
-          {avatarSrc ? (
-            <Image className="set-avatar" src={avatarSrc} mode="aspectFill" />
-          ) : (
-            <View className="set-avatar set-avatar-placeholder">
-              <Text className="set-avatar-text">{displayName.slice(0, 1)}</Text>
-            </View>
-          )}
-        </View>
-        <View className="set-row">
-          <Text className="set-row-label">昵称</Text>
-          <Input
-            className="set-row-input"
-            value={form.nickname}
-            placeholder="设置昵称"
-            placeholderClass="set-row-placeholder"
-            maxlength={FIELD_MAXLEN.nickname}
-            onInput={(e) => setForm((f) => ({ ...f, nickname: e.detail.value }))}
-            onBlur={(e) => saveField('nickname', e.detail.value)}
-          />
-        </View>
-        <View className="set-row">
-          <Text className="set-row-label">学号</Text>
-          <Input
-            className="set-row-input"
-            value={form.student_number}
-            placeholder="填写学号"
-            placeholderClass="set-row-placeholder"
-            maxlength={FIELD_MAXLEN.student_number}
-            onInput={(e) => setForm((f) => ({ ...f, student_number: e.detail.value }))}
-            onBlur={(e) => saveField('student_number', e.detail.value)}
-          />
-        </View>
-        <View className="set-row">
-          <Text className="set-row-label">班级</Text>
-          <Input
-            className="set-row-input"
-            value={form.class_name}
-            placeholder="填写班级"
-            placeholderClass="set-row-placeholder"
-            maxlength={FIELD_MAXLEN.class_name}
-            onInput={(e) => setForm((f) => ({ ...f, class_name: e.detail.value }))}
-            onBlur={(e) => saveField('class_name', e.detail.value)}
-          />
+        <View className="set-cell" onClick={goAccountEdit}>
+          <Text className="set-cell-label">账号设置</Text>
+          <Text className="set-arrow">›</Text>
         </View>
       </View>
 

@@ -1,0 +1,111 @@
+@import '../../styles/variables.scss';
+
+.pedit-page {
+  min-height: 100vh;
+  background: $background;
+  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.pedit-card {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  overflow: hidden;
+}
+
+/* 头像行：标签 + 头像 + 箭头 */
+.pedit-avatar-row {
+  display: flex;
+  align-items: center;
+  padding: $spacing-md $spacing-lg;
+  border-bottom: 1rpx solid $border-color;
+}
+
+.pedit-row {
+  display: flex;
+  align-items: center;
+  padding: $spacing-md $spacing-lg;
+  border-bottom: 1rpx solid $border-color;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.pedit-row-label {
+  width: 160rpx;
+  flex-shrink: 0;
+  font-size: $font-size-md;
+  color: $text-primary;
+}
+
+.pedit-row-input {
+  flex: 1;
+  font-size: $font-size-md;
+  color: $text-primary;
+  text-align: right;
+}
+
+.pedit-row-placeholder {
+  color: $text-tertiary;
+}
+
+.pedit-arrow {
+  font-size: $font-size-md;
+  color: $text-tertiary;
+  margin-left: $spacing-xs;
+}
+
+.pedit-avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: $primary-light;
+  border: 2rpx solid $border-color;
+  flex-shrink: 0;
+}
+
+.pedit-avatar-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pedit-avatar-text {
+  font-size: 40rpx;
+  color: $primary-color;
+  font-weight: 500;
+}
+
+.pedit-hint {
+  display: block;
+  margin-top: $spacing-md;
+  text-align: center;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}
+
+.pedit-save-wrap {
+  margin-top: $spacing-xl;
+  padding: 0 $spacing-md;
+}
+
+.pedit-save-btn {
+  background: $primary-color;
+  border-radius: $radius-full;
+  padding: $spacing-md 0;
+  text-align: center;
+  box-shadow: 0 4rpx 12rpx rgba(26, 115, 232, 0.25);
+}
+
+.pedit-save-btn-disabled {
+  background: $primary-light;
+  box-shadow: none;
+}
+
+.pedit-save-text {
+  font-size: $font-size-md;
+  color: $text-inverse;
+  font-weight: 600;
+}
