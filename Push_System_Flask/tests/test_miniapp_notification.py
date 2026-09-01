@@ -37,6 +37,7 @@ if ROOT not in sys.path:
 from app.core.api_response import api_success
 from app.core.extensions import limiter
 from app.model.notification import Notification
+from app.model.student_profile import StudentProfile
 from app.model.token_blacklist import TokenBlacklist
 from app.model.user import User
 from app.utils.auth_middleware import admin_required
@@ -74,6 +75,7 @@ def db_session():
     User.__table__.create(engine)
     Notification.__table__.create(engine)
     TokenBlacklist.__table__.create(engine)
+    StudentProfile.__table__.create(engine)
     Session = sessionmaker(bind=engine)
     s = Session()
     try:
@@ -89,6 +91,15 @@ def _patch_get_db(db_session):
     with mock.patch("app.core.database.get_db", return_value=db_session), mock.patch(
         "app.utils.jwt_auth.get_db", return_value=db_session
     ):
+        # student_bound_required 要求身份已绑定：为 token 对应的 user_id=1 预置绑定身份
+        profile = db_session.query(StudentProfile).filter_by(user_id=1).first()
+        if profile is None:
+            profile = StudentProfile(user_id=1)
+            db_session.add(profile)
+        profile.school = "重庆科创职业学院"
+        profile.student_number = "20260001"
+        profile.class_name = "计应2401班"
+        db_session.commit()
         yield
 
 

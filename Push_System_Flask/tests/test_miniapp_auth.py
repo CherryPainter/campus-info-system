@@ -266,10 +266,21 @@ def test_admin_token_blocked_from_miniapp_api(client, app):
 # ========== 学生资料（防 IDOR） ==========
 
 
+def _bind_student(db_session, user_id, student_number="20260001"):
+    """模拟学生已通过预录名单完成身份绑定（student_bound_required 要求 student_number 非空）"""
+    profile = db_session.query(StudentProfile).filter_by(user_id=user_id).one()
+    profile.school = "重庆科创职业学院"
+    profile.student_number = student_number
+    profile.class_name = "计应2401班"
+    db_session.commit()
+    return profile
+
+
 def test_profile_get_and_update_own_only(client, db_session):
     body = _login(client).get_json()
     user_id = body["user"]["id"]
     headers = {"Authorization": f"Bearer {body['access_token']}"}
+    _bind_student(db_session, user_id)
 
     resp = client.get("/api/miniapp/student/profile", headers=headers)
     assert resp.status_code == 200
@@ -280,7 +291,6 @@ def test_profile_get_and_update_own_only(client, db_session):
         "/api/miniapp/student/profile",
         json={
             "real_name": "张三",
-            "student_number": "20240001",
             "phone": "13800000000",
             "user_id": 999,
             "role": "admin",
@@ -290,13 +300,23 @@ def test_profile_get_and_update_own_only(client, db_session):
     assert resp.status_code == 200
     profile = db_session.query(StudentProfile).filter_by(user_id=user_id).one()
     assert profile.real_name == "张三"
-    assert profile.student_number == "20240001"
     assert profile.user_id == user_id  # user_id 不可被客户端篡改
 
+    # 身份字段（学号/班级/学校）已移出 PUT 白名单：绑定后不可再改，防绕过名单
+    resp = client.put(
+        "/api/miniapp/student/profile",
+        json={"student_number": "99999999", "class_name": "黑客班", "school": "某校"},
+        headers=headers,
+    )
+    assert resp.status_code == 400
+    profile = db_session.query(StudentProfile).filter_by(user_id=user_id).one()
+    assert profile.student_number == "20260001"
 
-def test_profile_update_invalid_fields_400(client):
+
+def test_profile_update_invalid_fields_400(client, db_session):
     body = _login(client).get_json()
     headers = {"Authorization": f"Bearer {body['access_token']}"}
+    _bind_student(db_session, body["user"]["id"])
     resp = client.put(
         "/api/miniapp/student/profile", json={"not_a_field": "x"}, headers=headers
     )

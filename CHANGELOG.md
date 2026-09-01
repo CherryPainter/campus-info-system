@@ -19,6 +19,7 @@
 - **管理端**：用户管理页改为双 Tab（「用户管理」+「学生名单」）；新增 `UserManagementRoster.tsx`：查询筛选（学校 Select+关键字）/新建/编辑（学校学号只读）/启停 Switch/删除/批量导入（结果弹窗展示失败明细）/模板下载。
 - **小程序端**：新增 `pages/bind/index` 绑定页（学校 chips 选中态高亮 + 学号/班级输入；已绑定直接 reLaunch 首页；成功回写 profile）；`request.ts` 对 403 `STUDENT_NOT_BOUND` 防抖（2s）reLaunch 绑定页并抛 ApiError；资料编辑页学号/班级改为只读身份信息块。
 - **验证**：后端 test_client 冒烟 10 项全过（未绑定 403 拦截、名单新建、学校列表、班级不匹配拒绝、三项匹配绑定成功、绑定后放行、绑定快照回读一致、防绕过 400、未登录 401）；`py_compile` 通过；管理端 `vite build` 成功；小程序 `tsc --noEmit` 0 错误 + `build:weapp` 成功。
+- **测试适配**（权限收紧同步更新既有用例）：`test_miniapp_auth.py` 登录用例补 `_bind_student` 预置绑定身份，`student_number` 改断言为不可经 PUT 篡改（400）；`test_miniapp_phase2.py` `_FakeSession` 支持按模型返回已绑定身份桩 + mock 目标改为路由实际使用的 `get_electricity_service` 工厂（修复电量用户化重构遗留的"mock 单例不生效"）；`test_miniapp_notification.py` 建 `student_profiles` 表并预置绑定身份。全量 `pytest` **158 passed**（此前电量 2 用例长期失败，本次一并修复）。
 
 ### 修复：小程序请求层 access token 预刷新，消除过期后首请求 401 噪音（2026-09-01）
 - **背景**：微信开发者工具控制台出现 `GET /api/miniapp/feedback|weather/current|weather/hourly|schedule/today 401` 红字。排查（后端日志 + 实测）：**非功能性 bug**——storage 里的旧 access token 超 1 小时过期后，页面初始化并发请求带旧 token → 全部 401「token 已过期」→ `request.ts` 单飞锁自动 `refreshOnce()` **刷新成功**（日志 20:20:34,115 生成新 token、旧 refresh 撤销）→ 4 个请求全部重放成功（天气/课表/反馈/电量数据均正常落库返回）。401 红字是微信开发者工具网络层固有日志，即使应用层自动刷新重放成功也无法抑制，仅造成"报错"错觉。

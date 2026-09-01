@@ -29,7 +29,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from app.services.electricity_service import electricity_service
 from app.services.schedule_service import schedule_service
 from app.services.weather_service import weather_service
 from app.utils.jwt_auth import JWTManager
@@ -37,17 +36,31 @@ from app.utils.jwt_auth import JWTManager
 SECRET = "test-secret-key-0123456789abcdef0123456789abcdef"
 
 
-class _FakeSession:
-    """黑名单查询桩：任何查询都返回 None（token 未撤销）"""
+class _FakeQuery:
+    """查询桩：StudentProfile 返回已绑定身份，其余（黑名单等）返回 None"""
 
-    def query(self, *a, **k):
-        return self
+    def __init__(self, model):
+        self._model = model
 
     def filter_by(self, *a, **k):
         return self
 
     def first(self):
+        from app.model.student_profile import StudentProfile
+
+        if self._model is StudentProfile:
+            # 模拟已通过预录名单完成身份绑定（student_bound_required 要求 student_number 非空）
+            from types import SimpleNamespace
+
+            return SimpleNamespace(student_number="20260001", electricity_cookie="")
         return None
+
+
+class _FakeSession:
+    """会话桩：任何查询返回 _FakeQuery（token 未撤销 / 身份已绑定）"""
+
+    def query(self, model, *a, **k):
+        return _FakeQuery(model)
 
     def close(self):
         pass
@@ -55,8 +68,10 @@ class _FakeSession:
 
 @pytest.fixture(autouse=True)
 def _no_db():
-    """jwt 黑名单校验不连真实 MySQL"""
-    with mock.patch("app.utils.jwt_auth.get_db", return_value=_FakeSession()):
+    """jwt 黑名单校验与身份绑定校验均不连真实 MySQL"""
+    with mock.patch("app.utils.jwt_auth.get_db", return_value=_FakeSession()), mock.patch(
+        "app.core.database.get_db", return_value=_FakeSession()
+    ):
         yield
 
 
@@ -320,12 +335,14 @@ def test_weather_alerts(client, student_token):
 
 
 def test_electricity_current(client, student_token):
-    with mock.patch.object(
-        electricity_service,
-        "get_remaining_power",
-        return_value={"remaining": 36.5, "total_capacity": 100.0, "percentage": 36.5,
-                      "is_low_power": False, "recorded_at": "2026-08-27 00:30"},
-    ):
+    with mock.patch("app.services.electricity_service.get_electricity_service") as _get_svc:
+        _get_svc.return_value.get_remaining_power.return_value = {
+            "remaining": 36.5,
+            "total_capacity": 100.0,
+            "percentage": 36.5,
+            "is_low_power": False,
+            "recorded_at": "2026-08-27 00:30",
+        }
         resp = client.get(
             "/api/miniapp/electricity/current", headers={"Authorization": f"Bearer {student_token}"}
         )
@@ -338,12 +355,14 @@ def test_electricity_current(client, student_token):
 def test_electricity_history_passes_limit(client, student_token):
     captured = {}
 
-    def _fake_records(days=None, limit=1000):
+    def _fake_records(days=None, limit=1000, offset=0):
         captured["days"] = days
         captured["limit"] = limit
         return [{"record_time": "2026-08-27 00:00", "usage": 1.2, "meter": "default"}]
 
-    with mock.patch.object(electricity_service, "get_usage_records", side_effect=_fake_records):
+    with mock.patch("app.services.electricity_service.get_electricity_service") as _get_svc:
+        _get_svc.return_value.get_usage_records.side_effect = _fake_records
+        _get_svc.return_value.count_usage_records.return_value = 1  # 非首次采集，不触发懒爬取
         resp = client.get(
             "/api/miniapp/electricity/history?limit=5",
             headers={"Authorization": f"Bearer {student_token}"},
