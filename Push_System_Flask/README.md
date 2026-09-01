@@ -651,9 +651,11 @@ npm run dev
 
 ### 电量模块配置
 
+> 说明：电表爬虫 Cookie 已改为学生在小程序「设置 - 电表配置」自行配置（存 `student_profiles.electricity_cookie`），下方 `ELECTRICITY_CRAWLER_COOKIE` 为**已弃用**变量（代码不再读取，仅保留向后兼容）。
+
 | 变量                                   | 默认值              | 说明                              |
 | -------------------------------------- | ------------------- | --------------------------------- |
-| `ELECTRICITY_CRAWLER_COOKIE`           | （空）              | 电表系统 Cookie（从浏览器获取）   |
+| `ELECTRICITY_CRAWLER_COOKIE`           | （空）              | ~~电表系统 Cookie~~（已弃用）     |
 | `ELECTRICITY_CRAWLER_BASE_URL`         | `http://dk.cqie.cn` | 电表系统 URL                      |
 | `ELECTRICITY_CRAWLER_MAX_PAGES`        | `2`                 | 每次爬取最大页数                  |
 | `ELECTRICITY_LOW_POWER_THRESHOLD`      | `10.0`              | 低电量告警阈值（度）              |

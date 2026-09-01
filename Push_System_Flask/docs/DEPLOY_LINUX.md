@@ -137,7 +137,7 @@ nano .env  # 或使用 vim .env
 | `JWXT_PASSWORD` | 教务系统密码 | 你的教务系统密码 |
 | `WECOM_WEBHOOK` | 企业微信 Webhook | 机器人 Webhook URL |
 | `QWEATHER_API_KEY` | 和风天气 API Key | 免费申请：https://dev.qweather.com/ |
-| `ELECTRICITY_CRAWLER_COOKIE` | 电表系统 Cookie | 从浏览器 DevTools 获取 |
+| `ELECTRICITY_CRAWLER_COOKIE` | 电表系统 Cookie | ~~从浏览器 DevTools 获取~~（已弃用：改由学生在小程序「设置 - 电表配置」自配，无需再配置） |
 
 **生成安全密钥：**
 

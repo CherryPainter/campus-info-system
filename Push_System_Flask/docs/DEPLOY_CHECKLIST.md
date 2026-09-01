@@ -107,7 +107,8 @@ BEFORE_END_CLASS_MINUTES=10
 TESSERACT_CMD=/usr/bin/tesseract
 
 # ========== 电量监控 ==========
-ELECTRICITY_CRAWLER_COOKIE=<你的电表系统Cookie>
+# 已弃用：电表 Cookie 改由学生在小程序「设置 - 电表配置」自配，无需再配全局变量
+# ELECTRICITY_CRAWLER_COOKIE=<你的电表系统Cookie>
 ELECTRICITY_CRAWLER_BASE_URL=http://dk.cqie.cn
 ELECTRICITY_CRAWLER_MAX_PAGES=2
 ELECTRICITY_LOW_POWER_THRESHOLD=10.0
