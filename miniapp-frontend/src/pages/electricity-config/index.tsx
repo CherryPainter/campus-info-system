@@ -108,9 +108,9 @@ export default function ElectricityConfigPage() {
       {/* 获取说明 */}
       <View className="ecfg-card">
         <Text className="ecfg-card-title">如何获取 Cookie</Text>
-        <Text className="ecfg-step">1. 在电脑浏览器中登录学校电表查询系统，进入您宿舍的电表页面</Text>
-        <Text className="ecfg-step">2. 按 F12 打开开发者工具，切换到「网络」面板</Text>
-        <Text className="ecfg-step">3. 刷新页面，找到任意请求，在「请求头」中复制 Cookie 一行的完整内容</Text>
+        <Text className="ecfg-step">1. 打开"重庆科创职业学院"微信公众号，进入"注册缴费" → "宿舍电费"，绑定您宿舍的电表</Text>
+        <Text className="ecfg-step">2. 使用抓包工具（如 Charles、Fiddler 等）开启抓包</Text>
+        <Text className="ecfg-step">3. 在公众号内点开"用量记录"，在抓包结果中找到 dk.cqie.cn 的请求，复制请求头中 Cookie 一行的完整内容</Text>
         <Text className="ecfg-step">4. 粘贴到下方输入框，点击「测试」，有效后点击「保存」</Text>
         <Text className="ecfg-warn">Cookie 含您的登录凭证，仅保存在您自己的账号下，请勿分享给他人</Text>
       </View>
