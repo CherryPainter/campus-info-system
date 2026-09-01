@@ -49,13 +49,11 @@ export default function CustomTabBar() {
     return () => Taro.eventCenter.off(BADGE_EVENT, handler);
   }, []);
 
-  // 每次 tab 显示（切 tab / 从子页面返回）时刷新高亮和 badge
+  // 每次 tab 显示时刷新角标。
+  // 注意：选中态由 switchTab 乐观更新（setCurrent(idx)）驱动，与最后一次切换始终同步；
+  // 这里不要再依据 getCurrentPages() 回写 current——切换过渡期它常读到旧路由，
+  // 会把高亮错误地回退成上一个 tab（表现为"要点两次才选中"）。
   useDidShow(() => {
-    const pages = Taro.getCurrentPages();
-    const curPage = pages[pages.length - 1];
-    const route = '/' + (curPage?.route || '');
-    const idx = TAB_LIST.findIndex((t) => route === t.pagePath || route.startsWith(t.pagePath + '/'));
-    if (idx >= 0) setCurrent(idx);
     setBadge(getSharedBadgeCount());
   });
 
