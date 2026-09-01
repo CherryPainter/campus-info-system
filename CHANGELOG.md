@@ -16,6 +16,7 @@
   - `update_user` 对 `student` 锁定身份字段：`role` 只接受 student（忽略其它值，避免前端禁用项提交触发白名单 400）、`username`（openid）不可改、`is_primary` 不可设。
   - `delete_user` 级联清理 `wechat_accounts` / `student_profiles` 子表（两 FK 均无 ondelete 级联，直接删 User 会外键失败）。
 - **管理端**（`UserManagement.tsx` + `types/user.ts`）：列表新增「来源」列（微信端绿 Tag / 网页端默认）；微信端用户行隐藏「重置密码」「重置MFA」操作；编辑弹窗对微信端用户锁定用户名与角色（显示"微信端用户"）、隐藏主管理员选项；移动端卡片同步加来源 Tag、隐藏密码/MFA 操作。
+- **筛选功能**（`UserManagement.tsx`）：列表顶部新增筛选栏（来源 / 角色 / MFA / 用户名关键字搜索），`useMemo` 派生 `filteredUsers`，桌面表格与移动端卡片共用同一份筛选结果；筛选无结果时显示空态提示（桌面表格 `emptyText`、移动端 `Empty` 组件）。轮询刷新不重置筛选条件。
 - **决策**：不设密码（微信端用户维持随机占位哈希，管理端不提供密码重置入口）；分流复用 `role` 判断（不加 `source` 列、不改表迁移）。
 - 验证：后端 `py_compile` 通过；管理端 `vite build` 成功，dist 含「微信端」分流逻辑。
 

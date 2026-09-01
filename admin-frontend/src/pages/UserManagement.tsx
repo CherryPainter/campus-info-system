@@ -2,7 +2,7 @@
  * 用户管理页面
  * 仅管理员可访问
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Card,
   Button,
@@ -19,6 +19,7 @@ import {
   Grid,
   Divider,
   Spin,
+  Empty,
 } from "antd";
 import { formatDateTime } from "@/utils/datetime";
 import ResponsiveTable from "@/components/ResponsiveTable";
@@ -53,6 +54,12 @@ export default function UserManagement() {
   const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
+
+  // 用户列表筛选：来源 / 角色 / MFA / 关键字
+  const [sourceFilter, setSourceFilter] = useState<"all" | "wechat" | "web">("all");
+  const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "user">("all");
+  const [mfaFilter, setMfaFilter] = useState<"all" | "enabled" | "disabled">("all");
+  const [keyword, setKeyword] = useState("");
 
   // 加载用户列表
   const loadUsers = async () => {
@@ -162,6 +169,21 @@ export default function UserManagement() {
 
   // 微信端用户：openid 登录，无账号密码/MFA 概念，相关操作不展示
   const isWechatUser = (user: User) => user.source === "wechat" || user.role === "student";
+
+  // 按来源/角色/MFA/关键字筛选后的用户列表
+  const filteredUsers = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    return users.filter((u) => {
+      const isWechat = u.source === "wechat" || u.role === "student";
+      if (sourceFilter === "wechat" && !isWechat) return false;
+      if (sourceFilter === "web" && isWechat) return false;
+      if (roleFilter !== "all" && u.role !== roleFilter) return false;
+      if (mfaFilter === "enabled" && !u.mfa_enabled) return false;
+      if (mfaFilter === "disabled" && u.mfa_enabled) return false;
+      if (kw && !u.username.toLowerCase().includes(kw)) return false;
+      return true;
+    });
+  }, [users, sourceFilter, roleFilter, mfaFilter, keyword]);
 
   // 判断是否可以删除用户
   const canDeleteUser = (user: User) => {
@@ -354,15 +376,67 @@ export default function UserManagement() {
           </Button>
         }
       >
+        {/* 筛选栏：来源/角色/MFA/关键字，桌面与移动端通用 */}
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "center",
+            marginBottom: 16,
+            padding: isMobile ? "12px 12px 0" : 0,
+          }}
+        >
+          <Select
+            value={sourceFilter}
+            onChange={setSourceFilter}
+            style={isMobile ? { flex: 1, minWidth: 0 } : { width: 120 }}
+            options={[
+              { value: "all", label: "全部来源" },
+              { value: "wechat", label: "微信端" },
+              { value: "web", label: "网页端" },
+            ]}
+          />
+          <Select
+            value={roleFilter}
+            onChange={setRoleFilter}
+            style={isMobile ? { flex: 1, minWidth: 0 } : { width: 120 }}
+            options={[
+              { value: "all", label: "全部角色" },
+              { value: "admin", label: "管理员" },
+              { value: "user", label: "普通用户" },
+            ]}
+          />
+          <Select
+            value={mfaFilter}
+            onChange={setMfaFilter}
+            style={isMobile ? { flex: 1, minWidth: 0 } : { width: 120 }}
+            options={[
+              { value: "all", label: "全部MFA" },
+              { value: "enabled", label: "已开启" },
+              { value: "disabled", label: "未开启" },
+            ]}
+          />
+          <Input
+            allowClear
+            placeholder="搜索用户名"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            style={isMobile ? { flex: "100%", minWidth: 0 } : { width: 200 }}
+          />
+        </div>
+
         {isMobile ? (
           // 手机端：每个用户一张专用卡片，竖向排列，避免横向滚动表格
           users.length === 0 && loading ? (
             <div style={{ textAlign: "center", padding: "48px 0" }}>
               <Spin />
             </div>
+          ) : filteredUsers.length === 0 ? (
+            <Empty description="没有符合条件的用户" style={{ padding: "48px 0" }} />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {users.map((u: User) => {
+              {filteredUsers.map((u: User) => {
                 const { canDelete, reason } = canDeleteUser(u);
                 return (
                   <Card key={u.id} size="small" loading={loading && users.length === 0}>
@@ -481,10 +555,11 @@ export default function UserManagement() {
         ) : (
           <ResponsiveTable
             columns={columns}
-            dataSource={users}
+            dataSource={filteredUsers}
             loading={loading}
             rowKey="id"
             scroll={{ x: 800 }}
+            locale={{ emptyText: "没有符合条件的用户" }}
           />
         )}
       </Card>
