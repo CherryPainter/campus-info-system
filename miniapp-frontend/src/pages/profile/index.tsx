@@ -179,6 +179,11 @@ export default function ProfilePage() {
         }
         handleLogout();
       },
+      // 用户点「取消」或点空白关闭属正常操作，静默忽略，避免抛未捕获异常
+      fail: (err) => {
+        if (err?.errMsg?.includes('cancel')) return;
+        // 其它异常按需上报，这里不打扰用户
+      },
     });
   };
 
