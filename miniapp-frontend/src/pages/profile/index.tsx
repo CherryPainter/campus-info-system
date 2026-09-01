@@ -194,12 +194,14 @@ export default function ProfilePage() {
     .join(' · ');
 
   return (
-    <View
-      className="page profile-page"
-      style={{ paddingTop: `${statusBarHeight}px` }}
-    >
-      {/* 顶部 hero 区：承载头像/姓名/操作 */}
-      <View className="profile-hero">
+    <View className="page profile-page">
+      {/* 顶部 hero 区：承载头像/姓名/操作，自带默认径向渐变背景。
+         顶部 paddingTop = statusBarHeight(避状态栏) + 80rpx(避系统胶囊)，
+         让 hero 从 page 顶部就开始铺，渐变覆盖到状态栏下方的"间距区"避免纯白留白 */}
+      <View
+        className="profile-hero"
+        style={{ paddingTop: `calc(${statusBarHeight}px + 80rpx)` }}
+      >
         <View className="profile-header">
           {user?.avatar ? (
             <Image src={user.avatar} className="profile-avatar" mode="aspectFill" />
