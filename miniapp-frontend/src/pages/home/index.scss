@@ -5,6 +5,9 @@
 .home-page {
   position: relative;
   background: $background;
+  /* 自定义 TabBar 高度（98rpx + safe-area） */
+  padding-bottom: calc(108rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
 
   .home-bg {
     position: absolute;

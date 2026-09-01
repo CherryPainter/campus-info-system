@@ -13,6 +13,10 @@
     ),
     $background;
 
+  /* 自定义 TabBar 高度（98rpx + safe-area） */
+  padding-bottom: calc(108rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+
   // 资料头部
   .profile-header {
     position: relative;

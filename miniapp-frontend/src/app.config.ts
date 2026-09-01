@@ -18,7 +18,9 @@ export default defineAppConfig({
   // 底部 TabBar：3 项（首页 / 时间轴 / 我的）
   // 图标由 iconfont 字体渲染成 PNG（96x96）：src/assets/tabbar/ 下
   // 微信 tabBar 图标只支持图片文件（不支持字体图标），所以走 PNG 路线
+  // custom=true 启用自定义 TabBar（原生不支持单个 tab 角标，需自绘）
   tabBar: {
+    custom: true,
     color: '#8a8f99',
     selectedColor: '#1a73e8',
     backgroundColor: '#ffffff',

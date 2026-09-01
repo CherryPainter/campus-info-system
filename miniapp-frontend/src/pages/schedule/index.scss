@@ -13,6 +13,9 @@
       #ffffff;
     background-color: #ffffff;
     min-height: 100vh;
+    /* 自定义 TabBar 高度（98rpx + safe-area） */
+    padding-bottom: calc(108rpx + env(safe-area-inset-bottom));
+    box-sizing: border-box;
 
     // 自定义导航栏标题：左对齐粗体大字（与首页"校园宜知行"同款）
     .schedule-nav-title {
