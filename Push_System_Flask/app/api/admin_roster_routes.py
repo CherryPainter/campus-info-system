@@ -181,7 +181,7 @@ def delete_student(roster_id):
 @admin_roster_bp.route("/schools", methods=["GET"])
 @admin_required
 def list_schools():
-    """学校选项（管理端新建/筛选用，与小程序绑定页保持一致）"""
+    """学校选项（管理端新建/筛选用，与小程序绑定页保持一致，顶层 schools 字段）"""
     return api_success(schools=SCHOOL_OPTIONS)
 
 

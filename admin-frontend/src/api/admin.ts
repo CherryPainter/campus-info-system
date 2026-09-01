@@ -694,6 +694,9 @@ export const rosterApi = {
       { headers: { "Content-Type": "multipart/form-data" } }
     );
   },
-  /** 学校选项（与小程序绑定页一致） */
-  getSchools: () => request.get<any, ApiResponse<string[]>>("/admin/roster/schools"),
+  /** 学校选项（与小程序绑定页一致，schools 字段在响应顶层） */
+  getSchools: () =>
+    request.get<any, ApiResponse<unknown> & { schools?: string[] }>(
+      "/admin/roster/schools"
+    ),
 };

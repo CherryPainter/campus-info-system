@@ -21,6 +21,15 @@
 - **验证**：后端 test_client 冒烟 10 项全过（未绑定 403 拦截、名单新建、学校列表、班级不匹配拒绝、三项匹配绑定成功、绑定后放行、绑定快照回读一致、防绕过 400、未登录 401）；`py_compile` 通过；管理端 `vite build` 成功；小程序 `tsc --noEmit` 0 错误 + `build:weapp` 成功。
 - **测试适配**（权限收紧同步更新既有用例）：`test_miniapp_auth.py` 登录用例补 `_bind_student` 预置绑定身份，`student_number` 改断言为不可经 PUT 篡改（400）；`test_miniapp_phase2.py` `_FakeSession` 支持按模型返回已绑定身份桩 + mock 目标改为路由实际使用的 `get_electricity_service` 工厂（修复电量用户化重构遗留的"mock 单例不生效"）；`test_miniapp_notification.py` 建 `student_profiles` 表并预置绑定身份。全量 `pytest` **158 passed**（此前电量 2 用例长期失败，本次一并修复）。
 
+### 修复：管理端「新建学生」学校下拉为空（2026-09-01）
+- **现象**：管理端「学生名单」Tab 新建学生 Modal 中学校下拉显示 `No data`，无任何学校可选（包括必须保留的重庆科创职业学院）。截图复现于部署新版管理端 dist 后。
+- **根因**：`api_success(schools=SCHOOL_OPTIONS)` 走 `**extra` 路径，`schools` 字段位于响应**顶层**（`{"status":"success","schools":[...]}`，无 `data` 字段）。管理端 `rosterApi.getSchools()` 泛型声明为 `ApiResponse<string[]>` 并从 `res.data` 取 → 拿到 `undefined → []` → 下拉空。小程序端 `getSchools` 从顶层 `schools` 取，所以未受影响。
+- **修复**（`admin-frontend/src/api/admin.ts` + `UserManagementRoster.tsx`，单点最小改动）：
+  - `admin.ts` 泛型改为 `ApiResponse<unknown> & { schools?: string[] }`，与实际响应结构对齐。
+  - `loadSchools` 改为 `setSchools(res.schools || [])`，与小程序端 `SchoolsResult` 类型（`extends ApiSuccess { schools: string[] }`）保持一致。
+- **回归测试**（新建 `tests/test_admin_roster_routes.py`）：断言 `/api/admin/roster/schools` 响应顶层含 `schools` 数组且包含「重庆科创职业学院」；学生 token 访问被 admin_required 拦截 403。全量 `pytest` **160 passed**。
+- **验证**：`npm run build` 成功（16.86s）。
+
 ### 修复：小程序请求层 access token 预刷新，消除过期后首请求 401 噪音（2026-09-01）
 - **背景**：微信开发者工具控制台出现 `GET /api/miniapp/feedback|weather/current|weather/hourly|schedule/today 401` 红字。排查（后端日志 + 实测）：**非功能性 bug**——storage 里的旧 access token 超 1 小时过期后，页面初始化并发请求带旧 token → 全部 401「token 已过期」→ `request.ts` 单飞锁自动 `refreshOnce()` **刷新成功**（日志 20:20:34,115 生成新 token、旧 refresh 撤销）→ 4 个请求全部重放成功（天气/课表/反馈/电量数据均正常落库返回）。401 红字是微信开发者工具网络层固有日志，即使应用层自动刷新重放成功也无法抑制，仅造成"报错"错觉。
 - **改动**（`miniapp-frontend/src/utils/storage.ts` + `request.ts`，最小改动）：

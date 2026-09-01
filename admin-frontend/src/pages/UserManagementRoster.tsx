@@ -64,7 +64,8 @@ export default function UserManagementRoster() {
     try {
       const res = await rosterApi.getSchools();
       if (res.status === "success") {
-        setSchools(res.data || []);
+        // 与小程序绑定页一致：schools 字段在响应顶层（api_success(schools=...) 走 **extra 路径）
+        setSchools(res.schools || []);
       }
     } catch {
       // 学校列表拉取失败不阻塞页面
