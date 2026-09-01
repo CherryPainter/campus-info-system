@@ -88,6 +88,39 @@
   color: $text-tertiary;
 }
 
+/* 身份信息（绑定后只读） */
+.pedit-identity {
+  padding: $spacing-md $spacing-lg;
+  border-bottom: 1rpx solid $border-color;
+  background: $background;
+}
+
+.pedit-identity-title {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-bottom: $spacing-sm;
+}
+
+.pedit-identity-row {
+  display: flex;
+  align-items: center;
+  padding: $spacing-xs 0;
+}
+
+.pedit-identity-label {
+  width: 160rpx;
+  flex-shrink: 0;
+  font-size: $font-size-md;
+  color: $text-secondary;
+}
+
+.pedit-identity-value {
+  flex: 1;
+  font-size: $font-size-md;
+  color: $text-primary;
+  text-align: right;
+}
+
 .pedit-save-wrap {
   margin-top: $spacing-xl;
   padding: 0 $spacing-md;

@@ -632,3 +632,68 @@ export const userApi = {
   /** 重置用户MFA（仅超级管理员） */
   resetUserMfa: (id: number) => request.post<any, ApiResponse>(`/admin/user/users/${id}/reset-mfa`),
 };
+
+// ==================== 学生名单（预录白名单）====================
+
+/** 名单条目（与后端 StudentRoster.to_dict 对齐） */
+export interface RosterStudent {
+  id: number;
+  school: string;
+  student_number: string;
+  class_name: string;
+  real_name: string | null;
+  remark: string | null;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** 批量导入结果 */
+export interface RosterImportResult {
+  created: number;
+  failures: Array<{ row: number; reason: string }>;
+}
+
+/** 学生名单 API（/api/admin/roster） */
+export const rosterApi = {
+  /** 分页查询名单（可选学校/关键字筛选） */
+  getList: (params?: {
+    school?: string;
+    keyword?: string;
+    page?: number;
+    page_size?: number;
+  }) =>
+    request.get<
+      any,
+      ApiResponse<RosterStudent[]> & { total: number; page: number; page_size: number }
+    >("/admin/roster/students", { params }),
+  /** 新建单个名单条目 */
+  create: (data: {
+    school: string;
+    student_number: string;
+    class_name: string;
+    real_name?: string;
+    remark?: string;
+    is_active?: boolean;
+  }) => request.post<any, ApiResponse<RosterStudent>>("/admin/roster/students", data),
+  /** 编辑名单条目（学校/学号只读） */
+  update: (
+    id: number,
+    data: { class_name?: string; real_name?: string; remark?: string; is_active?: boolean }
+  ) => request.put<any, ApiResponse<RosterStudent>>(`/admin/roster/students/${id}`, data),
+  /** 删除名单条目 */
+  remove: (id: number) =>
+    request.delete<any, ApiResponse>(`/admin/roster/students/${id}`),
+  /** 批量导入（CSV / Excel 文件） */
+  import: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request.post<any, ApiResponse<RosterImportResult>>(
+      "/admin/roster/students/batch",
+      formData,
+      { headers: { "Content-Type": "multipart/form-data" } }
+    );
+  },
+  /** 学校选项（与小程序绑定页一致） */
+  getSchools: () => request.get<any, ApiResponse<string[]>>("/admin/roster/schools"),
+};

@@ -55,6 +55,7 @@ ALL_TABLES = [
     ('holiday_periods',              '节假日周期',              'HolidayPeriod'),
     ('notifications',                '站内通知',                'Notification'),
     ('student_profiles',             '学生资料',                'StudentProfile'),
+    ('student_rosters',              '学生名单（预录白名单）',   'StudentRoster'),
     ('wechat_accounts',              '微信账号',                'WechatAccount'),
     ('feedbacks',                    '意见与反馈',              'Feedback'),
     ('user_notifications',           '用户站内通知',            'UserNotification'),

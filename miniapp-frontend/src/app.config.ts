@@ -18,6 +18,7 @@ export default defineAppConfig({
     'pages/profile-edit/index',
     'pages/electricity-config/index',
     'pages/messages/index',
+    'pages/bind/index',
   ],
   // 底部 TabBar：3 项（首页 / 时间轴 / 我的）
   // 图标由 iconfont 字体渲染成 PNG（96x96）：src/assets/tabbar/ 下

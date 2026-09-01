@@ -9,12 +9,10 @@ import './index.scss';
 
 const FIELD_MAXLEN: Record<string, number> = {
   nickname: 20,
-  student_number: 30,
   campus_card_number: 30,
-  class_name: 30,
 };
 
-type FieldKey = 'nickname' | 'student_number' | 'campus_card_number' | 'class_name';
+type FieldKey = 'nickname' | 'campus_card_number';
 
 /**
  * 账号设置（独立页）
@@ -22,6 +20,7 @@ type FieldKey = 'nickname' | 'student_number' | 'campus_card_number' | 'class_na
  * 避免误触；保存按钮按下前所有改动只在本地预览，不写后端）。
  *
  * 提交策略：一次 updateProfile 提交全部字段（用户一次操作完成全部修改）。
+ * 注意：学号/班级/学校由「身份绑定」管理，此处只读展示，不可修改。
  */
 export default function ProfileEditPage() {
   const { user, setUser } = useAuthStore();
@@ -30,9 +29,7 @@ export default function ProfileEditPage() {
   // 本地表单（受控 + onInput）：初始从 profile/avatar 拷贝，profile 加载/变更后回填
   const [form, setForm] = useState<Record<FieldKey, string>>({
     nickname: '',
-    student_number: '',
     campus_card_number: '',
-    class_name: '',
   });
   const [avatarSrc, setAvatarSrc] = useState<string | null>(user?.avatar || null);
   const [saving, setSaving] = useState(false);
@@ -42,9 +39,7 @@ export default function ProfileEditPage() {
     if (!profile) return;
     setForm((f) => ({
       nickname: f.nickname || profile.nickname || '',
-      student_number: f.student_number || profile.student_number || '',
       campus_card_number: f.campus_card_number || profile.campus_card_number || '',
-      class_name: f.class_name || profile.class_name || '',
     }));
   }, [profile]);
 
@@ -79,25 +74,15 @@ export default function ProfileEditPage() {
     }
   };
 
-  /** 显式保存：trim 后全字段提交；昵称/学号/班级必填 */
+  /** 显式保存：trim 后全字段提交；昵称必填 */
   const handleSave = async () => {
     if (saving) return;
     const payload = {
       nickname: (form.nickname || '').trim(),
-      student_number: (form.student_number || '').trim(),
       campus_card_number: (form.campus_card_number || '').trim(),
-      class_name: (form.class_name || '').trim(),
     };
     if (!payload.nickname) {
       Taro.showToast({ title: '昵称不能为空', icon: 'none' });
-      return;
-    }
-    if (!payload.student_number) {
-      Taro.showToast({ title: '学号不能为空', icon: 'none' });
-      return;
-    }
-    if (!payload.class_name) {
-      Taro.showToast({ title: '班级不能为空', icon: 'none' });
       return;
     }
     setSaving(true);
@@ -145,16 +130,21 @@ export default function ProfileEditPage() {
           />
         </View>
 
-        <View className="pedit-row">
-          <Text className="pedit-row-label">学号</Text>
-          <Input
-            className="pedit-row-input"
-            value={form.student_number}
-            placeholder="填写学号"
-            placeholderClass="pedit-row-placeholder"
-            maxlength={FIELD_MAXLEN.student_number}
-            onInput={(e) => setForm((f) => ({ ...f, student_number: e.detail.value }))}
-          />
+        {/* 身份信息：由管理员预录名单绑定，只读展示，不可修改 */}
+        <View className="pedit-identity">
+          <View className="pedit-identity-title">身份信息（绑定后不可修改）</View>
+          <View className="pedit-identity-row">
+            <Text className="pedit-identity-label">学校</Text>
+            <Text className="pedit-identity-value">{profile?.school || '未绑定'}</Text>
+          </View>
+          <View className="pedit-identity-row">
+            <Text className="pedit-identity-label">学号</Text>
+            <Text className="pedit-identity-value">{profile?.student_number || '未绑定'}</Text>
+          </View>
+          <View className="pedit-identity-row">
+            <Text className="pedit-identity-label">班级</Text>
+            <Text className="pedit-identity-value">{profile?.class_name || '未绑定'}</Text>
+          </View>
         </View>
 
         <View className="pedit-row">
@@ -166,18 +156,6 @@ export default function ProfileEditPage() {
             placeholderClass="pedit-row-placeholder"
             maxlength={FIELD_MAXLEN.campus_card_number}
             onInput={(e) => setForm((f) => ({ ...f, campus_card_number: e.detail.value }))}
-          />
-        </View>
-
-        <View className="pedit-row">
-          <Text className="pedit-row-label">班级</Text>
-          <Input
-            className="pedit-row-input"
-            value={form.class_name}
-            placeholder="填写班级"
-            placeholderClass="pedit-row-placeholder"
-            maxlength={FIELD_MAXLEN.class_name}
-            onInput={(e) => setForm((f) => ({ ...f, class_name: e.detail.value }))}
           />
         </View>
       </View>

@@ -12,7 +12,7 @@
 
 import functools
 
-from flask import g, jsonify
+from flask import g, jsonify, request
 
 from app.core.logger import get_logger
 from app.utils.auth_middleware import jwt_required
@@ -45,6 +45,58 @@ def student_required(f):
         if role != "student":
             logger.warning(f'学生权限验证失败: user={user.get("username")}, role={role}')
             return jsonify({"status": "error", "message": "权限不足，需要学生身份"}), 403
+
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+def student_bound_required(f):
+    """
+    学生权限 + 身份绑定校验装饰器
+
+    在 student_required 基础上，额外检查该学生是否已完成身份绑定
+    （student_profiles.student_number 非空，即通过预录名单绑定成功）。
+
+    未绑定返回 403 + code=STUDENT_NOT_BOUND，小程序端据此跳转身份绑定页。
+    用于除「登录 / 绑定 / 绑定状态 / 学校列表」外的全部学生端业务接口，
+    实现"指定学号的学生才有查看对应信息的权力"。
+    """
+
+    @functools.wraps(f)
+    @student_required
+    def decorated_function(*args, **kwargs):
+        from app.core.database import get_db
+        from app.model.student_profile import StudentProfile
+
+        user = g.get("current_user", {})
+        user_id = user.get("user_id")
+        if user_id is None:
+            return jsonify({"status": "error", "message": "登录状态异常"}), 401
+
+        db = get_db()
+        try:
+            profile = (
+                db.query(StudentProfile)
+                .filter_by(user_id=int(user_id))
+                .first()
+            )
+            if not profile or not profile.student_number:
+                logger.warning(
+                    f"身份未绑定拒绝访问: user_id={user_id}, path={request.path}"
+                )
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": "请先完成身份认证",
+                            "code": "STUDENT_NOT_BOUND",
+                        }
+                    ),
+                    403,
+                )
+        finally:
+            db.close()
 
         return f(*args, **kwargs)
 

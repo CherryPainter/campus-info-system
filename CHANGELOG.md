@@ -6,7 +6,19 @@
 
 ## Unreleased
 
-> 类型：**功能重构（未发版）**。电量模块用户化改造：每个宿舍独立电表，爬虫 Cookie 改由学生在小程序自配（不再全局共享），数据按用户隔离存储，推送改为小程序站内通知（企业微信电量推送整体移除）；消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）；修复小程序电表 Cookie 保存/测试被 XSS 中间件误判拦截；「我的」页消息入口（替换二维码占位 + 未读角标 + 新公告提醒）；修复校园卡误用学号；小程序请求层 access token 预刷新（消除过期后首请求 401 噪音）。
+> 类型：**功能重构（未发版）**。电量模块用户化改造：每个宿舍独立电表，爬虫 Cookie 改由学生在小程序自配（不再全局共享），数据按用户隔离存储，推送改为小程序站内通知（企业微信电量推送整体移除）；消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）；修复小程序电表 Cookie 保存/测试被 XSS 中间件误判拦截；「我的」页消息入口（替换二维码占位 + 未读角标 + 新公告提醒）；修复校园卡误用学号；小程序请求层 access token 预刷新（消除过期后首请求 401 噪音）；新增学生身份绑定 + 预录学生名单（强制绑定：未绑定仅显示引导页；管理员单条/批量录入名单，学校+学号+班级三项全匹配才放行）。
+
+### 新增：学生身份绑定 + 预录学生名单（2026-09-01）
+- **背景**：小程序登录后需选择学校（下拉为模糊选项但必须含重庆科创职业学院）、输入学号与班级，用于筛出无关人员；管理员提前录入学生名单，只有指定学号的学生才有权查看对应信息。绑定为强制流程——未绑定身份时小程序全部功能不可用（仅显示绑定引导页）。
+- **数据模型**：新增 `student_rosters` 预录白名单表（`school`+`student_number` 联合唯一，含 `class_name`/`real_name`/`remark`/`is_active`，全库共 30 张表）；`student_profiles` 新增 `school` 列；新表/新列由 `init_db.py migrate` 指纹迁移自动补齐。
+- **后端**：
+  - `app/services/student_roster_service.py`（新建）：`create`（必填+查重）、`create_batch`（事务内文件内+库内查重，返回 `{created, failures:[{row, reason}]}`）、`verify`（学校+学号+班级三项全匹配且 `is_active`）、`list`（分页+学校/关键字筛选）、`update`（学校/学号只读）、`delete`。
+  - `app/api/admin_roster_routes.py`（新建，`/api/admin/roster`，均 `@admin_required`）：学生列表/新建/批量导入（CSV 支持 UTF-8-SIG/GBK 编码，xlsx 用 openpyxl 解析，表头中英文兼容）/编辑/启停/删除/学校选项/CSV 模板下载。
+  - `app/utils/student_auth.py` 新增 `student_bound_required` 装饰器：在 `student_required` 基础上校验 `StudentProfile.student_number` 非空，未绑定返回 403 `code=STUDENT_NOT_BOUND`；miniapp/feedback 全部业务路由由 `@student_required` 切换为 `@student_bound_required`（`/user/me` 保留）。
+  - `miniapp_routes.py`：新增 `GET /student/bind-status`（绑定快照）、`GET /student/schools`（复用管理端学校选项）、`POST /student/bind`（三项校验通过才写回 profile）；`PUT /student/profile` 白名单移除 `school`/`student_number`/`class_name`，防止绕过名单直接填学号。
+- **管理端**：用户管理页改为双 Tab（「用户管理」+「学生名单」）；新增 `UserManagementRoster.tsx`：查询筛选（学校 Select+关键字）/新建/编辑（学校学号只读）/启停 Switch/删除/批量导入（结果弹窗展示失败明细）/模板下载。
+- **小程序端**：新增 `pages/bind/index` 绑定页（学校 chips 选中态高亮 + 学号/班级输入；已绑定直接 reLaunch 首页；成功回写 profile）；`request.ts` 对 403 `STUDENT_NOT_BOUND` 防抖（2s）reLaunch 绑定页并抛 ApiError；资料编辑页学号/班级改为只读身份信息块。
+- **验证**：后端 test_client 冒烟 10 项全过（未绑定 403 拦截、名单新建、学校列表、班级不匹配拒绝、三项匹配绑定成功、绑定后放行、绑定快照回读一致、防绕过 400、未登录 401）；`py_compile` 通过；管理端 `vite build` 成功；小程序 `tsc --noEmit` 0 错误 + `build:weapp` 成功。
 
 ### 修复：小程序请求层 access token 预刷新，消除过期后首请求 401 噪音（2026-09-01）
 - **背景**：微信开发者工具控制台出现 `GET /api/miniapp/feedback|weather/current|weather/hourly|schedule/today 401` 红字。排查（后端日志 + 实测）：**非功能性 bug**——storage 里的旧 access token 超 1 小时过期后，页面初始化并发请求带旧 token → 全部 401「token 已过期」→ `request.ts` 单飞锁自动 `refreshOnce()` **刷新成功**（日志 20:20:34,115 生成新 token、旧 refresh 撤销）→ 4 个请求全部重放成功（天气/课表/反馈/电量数据均正常落库返回）。401 红字是微信开发者工具网络层固有日志，即使应用层自动刷新重放成功也无法抑制，仅造成"报错"错觉。

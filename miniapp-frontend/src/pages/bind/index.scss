@@ -1,0 +1,125 @@
+@import '../../styles/variables.scss';
+
+.bind-page {
+  min-height: 100vh;
+  background: $background;
+  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.bind-card {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  padding: $spacing-lg;
+  margin-top: $spacing-md;
+}
+
+.bind-title {
+  display: block;
+  font-size: $font-size-xl;
+  font-weight: 700;
+  color: $text-primary;
+}
+
+.bind-desc {
+  display: block;
+  margin-top: $spacing-sm;
+  font-size: $font-size-sm;
+  line-height: 1.6;
+  color: $text-secondary;
+}
+
+.bind-label {
+  display: block;
+  margin-top: $spacing-lg;
+  margin-bottom: $spacing-sm;
+  font-size: $font-size-md;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+/* 学校选项：网格 chips */
+.bind-schools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-sm;
+}
+
+.bind-school-chip {
+  padding: $spacing-sm $spacing-md;
+  border-radius: $radius-full;
+  border: 1rpx solid $border-color;
+  background: $card-background;
+  transition: all 0.2s ease;
+}
+
+.bind-school-chip-active {
+  border-color: $primary-color;
+  background: $primary-light;
+}
+
+.bind-school-text {
+  font-size: $font-size-sm;
+  color: $text-secondary;
+}
+
+.bind-school-text-active {
+  font-size: $font-size-sm;
+  color: $primary-color;
+  font-weight: 600;
+}
+
+.bind-school-empty {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}
+
+/* 输入行 */
+.bind-input-row {
+  display: flex;
+  align-items: center;
+  padding: $spacing-sm $spacing-md;
+  border: 1rpx solid $border-color;
+  border-radius: $radius-medium;
+  background: $background;
+}
+
+.bind-input {
+  flex: 1;
+  font-size: $font-size-md;
+  color: $text-primary;
+}
+
+.bind-placeholder {
+  color: $text-tertiary;
+}
+
+/* 提交 */
+.bind-submit {
+  margin-top: $spacing-xl;
+  background: $primary-color;
+  border-radius: $radius-full;
+  padding: $spacing-md 0;
+  text-align: center;
+  box-shadow: 0 4rpx 12rpx rgba(26, 115, 232, 0.25);
+}
+
+.bind-submit-disabled {
+  background: $primary-light;
+  box-shadow: none;
+}
+
+.bind-submit-text {
+  font-size: $font-size-md;
+  color: $text-inverse;
+  font-weight: 600;
+}
+
+.bind-hint {
+  display: block;
+  margin-top: $spacing-md;
+  text-align: center;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}

@@ -102,6 +102,19 @@ function redirectToLogin(): void {
   Taro.reLaunch({ url: '/pages/login/index' });
 }
 
+/** 身份未绑定防抖标记：多个业务请求同时 403 时只触发一次跳转 */
+let isRedirectingToBind = false;
+
+/** 403 code=STUDENT_NOT_BOUND 时统一跳身份绑定页（reLaunch 替换栈，无法返回跳过） */
+function redirectToBind(): void {
+  if (isRedirectingToBind) return;
+  isRedirectingToBind = true;
+  Taro.reLaunch({ url: '/pages/bind/index' });
+  setTimeout(() => {
+    isRedirectingToBind = false;
+  }, 2000);
+}
+
 export async function request<T = unknown>(options: RequestOptions): Promise<T> {
   const { url, method = 'GET', data, auth = true, _retried, timeout = 10000 } = options;
 
@@ -150,6 +163,16 @@ export async function request<T = unknown>(options: RequestOptions): Promise<T> 
     }
     redirectToLogin();
     throw new ApiError('登录已过期，请重新登录', 401);
+  }
+
+  // 403 + code=STUDENT_NOT_BOUND：身份未绑定 → 跳绑定页（绑定接口本身不会触发，
+  // 仅业务接口命中；绑定失败的业务码是普通 403 无 code，页面自行 toast）
+  if (res.statusCode === 403 && auth) {
+    const body = res.data as { code?: string };
+    if (body?.code === 'STUDENT_NOT_BOUND') {
+      redirectToBind();
+      throw new ApiError('请先完成身份认证', 403, res.data);
+    }
   }
 
   throw new ApiError(friendlyMessage(res.statusCode, res.data), res.statusCode, res.data);

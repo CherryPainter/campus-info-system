@@ -43,6 +43,7 @@ export interface RefreshResult extends ApiSuccess {
 export interface StudentProfile {
   user_id: number;
   student_number: string | null;
+  school: string | null;
   campus_card_number: string | null;
   real_name: string | null;
   nickname: string | null;
@@ -61,6 +62,27 @@ export interface UserMeResult extends ApiSuccess {
 
 export interface StudentProfileResult extends ApiSuccess {
   profile: StudentProfile;
+}
+
+// ==================== 身份绑定（/api/miniapp/student/bind） ====================
+
+/** 绑定状态查询结果 */
+export interface BindStatusResult extends ApiSuccess {
+  bound: boolean;
+  school: string | null;
+  student_number: string | null;
+  class_name: string | null;
+}
+
+/** 提交绑定结果 */
+export interface BindResult extends ApiSuccess {
+  bound: boolean;
+  profile: StudentProfile;
+}
+
+/** 可选学校列表 */
+export interface SchoolsResult extends ApiSuccess {
+  schools: string[];
 }
 
 // ==================== 课表（/api/miniapp/schedule） ====================

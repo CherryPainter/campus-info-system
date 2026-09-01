@@ -27,6 +27,7 @@ from app.model.push_task import PushTask
 from app.model.scheduled_crawl_task import ScheduledCrawlTask
 from app.model.server_session import ServerSession
 from app.model.student_profile import StudentProfile
+from app.model.student_roster import StudentRoster
 from app.model.task_process import TaskProcess
 from app.model.token_blacklist import TokenBlacklist
 from app.model.user import User
@@ -52,6 +53,7 @@ __all__ = [
     "UserMFA",
     "User",
     "StudentProfile",
+    "StudentRoster",
     "WechatAccount",
     "UserNotification",
     "LoginLog",

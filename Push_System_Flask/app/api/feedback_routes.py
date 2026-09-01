@@ -7,7 +7,7 @@
 - 图片上传走 miniapp（学生端），公共访问路由在 app/api/routes.py
 
 接口总览：
-  学生侧（@student_required）
+  学生侧（@student_bound_required）
     POST   /api/miniapp/feedback             提交反馈
     GET    /api/miniapp/feedback            我的反馈列表（分页）
     GET    /api/miniapp/feedback/<id>       反馈详情
@@ -37,7 +37,7 @@ from app.model.feedback import (
     STATUS_RESOLVED,
 )
 from app.utils.auth_middleware import admin_required
-from app.utils.student_auth import student_required
+from app.utils.student_auth import student_bound_required
 from app.utils.file_upload_security import (
     FileUploadError,
     generate_secure_filename,
@@ -67,7 +67,7 @@ def _image_root():
 # ==================== 学生侧 ====================
 
 @miniapp_bp.route("/feedback", methods=["POST"])
-@student_required
+@student_bound_required
 def feedback_create():
     """提交反馈
 
@@ -115,7 +115,7 @@ def feedback_create():
 
 
 @miniapp_bp.route("/feedback", methods=["GET"])
-@student_required
+@student_bound_required
 def feedback_mine():
     """我的反馈列表（分页）
 
@@ -143,7 +143,7 @@ def feedback_mine():
 
 
 @miniapp_bp.route("/feedback/<int:feedback_id>", methods=["GET"])
-@student_required
+@student_bound_required
 def feedback_detail_mine(feedback_id):
     """反馈详情（仅本人）"""
     user_id = int(g_user_id())
@@ -160,7 +160,7 @@ def feedback_detail_mine(feedback_id):
 
 
 @miniapp_bp.route("/feedback/upload", methods=["POST"])
-@student_required
+@student_bound_required
 def feedback_upload():
     """反馈截图上传（WangEditor v5 约定返回格式）
 

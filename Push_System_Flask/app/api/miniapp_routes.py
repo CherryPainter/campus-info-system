@@ -7,6 +7,9 @@
 
 接口清单：
 - GET  /api/miniapp/user/me                    当前学生用户信息（v6.16.0）
+- GET  /api/miniapp/student/bind-status        身份绑定状态（是否通过预录名单绑定）
+- GET  /api/miniapp/student/schools            身份绑定可选学校列表（含模糊干扰项）
+- POST /api/miniapp/student/bind               身份绑定（学校+学号+班级 命中预录名单）
 - GET  /api/miniapp/student/profile            本人学生资料
 - PUT  /api/miniapp/student/profile            更新本人学生资料
 - GET  /api/miniapp/schedule/today             今日课表（v6.16.0 第二阶段）
@@ -48,7 +51,7 @@ from flask import Blueprint, g, request
 
 from app.core.api_response import api_error, api_success
 from app.core.logger import get_logger
-from app.utils.student_auth import student_required
+from app.utils.student_auth import student_bound_required, student_required
 
 # 使用统一日志系统
 logger = get_logger(__name__)
@@ -79,8 +82,104 @@ def me():
         db.close()
 
 
-@miniapp_bp.route("/student/profile", methods=["GET"])
+@miniapp_bp.route("/student/bind-status", methods=["GET"])
 @student_required
+def bind_status():
+    """
+    身份绑定状态查询
+
+    返回是否已通过预录名单完成身份绑定（student_number 非空即视为已绑定），
+    以及已绑定的学校/学号/班级快照。小程序端据此决定是否跳转绑定页。
+    """
+    from app.core.database import get_db
+    from app.model.student_profile import StudentProfile
+
+    user_id = int(g.current_user["user_id"])
+    db = get_db()
+    try:
+        profile = db.query(StudentProfile).filter_by(user_id=user_id).first()
+        if not profile:
+            return api_success(bound=False)
+        bound = bool(profile.student_number)
+        return api_success(
+            bound=bound,
+            school=profile.school,
+            student_number=profile.student_number,
+            class_name=profile.class_name,
+        )
+    finally:
+        db.close()
+
+
+@miniapp_bp.route("/student/schools", methods=["GET"])
+@student_required
+def student_schools():
+    """
+    身份绑定可选学校列表（含模糊干扰项；重庆科创职业学院必须保留）
+    """
+    from app.api.admin_roster_routes import SCHOOL_OPTIONS
+
+    return api_success(schools=SCHOOL_OPTIONS)
+
+
+@miniapp_bp.route("/student/bind", methods=["POST"])
+@student_required
+def bind_student():
+    """
+    身份绑定：校验「学校 + 学号 + 班级」命中预录名单（启用中）后写入本人资料
+
+    - 三项均匹配且名单条目 is_active=1 才绑定成功；
+    - 绑定成功后 school/student_number/class_name 由本接口管理，
+      不再接受 PUT /student/profile 修改（防止绕过名单直接填学号）。
+    """
+    from app.core.database import get_db
+    from app.model.student_profile import StudentProfile
+    from app.services.student_roster_service import StudentRosterService
+
+    payload = request.get_json(silent=True) or {}
+    school = (payload.get("school") or "").strip()
+    student_number = (payload.get("student_number") or "").strip()
+    class_name = (payload.get("class_name") or "").strip()
+    if not school or not student_number or not class_name:
+        return api_error(message="学校、学号、班级均不能为空", http_status=400)
+
+    ok, _row = StudentRosterService.verify(school, student_number, class_name)
+    if not ok:
+        logger.warning(
+            f"身份绑定校验未通过: user_id={g.current_user.get('user_id')}, "
+            f"school={school}, student_number={student_number}"
+        )
+        return api_error(
+            message="身份校验未通过，请联系管理员确认名单", http_status=403
+        )
+
+    user_id = int(g.current_user["user_id"])
+    db = get_db()
+    try:
+        profile = db.query(StudentProfile).filter_by(user_id=user_id).first()
+        if not profile:
+            profile = StudentProfile(user_id=user_id)
+            db.add(profile)
+        profile.school = school
+        profile.student_number = student_number
+        profile.class_name = class_name
+        db.commit()
+        db.refresh(profile)
+        logger.info(
+            f"身份绑定成功: user_id={user_id}, school={school}, "
+            f"student_number={student_number}, class_name={class_name}"
+        )
+        return api_success(bound=True, profile=profile.to_dict(), message="绑定成功")
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"身份绑定落库失败: user_id={user_id}: {exc}")
+        return api_error(message="绑定失败，请稍后重试", http_status=500)
+    finally:
+        db.close()
+
+
+@miniapp_bp.route("/student/profile", methods=["GET"])
+@student_bound_required
 def get_profile():
     """
     获取当前学生资料（student_profiles 表，按 JWT user_id 查询本人资料）
@@ -100,23 +199,24 @@ def get_profile():
 
 
 @miniapp_bp.route("/student/profile", methods=["PUT"])
-@student_required
+@student_bound_required
 def update_profile():
     """
     更新当前学生资料（只允许更新本人资料，user_id 取自 JWT 而非客户端）
 
     请求体（全部可选，只更新传入字段）：
         {
-            "student_number": "学号",
             "campus_card_number": "校园卡号（一卡通号）",
             "real_name": "姓名",
             "nickname": "昵称",
             "college": "学院",
             "major": "专业",
-            "class_name": "班级",
             "grade": "年级",
             "phone": "手机号"
         }
+
+    注意：school / student_number / class_name 由「身份绑定」接口（POST /student/bind）
+    管理，不在此白名单内——防止绕过预录名单直接填写学号。
     """
     from app.core.database import get_db
     from app.model.student_profile import StudentProfile
@@ -125,13 +225,11 @@ def update_profile():
     data = request.get_json(silent=True) or {}
 
     allowed_fields = {
-        "student_number",
         "campus_card_number",
         "real_name",
         "nickname",
         "college",
         "major",
-        "class_name",
         "grade",
         "phone",
     }
@@ -162,7 +260,7 @@ def update_profile():
 
 
 @miniapp_bp.route("/user/avatar", methods=["PUT"])
-@student_required
+@student_bound_required
 def update_avatar():
     """
     更新当前学生用户头像（data URI 形式，复用管理端头像校验，无修改次数配额）
@@ -203,7 +301,7 @@ def update_avatar():
 
 
 @miniapp_bp.route("/schedule/today", methods=["GET"])
-@student_required
+@student_bound_required
 def schedule_today():
     """
     指定日期课表（默认今天）
@@ -223,7 +321,7 @@ def schedule_today():
 
 
 @miniapp_bp.route("/schedule/week", methods=["GET"])
-@student_required
+@student_bound_required
 def schedule_week():
     """
     指定周课表（默认当前教学周）
@@ -269,7 +367,7 @@ def schedule_week():
 
 
 @miniapp_bp.route("/schedule/current", methods=["GET"])
-@student_required
+@student_bound_required
 def schedule_current():
     """
     当前教学周信息 + 学期周次面板数据
@@ -314,7 +412,7 @@ def schedule_current():
 
 
 @miniapp_bp.route("/weather/current", methods=["GET"])
-@student_required
+@student_bound_required
 def weather_current():
     """
     实时天气（30 分钟 TTL，过期返回旧数据并后台刷新）
@@ -328,7 +426,7 @@ def weather_current():
 
 
 @miniapp_bp.route("/weather/hourly", methods=["GET"])
-@student_required
+@student_bound_required
 def weather_hourly():
     """
     24 小时逐小时预报（60 分钟 TTL，过期返回旧数据并后台刷新）
@@ -340,7 +438,7 @@ def weather_hourly():
 
 
 @miniapp_bp.route("/weather/alerts", methods=["GET"])
-@student_required
+@student_bound_required
 def weather_alerts():
     """
     生效中的天气预警
@@ -352,7 +450,7 @@ def weather_alerts():
 
 
 @miniapp_bp.route("/weather/daily", methods=["GET"])
-@student_required
+@student_bound_required
 def weather_daily():
     """
     未来 7 天逐天预报（缓存 3 小时，未命中按需回源）
@@ -370,7 +468,7 @@ def weather_daily():
 
 
 @miniapp_bp.route("/weather/indices", methods=["GET"])
-@student_required
+@student_bound_required
 def weather_indices():
     """
     生活指数（缓存 6 小时，未命中按需回源）
@@ -388,7 +486,7 @@ def weather_indices():
 
 
 @miniapp_bp.route("/weather/air", methods=["GET"])
-@student_required
+@student_bound_required
 def weather_air():
     """
     实时空气质量 AQI（缓存 30 分钟，未命中按需回源）
@@ -406,7 +504,7 @@ def weather_air():
 
 
 @miniapp_bp.route("/weather/minutely", methods=["GET"])
-@student_required
+@student_bound_required
 def weather_minutely():
     """
     分钟级降水（缓存 30 分钟，未命中按需回源）
@@ -440,7 +538,7 @@ def _get_student_cookie(user_id: int) -> str:
 
 
 @miniapp_bp.route("/electricity/current", methods=["GET"])
-@student_required
+@student_bound_required
 def electricity_current():
     """
     剩余电量（含百分比/总量/低电量标记，按 JWT 用户隔离，recorded_at 为数据采集时间）
@@ -460,7 +558,7 @@ def electricity_current():
 
 
 @miniapp_bp.route("/electricity/refresh", methods=["GET"])
-@student_required
+@student_bound_required
 def electricity_refresh():
     """
     轻量刷新剩余电量：触发一次实时爬取（1 个请求）并返回最新值。
@@ -489,7 +587,7 @@ def electricity_refresh():
 
 
 @miniapp_bp.route("/electricity/history", methods=["GET"])
-@student_required
+@student_bound_required
 def electricity_history():
     """
     用电记录（按需分页，前端用多少请求多少，按 JWT 用户隔离）
@@ -547,7 +645,7 @@ def electricity_history():
 
 
 @miniapp_bp.route("/electricity/trend", methods=["GET"])
-@student_required
+@student_bound_required
 def electricity_trend():
     """
     用电趋势（按日聚合，仅返回少量点，按 JWT 用户隔离）
@@ -570,7 +668,7 @@ def electricity_trend():
 
 
 @miniapp_bp.route("/electricity/cookie", methods=["GET"])
-@student_required
+@student_bound_required
 def electricity_cookie_get():
     """
     获取当前学生电表 Cookie 配置状态（脱敏，不返回完整 Cookie）
@@ -590,7 +688,7 @@ def electricity_cookie_get():
 
 
 @miniapp_bp.route("/electricity/cookie", methods=["PUT"])
-@student_required
+@student_bound_required
 def electricity_cookie_put():
     """
     保存当前学生电表爬虫 Cookie（仅本人可写，存在 student_profiles.electricity_cookie）
@@ -628,7 +726,7 @@ def electricity_cookie_put():
 
 
 @miniapp_bp.route("/electricity/cookie/test", methods=["POST"])
-@student_required
+@student_bound_required
 def electricity_cookie_test():
     """
     测试电表 Cookie 是否有效（不落库，仅检测）
@@ -655,7 +753,7 @@ def electricity_cookie_test():
 
 
 @miniapp_bp.route("/notifications/messages", methods=["GET"])
-@student_required
+@student_bound_required
 def user_notifications_list():
     """
     个人站内通知列表（电量日报/周报/月报、低电量提醒、Cookie 失效提醒等）
@@ -713,7 +811,7 @@ def user_notifications_list():
 
 
 @miniapp_bp.route("/notifications/messages/read", methods=["POST"])
-@student_required
+@student_bound_required
 def user_notifications_read():
     """
     标记个人站内通知已读
@@ -755,7 +853,7 @@ def user_notifications_read():
 
 
 @miniapp_bp.route("/notifications/unread-count", methods=["GET"])
-@student_required
+@student_bound_required
 def user_notifications_unread_count():
     """
     消息未读统计（「我的」页消息图标角标用）
@@ -789,7 +887,7 @@ def user_notifications_unread_count():
 
 
 @miniapp_bp.route("/notifications/upcoming", methods=["GET"])
-@student_required
+@student_bound_required
 def notifications_upcoming():
     """
     即将到来的活跃提醒（首页/时间轴"近期提醒"卡片用）
@@ -817,7 +915,7 @@ def notifications_upcoming():
 
 
 @miniapp_bp.route("/notifications/all", methods=["GET"])
-@student_required
+@student_bound_required
 def notifications_all():
     """
     所有未过期活跃提醒（"更多"列表页用，不限 remind_days 窗口）
@@ -846,7 +944,7 @@ def notifications_all():
 
 
 @miniapp_bp.route("/announcements", methods=["GET"])
-@student_required
+@student_bound_required
 def announcements_list():
     """校园通知列表（仅已发布、未过期，置顶优先）
 
@@ -883,7 +981,7 @@ def announcements_list():
 
 
 @miniapp_bp.route("/announcements/unread-count", methods=["GET"])
-@student_required
+@student_bound_required
 def announcements_unread_count():
     """未读通知数（首页角标/红点用）"""
     from app.services.announcement_service import announcement_service
@@ -893,7 +991,7 @@ def announcements_unread_count():
 
 
 @miniapp_bp.route("/announcements/<int:announcement_id>", methods=["GET"])
-@student_required
+@student_bound_required
 def announcement_detail(announcement_id):
     """通知详情（含正文、附件、同分类相关推荐；首次访问自动记已读并累加阅读数）"""
     from app.services.announcement_service import announcement_service
@@ -906,7 +1004,7 @@ def announcement_detail(announcement_id):
 
 
 @miniapp_bp.route("/announcements/<int:announcement_id>/favorite", methods=["POST"])
-@student_required
+@student_bound_required
 def announcement_favorite(announcement_id):
     """收藏 / 取消收藏（toggle），返回操作后的收藏状态"""
     from app.services.announcement_service import announcement_service
@@ -919,7 +1017,7 @@ def announcement_favorite(announcement_id):
 
 
 @miniapp_bp.route("/announcements/<int:announcement_id>/read", methods=["POST"])
-@student_required
+@student_bound_required
 def announcement_mark_read(announcement_id):
     """显式标记已读（详情页底部按钮，正常浏览已自动记已读）"""
     from app.services.announcement_service import announcement_service
@@ -930,7 +1028,7 @@ def announcement_mark_read(announcement_id):
 
 
 @miniapp_bp.route("/announcements/attachment/<int:attachment_id>", methods=["GET"])
-@student_required
+@student_bound_required
 def announcement_attachment(attachment_id):
     """下载公告附件（仅限所属公告对学生可见时可下）"""
     import os

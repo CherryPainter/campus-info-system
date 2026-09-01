@@ -273,6 +273,11 @@ def create_app(config_class=None):
 
     app.register_blueprint(admin_user_bp, url_prefix="/api/admin/user")
 
+    # 注册学生名单管理蓝图（预录白名单，用户管理页「学生名单」Tab）
+    from app.api.admin_roster_routes import admin_roster_bp
+
+    app.register_blueprint(admin_roster_bp, url_prefix="/api/admin/roster")
+
     # 注册 IP 黑名单管理蓝图
     from app.api.ip_blacklist_routes import ip_blacklist_bp
 
