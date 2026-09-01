@@ -6,7 +6,12 @@
 
 ## Unreleased
 
-> 类型：**功能重构（未发版）**。电量模块用户化改造：每个宿舍独立电表，爬虫 Cookie 改由学生在小程序自配（不再全局共享），数据按用户隔离存储，推送改为小程序站内通知（企业微信电量推送整体移除）；消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）。
+> 类型：**功能重构（未发版）**。电量模块用户化改造：每个宿舍独立电表，爬虫 Cookie 改由学生在小程序自配（不再全局共享），数据按用户隔离存储，推送改为小程序站内通知（企业微信电量推送整体移除）；消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）；修复小程序电表 Cookie 保存/测试被 XSS 中间件误判拦截。
+
+### 修复：小程序电表 Cookie 保存/测试被 XSS 中间件误判拦截（2026-09-01）
+- **背景**：小程序「电表配置」页保存/测试 Cookie 报 `PUT /api/miniapp/electricity/cookie 400 (BAD REQUEST)`。日志定位为安全中间件 `Blocked xss attack: XSS in JSON field "cookie"`：XSS 模式 `on\w+\s*=\s*["\']?[^"\'>]+["\']?`（本意拦截 `onclick=` 等 DOM 事件属性）会把 Cookie 中任何以 `on` 开头的正常键值对（如 `online=1`、`onetime=...`）误判为 XSS，`scan_request_for_attacks()` 在路由执行前直接返回 400「Bad Request」（已用 `detect_xss` 实测复现）。此前管理端全局 Cookie 接口（7-20）能保存成功只是因为当时的 Cookie 内容恰好不触发。
+- **修复**（`app/utils/security.py`，最小改动单点处理）：新增 `JSON_SCAN_EXEMPT_FIELDS`（method, path, key 三元组）字段级扫描豁免，对 `PUT /api/miniapp/electricity/cookie` 与 `POST /api/miniapp/electricity/cookie/test` 的 `cookie` 字段跳过 SQL/XSS 检测。豁免依据：该字段是学生爬虫鉴权凭证，仅存库 + 服务端转发给教务系统，`GET` 只返回脱敏预览（前4后2），绝不回显页面，SQL/XSS 检测不适用；且两接口均有 `@student_required` 认证（仅本人可读写）。全局攻击扫描不受影响，其它路径/字段行为不变。
+- **验证**：py_compile 通过；test_client 模拟含 `online=1` 的 Cookie：无 token 401（认证层拦截而非 400 攻击拦截）、假 token 401「认证令牌无效」（证明已通过扫描）、真实 student token PUT 保存 200、GET 配置 200（`configured=true` + 脱敏预览 `ASP.****bc`）、空 Cookie 400「Cookie 不能为空」（业务校验正常）。测试写入的假 Cookie 已清空恢复现场。
 
 ### 电量模块用户化重构（2026-09-01）
 - **背景**：每个宿舍有独立电表，原实现共用一个全局 Cookie（管理员配置），数据与推送不分用户，不适用于多宿舍场景；自动化无法代学生获取 Cookie，故改为学生自配、系统按其配置分别采集与推送。

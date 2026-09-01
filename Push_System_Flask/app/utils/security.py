@@ -368,6 +368,9 @@ def scan_request_for_attacks():
             if isinstance(json_data, dict):
                 for key, value in json_data.items():
                     if isinstance(value, str):
+                        # 凭证类字段豁免（如电表 Cookie：仅存库/服务端转发，不回显页面）
+                        if (request.method, request.path, key) in JSON_SCAN_EXEMPT_FIELDS:
+                            continue
                         if detect_sql_injection(value):
                             return (True, "sql_injection", f'SQL injection in JSON field "{key}"')
                         if detect_xss(value):
@@ -551,6 +554,15 @@ def _check_foreign_ip(client_ip: str):
 _SECURITY_BEFORE_REQUEST_WHITELIST = {
     "/api/auth/login",
     "/api/auth/login_mfa",
+}
+
+# JSON 字段级扫描豁免（method, path, key）：仅用于纯凭证字段，值只落库/服务端转发、不回显页面
+# - 电表 Cookie：学生粘贴的爬虫鉴权凭证，含 "online=1" 等以 on 开头的正常键值对，
+#   会被事件属性 XSS 模式 on\w+= 误判拦截；GET 仅返回脱敏预览（前4后2），SQL/XSS 检测不适用。
+# - 若未来该字段被回显渲染到页面，必须移除对应豁免。
+JSON_SCAN_EXEMPT_FIELDS = {
+    ("PUT", "/api/miniapp/electricity/cookie", "cookie"),
+    ("POST", "/api/miniapp/electricity/cookie/test", "cookie"),
 }
 
 
