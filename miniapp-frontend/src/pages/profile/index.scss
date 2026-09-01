@@ -2,11 +2,13 @@
 
 .profile-page {
   position: relative;
+  // 强制占满视口高度，避免下方内容区透到 iOS 渲染层（被 hero 的渐变染成淡蓝紫）
+  min-height: 100vh;
   background: $background;
+  box-sizing: border-box;
 
   /* 自定义 TabBar 高度（98rpx + safe-area） */
   padding-bottom: calc(108rpx + env(safe-area-inset-bottom));
-  box-sizing: border-box;
 }
 
 // 顶部 hero 区：自定义背景主题只染这块（资料头部 + 适当留白）
@@ -43,7 +45,7 @@
     background: linear-gradient(180deg, #cdd6f0 0%, #e6e9f8 46%, $background 80%);
   }
 
-  // 资料头部
+  // 资料头部（hero 内部子元素，保持嵌套）
   .profile-header {
     position: relative;
     z-index: 1;
@@ -121,186 +123,186 @@
       font-size: 40rpx;
     }
   }
+}
 
-  // 宿舍用电卡
-  .dorm-card {
-    margin-top: $spacing-md;
+// 宿舍用电卡（.profile-page 的子级，与 .profile-hero 平级）
+.dorm-card {
+  margin-top: $spacing-md;
 
-    .dorm-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: $spacing-md;
+  .dorm-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: $spacing-md;
 
-      .card-title {
-        font-size: $font-size-lg;
-        font-weight: 600;
-        color: $text-primary;
-      }
-
-      .card-more {
-        font-size: $font-size-sm;
-        color: $text-tertiary;
-      }
-
-      // 标题右侧：楼栋信息 + 更多› 横向排列
-      .dorm-header-right {
-        display: flex;
-        align-items: center;
-      }
-
-      .dorm-room {
-        font-size: $font-size-sm;
-        color: $text-tertiary;
-        margin-right: $spacing-md;
-        line-height: 1;
-      }
+    .card-title {
+      font-size: $font-size-lg;
+      font-weight: 600;
+      color: $text-primary;
     }
 
-    .dorm-stats {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: $spacing-md $spacing-xs;
-    }
-
-    .dorm-stat {
-      flex: 1;
-      // 重要：Text 在 WXSS 中默认是 inline-block，会水平排版；
-      // 上下排版必须给 Text 显式 display:block
-      .dorm-stat-label {
-        display: block;
-        font-size: $font-size-xs;
-        color: $text-tertiary;
-        line-height: 1.2;
-      }
-
-      .dorm-stat-value {
-        display: block;
-        margin-top: $spacing-sm;
-        font-size: 68rpx;
-        font-weight: 700;
-        color: $text-primary;
-        line-height: 1.1;
-      }
-
-      // 剩余电量用绿色突出（原型图）
-      .dorm-stat-value-remaining {
-        color: #34c759;
-      }
-
-      // 本月已用为深色（原型图）
-      .dorm-stat-value-used {
-        color: $text-primary;
-      }
-    }
-
-    .dorm-stat-divider {
-      // 竖线两侧留出间距，避免与数字重叠
-      margin: 0 $spacing-md;
-      width: 1rpx;
-      height: 80rpx;
-      background: $border-color;
-      flex-shrink: 0;
-    }
-
-    .dorm-foot {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-top: $spacing-md;
-    }
-
-    .dorm-foot-time {
-      font-size: $font-size-xs;
+    .card-more {
+      font-size: $font-size-sm;
       color: $text-tertiary;
     }
 
-    .dorm-foot-btn {
-      padding: 10rpx 24rpx;
-      border-radius: $radius-full;
-      // 浅蓝边框按钮（原型图）
-      border: 1rpx solid #d6e4ff;
-      background: #f0f6ff;
-      font-size: $font-size-sm;
-      color: $primary-color;
-    }
-  }
-
-  // 功能列表（带中文首字图标块）
-  .profile-list {
-    padding: 0 $spacing-lg;
-    margin-top: $spacing-md;
-
-    .profile-item {
+    // 标题右侧：楼栋信息 + 更多› 横向排列
+    .dorm-header-right {
       display: flex;
       align-items: center;
-      padding: $spacing-md 0;
-      border-bottom: 1rpx solid $border-color;
+    }
 
-      &:last-child {
-        border-bottom: none;
-      }
-
-      .profile-item-icon-wrap {
-        width: 56rpx;
-        height: 56rpx;
-        border-radius: $radius-medium;
-        background: $primary-light;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        margin-right: $spacing-md;
-      }
-
-      .profile-item-icon {
-        font-size: 36rpx;
-        color: $primary-color;
-        line-height: 1;
-      }
-
-      .profile-star-icon {
-        color: $primary-color;
-      }
-
-      .profile-label {
-        flex: 1;
-        font-size: $font-size-md;
-        color: $text-primary;
-      }
-
-      .profile-arrow {
-        font-size: 32rpx;
-        color: $text-tertiary;
-      }
-
-      /* 意见反馈未读红点：与箭头保持间距 */
-      .fb-badge {
-        margin-right: $spacing-xs;
-      }
+    .dorm-room {
+      font-size: $font-size-sm;
+      color: $text-tertiary;
+      margin-right: $spacing-md;
+      line-height: 1;
     }
   }
 
-  .logout-btn {
-    margin: $spacing-lg $spacing-md 0;
-    padding: $spacing-md;
-    border-radius: $radius-large;
-    background: $card-background;
-    text-align: center;
+  .dorm-stats {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: $spacing-md $spacing-xs;
+  }
 
-    .logout-text {
-      font-size: $font-size-md;
-      color: $error;
+  .dorm-stat {
+    flex: 1;
+    // 重要：Text 在 WXSS 中默认是 inline-block，会水平排版；
+    // 上下排版必须给 Text 显式 display:block
+    .dorm-stat-label {
+      display: block;
+      font-size: $font-size-xs;
+      color: $text-tertiary;
+      line-height: 1.2;
+    }
+
+    .dorm-stat-value {
+      display: block;
+      margin-top: $spacing-sm;
+      font-size: 68rpx;
+      font-weight: 700;
+      color: $text-primary;
+      line-height: 1.1;
+    }
+
+    // 剩余电量用绿色突出（原型图）
+    .dorm-stat-value-remaining {
+      color: #34c759;
+    }
+
+    // 本月已用为深色（原型图）
+    .dorm-stat-value-used {
+      color: $text-primary;
     }
   }
 
-  .profile-version {
-    display: block;
-    margin-top: $spacing-lg;
-    margin-bottom: $spacing-xl;
-    text-align: center;
+  .dorm-stat-divider {
+    // 竖线两侧留出间距，避免与数字重叠
+    margin: 0 $spacing-md;
+    width: 1rpx;
+    height: 80rpx;
+    background: $border-color;
+    flex-shrink: 0;
+  }
+
+  .dorm-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: $spacing-md;
+  }
+
+  .dorm-foot-time {
     font-size: $font-size-xs;
     color: $text-tertiary;
   }
+
+  .dorm-foot-btn {
+    padding: 10rpx 24rpx;
+    border-radius: $radius-full;
+    // 浅蓝边框按钮（原型图）
+    border: 1rpx solid #d6e4ff;
+    background: #f0f6ff;
+    font-size: $font-size-sm;
+    color: $primary-color;
+  }
+}
+
+// 功能列表（.profile-page 的子级，与 .profile-hero 平级，带中文首字图标块）
+.profile-list {
+  padding: 0 $spacing-lg;
+  margin-top: $spacing-md;
+
+  .profile-item {
+    display: flex;
+    align-items: center;
+    padding: $spacing-md 0;
+    border-bottom: 1rpx solid $border-color;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    .profile-item-icon-wrap {
+      width: 56rpx;
+      height: 56rpx;
+      border-radius: $radius-medium;
+      background: $primary-light;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-right: $spacing-md;
+    }
+
+    .profile-item-icon {
+      font-size: 36rpx;
+      color: $primary-color;
+      line-height: 1;
+    }
+
+    .profile-star-icon {
+      color: $primary-color;
+    }
+
+    .profile-label {
+      flex: 1;
+      font-size: $font-size-md;
+      color: $text-primary;
+    }
+
+    .profile-arrow {
+      font-size: 32rpx;
+      color: $text-tertiary;
+    }
+
+    /* 意见反馈未读红点：与箭头保持间距 */
+    .fb-badge {
+      margin-right: $spacing-xs;
+    }
+  }
+}
+
+.logout-btn {
+  margin: $spacing-lg $spacing-md 0;
+  padding: $spacing-md;
+  border-radius: $radius-large;
+  background: $card-background;
+  text-align: center;
+
+  .logout-text {
+    font-size: $font-size-md;
+    color: $error;
+  }
+}
+
+.profile-version {
+  display: block;
+  margin-top: $spacing-lg;
+  margin-bottom: $spacing-xl;
+  text-align: center;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
 }
