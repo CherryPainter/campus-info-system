@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, Image, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
@@ -28,6 +28,25 @@ export default function SettingsPage() {
 
   // 头像本地展示值（上传成功后同步到 authStore，此处仅做切换反馈）
   const [avatarSrc, setAvatarSrc] = useState<string | null>(user?.avatar || null);
+
+  // 行内编辑表单（受控）：本地维护输入值，onInput 更新、onBlur 保存。
+  // 之前直接绑 value={profile?.xxx} 且无 onInput，属纯受控——Taro 3 原生 Input 输入后
+  // 一旦重渲染会把 value setData 回写旧值，表现为"打不进字/填不了"（纯前端锅）。
+  const [form, setForm] = useState<Record<'nickname' | 'student_number' | 'class_name', string>>({
+    nickname: '',
+    student_number: '',
+    class_name: '',
+  });
+
+  // 资料加载完成/保存成功后回填表单（仅回填空值，不覆盖用户正在编辑的内容）
+  useEffect(() => {
+    if (!profile) return;
+    setForm((f) => ({
+      nickname: f.nickname || profile.nickname || '',
+      student_number: f.student_number || profile.student_number || '',
+      class_name: f.class_name || profile.class_name || '',
+    }));
+  }, [profile]);
 
   const displayName = profile?.nickname || profile?.real_name || user?.username || '同学';
 
@@ -155,10 +174,11 @@ export default function SettingsPage() {
           <Text className="set-row-label">昵称</Text>
           <Input
             className="set-row-input"
-            value={profile?.nickname || ''}
+            value={form.nickname}
             placeholder="设置昵称"
             placeholderClass="set-row-placeholder"
             maxlength={FIELD_MAXLEN.nickname}
+            onInput={(e) => setForm((f) => ({ ...f, nickname: e.detail.value }))}
             onBlur={(e) => saveField('nickname', e.detail.value)}
           />
         </View>
@@ -166,10 +186,11 @@ export default function SettingsPage() {
           <Text className="set-row-label">学号</Text>
           <Input
             className="set-row-input"
-            value={profile?.student_number || ''}
+            value={form.student_number}
             placeholder="填写学号"
             placeholderClass="set-row-placeholder"
             maxlength={FIELD_MAXLEN.student_number}
+            onInput={(e) => setForm((f) => ({ ...f, student_number: e.detail.value }))}
             onBlur={(e) => saveField('student_number', e.detail.value)}
           />
         </View>
@@ -177,10 +198,11 @@ export default function SettingsPage() {
           <Text className="set-row-label">班级</Text>
           <Input
             className="set-row-input"
-            value={profile?.class_name || ''}
+            value={form.class_name}
             placeholder="填写班级"
             placeholderClass="set-row-placeholder"
             maxlength={FIELD_MAXLEN.class_name}
+            onInput={(e) => setForm((f) => ({ ...f, class_name: e.detail.value }))}
             onBlur={(e) => saveField('class_name', e.detail.value)}
           />
         </View>
