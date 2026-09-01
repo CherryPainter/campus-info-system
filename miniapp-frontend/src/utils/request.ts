@@ -1,6 +1,6 @@
 import Taro from '@tarojs/taro';
 
-import { clearTokens, getAccessToken, getRefreshToken, setTokens } from './storage';
+import { clearTokens, getAccessToken, getRefreshToken, isAccessTokenExpiringSoon, setTokens } from './storage';
 
 /**
  * 统一请求层（全项目唯一出口）
@@ -107,6 +107,12 @@ export async function request<T = unknown>(options: RequestOptions): Promise<T> 
 
   const header: Record<string, string> = { 'Content-Type': 'application/json' };
   if (auth) {
+    // 预刷新：access token 即将过期且有 refresh token 时提前换新，
+    // 避免过期后首次请求的 401——微信开发者工具控制台会把每次 401 打印成红字，
+    // 即使随后自动刷新重放成功也会造成"报错"错觉。刷新失败不阻断，走下方 401 兜底。
+    if (isAccessTokenExpiringSoon() && getRefreshToken()) {
+      await refreshOnce();
+    }
     const token = getAccessToken();
     if (token) {
       header.Authorization = `Bearer ${token}`;

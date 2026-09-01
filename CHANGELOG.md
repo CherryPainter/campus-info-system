@@ -6,7 +6,14 @@
 
 ## Unreleased
 
-> 类型：**功能重构（未发版）**。电量模块用户化改造：每个宿舍独立电表，爬虫 Cookie 改由学生在小程序自配（不再全局共享），数据按用户隔离存储，推送改为小程序站内通知（企业微信电量推送整体移除）；消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）；修复小程序电表 Cookie 保存/测试被 XSS 中间件误判拦截；「我的」页消息入口（替换二维码占位 + 未读角标 + 新公告提醒）；修复校园卡误用学号。
+> 类型：**功能重构（未发版）**。电量模块用户化改造：每个宿舍独立电表，爬虫 Cookie 改由学生在小程序自配（不再全局共享），数据按用户隔离存储，推送改为小程序站内通知（企业微信电量推送整体移除）；消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）；修复小程序电表 Cookie 保存/测试被 XSS 中间件误判拦截；「我的」页消息入口（替换二维码占位 + 未读角标 + 新公告提醒）；修复校园卡误用学号；小程序请求层 access token 预刷新（消除过期后首请求 401 噪音）。
+
+### 修复：小程序请求层 access token 预刷新，消除过期后首请求 401 噪音（2026-09-01）
+- **背景**：微信开发者工具控制台出现 `GET /api/miniapp/feedback|weather/current|weather/hourly|schedule/today 401` 红字。排查（后端日志 + 实测）：**非功能性 bug**——storage 里的旧 access token 超 1 小时过期后，页面初始化并发请求带旧 token → 全部 401「token 已过期」→ `request.ts` 单飞锁自动 `refreshOnce()` **刷新成功**（日志 20:20:34,115 生成新 token、旧 refresh 撤销）→ 4 个请求全部重放成功（天气/课表/反馈/电量数据均正常落库返回）。401 红字是微信开发者工具网络层固有日志，即使应用层自动刷新重放成功也无法抑制，仅造成"报错"错觉。
+- **改动**（`miniapp-frontend/src/utils/storage.ts` + `request.ts`，最小改动）：
+  - `storage.ts`：`setTokens` 记录 access token 签发时间戳（`miniapp.tokenIssuedAt`，配合原有 `expiresIn`）；新增 `isAccessTokenExpiringSoon(leewayMs=60s)`——签发时间 + 有效秒数齐备才判断剩余有效期，storage 无 token（DEV_TOKEN 预览回退场景）时返回 false 不触发。
+  - `request.ts`：发起请求前，若 `auth && isAccessTokenExpiringSoon() && getRefreshToken()` → 复用单飞锁 `refreshOnce()` 提前换新，请求直接带新 token；刷新失败不阻断，仍走原 401 → refresh → 重放兜底。DEV_TOKEN 场景（30 天有效、无 refresh token）不预刷新，行为不变。
+- **验证**：`tsc --noEmit` 0 错误；`build:weapp` 成功（产物确认含 `miniapp.tokenIssuedAt`）；后端实测带 dev token 请求 `weather/current` 返回 200。
 
 ### 「我的」页消息中心：入口整合 + 新公告提醒 + 校园卡号修复（2026-09-01）
 - **背景**：小程序「我的消息」此前仅从设置页进入，发现成本高；「我的」页顶部二维码图标为无功能占位（点击仅 toast「二维码开发中」）；消息列表只含电量类站内通知，新发布的校园公告（首页有卡片但无独立提醒）无法在消息里感知；校园卡卡片编号误用学号（`studentNumber` 直传 `profile.student_number`），而校园卡号（一卡通号）与学号不同。
