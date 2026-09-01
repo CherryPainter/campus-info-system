@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { getSharedBadgeCount } from '@/utils/feedbackBadge';
+import { getTabIndex, setTabIndex, TAB_INDEX_EVENT } from '@/utils/tabBarState';
 import homeIcon from '@/assets/tabbar/home.png';
 import homeActiveIcon from '@/assets/tabbar/home-active.png';
 import timelineIcon from '@/assets/tabbar/timeline.png';
@@ -16,10 +17,11 @@ import './index.scss';
  * app.config.ts 设置 tabBar.custom=true 后，微信自动渲染本组件为底部导航栏。
  * 不需要在各 tab 页手动引入（框架自动挂载）。
  *
- * 特性：
- * - 三个 tab（首页 / 时间轴 / 我的），图标与原生一致
- * - 「我的」tab 右上角显示反馈未读角标（红色圆圈数字，0 时隐藏）
- * - 角标通过 Taro.eventCenter 实时更新（profile 页 useFeedbackBadge 刷新后触发）
+ * 选中态策略（修复「点一下短暂选中又跳回首页 / 要两次才选中」）：
+ * - 选中的 tab 下标存在模块级共享状态（tabBarState），不依赖组件 useState 生命周期；
+ * - 切换时 update 模块态并广播，组件订阅事件实时同步 setCurrent；
+ * - 每个 tab 页在 useDidShow 时广播自己的下标，保证任何进入路径（含其它页 switchTab 直达）都一致；
+ * - 因此即使组件被框架重建、useState 回到初值，也会立刻被事件/挂载初值修正。
  */
 
 interface TabItem {
@@ -38,28 +40,33 @@ const TAB_LIST: TabItem[] = [
 const BADGE_EVENT = 'feedback:badge';
 
 export default function CustomTabBar() {
-  const [current, setCurrent] = useState(0);
-  const [badge, setBadge] = useState(0);
+  // 初值取模块级选中态（而非硬编码 0），避免重建后闪烁回首页
+  const [current, setCurrent] = useState<number>(() => getTabIndex());
+  const [badge, setBadge] = useState<number>(() => getSharedBadgeCount());
 
-  // 挂载时读初始 badge + 监听实时更新事件
+  // 挂载：订阅选中态广播 + 角标广播；卸载时解绑
   useEffect(() => {
-    setBadge(getSharedBadgeCount());
-    const handler = (n: number) => setBadge(n);
-    Taro.eventCenter.on(BADGE_EVENT, handler);
-    return () => Taro.eventCenter.off(BADGE_EVENT, handler);
+    const onTabIndex = (idx: number) => setCurrent(idx);
+    const onBadge = (n: number) => setBadge(n);
+    Taro.eventCenter.on(TAB_INDEX_EVENT, onTabIndex);
+    Taro.eventCenter.on(BADGE_EVENT, onBadge);
+    return () => {
+      Taro.eventCenter.off(TAB_INDEX_EVENT, onTabIndex);
+      Taro.eventCenter.off(BADGE_EVENT, onBadge);
+    };
   }, []);
 
-  // 每次 tab 显示时刷新角标。
-  // 注意：选中态由 switchTab 乐观更新（setCurrent(idx)）驱动，与最后一次切换始终同步；
-  // 这里不要再依据 getCurrentPages() 回写 current——切换过渡期它常读到旧路由，
-  // 会把高亮错误地回退成上一个 tab（表现为"要点两次才选中"）。
+  // 每次本组件随 tab 显示时（pageLifetimes.show），刷新角标 + 用模块态兜底修正选中
+  // （不在此处依据路由回写 current，路由在切换过渡期会读到旧页面导致回退，已移除）
   useDidShow(() => {
     setBadge(getSharedBadgeCount());
+    setCurrent(getTabIndex());
   });
 
   const switchTab = (idx: number) => {
     if (idx === current) return;
-    setCurrent(idx);
+    setTabIndex(idx); // 更新模块态 + 广播 → setCurrent，跨重建也一致
+    setCurrent(idx); // 乐观即时高亮
     Taro.switchTab({ url: TAB_LIST[idx].pagePath });
   };
 

@@ -35,7 +35,7 @@
 - **管理端**：新增 `src/pages/Feedback.tsx`（列表按状态 Segmented 筛选 + 详情 Drawer，支持标记处理中/已解决、回复学生）、`src/api/feedback.ts`（list/detail/resolve/reply）、侧边栏「意见与反馈」入口（CommentOutlined，AdminGuard 保护）、`src/App.tsx` 路由 `/feedback`。
 - **未读红点（已受理提醒）**：新增 `src/utils/feedbackBadge.ts`（本地已读集合 + `computeUnread` 计数 + 模块级共享计数 + `Taro.eventCenter` 实时通知）、`src/hooks/useFeedbackBadge.ts`（拉取「我的反馈」全量计算红点数 + 同步写入共享计数）、`src/components/FeedbackBadge`（红色圆形红点，count≤0 不渲染）。「已受理」= 反馈被管理员回复且状态置 `resolved`；用户在详情页查看（确有回复）即写入本地已读集合，红点 -1；计数为 0 不显示。红点同时出现在「我的」页「意见反馈」条目与提交页「我的反馈」顶栏，进入/返回对应页面时刷新。
 - **自定义 TabBar（支持角标）**：原生微信 TabBar 不支持单个 tab 角标，切换为 `custom: true` 自定义 TabBar（`src/custom-tab-bar/index.tsx`）。框架级组件（`component: true`），微信自动渲染为底部导航栏，无需各 tab 页手动引入。三个 tab 图标/高亮与原生一致；「我的」tab 右上角显示反馈未读角标（通过 eventCenter 实时更新）；三个 tab 页根容器加 `padding-bottom` 防内容被遮挡。
-- **修复 TabBar 选中要点击两次**：`custom-tab-bar` 的 `useDidShow` 原先用 `getCurrentPages()` 回写 `current`，但切换过渡期读到的仍是旧路由，会把高亮错误回退到上一个 tab（表现为要点两次才选中）。改为选中态完全由 `switchTab` 乐观更新（`setCurrent(idx)`）驱动，与最后一次切换始终同步；`useDidShow` 只刷新角标。
+- **修复 TabBar 选中要点击两次 / 点一下跳回首页**：原乐观 `setCurrent(idx)` 仍不稳——自定义 TabBar 组件在切换时可能被框架重建（`useState` 重置回首页 0），且 profile「我的课表」等其它页 `switchTab` 直达 tab 页时不经过 TabBar 点击处理、选中态错位。改为新增模块级选中态 `src/utils/tabBarState.ts`（`getTabIndex`/`setTabIndex` + `eventCenter` 广播 `tab:index`）；`custom-tab-bar` 初值取模块态、订阅广播实时同步 `setCurrent`，不再依赖组件生命周期；三个 tab 页（home/schedule/profile）在 `useDidShow` 各自广播自身下标，覆盖任何进入路径。冷启动角标：在 `app.tsx` 的 `useLaunch` 预取反馈未读并写入共享计数（`useFeedbackBadge.refresh`），TabBar「我的」角标在启动即可见，无需先进入「我的」页。
 
 ### 验证
 - 后端：`test_client` 伪造合法 JWT 端到端跑通——学生提交→学生列表→管理列表→管理回复(置已解决)→管理详情(含回复)→学生详情(可见回复)，且学生访问管理接口正确返回 403；测试数据已清理。

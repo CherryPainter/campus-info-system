@@ -3,6 +3,8 @@ import { View, Text, Swiper, SwiperItem, ScrollView, PickerView, PickerViewColum
 import { useLoad, useDidShow, usePullDownRefresh, stopPullDownRefresh, getWindowInfo } from '@tarojs/taro';
 import dayjs from 'dayjs';
 
+import { setTabIndex } from '@/utils/tabBarState';
+
 import * as scheduleApi from '@/api/schedule';
 import * as notificationApi from '@/api/notification';
 import type { NotificationEvent, ScheduleCourse } from '@/types/api';
@@ -153,6 +155,11 @@ export default function SchedulePage() {
   usePullDownRefresh(async () => {
     await Promise.all([loadAll(), fetchDayCourses(selectedDate)]);
     stopPullDownRefresh();
+  });
+
+  // 时间轴是 TabBar 第 1 项：每次显示广播自身下标，保证 TabBar 选中态与任意进入路径一致
+  useDidShow(() => {
+    setTabIndex(1);
   });
 
   // 时间轴是 TabBar 页：切 Tab 离开再回来时页面常驻内存、state 不会自动重置。

@@ -9,6 +9,7 @@ import dayjs from 'dayjs';
 import { logout as logoutApi } from '@/api/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { useUserStore } from '@/stores/userStore';
+import { setTabIndex } from '@/utils/tabBarState';
 import CampusCard from '@/components/CampusCard';
 import FeedbackBadge from '@/components/FeedbackBadge';
 import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
@@ -118,6 +119,11 @@ export default function ProfilePage() {
       }
     }).catch(() => { /* 刷新失败保留缓存 */ });
   };
+
+  // "我的"是 TabBar 第 2 项：每次显示广播自身下标，保证 TabBar 选中态与任意进入路径一致
+  useDidShow(() => {
+    setTabIndex(2);
+  });
 
   // "我的"是 TabBar 页：切 Tab 离开再回来时页面常驻内存，非首次 onShow 也刷新一次
   const firstShowRef = useRef(true);

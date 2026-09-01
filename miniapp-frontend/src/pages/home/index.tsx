@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { View, Text } from '@tarojs/components';
-import Taro, { useLoad, usePullDownRefresh, stopPullDownRefresh } from '@tarojs/taro';
+import Taro, { useLoad, useDidShow, usePullDownRefresh, stopPullDownRefresh } from '@tarojs/taro';
+
+import { setTabIndex } from '@/utils/tabBarState';
 
 import * as weatherApi from '@/api/weather';
 import * as scheduleApi from '@/api/schedule';
@@ -78,6 +80,11 @@ export default function HomePage() {
       // 兜底 20
     }
     loadAll();
+  });
+
+  // 首页是 TabBar 第 0 项：每次显示广播自身下标，保证 TabBar 选中态与任意进入路径一致
+  useDidShow(() => {
+    setTabIndex(0);
   });
 
   usePullDownRefresh(async () => {
