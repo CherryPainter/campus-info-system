@@ -31,6 +31,8 @@ class StudentRoster(Base):
     school = Column(String(50), nullable=False, comment="学校名称")
     student_number = Column(String(30), nullable=False, index=True, comment="学号")
     class_name = Column(String(100), nullable=False, comment="班级")
+    college = Column(String(100), nullable=True, comment="学院（组织维度，管理员预录）")
+    major = Column(String(100), nullable=True, comment="专业（组织维度，管理员预录）")
     real_name = Column(String(50), nullable=True, comment="姓名")
     remark = Column(String(200), nullable=True, comment="备注")
     is_active = Column(
@@ -45,6 +47,8 @@ class StudentRoster(Base):
             "school": self.school,
             "student_number": self.student_number,
             "class_name": self.class_name,
+            "college": self.college,
+            "major": self.major,
             "real_name": self.real_name,
             "remark": self.remark,
             "is_active": self.is_active,

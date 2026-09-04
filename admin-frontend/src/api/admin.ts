@@ -641,6 +641,9 @@ export interface RosterStudent {
   school: string;
   student_number: string;
   class_name: string;
+  /** 组织维度（管理员预录）：学院/专业 */
+  college: string | null;
+  major: string | null;
   real_name: string | null;
   remark: string | null;
   is_active: boolean;
@@ -676,6 +679,8 @@ export const rosterApi = {
     school: string;
     student_number: string;
     class_name: string;
+    college?: string;
+    major?: string;
     real_name?: string;
     remark?: string;
     is_active?: boolean;
@@ -683,7 +688,14 @@ export const rosterApi = {
   /** 编辑名单条目（学校/学号只读） */
   update: (
     id: number,
-    data: { class_name?: string; real_name?: string; remark?: string; is_active?: boolean }
+    data: {
+      class_name?: string;
+      college?: string;
+      major?: string;
+      real_name?: string;
+      remark?: string;
+      is_active?: boolean;
+    }
   ) => request.put<any, ApiResponse<RosterStudent>>(`/admin/roster/students/${id}`, data),
   /** 删除名单条目 */
   remove: (id: number) =>

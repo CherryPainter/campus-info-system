@@ -192,3 +192,211 @@ def test_merge_binding_no_profile_means_unbound():
     assert items[0]["bound_user_id"] is None
     assert items[0]["bound_username"] is None
     assert items[0]["bound_at"] is None
+
+
+# ==================== service 层 college/major 透传（组织维度，2026-09-04） ====================
+
+
+class _FakeQuery:
+    """链式 mock：filter_by/filter 原样返回自身，first 可配置。"""
+
+    def __init__(self, first_result=None):
+        self._first_result = first_result
+
+    def filter_by(self, **kwargs):
+        return self
+
+    def filter(self, *args, **kwargs):
+        return self
+
+    def first(self):
+        return self._first_result
+
+    def count(self):
+        return 0
+
+    def all(self):
+        return []
+
+    def order_by(self, *args):
+        return self
+
+    def offset(self, n):
+        return self
+
+    def limit(self, n):
+        return self
+
+
+class _FakeSession:
+    """最小可用 session 替身：记录被 add 的对象，支持 commit/rollback/refresh/close。"""
+
+    def __init__(self, query_first=None):
+        self.added = []
+        self._query_first = query_first
+
+    def query(self, model):
+        return _FakeQuery(self._query_first)
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
+
+    def refresh(self, row):
+        pass
+
+    def close(self):
+        pass
+
+
+def test_service_create_persists_college_major():
+    """create() 应把学院/专业透传到 StudentRoster 实例（名单组织维度落库）。"""
+    from app.model.student_roster import StudentRoster
+    from app.services.student_roster_service import StudentRosterService
+
+    fake = _FakeSession()
+    with mock.patch("app.services.student_roster_service.get_db", return_value=fake):
+        row, err = StudentRosterService.create(
+            school="重庆科创职业学院",
+            student_number="20260001",
+            class_name="计算机2301",
+            college="信息与人工智能学院",
+            major="计算机应用技术",
+            real_name="张三",
+        )
+    assert err is None
+    assert row is not None
+    assert isinstance(row, StudentRoster)
+    assert row.college == "信息与人工智能学院"
+    assert row.major == "计算机应用技术"
+    assert row.class_name == "计算机2301"
+
+
+def test_service_update_persists_college_major():
+    """update() 应能修改学院/专业。"""
+    from app.model.student_roster import StudentRoster
+    from app.services.student_roster_service import StudentRosterService
+
+    existing = StudentRoster(
+        school="重庆科创职业学院",
+        student_number="20260001",
+        class_name="计算机2301",
+        college="旧学院",
+        major="旧专业",
+    )
+    fake = _FakeSession(query_first=existing)
+    with mock.patch("app.services.student_roster_service.get_db", return_value=fake):
+        row, err = StudentRosterService.update(
+            roster_id=1,
+            class_name="计算机2302",
+            college="新学院",
+            major="新专业",
+        )
+    assert err is None
+    assert row is existing
+    assert row.college == "新学院"
+    assert row.major == "新专业"
+    assert row.class_name == "计算机2302"
+
+
+def test_service_create_batch_reads_college_major():
+    """create_batch() 应读取行内 college/major 并写入 StudentRoster 实例。"""
+    from app.model.student_roster import StudentRoster
+    from app.services.student_roster_service import StudentRosterService
+
+    fake = _FakeSession()
+    rows = [
+        {
+            "school": "重庆科创职业学院",
+            "student_number": "20260001",
+            "class_name": "计算机2301",
+            "college": "信息与人工智能学院",
+            "major": "计算机应用技术",
+        },
+        {
+            "school": "重庆科创职业学院",
+            "student_number": "20260002",
+            "class_name": "计算机2301",
+            # 缺省学院/专业：应落为 None（可空）
+        },
+    ]
+    with mock.patch("app.services.student_roster_service.get_db", return_value=fake):
+        result = StudentRosterService.create_batch(rows)
+    assert result["created"] == 2
+    assert result["failures"] == []
+    assert len(fake.added) == 2
+    added0 = fake.added[0]
+    assert isinstance(added0, StudentRoster)
+    assert added0.college == "信息与人工智能学院"
+    assert added0.major == "计算机应用技术"
+    added1 = fake.added[1]
+    assert added1.college is None
+    assert added1.major is None
+
+
+def test_router_create_passes_college_major(client):
+    """POST /students 路由应把 college/major 传给 service.create（注册前端表单入参）。"""
+    from app.api import admin_roster_routes
+
+    captured = {}
+
+    class _Svc:
+        @staticmethod
+        def create(**kwargs):
+            captured.update(kwargs)
+            row = mock.MagicMock()
+            row.to_dict.return_value = {"id": 1}
+            return row, None
+
+    token = _make_token(1, "admin", "admin")
+    with mock.patch.object(admin_roster_routes, "StudentRosterService", _Svc):
+        resp = client.post(
+            "/api/admin/roster/students",
+            json={
+                "school": "重庆科创职业学院",
+                "student_number": "20260001",
+                "class_name": "计算机2301",
+                "college": "信息与人工智能学院",
+                "major": "计算机应用技术",
+                "real_name": "张三",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert resp.status_code == 200
+    assert captured["college"] == "信息与人工智能学院"
+    assert captured["major"] == "计算机应用技术"
+
+
+def test_router_update_passes_college_major(client):
+    """PUT /students/<id> 路由应把 college/major 传给 service.update。"""
+    from app.api import admin_roster_routes
+
+    captured = {}
+
+    class _Svc:
+        @staticmethod
+        def update(roster_id, **kwargs):
+            captured.update(kwargs)
+            row = mock.MagicMock()
+            row.to_dict.return_value = {"id": 1}
+            return row, None
+
+    token = _make_token(1, "admin", "admin")
+    with mock.patch.object(admin_roster_routes, "StudentRosterService", _Svc):
+        resp = client.put(
+            "/api/admin/roster/students/1",
+            json={
+                "class_name": "计算机2302",
+                "college": "新学院",
+                "major": "新专业",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert resp.status_code == 200
+    assert captured["college"] == "新学院"
+    assert captured["major"] == "新专业"

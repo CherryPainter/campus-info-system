@@ -53,7 +53,7 @@ class StudentRosterService:
     """学生名单（预录白名单）服务"""
 
     @staticmethod
-    def create(school, student_number, class_name, real_name=None, remark=None, is_active=True):
+    def create(school, student_number, class_name, college=None, major=None, real_name=None, remark=None, is_active=True):
         """新建单个名单条目。返回 (row|None, error|None)。"""
         school = _norm(school)
         student_number = _norm(student_number)
@@ -73,6 +73,8 @@ class StudentRosterService:
                 school=school,
                 student_number=student_number,
                 class_name=class_name,
+                college=_norm(college) or None,
+                major=_norm(major) or None,
                 real_name=_norm(real_name) or None,
                 remark=_norm(remark) or None,
                 is_active=bool(is_active),
@@ -95,7 +97,8 @@ class StudentRosterService:
 
         Args:
             rows (list[dict]): 每项含 school / student_number / class_name /
-                               real_name / remark（real_name、remark 可缺省）。
+                               college / major / real_name / remark
+                               （college/major/real_name/remark 可缺省）。
 
         Returns:
             dict: {"created": int, "failures": [{"row": int, "reason": str}]}
@@ -131,6 +134,8 @@ class StudentRosterService:
                         school=school,
                         student_number=student_number,
                         class_name=class_name,
+                        college=_norm(item.get("college")) or None,
+                        major=_norm(item.get("major")) or None,
                         real_name=_norm(item.get("real_name")) or None,
                         remark=_norm(item.get("remark")) or None,
                         is_active=True,
@@ -193,6 +198,8 @@ class StudentRosterService:
                     or_(
                         StudentRoster.student_number.like(kw),
                         StudentRoster.class_name.like(kw),
+                        StudentRoster.college.like(kw),
+                        StudentRoster.major.like(kw),
                         StudentRoster.real_name.like(kw),
                     )
                 )
@@ -231,7 +238,7 @@ class StudentRosterService:
             session.close()
 
     @staticmethod
-    def update(roster_id, class_name=None, real_name=None, remark=None, is_active=None):
+    def update(roster_id, class_name=None, college=None, major=None, real_name=None, remark=None, is_active=None):
         """
         编辑名单条目（学校/学号只读，防止破坏绑定语义）。
 
@@ -248,6 +255,10 @@ class StudentRosterService:
                 if not class_name:
                     return None, "班级不能为空"
                 row.class_name = class_name
+            if college is not None:
+                row.college = _norm(college) or None
+            if major is not None:
+                row.major = _norm(major) or None
             if real_name is not None:
                 row.real_name = _norm(real_name) or None
             if remark is not None:

@@ -104,6 +104,8 @@ export default function UserManagementRoster() {
         school: values.school,
         student_number: values.student_number,
         class_name: values.class_name,
+        college: values.college,
+        major: values.major,
         real_name: values.real_name,
         remark: values.remark,
       });
@@ -127,6 +129,8 @@ export default function UserManagementRoster() {
     try {
       const res = await rosterApi.update(editTarget.id, {
         class_name: values.class_name,
+        college: values.college,
+        major: values.major,
         real_name: values.real_name,
         remark: values.remark,
         is_active: values.is_active,
@@ -232,6 +236,20 @@ export default function UserManagementRoster() {
       ellipsis: true,
     },
     {
+      title: "学院",
+      dataIndex: "college",
+      key: "college",
+      ellipsis: true,
+      render: (v: string | null) => v || "-",
+    },
+    {
+      title: "专业",
+      dataIndex: "major",
+      key: "major",
+      ellipsis: true,
+      render: (v: string | null) => v || "-",
+    },
+    {
       title: "姓名",
       dataIndex: "real_name",
       key: "real_name",
@@ -285,6 +303,8 @@ export default function UserManagementRoster() {
               setEditTarget(record);
               editForm.setFieldsValue({
                 class_name: record.class_name,
+                college: record.college,
+                major: record.major,
                 real_name: record.real_name,
                 remark: record.remark,
                 is_active: record.is_active,
@@ -377,13 +397,13 @@ export default function UserManagementRoster() {
         </Select>
         <Input
           allowClear
-          placeholder="搜索学号/班级/姓名"
+          placeholder="搜索学号/班级/学院/专业/姓名"
           value={keyword}
           onChange={(e) => {
             setKeyword(e.target.value);
             setPage(1);
           }}
-          style={isMobile ? { flex: "100%", minWidth: 0 } : { width: 200 }}
+          style={isMobile ? { flex: "100%", minWidth: 0 } : { width: 220 }}
         />
       </div>
 
@@ -399,7 +419,7 @@ export default function UserManagementRoster() {
           dataSource={items}
           loading={loading}
           rowKey="id"
-          scroll={{ x: 900 }}
+          scroll={{ x: 1100 }}
           locale={{ emptyText: "没有符合条件的名单" }}
           pagination={{
             current: page,
@@ -454,6 +474,12 @@ export default function UserManagementRoster() {
           >
             <Input placeholder="请输入班级，如：计算机2301" />
           </Form.Item>
+          <Form.Item label="学院（选填）" name="college">
+            <Input placeholder="请输入学院，如：信息与人工智能学院" />
+          </Form.Item>
+          <Form.Item label="专业（选填）" name="major">
+            <Input placeholder="请输入专业，如：计算机应用技术" />
+          </Form.Item>
           <Form.Item label="姓名（选填）" name="real_name">
             <Input placeholder="请输入姓名" />
           </Form.Item>
@@ -491,6 +517,12 @@ export default function UserManagementRoster() {
             rules={[{ required: true, message: "请输入班级" }]}
           >
             <Input placeholder="请输入班级" />
+          </Form.Item>
+          <Form.Item label="学院（选填）" name="college">
+            <Input placeholder="请输入学院" />
+          </Form.Item>
+          <Form.Item label="专业（选填）" name="major">
+            <Input placeholder="请输入专业" />
           </Form.Item>
           <Form.Item label="姓名（选填）" name="real_name">
             <Input placeholder="请输入姓名" />

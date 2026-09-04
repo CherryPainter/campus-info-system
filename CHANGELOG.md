@@ -48,6 +48,16 @@
 - **绑定状态聚合（后端，零模型改动）**：`StudentRosterService.list` 按 `(school, student_number)` 关联 `student_profiles` + `users`，给每条名单附加 `bound_user_id`/`bound_username`/`bound_at`；抽纯函数 `_merge_binding`（便于单测）。名单表新增「绑定状态」列（已认领显示用户名+绑定时间，未绑定灰标）。
 - **验证**：前端 `tsc --noEmit` 0 错误 + `npm run build` 成功；后端 pytest **167 passed**（新增 `_merge_binding` 2 例 + `test_list_returns_data_array_not_items` 锁定结构）；`AccessControl` 改用 `IdcardOutlined` 图标。
 
+### 补全：学生名单/绑定增加 学院+专业 组织维度（2026-09-04）
+- **背景**：学生组织是 学校→学院→专业→班级（含年级）→学生（约 40 人/班）五层，而名单只有 学校/学号/班级——用户发现少了学院、专业两个字段。经确认采用「名单落库 + 绑定写入 profile」方案：学院/专业由管理员预录，绑定成功后随身份一并写入学生资料（年级维持仅学生自填，名单不存）。
+- **数据模型**：`student_rosters` 新增 `college`/`major` 两列（`VARCHAR(100)` 可空，`init_db.py migrate` 指纹迁移自动加列，已实测 2 处变更）；`StudentRoster.to_dict()` 输出两字段。
+- **后端**：
+  - `student_roster_service.py`：`create`/`create_batch`/`update` 支持透传 `college`/`major`（空值落 NULL）；`list` 关键字搜索扩展为 学号/班级/学院/专业/姓名。
+  - `admin_roster_routes.py`：单条新建/编辑路由透传两字段；批量导入 `HEADER_MAP` 兼容「学院/专业 + college/major」中英文表头；CSV 模板下载增加两列与示例行。
+  - `miniapp_routes.py` `bind_student()`：绑定校验仍为「学校+学号+班级」三项（学院/专业非学生自答项，避免增加绑定摩擦）；命中名单后把 `college`/`major` 一并写入 `StudentProfile`（已有列，此前无人填）。小程序资料详情页/UserInfoCard 原本就渲染 `profile.college`/`major`，绑定后自动可见，无前端改动。
+- **管理端**（`UserManagementRoster.tsx` + `api/admin.ts`）：名单表新增「学院」「专业」两列（班级之后）；新建/编辑表单加「学院（选填）」「专业（选填）」输入；搜索框提示更新为 学号/班级/学院/专业/姓名；`RosterStudent` 接口与 create/update 入参类型补两字段。
+- **验证**：后端 pytest **173 passed**（新增 create/update/batch 透传 3 例 + 路由透传 2 例 + bind 写入 profile 1 例）；指纹迁移补列成功并 SHOW COLUMNS 复核；前端 `tsc --noEmit` 0 错误 + `vite build` 成功（15.55s）。
+
 ### 修复：小程序请求层 access token 预刷新，消除过期后首请求 401 噪音（2026-09-01）
 - **背景**：微信开发者工具控制台出现 `GET /api/miniapp/feedback|weather/current|weather/hourly|schedule/today 401` 红字。排查（后端日志 + 实测）：**非功能性 bug**——storage 里的旧 access token 超 1 小时过期后，页面初始化并发请求带旧 token → 全部 401「token 已过期」→ `request.ts` 单飞锁自动 `refreshOnce()` **刷新成功**（日志 20:20:34,115 生成新 token、旧 refresh 撤销）→ 4 个请求全部重放成功（天气/课表/反馈/电量数据均正常落库返回）。401 红字是微信开发者工具网络层固有日志，即使应用层自动刷新重放成功也无法抑制，仅造成"报错"错觉。
 - **改动**（`miniapp-frontend/src/utils/storage.ts` + `request.ts`，最小改动）：

@@ -169,7 +169,7 @@ def bind_student():
     finally:
         db.close()
 
-    ok, _row = StudentRosterService.verify(school, student_number, class_name)
+    ok, matched_row = StudentRosterService.verify(school, student_number, class_name)
     if not ok:
         logger.warning(
             f"身份绑定校验未通过: user_id={g.current_user.get('user_id')}, "
@@ -188,6 +188,11 @@ def bind_student():
         profile.school = school
         profile.student_number = student_number
         profile.class_name = class_name
+        # 学院/专业随绑定同步写入（名单预录的组织属性，非学生自答项；
+        # 资料编辑接口不会覆盖这三个身份字段）
+        if matched_row:
+            profile.college = matched_row.college or profile.college
+            profile.major = matched_row.major or profile.major
         db.commit()
         db.refresh(profile)
         logger.info(

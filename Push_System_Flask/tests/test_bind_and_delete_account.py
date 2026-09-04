@@ -193,6 +193,31 @@ def test_bind_first_time_succeeds(client, db_session):
     assert body["profile"]["student_number"] == "20260001"
 
 
+def test_bind_writes_college_major_from_roster(client, db_session):
+    """名单预录的学院/专业应随绑定一并写入 StudentProfile（组织维度随身份同步）。"""
+    _create_student(db_session, user_id=1)
+    roster = _seed_roster("重庆科创职业学院", "20260001", "计应2401班")
+    roster.college = "信息与人工智能学院"
+    roster.major = "计算机应用技术"
+    db_session.add(roster)
+    db_session.commit()
+    token = _make_token(1)
+    resp = client.post(
+        "/api/miniapp/student/bind",
+        json={
+            "school": "重庆科创职业学院",
+            "student_number": "20260001",
+            "class_name": "计应2401班",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["bound"] is True
+    assert body["profile"]["college"] == "信息与人工智能学院"
+    assert body["profile"]["major"] == "计算机应用技术"
+
+
 def test_bind_rejects_already_bound(client, db_session):
     """已绑定学生重复 bind → 403 ALREADY_BOUND（防覆盖为他人学号，安全核心断言）"""
     user, profile = _create_student(db_session, user_id=1)
