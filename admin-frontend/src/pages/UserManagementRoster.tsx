@@ -253,6 +253,19 @@ export default function UserManagementRoster() {
         v ? <Tag color="green">启用</Tag> : <Tag color="default">停用</Tag>,
     },
     {
+      title: "绑定状态",
+      key: "binding",
+      width: 120,
+      render: (_: unknown, record: RosterStudent) =>
+        record.bound_username ? (
+          <Tag color="blue" title={record.bound_at ? `绑定于 ${record.bound_at}` : undefined}>
+            已认领：{record.bound_username}
+          </Tag>
+        ) : (
+          <Tag color="default">未绑定</Tag>
+        ),
+    },
+    {
       title: "创建时间",
       dataIndex: "created_at",
       key: "created_at",

@@ -635,7 +635,7 @@ export const userApi = {
 
 // ==================== 学生名单（预录白名单）====================
 
-/** 名单条目（与后端 StudentRoster.to_dict 对齐） */
+/** 名单条目（与后端 StudentRoster.to_dict 对齐，含绑定状态聚合字段） */
 export interface RosterStudent {
   id: number;
   school: string;
@@ -646,6 +646,10 @@ export interface RosterStudent {
   is_active: boolean;
   created_at: string | null;
   updated_at: string | null;
+  /** 绑定状态聚合：已被哪个用户认领（按 school+student_number 关联 student_profiles） */
+  bound_user_id: number | null;
+  bound_username: string | null;
+  bound_at: string | null;
 }
 
 /** 批量导入结果 */

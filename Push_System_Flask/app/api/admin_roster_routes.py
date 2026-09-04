@@ -102,9 +102,11 @@ def list_students():
         page=page,
         page_size=page_size,
     )
+    # 注意：前端 UserManagementRoster.load() 读取 res.data / res.total（与 ApiResponse<RosterStudent[]> 契约一致），
+    # 因此列表数据必须放在 data 字段（api_success 的 **extra 路径不会生成 data），否则列表恒为空。
     return api_success(
+        data=data["items"],
         total=data["total"],
-        items=data["items"],
         page=data["page"],
         page_size=data["page_size"],
     )

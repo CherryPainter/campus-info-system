@@ -38,6 +38,16 @@
 - **前端支撑**：`request.ts` 新增 `del` 便捷方法（DELETE query 参数手动编码拼 URL）；`src/api/user.ts` 新增 `deleteAccount(refreshToken?)`；`app.config.ts` 注册 `pages/profile-detail/index`。
 - **回归测试**（新建 `tests/test_bind_and_delete_account.py` 4 用例）：首次绑定成功；已绑定重复 bind → 403 `ALREADY_BOUND` 且 `student_number` 未被覆盖（安全核心断言）；注销后 `user.is_active is False` + access token 进入 TokenBlacklist；注销后携原 token 访问保护接口 → 401。全量 `pytest` **164 passed**；`build:weapp:clean` 成功。
 
+### 修复 + 重构：用户与权限模块扁平化 + 名单/绑定合一（2026-09-04）
+- **顺带修复**：管理员端「学生名单」列表恒为空（加了学生不显示）。根因 `list_students` 用 `api_success(total=..., items=...)`，`items` 走 **extra 路径落在响应顶层、无 data 字段；前端 `UserManagementRoster.load()` 读 `res.data` → 恒 undefined → 列表空。改回 `api_success(data=data["items"], total=..., page=..., page_size=...)` 对齐前端契约（与「学校下拉为空」同源的 api_success 顶层语义错配）。回归测试 `test_list_returns_data_array_not_items` 锁定结构。
+- **重构动因**：用户与权限模块是逐次打补丁长出来的——`/access`(AccessControl) 三层嵌套（用户→用户管理→学生名单），学生名单（预录白名单）被埋在最深处；且「用户管理」把网页 admin 用户与微信 student 用户混排，密码/MFA/主管理员操作只对网页用户有意义，前端靠 disabled 硬控。三个本应关联的「学生」概念（预录名单 / 已绑定身份 / 登录账号）彼此割裂，管理端看不到「这条名单被谁认领」。
+- **目标架构（扁平四分区）**：`/access` 改为 `账号 / 学生身份 / 会话 / 访问控制` 四个并列 Tab：
+  - 账号 = `UserManagement`（去嵌套，仅保留账号表；来源列已存在，密码/MFA/主管理员操作维持仅非微信用户可用）。
+  - 学生身份 = `UserManagementRoster`（预录名单 + 绑定状态合一）。
+  - 会话 = `SessionManager`、访问控制 = `Blacklist`（不变）。
+- **绑定状态聚合（后端，零模型改动）**：`StudentRosterService.list` 按 `(school, student_number)` 关联 `student_profiles` + `users`，给每条名单附加 `bound_user_id`/`bound_username`/`bound_at`；抽纯函数 `_merge_binding`（便于单测）。名单表新增「绑定状态」列（已认领显示用户名+绑定时间，未绑定灰标）。
+- **验证**：前端 `tsc --noEmit` 0 错误 + `npm run build` 成功；后端 pytest **167 passed**（新增 `_merge_binding` 2 例 + `test_list_returns_data_array_not_items` 锁定结构）；`AccessControl` 改用 `IdcardOutlined` 图标。
+
 ### 修复：小程序请求层 access token 预刷新，消除过期后首请求 401 噪音（2026-09-01）
 - **背景**：微信开发者工具控制台出现 `GET /api/miniapp/feedback|weather/current|weather/hourly|schedule/today 401` 红字。排查（后端日志 + 实测）：**非功能性 bug**——storage 里的旧 access token 超 1 小时过期后，页面初始化并发请求带旧 token → 全部 401「token 已过期」→ `request.ts` 单飞锁自动 `refreshOnce()` **刷新成功**（日志 20:20:34,115 生成新 token、旧 refresh 撤销）→ 4 个请求全部重放成功（天气/课表/反馈/电量数据均正常落库返回）。401 红字是微信开发者工具网络层固有日志，即使应用层自动刷新重放成功也无法抑制，仅造成"报错"错觉。
 - **改动**（`miniapp-frontend/src/utils/storage.ts` + `request.ts`，最小改动）：

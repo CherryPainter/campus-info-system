@@ -20,7 +20,6 @@ import {
   Divider,
   Spin,
   Empty,
-  Tabs,
 } from "antd";
 import { formatDateTime } from "@/utils/datetime";
 import ResponsiveTable from "@/components/ResponsiveTable";
@@ -38,7 +37,6 @@ import type { User } from "@/types/user";
 import { useUser } from "@/contexts/UserContext";
 import { useIntervalPolling } from "@/hooks/useIntervalPolling";
 import { POLL_NORMAL } from "@/hooks/pollIntervals";
-import UserManagementRoster from "./UserManagementRoster";
 
 const { Option } = Select;
 
@@ -362,14 +360,6 @@ export default function UserManagement() {
 
   return (
     <div>
-      <Tabs
-        defaultActiveKey="users"
-        items={[
-          {
-            key: "users",
-            label: "用户管理",
-            children: (
-              <div>
                 <Card
                   // 移动端消除外层白色容器：borderless 去边框 + body padding 0 让内容直接贴 Tabs 边缘，
                   // 避免"Card 进一步限制"导致用户卡片被挤窄，桌面端保持默认 outlined/24px padding
@@ -737,16 +727,6 @@ export default function UserManagement() {
           </Form.Item>
         </Form>
       </Modal>
-              </div>
-            ),
-          },
-          {
-            key: "roster",
-            label: "学生名单",
-            children: <UserManagementRoster />,
-          },
-        ]}
-      />
     </div>
   );
 }

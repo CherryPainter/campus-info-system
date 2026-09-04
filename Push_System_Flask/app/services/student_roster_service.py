@@ -10,7 +10,9 @@ from sqlalchemy import or_
 
 from app.core.database import get_db
 from app.core.logger import get_logger
+from app.model.student_profile import StudentProfile
 from app.model.student_roster import StudentRoster
+from app.model.user import User
 
 logger = get_logger(__name__)
 
@@ -18,6 +20,33 @@ logger = get_logger(__name__)
 def _norm(value):
     """去首尾空白，None 转空串"""
     return (value or "").strip()
+
+
+def _merge_binding(items, profiles, users):
+    """纯函数：把已绑定身份（profiles）与用户（users）关联到名单条目 items。
+
+    按 (school, student_number) 匹配——与小程序身份绑定的门禁键一致。
+    items / profiles / users 均为 to_dict 后的 dict 列表；本函数就地给每个 item
+    写入 bound_user_id / bound_username / bound_at（未匹配则置 None）。
+    抽成纯函数便于单测，不依赖数据库会话。
+    """
+    prof_map = {}
+    for p in profiles:
+        sn = p.get("student_number")
+        if sn:
+            prof_map[(p.get("school"), sn)] = p
+    user_map = {u.get("id"): u for u in users}
+    for it in items:
+        p = prof_map.get((it.get("school"), it.get("student_number")))
+        if p and p.get("user_id") is not None:
+            u = user_map.get(p.get("user_id"))
+            it["bound_user_id"] = p.get("user_id")
+            it["bound_username"] = u.get("username") if u else None
+            it["bound_at"] = p.get("updated_at")
+        else:
+            it["bound_user_id"] = None
+            it["bound_username"] = None
+            it["bound_at"] = None
 
 
 class StudentRosterService:
@@ -168,15 +197,33 @@ class StudentRosterService:
                     )
                 )
             total = query.count()
-            items = (
+            rows = (
                 query.order_by(StudentRoster.id.desc())
                 .offset((page - 1) * page_size)
                 .limit(page_size)
                 .all()
             )
+            items = [row.to_dict() for row in rows]
+            # 聚合绑定状态：按 (school, student_number) 关联已绑定身份 + 用户，
+            # 让管理端「学生身份」视图能直接看到每条名单被哪个用户认领 / 是否已绑定。
+            numbers = {it["student_number"] for it in items if it.get("student_number")}
+            profiles = []
+            users = []
+            if numbers:
+                prof_rows = (
+                    session.query(StudentProfile)
+                    .filter(StudentProfile.student_number.in_(numbers))
+                    .all()
+                )
+                profiles = [p.to_dict() for p in prof_rows]
+                uids = [p.user_id for p in prof_rows if p.user_id]
+                if uids:
+                    user_rows = session.query(User).filter(User.id.in_(uids)).all()
+                    users = [u.to_dict() for u in user_rows]
+            _merge_binding(items, profiles, users)
             return {
                 "total": total,
-                "items": [row.to_dict() for row in items],
+                "items": items,
                 "page": page,
                 "page_size": page_size,
             }
