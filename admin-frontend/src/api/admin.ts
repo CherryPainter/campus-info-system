@@ -638,14 +638,18 @@ export const userApi = {
 /** 名单条目（与后端 StudentRoster.to_dict 对齐，含绑定状态聚合字段） */
 export interface RosterStudent {
   id: number;
+  /** 所属班级节点 ID（org_units，node_type=class）；组织路径由树继承 */
+  class_id: number | null;
   school: string;
   student_number: string;
   class_name: string;
-  /** 组织维度（管理员预录）：学院/专业 */
+  /** 组织维度（从组织树冗余带出，录入无需填写） */
   college: string | null;
   major: string | null;
   real_name: string | null;
   remark: string | null;
+  /** 是否已生成一次性绑定码（明文仅生成时返回一次） */
+  has_bind_code: boolean;
   is_active: boolean;
   created_at: string | null;
   updated_at: string | null;
@@ -653,6 +657,23 @@ export interface RosterStudent {
   bound_user_id: number | null;
   bound_username: string | null;
   bound_at: string | null;
+}
+
+/** 组织树节点（org_units） */
+export interface OrgUnit {
+  id: number;
+  parent_id: number | null;
+  node_type: "school" | "college" | "major" | "class";
+  name: string;
+  children?: OrgUnit[];
+}
+
+/** 批量生成的绑定码（明文仅本次返回，供导出/复制） */
+export interface BindCodeItem {
+  roster_id: number;
+  student_number: string;
+  real_name: string | null;
+  code: string;
 }
 
 /** 批量导入结果 */
@@ -663,9 +684,10 @@ export interface RosterImportResult {
 
 /** 学生名单 API（/api/admin/roster） */
 export const rosterApi = {
-  /** 分页查询名单（可选学校/关键字筛选） */
+  /** 分页查询名单（可选学校/班级节点/关键字筛选） */
   getList: (params?: {
     school?: string;
+    class_id?: number;
     keyword?: string;
     page?: number;
     page_size?: number;
@@ -674,24 +696,19 @@ export const rosterApi = {
       any,
       ApiResponse<RosterStudent[]> & { total: number; page: number; page_size: number }
     >("/admin/roster/students", { params }),
-  /** 新建单个名单条目 */
+  /** 新建单个名单条目（挂班级节点，组织路径由树继承） */
   create: (data: {
-    school: string;
+    class_id: number;
     student_number: string;
-    class_name: string;
-    college?: string;
-    major?: string;
     real_name?: string;
     remark?: string;
     is_active?: boolean;
   }) => request.post<any, ApiResponse<RosterStudent>>("/admin/roster/students", data),
-  /** 编辑名单条目（学校/学号只读） */
+  /** 编辑名单条目（学校/学号只读；class_id 传了即换班） */
   update: (
     id: number,
     data: {
-      class_name?: string;
-      college?: string;
-      major?: string;
+      class_id?: number | null;
       real_name?: string;
       remark?: string;
       is_active?: boolean;
@@ -710,9 +727,38 @@ export const rosterApi = {
       { headers: { "Content-Type": "multipart/form-data" } }
     );
   },
-  /** 学校选项（与小程序绑定页一致，schools 字段在响应顶层） */
+  /** 学校选项（从组织树动态读取，schools 字段在响应顶层） */
   getSchools: () =>
     request.get<any, ApiResponse<unknown> & { schools?: string[] }>(
       "/admin/roster/schools"
     ),
+  /** 为学生生成一次性绑定码（明文仅本次返回） */
+  generateBindCode: (id: number) =>
+    request.post<any, ApiResponse<{ code: string }>>(
+      `/admin/roster/students/${id}/bind-code`
+    ),
+  /** 批量生成绑定码（返回明文列表，供导出 CSV 一次性发放） */
+  generateBindCodes: (ids: number[]) =>
+    request.post<any, ApiResponse<{ codes: BindCodeItem[]; count: number }>>(
+      "/admin/roster/students/bind-codes",
+      { ids }
+    ),
+};
+
+/** 组织树 API（学校/学院/专业/班级，/api/admin/roster/org） */
+export const orgApi = {
+  /** 全量组织树（顶层为学校，含 children） */
+  tree: () =>
+    request.get<any, ApiResponse<unknown> & { tree?: OrgUnit[] }>(
+      "/admin/roster/org/tree"
+    ),
+  /** 新建节点：school 不传 parent_id；其余传上级节点 id */
+  create: (data: { node_type: OrgUnit["node_type"]; name: string; parent_id?: number | null }) =>
+    request.post<any, ApiResponse<{ unit: OrgUnit }>>("/admin/roster/org", data),
+  /** 重命名（级联刷新子树名单冗余路径） */
+  rename: (id: number, name: string) =>
+    request.put<any, ApiResponse<{ unit: OrgUnit }>>(`/admin/roster/org/${id}`, { name }),
+  /** 删除（有子节点或班级被名单引用时拒绝） */
+  remove: (id: number) =>
+    request.delete<any, ApiResponse>(`/admin/roster/org/${id}`),
 };

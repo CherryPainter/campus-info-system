@@ -4,9 +4,10 @@
  * 登录后若未通过管理员预录名单完成身份绑定，所有业务请求会收到
  * 403（code=STUDENT_NOT_BOUND），由请求层统一 reLaunch 到本页。
  *
- * 流程：选择学校（含模糊干扰项）→ 输入学号、班级 → 提交 →
- * 三项命中预录名单（启用中）即绑定成功 → 回到首页。
- * 未命中：提示联系管理员确认名单（筛除无关人员）。
+ * 流程：选择学校 → 输入学号、绑定码 → 提交 → 命中预录名单（启用中，
+ * 且绑定码匹配、未核销）即绑定成功 → 回到首页。
+ * 班级/学院/专业由名单所在组织树继承写入资料，学生无需填写。
+ * 绑定码由管理员生成后私下发放（一次性，绑定即失效）。
  */
 import { useEffect, useState } from 'react';
 import { View, Text, Input } from '@tarojs/components';
@@ -22,7 +23,7 @@ export default function BindPage() {
   const [schools, setSchools] = useState<string[]>([]);
   const [school, setSchool] = useState('');
   const [studentNumber, setStudentNumber] = useState('');
-  const [className, setClassName] = useState('');
+  const [bindCode, setBindCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -53,7 +54,7 @@ export default function BindPage() {
     if (submitting) return;
     const s = school.trim();
     const num = studentNumber.trim();
-    const cls = className.trim();
+    const code = bindCode.trim();
     if (!s) {
       Taro.showToast({ title: '请选择学校', icon: 'none' });
       return;
@@ -62,8 +63,8 @@ export default function BindPage() {
       Taro.showToast({ title: '请输入学号', icon: 'none' });
       return;
     }
-    if (!cls) {
-      Taro.showToast({ title: '请输入班级', icon: 'none' });
+    if (!code) {
+      Taro.showToast({ title: '请输入绑定码', icon: 'none' });
       return;
     }
     setSubmitting(true);
@@ -71,7 +72,7 @@ export default function BindPage() {
       const res = await userApi.bindStudent({
         school: s,
         student_number: num,
-        class_name: cls,
+        bind_code: code,
       });
       if (res.status === 'success' && res.bound) {
         if (res.profile) setProfile(res.profile);
@@ -93,10 +94,10 @@ export default function BindPage() {
       <View className="bind-card">
         <Text className="bind-title">身份认证</Text>
         <Text className="bind-desc">
-          请选择学校并填写学号、班级完成身份认证。信息须与学校登记一致，仅限本校在读学生使用。
+          请选择学校并填写学号与绑定码完成身份认证。绑定码由学校管理员发放，仅限本校在读学生使用。
         </Text>
 
-        {/* 学校选择（模糊选项，正校必须保留） */}
+        {/* 学校选择（动态：管理端已建学校） */}
         <Text className="bind-label">学校</Text>
         <View className="bind-schools">
           {schools.map((s) => (
@@ -111,11 +112,11 @@ export default function BindPage() {
             </View>
           ))}
           {!loading && schools.length === 0 && (
-            <Text className="bind-school-empty">学校列表加载失败，请下拉重试</Text>
+            <Text className="bind-school-empty">暂无学校选项，请联系管理员</Text>
           )}
         </View>
 
-        {/* 学号 / 班级 */}
+        {/* 学号 */}
         <Text className="bind-label">学号</Text>
         <View className="bind-input-row">
           <Input
@@ -128,15 +129,16 @@ export default function BindPage() {
           />
         </View>
 
-        <Text className="bind-label">班级</Text>
+        {/* 绑定码 */}
+        <Text className="bind-label">绑定码</Text>
         <View className="bind-input-row">
           <Input
-            className="bind-input"
-            value={className}
-            placeholder="请输入班级，如：计算机2301"
+            className="bind-input bind-code-input"
+            value={bindCode}
+            placeholder="请输入 8 位绑定码"
             placeholderClass="bind-placeholder"
-            maxlength={30}
-            onInput={(e) => setClassName(e.detail.value)}
+            maxlength={8}
+            onInput={(e) => setBindCode(e.detail.value.toUpperCase())}
           />
         </View>
 
@@ -148,7 +150,7 @@ export default function BindPage() {
         </View>
 
         <Text className="bind-hint">
-          如无法通过认证，请联系管理员确认名单信息
+          绑定码为一次性凭证，请向管理员获取；如无法通过认证，请联系管理员
         </Text>
       </View>
     </View>

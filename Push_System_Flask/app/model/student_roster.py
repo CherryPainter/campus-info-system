@@ -14,13 +14,19 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
 
 from app.core.database import Base
 
 
 class StudentRoster(Base):
-    """学生预录名单表"""
+    """学生预录名单表
+
+    v6.17 组织树化后：学校/学院/专业/班级 由 org_units 树维护，
+    本表通过 class_id 挂到「班级」节点，school/college/major/class_name
+    冗余列仍保留并由服务端从树带出写入（兼容旧查询与展示，避免每行 join）。
+    bind_code_hash 存一次性绑定密钥的 sha256（明文仅在生成/批量导出时返回一次）。
+    """
 
     __tablename__ = "student_rosters"
     __table_args__ = (
@@ -28,13 +34,21 @@ class StudentRoster(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    school = Column(String(50), nullable=False, comment="学校名称")
+    class_id = Column(
+        Integer,
+        ForeignKey("org_units.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment="所属班级节点ID（org_units，node_type=class）",
+    )
+    school = Column(String(50), nullable=False, comment="学校名称（从组织树冗余带出）")
     student_number = Column(String(30), nullable=False, index=True, comment="学号")
-    class_name = Column(String(100), nullable=False, comment="班级")
-    college = Column(String(100), nullable=True, comment="学院（组织维度，管理员预录）")
-    major = Column(String(100), nullable=True, comment="专业（组织维度，管理员预录）")
+    class_name = Column(String(100), nullable=False, comment="班级（从组织树冗余带出）")
+    college = Column(String(100), nullable=True, comment="学院（从组织树冗余带出）")
+    major = Column(String(100), nullable=True, comment="专业（从组织树冗余带出）")
     real_name = Column(String(50), nullable=True, comment="姓名")
     remark = Column(String(200), nullable=True, comment="备注")
+    bind_code_hash = Column(String(64), nullable=True, comment="一次性绑定密钥 sha256（绑定成功即清空）")
     is_active = Column(
         Boolean, default=True, nullable=False, comment="是否启用（停用后不可绑定）"
     )
@@ -44,6 +58,7 @@ class StudentRoster(Base):
     def to_dict(self):
         return {
             "id": self.id,
+            "class_id": self.class_id,
             "school": self.school,
             "student_number": self.student_number,
             "class_name": self.class_name,
@@ -51,6 +66,7 @@ class StudentRoster(Base):
             "major": self.major,
             "real_name": self.real_name,
             "remark": self.remark,
+            "has_bind_code": bool(self.bind_code_hash),
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

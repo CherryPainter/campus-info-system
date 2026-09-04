@@ -91,6 +91,12 @@
   color: $text-primary;
 }
 
+/* 绑定码：等宽感 + 字距，便于核对 */
+.bind-code-input {
+  font-family: monospace;
+  letter-spacing: 6rpx;
+}
+
 .bind-placeholder {
   color: $text-tertiary;
 }

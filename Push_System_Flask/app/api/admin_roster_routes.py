@@ -2,9 +2,12 @@
 """
 学生名单管理路由（/api/admin/roster/*）
 
-管理端「学生名单」Tab 的后端：新建单个 / 批量导入（CSV、Excel）/
-编辑 / 停用启用 / 删除 / 分页查询。
+管理端「学生身份」Tab 的后端：组织树（学校/学院/专业/班级）维护 +
+学生名单 CRUD + 一次性绑定码发放 + 批量导入（CSV、Excel）+ 分页查询。
 仅 @admin_required（与用户管理同级权限域）。
+
+组织维度（v6.17）：学校选项不再硬编码，改为从组织树动态读取；
+名单录入只选班级节点，学校/学院/专业/班级名由树继承，不再逐行重复填写。
 """
 
 import csv
@@ -14,6 +17,7 @@ from flask import Blueprint, Response, request
 
 from app.core.api_response import api_error, api_success
 from app.core.logger import get_logger
+from app.services.org_unit_service import OrgUnitService
 from app.services.student_roster_service import StudentRosterService
 from app.utils.auth_middleware import admin_required
 
@@ -21,17 +25,7 @@ logger = get_logger(__name__)
 
 admin_roster_bp = Blueprint("admin_roster", __name__)
 
-# 学校选项（小程序身份绑定可选列表；重庆科创职业学院必须保留，其余为模糊干扰项）
-SCHOOL_OPTIONS = [
-    "重庆科创职业学院",
-    "重庆工程学院",
-    "重庆大学",
-    "西南大学",
-    "重庆邮电大学",
-    "重庆理工大学",
-]
-
-# 批量导入表头：兼容中英文列名
+# 批量导入表头：兼容中英文列名（班级定位用名称路径，组织须先建好）
 HEADER_MAP = {
     "school": "school",
     "学校": "school",
@@ -53,7 +47,8 @@ HEADER_MAP = {
 def _parse_upload_file(file_storage):
     """
     解析上传的名单文件（.csv / .xlsx），返回 list[dict]。
-    表头：学校, 学号, 班级[, 学院, 专业, 姓名, 备注]（学院/专业/姓名/备注可缺省）。
+    表头：学校, 学院, 专业, 班级, 学号[, 姓名, 备注]（姓名/备注可缺省；
+    学院/专业/班级须与已建组织节点名称一致，用于定位班级）。
     """
     filename = (file_storage.filename or "").lower()
     raw = file_storage.read()
@@ -92,16 +87,68 @@ def _parse_upload_file(file_storage):
     return rows
 
 
+# ==================== 组织树（学校/学院/专业/班级） ====================
+
+
+@admin_roster_bp.route("/org/tree", methods=["GET"])
+@admin_required
+def org_tree():
+    """组织树（顶层为学校，含 children），供管理端组织管理 + 名单录入级联选择"""
+    return api_success(tree=OrgUnitService.tree())
+
+
+@admin_roster_bp.route("/org", methods=["POST"])
+@admin_required
+def org_create():
+    """新建组织节点：{node_type: school|college|major|class, name, parent_id?}"""
+    payload = request.get_json(silent=True) or {}
+    unit, err = OrgUnitService.create(
+        node_type=payload.get("node_type"),
+        name=payload.get("name"),
+        parent_id=payload.get("parent_id"),
+    )
+    if err:
+        return api_error(message=err, http_status=400)
+    return api_success(unit=unit.to_dict(), message="已创建")
+
+
+@admin_roster_bp.route("/org/<int:unit_id>", methods=["PUT"])
+@admin_required
+def org_rename(unit_id):
+    """重命名组织节点（同级查重 + 级联刷新子树名单冗余路径名）"""
+    payload = request.get_json(silent=True) or {}
+    unit, err = OrgUnitService.rename(unit_id, name=payload.get("name"))
+    if not unit:
+        status = 404 if err and "不存在" in err else 400
+        return api_error(message=err or "节点不存在", http_status=status)
+    return api_success(unit=unit.to_dict(), message="已保存")
+
+
+@admin_roster_bp.route("/org/<int:unit_id>", methods=["DELETE"])
+@admin_required
+def org_delete(unit_id):
+    """删除组织节点（有子节点或被名单引用时拒绝）"""
+    ok, err = OrgUnitService.delete(unit_id)
+    if not ok:
+        return api_error(message=err or "节点不存在", http_status=400)
+    return api_success(message="已删除")
+
+
+# ==================== 学生名单 ====================
+
+
 @admin_roster_bp.route("/students", methods=["GET"])
 @admin_required
 def list_students():
-    """分页查询名单（可选：学校 / 关键字筛选）"""
+    """分页查询名单（可选：学校 / 班级节点 class_id / 关键字筛选）"""
     school = (request.args.get("school") or "").strip()
+    class_id = request.args.get("class_id", type=int) or None
     keyword = (request.args.get("keyword") or "").strip()
     page = max(1, request.args.get("page", 1, type=int))
     page_size = min(100, max(1, request.args.get("page_size", 20, type=int)))
     data = StudentRosterService.list(
         school=school or None,
+        class_id=class_id,
         keyword=keyword or None,
         page=page,
         page_size=page_size,
@@ -119,14 +166,11 @@ def list_students():
 @admin_roster_bp.route("/students", methods=["POST"])
 @admin_required
 def create_student():
-    """新建单个名单条目"""
+    """按班级节点新建名单条目（组织名由树继承）"""
     payload = request.get_json(silent=True) or {}
     row, err = StudentRosterService.create(
-        school=payload.get("school"),
+        class_id=payload.get("class_id"),
         student_number=payload.get("student_number"),
-        class_name=payload.get("class_name"),
-        college=payload.get("college"),
-        major=payload.get("major"),
         real_name=payload.get("real_name"),
         remark=payload.get("remark"),
         is_active=payload.get("is_active", True),
@@ -151,7 +195,7 @@ def batch_import():
         return api_error(message=str(exc), http_status=400)
     except Exception as exc:
         logger.error(f"[StudentRoster] 解析上传文件失败: {exc}")
-        return api_error(message="文件解析失败，请检查格式（表头：学校,学号,班级,学院,专业,姓名,备注）", http_status=400)
+        return api_error(message="文件解析失败，请检查格式（表头：学校,学院,专业,班级,学号,姓名,备注）", http_status=400)
     if not rows:
         return api_error(message="文件中没有有效数据（需含表头 + 数据行）", http_status=400)
     result = StudentRosterService.create_batch(rows)
@@ -161,13 +205,11 @@ def batch_import():
 @admin_roster_bp.route("/students/<int:roster_id>", methods=["PUT"])
 @admin_required
 def update_student(roster_id):
-    """编辑名单条目（学校/学号只读，防止破坏绑定语义）"""
+    """编辑名单条目（学校/学号只读，防止破坏绑定语义；班级可换）"""
     payload = request.get_json(silent=True) or {}
     row, err = StudentRosterService.update(
         roster_id,
-        class_name=payload.get("class_name"),
-        college=payload.get("college"),
-        major=payload.get("major"),
+        class_id=payload.get("class_id"),
         real_name=payload.get("real_name"),
         remark=payload.get("remark"),
         is_active=payload.get("is_active"),
@@ -188,18 +230,51 @@ def delete_student(roster_id):
     return api_success(message="已删除")
 
 
+# ==================== 一次性绑定码 ====================
+
+
+@admin_roster_bp.route("/students/<int:roster_id>/bind-code", methods=["POST"])
+@admin_required
+def generate_student_code(roster_id):
+    """为学生生成一次性绑定码（覆盖旧码即旧码作废），明文仅本次返回"""
+    code, err = StudentRosterService.generate_bind_code(roster_id)
+    if err:
+        return api_error(message=err, http_status=400)
+    # data 包裹：前端统一从 res.data 取值
+    return api_success(data={"code": code}, message="生成成功，请立即复制并私下发放")
+
+
+@admin_roster_bp.route("/students/bind-codes", methods=["POST"])
+@admin_required
+def generate_student_codes_batch():
+    """批量生成绑定码（{ids:[...]}），返回明文列表供导出 CSV 一次性发放"""
+    payload = request.get_json(silent=True) or {}
+    ids = payload.get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        return api_error(message="请选择要生成绑定码的学生", http_status=400)
+    codes = StudentRosterService.generate_bind_codes(ids)
+    return api_success(data={"codes": codes, "count": len(codes)})
+
+
+# ==================== 学校选项（动态）与模板 ====================
+
+
 @admin_roster_bp.route("/schools", methods=["GET"])
 @admin_required
 def list_schools():
-    """学校选项（管理端新建/筛选用，与小程序绑定页保持一致，顶层 schools 字段）"""
-    return api_success(schools=SCHOOL_OPTIONS)
+    """学校选项（从组织树动态读取，与小程序绑定页保持一致，顶层 schools 字段）"""
+    units = OrgUnitService.list_schools()
+    return api_success(schools=[u["name"] for u in units])
 
 
 @admin_roster_bp.route("/template", methods=["GET"])
 @admin_required
 def download_template():
-    """批量导入 CSV 模板下载"""
-    content = "学校,学号,班级,学院,专业,姓名,备注\n重庆科创职业学院,20260001,计算机2301,信息与人工智能学院,计算机应用技术,张三,\n"
+    """批量导入 CSV 模板下载（组织名须与已建节点一致）"""
+    content = (
+        "学校,学院,专业,班级,学号,姓名,备注\n"
+        "重庆科创职业学院,信息与人工智能学院,计算机应用技术,zk2401,20260001,张三,\n"
+    )
     return Response(
         content.encode("utf-8-sig"),
         mimetype="text/csv",

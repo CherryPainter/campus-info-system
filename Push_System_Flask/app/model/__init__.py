@@ -23,6 +23,7 @@ from app.model.ip_blacklist import IPBlacklist, IPSecurityEvent
 from app.model.login_log import LoginLog
 from app.model.module_config import ModuleConfig
 from app.model.notification import Notification
+from app.model.org_unit import OrgUnit
 from app.model.push_task import PushTask
 from app.model.scheduled_crawl_task import ScheduledCrawlTask
 from app.model.server_session import ServerSession
@@ -59,6 +60,7 @@ __all__ = [
     "LoginLog",
     "ModuleConfig",
     "Notification",
+    "OrgUnit",
     "Webhook",
     "PushTask",
     "Announcement",

@@ -43,16 +43,16 @@ export function getBindStatus(): Promise<BindStatusResult> {
   return get<BindStatusResult>('/api/miniapp/student/bind-status');
 }
 
-/** 可选学校列表（含模糊干扰项；重庆科创职业学院必须保留） */
+/** 可选学校列表（从管理端组织树动态读取） */
 export function getSchools(): Promise<SchoolsResult> {
   return get<SchoolsResult>('/api/miniapp/student/schools');
 }
 
-/** 提交身份绑定（学校+学号+班级 三项命中名单才成功） */
+/** 提交身份绑定（学校+学号+一次性绑定码 命中名单才成功；班级/学院/专业由名单继承） */
 export function bindStudent(data: {
   school: string;
   student_number: string;
-  class_name: string;
+  bind_code: string;
 }): Promise<BindResult> {
   return post<BindResult>('/api/miniapp/student/bind', data);
 }

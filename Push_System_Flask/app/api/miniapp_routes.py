@@ -8,8 +8,8 @@
 接口清单：
 - GET  /api/miniapp/user/me                    当前学生用户信息（v6.16.0）
 - GET  /api/miniapp/student/bind-status        身份绑定状态（是否通过预录名单绑定）
-- GET  /api/miniapp/student/schools            身份绑定可选学校列表（含模糊干扰项）
-- POST /api/miniapp/student/bind               身份绑定（学校+学号+班级 命中预录名单）
+- GET  /api/miniapp/student/schools            身份绑定可选学校列表（从组织树动态读取）
+- POST /api/miniapp/student/bind               身份绑定（学校+学号+一次性绑定码 命中预录名单）
 - GET  /api/miniapp/student/profile            本人学生资料
 - PUT  /api/miniapp/student/profile            更新本人学生资料
 - GET  /api/miniapp/schedule/today             今日课表（v6.16.0 第二阶段）
@@ -115,35 +115,37 @@ def bind_status():
 @student_required
 def student_schools():
     """
-    身份绑定可选学校列表（含模糊干扰项；重庆科创职业学院必须保留）
+    身份绑定可选学校列表（从管理端已建组织树动态读取）
     """
-    from app.api.admin_roster_routes import SCHOOL_OPTIONS
+    from app.services.org_unit_service import OrgUnitService
 
-    return api_success(schools=SCHOOL_OPTIONS)
+    units = OrgUnitService.list_schools()
+    return api_success(schools=[u["name"] for u in units])
 
 
 @miniapp_bp.route("/student/bind", methods=["POST"])
 @student_required
 def bind_student():
     """
-    身份绑定：校验「学校 + 学号 + 班级」命中预录名单（启用中）后写入本人资料
+    身份绑定：校验「学校 + 学号 + 一次性绑定码」命中预录名单（启用中）后写入本人资料
 
-    - 三项均匹配且名单条目 is_active=1 才绑定成功；
-    - 绑定成功后 school/student_number/class_name 由本接口管理，
-      不再接受 PUT /student/profile 修改（防止绕过名单直接填学号）。
+    - 学校/学号/码 命中且名单条目 is_active=1 才绑定成功；
+    - 学院/专业/班级 由名单所在组织树继承写入 profile（学生无需填写、不可自填）；
+    - 绑定码一次性：绑定成功即核销（防重放/转借/先到先得冒绑）；
     - 已绑定学生不可重复调用本接口（防覆盖为他人学号，ALREADY_BOUND 403）；
       如需解绑/换绑请联系管理员走管理端。
     """
     from app.core.database import get_db
     from app.model.student_profile import StudentProfile
+    from app.model.student_roster import StudentRoster
     from app.services.student_roster_service import StudentRosterService
 
     payload = request.get_json(silent=True) or {}
     school = (payload.get("school") or "").strip()
     student_number = (payload.get("student_number") or "").strip()
-    class_name = (payload.get("class_name") or "").strip()
-    if not school or not student_number or not class_name:
-        return api_error(message="学校、学号、班级均不能为空", http_status=400)
+    bind_code = (payload.get("bind_code") or "").strip()
+    if not school or not student_number or not bind_code:
+        return api_error(message="学校、学号、绑定码均不能为空", http_status=400)
 
     user_id = int(g.current_user["user_id"])
 
@@ -169,35 +171,47 @@ def bind_student():
     finally:
         db.close()
 
-    ok, matched_row = StudentRosterService.verify(school, student_number, class_name)
+    ok, _matched = StudentRosterService.verify(school, student_number, bind_code)
     if not ok:
         logger.warning(
             f"身份绑定校验未通过: user_id={g.current_user.get('user_id')}, "
             f"school={school}, student_number={student_number}"
         )
         return api_error(
-            message="身份校验未通过，请联系管理员确认名单", http_status=403
+            message="身份校验未通过：请确认学校/学号与绑定码无误，或联系管理员", http_status=403
         )
 
     db = get_db()
     try:
+        # 重新在同一事务取名单行（verify 的会话已关闭，避免跨 session 操作 detached 对象）
+        roster = (
+            db.query(StudentRoster)
+            .filter(
+                StudentRoster.school == school,
+                StudentRoster.student_number == student_number,
+                StudentRoster.is_active.is_(True),
+            )
+            .first()
+        )
+        if not roster:
+            return api_error(message="名单不存在或已停用", http_status=403)
         profile = db.query(StudentProfile).filter_by(user_id=user_id).first()
         if not profile:
             profile = StudentProfile(user_id=user_id)
             db.add(profile)
-        profile.school = school
-        profile.student_number = student_number
-        profile.class_name = class_name
-        # 学院/专业随绑定同步写入（名单预录的组织属性，非学生自答项；
-        # 资料编辑接口不会覆盖这三个身份字段）
-        if matched_row:
-            profile.college = matched_row.college or profile.college
-            profile.major = matched_row.major or profile.major
+        # 身份字段全部以名单（组织树冗余列）为准写入，学生不可自填/篡改
+        profile.school = roster.school
+        profile.student_number = roster.student_number
+        profile.class_name = roster.class_name
+        profile.college = roster.college
+        profile.major = roster.major
+        # 核销一次性绑定码（同一事务，绑定成功即作废）
+        roster.bind_code_hash = None
         db.commit()
         db.refresh(profile)
         logger.info(
             f"身份绑定成功: user_id={user_id}, school={school}, "
-            f"student_number={student_number}, class_name={class_name}"
+            f"student_number={student_number}, class_name={roster.class_name}"
         )
         return api_success(bound=True, profile=profile.to_dict(), message="绑定成功")
     except Exception as exc:
