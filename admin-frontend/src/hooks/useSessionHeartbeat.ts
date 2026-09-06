@@ -10,10 +10,22 @@
 import { useCallback } from "react";
 import request from "@/api/request";
 import { useIntervalPolling } from "@/hooks/useIntervalPolling";
-import { POLL_NORMAL } from "@/hooks/pollIntervals";
+import { POLL_SLOW } from "@/hooks/pollIntervals";
 import { notifySessionExpired } from "@/utils/sessionExpiry";
 
-export function useSessionHeartbeat(enabled: boolean, intervalMs: number = POLL_NORMAL): void {
+/**
+ * 会话心跳检测 Hook
+ *
+ * 周期性调用 GET /api/auth/session/status 探测当前会话是否仍有效，
+ * 弥补“只有发 API 请求返回 401 才发现被踢”的延迟 —— 即便页面空闲，
+ * 也能在 30s 内通过弹框及时告知用户“已在其他设备登录 / 会话过期”。
+ *
+ * 端点始终返回 200（valid 标志区分），不会触发响应拦截器的 401 逻辑。
+ *
+ * 频率取 POLL_SLOW(30s)：心跳仅用于“探测被踢”，30s 内发现已足够；
+ * 用 5s 会把该端点请求抬到 720/小时，挤占全局限流配额（曾反复触发 429）。
+ */
+export function useSessionHeartbeat(enabled: boolean, intervalMs: number = POLL_SLOW): void {
   const check = useCallback(async () => {
     try {
       // request 拦截器已解包一层，res 即 { valid, reason, ip, time }
