@@ -75,9 +75,13 @@ def status():
 
 
 @api_bp.route("/trigger", methods=["POST"])
-@jwt_required
+@admin_required
 def trigger():
-    """手动触发推送（需 JWT 认证）
+    """手动触发推送（需管理员权限）
+
+    修复：原为 @jwt_required（任意登录用户，含学生 role='student'）即可调用，
+    可 force=true 强制触发面向全校的推送广播。推送是管理端运营操作，
+    学生端角色不应能触发，收紧为 @admin_required（2026-09-06）。
 
     查询参数:
         force: bool - 为 true 时忽略时间窗口检查，强制触发所有适用规则（默认 false）

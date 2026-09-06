@@ -56,11 +56,17 @@ def get_sessions():
     user_id = g.current_user.get("user_id")
     role = g.current_user.get("role")
 
-    # 普通用户只能看自己的会话；管理员（普管/超管）看全部（含所属用户信息）
-    if role == "user":
+    # 权限：网页普通用户（user）与学生端（student）都只能看自己的会话；
+    # 只有管理员（admin，网页管理端）才有权查看全部活跃会话（含所属用户信息）。
+    # 修复：原实现只对 role=='user' 放行"只看自己"，导致 role=='student' 落到 else，
+    # 学生会看到全量活跃会话（含其他用户 IP/UA）——横向越权（2026-09-06 修复）。
+    if role in ("user", "student"):
         sessions = session_service.get_user_sessions(int(user_id))
-    else:
+    elif role == "admin":
         sessions = session_service.get_all_active_sessions_with_owner()
+    else:
+        # 未知角色兜底：按"只看自己"处理，绝不放大到全量
+        sessions = session_service.get_user_sessions(int(user_id))
 
     return api_success(data={"sessions": sessions}, http_status=200)
 
@@ -101,12 +107,12 @@ def revoke_session(session_id):
         if not target_user:
             return api_error(message="会话所属用户不存在", http_status=404)
 
-        # 2. 权限分层（与用户管理一致：普管管普通用户，超管管全部）
-        if operator_role == "user":
-            # 普通用户只能踢自己的会话
+        # 2. 权限分层：普通用户/学生只能踢自己的会话；管理员需区分超管/普管
+        if operator_role in ("user", "student"):
+            # 普通用户与学生只能踢自己的会话（学生无服务端会话，此处兜底防横向越权）
             if target_session.user_id != int(operator_id):
                 return api_error(message="无权撤销此Session", http_status=403)
-        else:
+        elif operator_role == "admin":
             # 管理员需区分超管 / 普管
             operator = db_session.query(User).filter(User.id == int(operator_id)).first()
             is_primary = bool(operator.is_primary) if operator else False
@@ -114,6 +120,10 @@ def revoke_session(session_id):
                 # 普管：只能踢普通用户（role != 'admin'）的会话，不能踢任何管理员
                 if target_user.role == "admin":
                     return api_error(message="无权踢出管理员会话", http_status=403)
+        else:
+            # 未知角色兜底：一律只允许踢自己的会话，杜绝提权
+            if target_session.user_id != int(operator_id):
+                return api_error(message="无权撤销此Session", http_status=403)
 
         # 撤销Session（记录撤销原因与操作者IP，供被踢设备弹框显示）
         success = session_service.delete_session(

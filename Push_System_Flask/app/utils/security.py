@@ -551,9 +551,12 @@ def _check_foreign_ip(client_ip: str):
 
 
 # 登录接口白名单：黑名单/攻击检测不拦截登录，避免误封管理员 IP 后无法进入后台
+# 注意：真实路由是 /api/auth/login 与 /api/auth/login/mfa（此前误写为 /api/auth/login_mfa，
+# 是死路径 → login/mfa 实际并未被白名单豁免，仍走全局 IP 拦截，会在"密码通过后、MFA 这步"
+# 把临时封禁窗口内的合法管理员二次挡下，造成登录锁死。2026-09-06 修正路径。
 _SECURITY_BEFORE_REQUEST_WHITELIST = {
     "/api/auth/login",
-    "/api/auth/login_mfa",
+    "/api/auth/login/mfa",
 }
 
 # JSON 字段级扫描豁免（method, path, key）：仅用于纯凭证字段，值只落库/服务端转发、不回显页面

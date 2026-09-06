@@ -13,6 +13,7 @@ from flask import Blueprint, g, request
 from app.core.api_response import api_error, api_success
 from app.core.logger import get_logger
 from app.utils.auth_middleware import admin_required, jwt_required
+from app.utils.security import get_client_ip
 from app.utils.file_upload_security import (
     AVATAR_QUOTA,
     AVATAR_QUOTA_DAYS,
@@ -457,6 +458,10 @@ def update_user(user_id):
         if not user:
             return api_error(message="用户不存在", http_status=404)
 
+        # 记录变更前状态，用于判断是否发生"禁用/降权"（需吊销其活跃 token/session，否则旧 token 继续有效）
+        prev_active = bool(user.is_active)
+        prev_role = user.role or ""
+
         # 获取当前登录用户信息
         current_user_id = g.current_user.get("user_id")
         current_user = session.query(User).filter_by(id=int(current_user_id)).first()
@@ -524,6 +529,31 @@ def update_user(user_id):
 
         user.updated_at = datetime.now()
         session.commit()
+
+        # 若本次更新导致该用户"被禁用"或"从 admin 降权"，立即吊销其全部活跃会话，
+        # 使其现存 token/会话即刻失效，避免旧凭据在禁用/降权后仍能访问（2026-09-06 加固）。
+        # 会话撤销后，依赖 session_id cookie 的请求在 jwt_required 层即返回 401，
+        # 前端自动刷新时会因 session 失效而重新登录；纯 Bearer 短时 access 到期后自然失效。
+        now_disabled = not bool(user.is_active)
+        demoted_from_admin = prev_role == "admin" and (user.role or "") != "admin"
+        if (prev_active and now_disabled) or demoted_from_admin:
+            from app.core.database import get_db as _sdb
+            from app.services.session_service import session_service
+
+            _ss = _sdb()
+            try:
+                _cnt = session_service.delete_all_user_sessions(
+                    int(user_id), reason="admin_disable", by_ip=get_client_ip()
+                )
+            except Exception as _exc:  # 会话吊销失败不阻断主流程，记日志即可
+                logger.warning(f"禁用/降权后吊销会话失败 user_id={user_id}: {_exc}")
+                _cnt = 0
+            finally:
+                _ss.close()
+            logger.info(
+                f"用户被禁用/降权，已吊销其 {_cnt} 个活跃会话: user_id={user_id}, "
+                f"prev_active={prev_active}, prev_role={prev_role}, role={user.role}"
+            )
 
         logger.info(f"管理员更新了用户: {user.username}")
 

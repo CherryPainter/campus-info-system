@@ -126,6 +126,10 @@ class Config:
         cls.HOST = os.getenv("HOST", "0.0.0.0")
         cls.PORT = int(os.getenv("PORT", "29528"))
 
+        # 请求体上限（Flask 原生 MAX_CONTENT_LENGTH，防御超大头/分块绕过手动 Content-Length 检查）
+        # 前端只会上传头像/反馈图/公告图，10MB 足够；设过大会让超大 body 直接打满内存。
+        cls.MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(10 * 1024 * 1024)))
+
         # 安全：SECRET_KEY 必须来自环境变量（敏感配置不硬编码）
         # 生产环境缺失则直接启动失败（避免重启即全员下线 / 多实例密钥不一致）；
         # 开发环境允许不安全默认值并告警，便于本地联调。
@@ -160,6 +164,15 @@ class Config:
 
         # 是否强制管理员启用 MFA（默认开启；设为 false 可关闭，便于特殊场景）
         cls.FORCE_ADMIN_MFA = os.getenv("FORCE_ADMIN_MFA", "true").lower() == "true"
+
+        # 是否强制 HTTPS（生产走 https 时设为 true）：
+        # - 生效后 auth_routes 下发 cookie 加 Secure 标志（仅 https 传输）
+        # - __init__.py 的 before_request 会把 http 请求 301 跳 https
+        # 注意：若前端经 nginx 反代且 nginx 已终结 TLS，需 nginx 转发 X-Forwarded-Proto:
+        # https 才能让 request.is_secure 正确判定（否则跳转/判 secure 会误判）。
+        # 此前该配置从未被 Config 读取，.env 里的 FORCE_HTTPS 一直失效（cookie 恒不加 Secure、
+        # 跳转恒不触发）——2026-09-06 修复读取。
+        cls.FORCE_HTTPS = os.getenv("FORCE_HTTPS", "false").lower() in ("1", "true", "yes", "on")
 
         # 境外 IP 拦截（防火墙）：仅允许中国 IP 访问，其余请求在请求最前端直接 403 断开
         # 默认开启；REGION_BLOCK_EXCEPTIONS 为逗号分隔的例外 IP/CIDR（管理员白名单，防止误锁自己）

@@ -953,6 +953,10 @@ def login_mfa():
     if not mfa_token or not code:
         return api_error(message="请提供MFA令牌和验证码", http_status=400)
 
+    # 该接口已被全局 security_before_request 白名单豁免（同 login）。不再做 IP 硬拦：
+    # MFA 是登录第二步，只有持有有效一次性 mfa_token（= 刚通过密码校验）才会走到这里，
+    # 且已有 @limiter(10/min) 兜底；此处若再硬拦 IP，会在"密码自助解封后、MFA 这步"
+    # 把合法管理员二次挡下造成锁死。暴力面已由 一次性 token + 限流 覆盖。
     # 验证临时 MFA token（JWT 编码，不依赖 session，支持跨域）
     try:
         pending_data = jwt.decode(mfa_token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
