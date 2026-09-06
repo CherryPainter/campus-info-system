@@ -111,13 +111,15 @@ export default function CourseDetailPage() {
 
   return (
     <View className="cd-page">
-      {/* ====== 蓝色头部卡片 ====== */}
-      <View className="cd-header" style={{ background: `linear-gradient(135deg, ${baseColor}, ${baseColor}cc)` }}>
-        <Text className="cd-header-title">
+      {/* ====== 浅色头部卡片（半透淡彩） ======
+          原先用 baseColor 全饱和渐变 + 白字，整体过艳；现在改为低透明度淡彩渐变 +
+          文字用基色自身（深）以保证可读性；通过 .cd-header 下的类名区分两个主题。 */}
+      <View className="cd-header" style={{ background: `linear-gradient(135deg, ${baseColor}1a, ${baseColor}0d)` }}>
+        <Text className="cd-header-title" style={{ color: baseColor }}>
           {currentCourse.course_name}
           {periodText ? ` (${periodText})` : ''}
         </Text>
-        <Text className="cd-header-sub">
+        <Text className="cd-header-sub" style={{ color: `${baseColor}b3` }}>
           {location || '—'}
           {' · '}
           {currentCourse.extra_info?.teacher || '—'}
@@ -175,9 +177,20 @@ export default function CourseDetailPage() {
         <Text className="cd-section-title">课程安排</Text>
         <View className="cd-week-list">
           {(() => {
-            // 从整周数据中找出同名的所有课程记录（同一门课可能在不同 weekday 有多条）
+            // 判断两个 classroom 是否"兼容"（空值互相兼容 + 完全匹配）
+            const classroomMatch = (a?: string, b?: string): boolean => {
+              const ae = !a || !a.trim();
+              const be = !b || !b.trim();
+              return ae || be || a === b;
+            };
+            // 从整周数据中找出同课名、同教室的所有课程记录
+            // （教室为空时兼容任意教室，避免爬虫/旧数据缺 classroom 时丢失关联）
+            const sameClassroom = currentCourse.extra_info?.classroom;
             const sameCourses = weekCourses.filter(
-              (c) => c.course_name === currentCourse.course_name && c.schedule_id !== currentCourse.schedule_id,
+              (c) =>
+                c.course_name === currentCourse.course_name &&
+                classroomMatch(c.extra_info?.classroom, sameClassroom) &&
+                c.schedule_id !== currentCourse.schedule_id,
             );
             // 当前课程 + 同名课程 → 按 week_day 索引
             const byDay: Record<number, ScheduleCourse[]> = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };

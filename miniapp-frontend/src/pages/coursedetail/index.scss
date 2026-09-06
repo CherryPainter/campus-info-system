@@ -6,12 +6,14 @@
   padding-bottom: calc(env(safe-area-inset-bottom) + 40rpx);
 }
 
-/* ====== 蓝色头部卡片 ====== */
+/* ====== 浅色头部卡片（半透淡彩） ======
+   之前用饱和渐变 + 白字 + 强 opacity 看起来很艳。现改为低透明度淡彩渐变背景，文字由
+   inline style 设成对应基色（深色），opacity 仅用于辅助文本。 */
 .cd-header {
   margin: $spacing-lg;
   padding: 36rpx 32rpx;
   border-radius: 24rpx;
-  color: #fff;
+  // 文字颜色由 inline style 提供（按课程 baseColor）；此处不再硬编码 #fff，避免覆盖。
 
   .cd-header-title {
     display: block;
@@ -28,7 +30,7 @@
   .cd-header-sub {
     display: block;
     font-size: 26rpx;
-    opacity: 0.9;
+    // 不再用 opacity 调淡度（会一并淡化文字背景对比），由 inline style 直接给颜色。
     margin-bottom: 24rpx;
     word-break: break-all;
     overflow-wrap: anywhere;
@@ -55,12 +57,13 @@
 
   .cd-header-icon {
     font-size: 28rpx;
-    opacity: 0.85;
+    // 图标统一用基色 alpha 调淡（与文字一起），避免突兀黑/灰图标。
+    opacity: 0.9;
   }
 
   .cd-header-meta-text {
     font-size: 26rpx;
-    opacity: 0.95;
+    // 与标题色一致（同基色），但靠 inline style 单独覆盖为基色深色（保持对比）。
   }
 }
 

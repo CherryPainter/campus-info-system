@@ -1,47 +1,8 @@
 @import '../../styles/variables.scss';
 
 .ct-page {
-  // 背景：白色 + 顶部蓝色渐变向下溶解（与首页/时间轴页同款）
-  background:
-    radial-gradient(
-      circle at 18% 0%,
-      rgba(122, 167, 255, 0.26) 0%,
-      rgba(122, 167, 255, 0.14) 30%,
-      rgba(122, 167, 255, 0.06) 55%,
-      rgba(122, 167, 255, 0) 75%
-    ),
-    #ffffff;
   background-color: #ffffff;
   min-height: 100vh;
-  padding-top: 24rpx;
-
-  // 视图切换 Tab（课表 / 日程）
-  .ct-tabs {
-    display: flex;
-    margin-left: $spacing-lg;
-    margin-right: $spacing-lg;
-    margin-bottom: $spacing-md;
-    background: #f0f2f5;
-    border-radius: 999rpx;
-    padding: 6rpx;
-  }
-
-  .ct-tab {
-    flex: 1;
-    text-align: center;
-    font-size: 28rpx;
-    color: $text-secondary;
-    padding: 14rpx 0;
-    border-radius: 999rpx;
-    transition: all 0.2s ease;
-
-    &.ct-tab-active {
-      background: #fff;
-      color: $primary-color;
-      font-weight: 600;
-      box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
-    }
-  }
 }
 
 /* ============ 周历卡片（与 schedule 同款视觉，自包含） ============ */
@@ -76,6 +37,43 @@
   font-size: $font-size-md;
   color: $primary-color;
   padding: 4rpx 12rpx;
+}
+
+.schedule-semester-text {
+  font-size: $font-size-md;
+  font-weight: 500;
+  color: $text-primary;
+  white-space: nowrap;
+}
+
+// 课表版式顶部：本周（左，固定宽） | 学期周次（中，占满剩余宽） | 占位（右，与左侧同宽保证居中）
+// 贴导航栏、通栏无左右间距、直角无阴影
+.week-calendar.ct-week-header-grid {
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+
+  .week-calendar-head {
+    display: flex;
+    align-items: center;
+  }
+
+  .schedule-today-btn {
+    flex-shrink: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .schedule-week-picker {
+    flex: 1;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .week-header-spacer {
+    width: 80rpx;
+    flex-shrink: 0;
+  }
 }
 
 .week-calendar {
@@ -199,22 +197,21 @@
 /* ============ 课程表网格版式 ============ */
 
 .ct-table {
-  margin: $spacing-md $spacing-lg 0;
+  margin: $spacing-md 0 0;
 }
 
 .ct-table-inner {
   display: flex;
-  border-radius: $radius-large;
+  border-radius: $radius-medium;
   overflow: hidden;
   background: #fff;
   border: 1rpx solid #eef0f2;
 }
 
-// 固定节次列（不随横向滚动）
+// 固定节次列（不随横向滚动），与课程表融为同一张连续表格
 .ct-col-period {
-  width: 60rpx;
+  width: 56rpx;
   flex-shrink: 0;
-  background: #fafbfc;
 }
 
 .ct-cols {
@@ -259,15 +256,36 @@
   color: $text-secondary;
 }
 
-// 列头（星期）
+// 节次列分组背景：1-4 白、5-8 灰、9-12 白，便于快速定位大课区间
+.ct-period-cell-light {
+  background: #ffffff;
+}
+
+.ct-period-cell-gray {
+  background: #f0f2f5;
+}
+
+// 列头（星期 + 日期上下排列，日期嵌入课表星期里）
 .ct-day-head {
-  height: 64rpx;
+  height: 72rpx;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   font-weight: 600;
+}
+
+.ct-day-week {
+  font-size: 20rpx;
+  color: $text-secondary;
+  line-height: 1.2;
+}
+
+.ct-day-date {
   font-size: 22rpx;
   color: $text-primary;
+  line-height: 1.2;
+  margin-top: 2rpx;
 }
 
 // ====== 课表骨架屏（加载占位，数据到达后替换为真实卡片） ======
@@ -295,47 +313,24 @@
   100% { background-position: 0 50%; }
 }
 
-// 时间轴骨架：时间列 + 卡片条
-.ct-skeleton-timeline {
-  padding: 24rpx;
-}
-
-.ct-skeleton-tl-item {
-  display: flex;
-  align-items: center;
-  padding: 20rpx 0;
-  border-bottom: 1rpx solid #f2f3f5;
-}
-
-.ct-skeleton-tl-time {
-  width: 140rpx;
-  flex-shrink: 0;
-  padding-right: 24rpx;
-}
-
-.ct-skeleton-tl-body {
-  flex: 1;
-}
-
-.ct-skeleton-tl-body .ct-skeleton-block {
-  height: 48rpx;
-  width: 100%;
-}
-
-
-// 今天列：整列淡蓝底 + 星期标签蓝色实心圆高亮（与时间轴周历一致）
+// 今天列：整列淡蓝底 + 日期蓝色实心圆高亮
 .ct-col-today {
   background: rgba(26, 115, 232, 0.04);
+}
 
-  .ct-day-text {
-    width: 44rpx;
-    height: 44rpx;
-    line-height: 44rpx;
+.ct-day-head-today {
+  .ct-day-week {
+    color: $primary-color;
+  }
+
+  .ct-day-date {
+    width: 32rpx;
+    height: 32rpx;
+    line-height: 32rpx;
     border-radius: 50%;
     background: $primary-color;
     color: #fff;
     text-align: center;
-    display: inline-block;
   }
 }
 
@@ -444,20 +439,6 @@
   font-size: 18rpx;
   color: #999;
   margin-top: 2rpx;
-}
-
-/* ============ 时间轴版式间距 ============ */
-
-.timeline-list {
-  margin-top: $spacing-lg;
-}
-
-.schedule-empty-card {
-  margin-top: $spacing-lg;
-}
-
-.ct-empty-card {
-  margin-top: $spacing-lg;
 }
 
 /* ============ 底部弹出周次选择（与 schedule 同款） ============ */

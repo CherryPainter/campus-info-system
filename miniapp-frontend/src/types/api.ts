@@ -126,7 +126,16 @@ export interface ScheduleWeekResult extends ApiSuccess {
     courses: ScheduleCourse[];
     week_number: number;
     available_weeks: AvailableWeek[];
+    semester_id?: number;
   };
+}
+
+export interface ScheduleSemester {
+  id: number;
+  name: string;
+  academic_year: string;
+  term: number;
+  is_current: boolean;
 }
 
 export interface ScheduleCurrentResult extends ApiSuccess {
@@ -138,6 +147,7 @@ export interface ScheduleCurrentResult extends ApiSuccess {
     semester_id: number;
     semester_name: string;
     available_weeks: AvailableWeek[];
+    semesters?: ScheduleSemester[];
   };
 }
 

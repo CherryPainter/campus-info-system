@@ -1,12 +1,10 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
-import { View, Text, Swiper, SwiperItem, PickerView, PickerViewColumn } from '@tarojs/components';
+import { useMemo, useState, useCallback } from 'react';
+import { View, Text, PickerView, PickerViewColumn } from '@tarojs/components';
 import { useLoad, usePullDownRefresh, stopPullDownRefresh, navigateTo } from '@tarojs/taro';
 import dayjs from 'dayjs';
 
 import * as scheduleApi from '@/api/schedule';
-import type { ScheduleCourse } from '@/types/api';
-import TimelineItem, { type TimelineStatus } from '@/components/TimelineItem';
-import EmptyState from '@/components/EmptyState';
+import type { ScheduleCourse, ScheduleSemester } from '@/types/api';
 import './index.scss';
 
 /**
@@ -21,6 +19,19 @@ import './index.scss';
  */
 
 const WEEK_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
+
+// 周次选择器右列的候选周（覆盖到 25 周；各学期真实周由后端 available_weeks 决定，
+// 选中某周后仍以该学期实际可用周为准回退到第 1 周，避免右列与后端周上限脱节）
+const PICKER_WEEKS = Array.from({ length: 25 }, (_, i) => i + 1);
+
+/** 把后端学期名（如 2026-2027-1）格式化为中文展示文本 */
+function formatSemesterLabel(name: string): string {
+  const m = name.match(/^(\d{4})-(\d{4})-(\d)$/);
+  if (!m) return name;
+  const [, start, end, term] = m;
+  const termText = term === '1' ? '一' : term === '2' ? '二' : term;
+  return `${start}-${end}年 第${termText}学期`;
+}
 
 /* ====== 颜色体系：与网页端 Course.tsx 完全一致的 10 色哈希 ====== */
 const COURSE_COLORS = [
@@ -234,34 +245,35 @@ function buildCellMap(
 
 export default function CourseTablePage() {
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'grid' | 'timeline'>('grid');
 
   // 整周课程（课程表版式用）
   const [weekCourses, setWeekCourses] = useState<ScheduleCourse[]>([]);
-  // 选中日课程（时间轴版式用）
-  const [courses, setCourses] = useState<ScheduleCourse[]>([]);
 
   const [weekNumber, setWeekNumber] = useState(0);
-  const [isTeachingWeek, setIsTeachingWeek] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string>(dayjs().format('YYYY-MM-DD'));
   const [showWeekPicker, setShowWeekPicker] = useState(false);
   const [pickerSelected, setPickerSelected] = useState<number>(0);
+  // 周次选择器左列：当前选中的学期索引（对应 semesters 下标）
+  const [pickerSemSelected, setPickerSemSelected] = useState<number>(0);
+  // 周次选择器左列：当前展示的学年/学期
+  const [semesters, setSemesters] = useState<ScheduleSemester[]>([]);
+  // 当前选中的学期 id（缺省当前学期）
+  const [selectedSemesterId, setSelectedSemesterId] = useState<number>(0);
   const [displayWeekNumber, setDisplayWeekNumber] = useState<number>(0);
   const [availableWeeks, setAvailableWeeks] = useState<{ week_number: number; start_date?: string | null; end_date?: string | null }[]>([]);
   const [semesterName, setSemesterName] = useState('');
   const [hasCourseByDow, setHasCourseByDow] = useState<Set<number>>(new Set());
-  // 周历锚定：当前显示周历的周一日期（来自后端 available_weeks.start_date）
+  // 当前显示周该周的周一日期（用于列头日期；当前学期按真实日历，历史学期用该学期开学日）
   const [weekStartDate, setWeekStartDate] = useState<string | null>(null);
 
-  // 加载整周课程（随选中周次刷新）
-  const loadWeekCourses = useCallback(async (wn: number) => {
+  // 加载某学期的整周课程（随选中周次/学期刷新）
+  const loadWeekCourses = useCallback(async (wn: number, semId?: number) => {
     if (wn < 1) {
       setWeekCourses([]);
       setHasCourseByDow(new Set());
       return;
     }
     try {
-      const weekRes = await scheduleApi.getWeek(wn);
+      const weekRes = await scheduleApi.getWeek(wn, semId || undefined);
       const wc = (weekRes.data.courses as ScheduleCourse[]) || [];
       setWeekCourses(wc);
       const set = new Set<number>();
@@ -275,29 +287,46 @@ export default function CourseTablePage() {
     }
   }, []);
 
-  // 加载选中日课程
-  const fetchDayCourses = useCallback(async (date: string) => {
-    try {
-      const r = await scheduleApi.getToday(date);
-      setCourses(r.data.courses);
-    } catch {
-      setCourses([]);
-    }
-  }, []);
+  // 判断给定学期是否为「当前学期」（用于决定周次日期锚定口径）
+  const isCurrentSemester = useCallback(
+    (semId?: number): boolean => {
+      if (!semId || semId === 0) return true; // 未选 = 当前
+      const cur = semesters.find((s) => s.is_current);
+      return Boolean(cur && cur.id === semId);
+    },
+    [semesters],
+  );
 
-  // 根据周次推算该周周一日期：以「当前真实日历周一」为基准，按 (wn − baseWk) 相对偏移。
-  // 与 schedule 页 + 后端 _calculate_date 口径一致：切换周只是围绕当前时间查看那个周的课程，
-  // 不会把日期跳到教学周真实日历（如第2周跳到 03-09）。
-  // baseWk 缺省取当前教学周 weekNumber（交互时已就绪）；loadAll 初始化需显式传 wkNum，
-  // 避免 setWeekNumber 异步未生效时读到旧值导致偏移错误。
-  const getStartDateForWeek = useCallback((wn: number, baseWk?: number): string | null => {
-    if (wn < 1) return null;
-    const today = dayjs();
-    const dow = today.day();
-    const thisMonday = today.add(dow === 0 ? -6 : 1 - dow, 'day');
-    const base = baseWk && baseWk >= 1 ? baseWk : (weekNumber >= 1 ? weekNumber : 1);
-    return thisMonday.add((wn - base) * 7, 'day').format('YYYY-MM-DD');
-  }, [weekNumber]);
+  // 由某个学期 id 解析其展示名（如 "2026-2027-1"）
+  const semesterNameById = useCallback(
+    (semId: number): string => {
+      const s = semesters.find((x) => x.id === semId);
+      return s ? s.name : semesterName;
+    },
+    [semesters, semesterName],
+  );
+
+  // 计算某周在表格列头的锚定周一日期：
+  // - 当前学期：沿用「以当前真实日历周一为基准按周差偏移」的既有口径（与 schedule 页一致），
+  //   保证"本周=这周"、今天的列高亮正确。
+  // - 历史学期：直接用该学期真实周历（available_weeks[wn-1].start_date，后端按开学日推算），
+  //   让列头日期反映当年真实几月几号。
+  const getWeekStartDate = useCallback(
+    (wn: number, semId?: number, weeks?: { week_number: number; start_date?: string | null }[]): string | null => {
+      if (wn < 1) return null;
+      if (!isCurrentSemester(semId)) {
+        const w = (weeks || []).find((x) => x.week_number === wn);
+        if (w?.start_date) return w.start_date;
+        // 无真实日期的极端回退：仍按当前周偏移
+      }
+      const today = dayjs();
+      const dow = today.day();
+      const thisMonday = today.add(dow === 0 ? -6 : 1 - dow, 'day');
+      const base = weekNumber >= 1 ? weekNumber : 1;
+      return thisMonday.add((wn - base) * 7, 'day').format('YYYY-MM-DD');
+    },
+    [weekNumber, isCurrentSemester],
+  );
 
   // 初始化
   const loadAll = useCallback(async () => {
@@ -308,119 +337,160 @@ export default function CourseTablePage() {
       .catch(() => ({ ok: false as const, d: null }));
     const rawWk = cRes.ok && cRes.d ? cRes.d.week_number : 0;
     const availWeeks = (cRes.ok && cRes.d ? cRes.d.available_weeks : []) || [];
+    const semList: ScheduleSemester[] = (cRes.ok && cRes.d ? cRes.d.semesters : []) || [];
     const wkNum = rawWk > 0 ? rawWk : (availWeeks.length > 0 ? availWeeks[0].week_number : 0);
     setWeekNumber(rawWk);
-    setIsTeachingWeek(cRes.ok && cRes.d ? cRes.d.is_teaching_week : false);
     setDisplayWeekNumber(wkNum);
     if (cRes.ok && cRes.d) {
       setAvailableWeeks(availWeeks);
       setSemesterName(cRes.d.semester_name || '');
     }
+    if (semList.length > 0) {
+      setSemesters(semList);
+      setSelectedSemesterId(cRes.ok && cRes.d ? cRes.d.semester_id : semList[0].id);
+    }
     // 周历锚定到相对当前真实周的周一（wkNum 即当前周，偏移 0；不跳教学周真实日历）
-    setWeekStartDate(getStartDateForWeek(wkNum, wkNum));
+    setWeekStartDate(getWeekStartDate(wkNum));
     await loadWeekCourses(wkNum);
     setLoading(false);
-  }, [loadWeekCourses, getStartDateForWeek]);
+  }, [loadWeekCourses, getWeekStartDate]);
 
   useLoad(() => {
     loadAll();
-    fetchDayCourses(selectedDate);
   });
 
-  useEffect(() => {
-    if (selectedDate) fetchDayCourses(selectedDate);
-  }, [selectedDate, fetchDayCourses]);
-
   usePullDownRefresh(async () => {
-    await Promise.all([loadAll(), fetchDayCourses(selectedDate)]);
+    await loadAll();
     stopPullDownRefresh();
   });
 
-  // 周历：基于相对当前真实周的 weekStartDate 锚定（不跳教学周真实日历）
+  // 周历：基于选中的锚定周一
   const currentMonday = useMemo(() => {
     if (!weekStartDate) return dayjs(); // 兜底：无数据时回退今天
     const d = dayjs(weekStartDate);
-    // 确保 start_date 是周一（后端已保证，防御性校验）
     const dow = d.day();
     const monday = dow === 1 ? d : (dow === 0 ? d.add(-6, 'day') : d.add(1 - dow, 'day'));
     return monday;
   }, [weekStartDate]);
 
   const todayStr = dayjs().format('YYYY-MM-DD');
-  const todayDow = dayjs().day() === 0 ? 7 : dayjs().day();
 
-  // Swiper 左右滑动切换周次：基于 available_weeks 相邻周
-  const onSwiperChange = useCallback((e: any) => {
-    const cur = e.detail.current;
-    if (cur === 2) {
-      // 往后（周次+1）
-      setDisplayWeekNumber((prev) => {
-        const next = prev + 1;
-        setWeekStartDate(getStartDateForWeek(next));
-        loadWeekCourses(next);
-        return next;
-      });
-    } else if (cur === 0) {
-      // 往前（周次-1）
-      setDisplayWeekNumber((prev) => {
-        const prevW = prev - 1;
-        if (prevW < 1) return prev; // 不允许小于第1周
-        setWeekStartDate(getStartDateForWeek(prevW));
-        loadWeekCourses(prevW);
-        return prevW;
-      });
-    }
-  }, [availableWeeks, loadWeekCourses, getStartDateForWeek]);
+  // 应用「指定学期 + 周次」到表格：拉取该学期该周课程 + 锚定列头周一 + 更新周次展示名
+  const applyWeek = useCallback(
+    async (wn: number, semId?: number, weeksOverride?: { week_number: number; start_date?: string | null }[]) => {
+      setDisplayWeekNumber(wn);
+      const effectiveSem = semId || selectedSemesterId || 0;
+      // 优先用调用方给定的周历（切学期后 state 里的 availableWeeks 可能还是旧学期，故可显式传入）
+      setWeekStartDate(getWeekStartDate(wn, effectiveSem, weeksOverride || availableWeeks));
+      if (effectiveSem && semesters.length > 0) {
+        const s = semesters.find((x) => x.id === effectiveSem);
+        if (s) setSemesterName(s.name);
+      }
+      await loadWeekCourses(wn, effectiveSem || undefined);
+    },
+    [selectedSemesterId, availableWeeks, getWeekStartDate, semesters, loadWeekCourses],
+  );
 
   const pickWeek = useCallback(
-    (wn: number) => {
-      setDisplayWeekNumber(wn);
-      setWeekStartDate(getStartDateForWeek(wn));
-      // selectedDate 设为该周对应的今天所在位置（若今天在该周内则用今天，否则用该周周一）
-      if (weekStartDate) {
-        const monday = dayjs(weekStartDate);
-        const today = dayjs();
-        // 检查今天是否在该周范围内
-        const weekEnd = monday.add(6, 'day');
-        if ((today.isAfter(monday) || today.isSame(monday, 'day')) &&
-            (today.isBefore(weekEnd) || today.isSame(weekEnd, 'day'))) {
-          setSelectedDate(today.format('YYYY-MM-DD'));
-        } else {
-          setSelectedDate(monday.format('YYYY-MM-DD'));
-        }
-      }
+    async (wn: number) => {
+      await applyWeek(wn, selectedSemesterId);
       setShowWeekPicker(false);
-      loadWeekCourses(wn);
     },
-    [availableWeeks, loadWeekCourses, getStartDateForWeek],
+    [applyWeek, selectedSemesterId],
+  );
+
+  // 周次选择器左列：可选学期（后端按当前学年向前候选生成），用可读学年文案展示
+  const semesterList = useMemo(
+    () => semesters.map((s) => formatSemesterLabel(s.name)).filter(Boolean),
+    [semesters],
   );
 
   const openWeekPicker = useCallback(() => {
-    if (availableWeeks.length > 0 && displayWeekNumber > 0) {
-      const idx = availableWeeks.findIndex((w) => w.week_number === displayWeekNumber);
-      setPickerSelected(idx >= 0 ? idx : 0);
-    } else {
-      setPickerSelected(0);
-    }
+    // 右列用扁平周次 1..25，索引 = 周次-1
+    const wkIdx = Math.max(0, Math.min(PICKER_WEEKS.length - 1, (displayWeekNumber || 1) - 1));
+    setPickerSelected(wkIdx);
+    // 左列定位到当前所选学期
+    const semIdx = semesters.findIndex((s) => s.id === selectedSemesterId);
+    setPickerSemSelected(semIdx >= 0 ? semIdx : 0);
     setShowWeekPicker(true);
-  }, [availableWeeks, displayWeekNumber]);
+  }, [displayWeekNumber, semesters, selectedSemesterId]);
 
-  const onPickerChange = useCallback((e: any) => setPickerSelected(e.detail.value), []);
-  const confirmPicker = useCallback(() => {
-    if (availableWeeks.length > 0) {
-      const wn = availableWeeks[pickerSelected]?.week_number;
-      if (wn) pickWeek(wn);
+  // Picker 双列：value 是 [semIdx, weekIdx]
+  const onPickerChange = useCallback(
+    (e: any) => {
+      const value = e.detail.value;
+      if (!Array.isArray(value)) return;
+      const [semIdx, weekIdx] = value;
+      if (typeof semIdx === 'number' && semIdx !== pickerSemSelected) {
+        setPickerSemSelected(semIdx);
+        // 切学期：右边周次先复位（确认后再拉取该学期周列表）
+        setPickerSelected(0);
+      }
+      if (typeof weekIdx === 'number' && weekIdx !== pickerSelected) {
+        setPickerSelected(weekIdx);
+      }
+    },
+    [pickerSelected, pickerSemSelected],
+  );
+
+  // 从可选学期列表生成某学期的周选项（左列联动右列）
+  const confirmPicker = useCallback(async () => {
+    const sem = semesters[pickerSemSelected];
+    // 右列扁平周次：选中周 = pickerSelected + 1
+    const targetWeek = pickerSelected + 1;
+    if (sem && sem.id !== selectedSemesterId) {
+      // 切换学期：先切后端数据，再应用周次（周次若超出该学期实际周数，由后端/加载层兜底回退）
+      setSelectedSemesterId(sem.id);
+      setSemesterName(sem.name);
+      let weeks: { week_number: number; start_date?: string | null }[] = [];
+      try {
+        const res = await scheduleApi.getWeek(targetWeek, sem.id);
+        weeks = (res.data.available_weeks || []) as { week_number: number; start_date?: string | null }[];
+      } catch {
+        weeks = [];
+      }
+      setAvailableWeeks(weeks);
+      setSelectedSemesterId(sem.id);
+      setSemesterName(sem.name);
+      await applyWeek(targetWeek, sem.id, weeks);
+    } else {
+      // 同学期：直接切周
+      await applyWeek(targetWeek, selectedSemesterId);
     }
     setShowWeekPicker(false);
-  }, [availableWeeks, pickerSelected, pickWeek]);
+  }, [semesters, pickerSemSelected, selectedSemesterId, pickerSelected, applyWeek]);
+
+  // 回到当前教学周（顶部"本周"按钮）
+  const goToCurrentWeek = useCallback(async () => {
+    // 先切回当前学期
+    const cur = semesters.find((s) => s.is_current);
+    const curId = cur ? cur.id : 0;
+    if (selectedSemesterId !== curId && cur) {
+      setSelectedSemesterId(curId);
+      setSemesterName(cur.name);
+      try {
+        const res = await scheduleApi.getWeek(1, cur.id);
+        setAvailableWeeks((res.data.available_weeks || []) as { week_number: number; start_date?: string | null }[]);
+      } catch {
+        /* 忽略 */
+      }
+    }
+    const targetWk = weekNumber > 0 ? weekNumber : (availableWeeks.length > 0 ? availableWeeks[0].week_number : 1);
+    await applyWeek(targetWk, curId);
+  }, [semesters, selectedSemesterId, weekNumber, availableWeeks, applyWeek]);
 
   // ====== 课程表版式数据 ======
   const { map, maxPeriod } = useMemo(
     () => buildCellMap(weekCourses, weekNumber, displayWeekNumber),
     [weekCourses, weekNumber, displayWeekNumber],
   );
-  // 固定12行（对齐网页端 Course.tsx），不依赖实际数据的 maxPeriod
-  const periodList = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), []);
+  // 表格行数：按实际数据最大节次动态截断，避免无课空行把页面拉长；
+  // 至少保留 8 行，保证常见课表（1-8节）视觉完整。
+  const periodList = useMemo(() => {
+    const minRows = 8;
+    const rows = Math.max(minRows, maxPeriod);
+    return Array.from({ length: rows }, (_, i) => i + 1);
+  }, [maxPeriod]);
   // 列：周一~周五固定，周末有课才追加（对齐网页端移动端列策略）
   const dayList = useMemo(() => {
     const list = [1, 2, 3, 4, 5];
@@ -428,15 +498,6 @@ export default function CourseTablePage() {
     if (hasCourseByDow.has(7)) list.push(7);
     return list;
   }, [hasCourseByDow]);
-
-  // ====== 时间轴版式数据 ======
-  const displayCourses = useMemo(
-    () => [...courses].sort((a, b) => (a._timeInfo?.start_ts || 0) - (b._timeInfo?.start_ts || 0)),
-    [courses],
-  );
-
-  const weekText = displayWeekNumber > 0 ? `第 ${displayWeekNumber} 周` : '非教学周';
-  const badgeText = isTeachingWeek ? '教学周' : '假期';
 
   /** 课表网格骨架屏：进入页面立即渲染网格结构，数据到达后填充真实卡片（消除"导航先出、页面后出"的白屏等待） */
   const renderGridSkeleton = () => (
@@ -472,22 +533,6 @@ export default function CourseTablePage() {
     </View>
   );
 
-  /** 时间轴版式骨架：几条圆点竖线 + 卡片占位 */
-  const renderTimelineSkeleton = () => (
-    <View className="timeline-list ct-skeleton-timeline">
-      {[1, 2, 3, 4].map((i) => (
-        <View className="ct-skeleton-tl-item" key={i}>
-          <View className="ct-skeleton-tl-time">
-            <View className="ct-skeleton-block" />
-          </View>
-          <View className="ct-skeleton-tl-body">
-            <View className="ct-skeleton-block" />
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-
   /** 渲染单个课程卡片（对齐网页端 renderCourseCell 移动端分支） */
   const renderCourseCard = (cell: Cell, day: number) => {
     const c = cell.course;
@@ -496,7 +541,6 @@ export default function CourseTablePage() {
     const isOngoing = cell.isOngoing;
     const isPast = cell.isPast;
     const isFinished = isPast;
-    const isTodayCol = day === todayDow;
 
     // 计算上课进度（用于渐进式高亮，对齐网页端 classProgress）
     let classProgress = 0;
@@ -584,129 +628,60 @@ export default function CourseTablePage() {
 
   return (
     <View className="page ct-page">
-      {/* 视图切换 Tab */}
-      <View className="ct-tabs">
-        <View
-          className={`ct-tab ${viewMode === 'grid' ? 'ct-tab-active' : ''}`}
-          onClick={() => setViewMode('grid')}
-        >
-          课表
-        </View>
-        <View
-          className={`ct-tab ${viewMode === 'timeline' ? 'ct-tab-active' : ''}`}
-          onClick={() => setViewMode('timeline')}
-        >
-          日程
-        </View>
-      </View>
-
-      {/* 周历卡片 */}
-      <View className="card week-calendar">
+      {/* 顶部周次选择栏：本周（左） | 学期周次（中） */}
+      <View className="card week-calendar ct-week-header-grid">
         <View className="week-calendar-head">
+          <Text className="schedule-today-btn" onClick={goToCurrentWeek}>本周</Text>
           <View className="schedule-week-picker" onClick={openWeekPicker}>
-            <Text className="schedule-month-text">{weekText}</Text>
-            <View className="week-calendar-badge">
-              <Text className="week-calendar-badge-text">{badgeText}</Text>
-            </View>
+            <Text className="schedule-semester-text">
+              {formatSemesterLabel(semesterName)} 第{displayWeekNumber}周
+            </Text>
             <Text className={`iconfont icon-a-xiala2 schedule-month-arrow${showWeekPicker ? ' rotated' : ''}`} />
+          </View>
+          <View className="week-header-spacer" />
         </View>
-        <Text
-          className="schedule-today-btn"
-          onClick={() => {
-            // 回到当前教学周：若在教学周则用真实当前周，否则回退第1周
-            const targetWk = weekNumber > 0 ? weekNumber : (availableWeeks.length > 0 ? availableWeeks[0].week_number : 1);
-            setDisplayWeekNumber(targetWk);
-            setWeekStartDate(getStartDateForWeek(targetWk));
-            setSelectedDate(todayStr);
-            loadWeekCourses(targetWk);
-          }}
-        >
-          今天
-        </Text>
-        </View>
-
-        <Swiper className="week-swiper" key={displayWeekNumber} current={1} onChange={onSwiperChange} duration={200}>
-          {[-1, 0, 1].map((offset) => {
-            // 基于当前教学周次查找相邻周的 start_date
-            const targetWk = displayWeekNumber + offset;
-            const targetStart = getStartDateForWeek(targetWk);
-            const baseMonday = targetStart
-              ? (() => { const d = dayjs(targetStart); const dow = d.day(); return dow === 1 ? d : (dow === 0 ? d.add(-6, 'day') : d.add(1 - dow, 'day')); })()
-              : currentMonday; // 无数据时回退到当前锚定周一
-            const days = Array.from({ length: 7 }, (_, i) => baseMonday.add(i, 'day'));
-            return (
-              <SwiperItem key={targetWk}>
-                <View className="week-calendar-days">
-                  {days.map((d) => {
-                    const dateStr = d.format('YYYY-MM-DD');
-                    // 今天始终标记（与时间轴页一致）：蓝色实心圆 + 白字；选中其他日期为蓝色字体
-                    const isToday = dateStr === todayStr;
-                    const isSelected = dateStr === selectedDate;
-                    const dDow = d.day();
-                    const backendDow = dDow === 0 ? 7 : dDow;
-                    const hasCourse = hasCourseByDow.has(backendDow);
-                    return (
-                      <View
-                        className={`week-cell ${isToday ? 'week-cell-today' : ''} ${isSelected && !isToday ? 'week-cell-selected' : ''}`}
-                        key={dateStr}
-                        onClick={() => setSelectedDate(dateStr)}
-                      >
-                        <Text className={`week-cell-label ${isToday || isSelected ? 'week-cell-active' : ''}`}>
-                          {WEEK_LABELS[dDow]}
-                        </Text>
-                        <View className={`week-cell-day ${isToday ? 'week-cell-day-today' : ''} ${isSelected && !isToday ? 'week-cell-day-selected' : ''}`}>
-                          <Text className={isToday ? 'week-cell-day-text-active' : isSelected ? 'week-cell-day-text-selected' : ''}>
-                            {d.date()}
-                          </Text>
-                        </View>
-                        <View className="week-cell-dot-row">
-                          {hasCourse ? <View className="week-cell-dot" /> : <View className="week-cell-dot week-cell-dot-empty" />}
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              </SwiperItem>
-            );
-          })}
-        </Swiper>
       </View>
 
-      {/* ====== 课程表版式 ====== */}
-      {viewMode === 'grid' &&
-        (loading ? (
-          renderGridSkeleton()
-        ) : maxPeriod === 0 ? (
-          <View className="card ct-empty-card">
-            <EmptyState title="本周没有课程" desc="换一周看看吧" />
-          </View>
-        ) : (
-          <View className="ct-table">
-            <View className="ct-table-inner">
-              {/* 固定节次列 */}
-              <View className="ct-col-period">
-                <View className="ct-cell ct-corner">
-                  <Text className="ct-corner-text">节</Text>
-                </View>
-                {periodList.map((p) => (
-                  <View className="ct-cell ct-period-cell" key={p}>
+      {/* ====== 课程表版式：始终渲染完整表格（有/无课都显示网格，空格子占位） ====== */}
+      {loading ? (
+        renderGridSkeleton()
+      ) : (
+        <View className="ct-table">
+          <View className="ct-table-inner">
+            {/* 固定节次列 */}
+            <View className="ct-col-period">
+              <View className="ct-cell ct-corner">
+                <Text className="ct-corner-text">节</Text>
+              </View>
+              {periodList.map((p) => {
+                const periodGroupClass = p <= 4 ? 'ct-period-cell-light' : p <= 8 ? 'ct-period-cell-gray' : 'ct-period-cell-light';
+                return (
+                  <View className={`ct-cell ct-period-cell ${periodGroupClass}`} key={p}>
                     <Text className="ct-period-num">{p}</Text>
                   </View>
-                ))}
-              </View>
+                );
+              })}
+            </View>
 
-              {/* 课程区：等分铺满屏幕 */}
-              <View className="ct-cols">
-                {dayList.map((day) => {
-                  const isToday = day === todayDow;
-                  return (
-                    <View className={`ct-col ${isToday ? 'ct-col-today' : ''}`} key={day}>
-                      <View className="ct-cell ct-day-head">
-                        <Text className="ct-day-text">{WEEK_LABELS[day % 7]}</Text>
-                      </View>
-                      {periodList.map((p) => {
-                        const cell = map[day]?.[p];
-                        if (!cell || !cell.render) return null;
+            {/* 课程区：等分铺满屏幕 */}
+            <View className="ct-cols">
+            {dayList.map((day) => {
+              const dayDate = currentMonday.add(day - 1, 'day');
+              const dateNum = dayDate.date();
+              const isToday = dayDate.format('YYYY-MM-DD') === todayStr;
+              return (
+                <View className={`ct-col ${isToday ? 'ct-col-today' : ''}`} key={day}>
+                  <View className={`ct-cell ct-day-head ${isToday ? 'ct-day-head-today' : ''}`}>
+                    <Text className="ct-day-week">{WEEK_LABELS[day % 7]}</Text>
+                    <Text className="ct-day-date">{dateNum}</Text>
+                  </View>
+                    {periodList.map((p) => {
+                      const cell = map[day]?.[p];
+                      if (!cell) {
+                        // 空节占位：保持表格行高与垂直位置对齐
+                        return <View className="ct-cell ct-cell-empty" key={p} />;
+                      }
+                      if (!cell.render) return null;
                         return renderCourseCard(cell, day);
                       })}
                     </View>
@@ -715,60 +690,7 @@ export default function CourseTablePage() {
               </View>
             </View>
           </View>
-        ))}
-
-      {/* ====== 时间轴版式 ====== */}
-      {viewMode === 'timeline' &&
-        (loading ? (
-          renderTimelineSkeleton()
-        ) : displayCourses.length === 0 ? (
-          <View className="card schedule-empty-card">
-            <EmptyState
-              title={selectedDate === todayStr ? '今天没有课程' : '当天没有课程'}
-              desc={selectedDate === todayStr ? '好好休息一下吧' : '换一天看看吧'}
-            />
-          </View>
-        ) : (
-          <View className="timeline-list">
-            {displayCourses.map((c, idx) => {
-              // 简单状态判断（时间轴不需要 isRealCurrentWeek 守卫，因为只展示当天）
-              const now = Date.now() / 1000;
-              const { start_ts, end_ts } = c._timeInfo || {};
-              let st: TimelineStatus = 'info';
-              if (start_ts && now < start_ts) st = 'upcoming';
-              else if (end_ts && now > end_ts) st = 'finished';
-              else if (start_ts && end_ts) st = 'ongoing';
-              const statusTextMap: Record<TimelineStatus, string> = {
-                upcoming: '未开始', ongoing: '进行中', finished: '已结束', info: '',
-              };
-              const ps = Array.isArray(c.periods) ? c.periods : [];
-              const periodsText = ps.length >= 2
-                ? `${ps[0]}-${ps[ps.length - 1]}节`
-                : ps.length === 1 ? `${ps[0]}节` : '';
-              // 颜色索引：用网页端同款哈希
-              const colorIdx = getCourseColorIndex(c.course_name);
-              const colorKeyMap: Record<number, 'green' | 'blue' | 'orange' | 'purple' | 'pink'> = {
-                0: 'blue', 1: 'green', 2: 'orange', 3: 'purple', 4: 'pink',
-                5: 'blue', 6: 'green', 7: 'orange', 8: 'purple', 9: 'pink',
-              };
-              return (
-                <TimelineItem
-                  key={c.schedule_id}
-                  time={c.start_time}
-                  periodsText={periodsText}
-                  courseName={c.course_name}
-                  building={c.extra_info?.building}
-                  classroom={c.extra_info?.classroom}
-                  teacher={c.extra_info?.teacher}
-                  status={st}
-                  statusText={statusTextMap[st]}
-                  courseColorKey={colorKeyMap[colorIdx] || 'blue'}
-                  isLast={idx === displayCourses.length - 1}
-                />
-              );
-            })}
-          </View>
-        ))}
+        )}
 
       {/* 周次选择器 */}
       {showWeekPicker && (
@@ -781,11 +703,24 @@ export default function CourseTablePage() {
             </View>
             <View className="week-picker-divider" />
             <View className="week-picker-body">
-              <PickerView className="week-picker-view" value={[pickerSelected]} onChange={onPickerChange}>
+              <PickerView
+                className="week-picker-view"
+                value={[pickerSemSelected, pickerSelected]}
+                onChange={onPickerChange}
+              >
+                {/* 左列：学年/学期 */}
                 <PickerViewColumn>
-                  {availableWeeks.map((w) => (
-                    <View className="week-picker-item" key={w.week_number}>
-                      <Text className="week-picker-item-text">第{w.week_number}周</Text>
+                  {(semesterList.length > 0 ? semesterList : [semesterName].filter(Boolean)).map((s, i) => (
+                    <View className="week-picker-item" key={`${s}-${i}`}>
+                      <Text className="week-picker-item-text">{s}</Text>
+                    </View>
+                  ))}
+                </PickerViewColumn>
+                {/* 右列：周次 */}
+                <PickerViewColumn>
+                  {PICKER_WEEKS.map((w) => (
+                    <View className="week-picker-item" key={w}>
+                      <Text className="week-picker-item-text">第{w}周</Text>
                     </View>
                   ))}
                 </PickerViewColumn>

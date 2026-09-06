@@ -15,9 +15,12 @@ export function getToday(date?: string): Promise<ScheduleTodayResult> {
   return get<ScheduleTodayResult>('/api/miniapp/schedule/today', date ? { date } : {});
 }
 
-/** 指定周课表（缺省当前教学周） */
-export function getWeek(weekNumber?: number): Promise<ScheduleWeekResult> {
-  return get<ScheduleWeekResult>('/api/miniapp/schedule/week', weekNumber ? { week_number: weekNumber } : {});
+/** 指定周课表（缺省当前教学周；可选指定学期） */
+export function getWeek(weekNumber?: number, semesterId?: number): Promise<ScheduleWeekResult> {
+  const params: Record<string, string | number> = {};
+  if (weekNumber) params.week_number = weekNumber;
+  if (semesterId) params.semester_id = semesterId;
+  return get<ScheduleWeekResult>('/api/miniapp/schedule/week', params);
 }
 
 /** 当前教学周信息 */
