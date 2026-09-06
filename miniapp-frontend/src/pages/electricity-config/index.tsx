@@ -90,49 +90,70 @@ export default function ElectricityConfigPage() {
 
   return (
     <View className="ecfg-page">
-      {/* 当前配置状态 */}
-      <View className="ecfg-card">
-        <View className="ecfg-status-row">
-          <Text className={`ecfg-status-dot${configured ? '' : ' warn'}`} />
-          <Text className={`ecfg-status-text ${configured ? 'ok' : 'empty'}`}>
+      {/* 当前配置状态：左侧色条 + 标题 + 脱敏预览 */}
+      <View className={`ecfg-status${configured ? '' : ' empty'}`}>
+        <View className="ecfg-status-main">
+          <Text className="ecfg-status-title">
             {configured ? '已配置电表 Cookie' : '尚未配置电表 Cookie'}
           </Text>
+          {configured ? (
+            <Text className="ecfg-status-preview">当前：{preview}</Text>
+          ) : (
+            <Text className="ecfg-status-preview empty">配置后可自动采集您宿舍的电量数据</Text>
+          )}
         </View>
-        {configured ? (
-          <Text className="ecfg-preview">当前：{preview}</Text>
-        ) : (
-          <Text className="ecfg-preview empty">配置后可自动采集您宿舍的电量数据</Text>
-        )}
       </View>
 
-      {/* 获取说明 */}
+      {/* 获取说明：编号方块 + 段落 */}
       <View className="ecfg-card">
         <Text className="ecfg-card-title">如何获取 Cookie</Text>
-        <Text className="ecfg-step">1. 打开"重庆科创职业学院"微信公众号，进入"注册缴费" → "宿舍电费"，绑定您宿舍的电表</Text>
-        <Text className="ecfg-step">2. 使用抓包工具（如 Charles、Fiddler 等）开启抓包</Text>
-        <Text className="ecfg-step">3. 在公众号内点开"用量记录"，在抓包结果中找到 dk.cqie.cn 的请求，复制请求头中 Cookie 一行的完整内容</Text>
-        <Text className="ecfg-step">4. 粘贴到下方输入框，点击「测试」，有效后点击「保存」</Text>
-        <Text className="ecfg-warn">Cookie 含您的登录凭证，仅保存在您自己的账号下，请勿分享给他人</Text>
+        <View className="ecfg-steps">
+          <View className="ecfg-step">
+            <Text className="ecfg-step-num">1</Text>
+            <Text className="ecfg-step-text">
+              打开「重庆科创职业学院」微信公众号，进入「注册缴费」→「宿舍电费」，绑定您宿舍的电表
+            </Text>
+          </View>
+          <View className="ecfg-step">
+            <Text className="ecfg-step-num">2</Text>
+            <Text className="ecfg-step-text">使用抓包工具（如 Charles、Fiddler 等）开启抓包</Text>
+          </View>
+          <View className="ecfg-step">
+            <Text className="ecfg-step-num">3</Text>
+            <Text className="ecfg-step-text">
+              在公众号内点开「用量记录」，在抓包结果中找到 dk.cqie.cn 的请求，复制请求头中 Cookie 一行的完整内容
+            </Text>
+          </View>
+          <View className="ecfg-step">
+            <Text className="ecfg-step-num">4</Text>
+            <Text className="ecfg-step-text">粘贴到下方输入框，点击「测试」，有效后点击「保存」</Text>
+          </View>
+        </View>
+        <Text className="ecfg-warn">
+          Cookie 含您的登录凭证，仅保存在您自己的账号下，请勿分享给他人
+        </Text>
       </View>
 
-      {/* 输入区 */}
+      {/* 输入区：标题 + 字数 + 细边白底输入框（焦点蓝边） */}
       <View className="ecfg-card">
         <View className="ecfg-input-head">
-          <Text className="ecfg-card-title">Cookie</Text>
+          <Text className="ecfg-card-title no-margin">Cookie</Text>
           <Text className="ecfg-counter">{cookie.length}/{MAX_LEN}</Text>
         </View>
-        <Textarea
-          className="ecfg-textarea"
-          placeholder="粘贴完整的 Cookie 字符串…"
-          placeholderClass="ecfg-placeholder"
-          maxlength={MAX_LEN}
-          value={cookie}
-          onInput={(e) => setCookie(e.detail.value)}
-        />
+        <View className="ecfg-textarea-wrap">
+          <Textarea
+            className="ecfg-textarea"
+            placeholder="粘贴完整的 Cookie 字符串…"
+            placeholderClass="ecfg-placeholder"
+            maxlength={MAX_LEN}
+            value={cookie}
+            onInput={(e) => setCookie(e.detail.value)}
+          />
+        </View>
       </View>
 
-      {/* 操作按钮 */}
-      <View className="ecfg-btns">
+      {/* 底部固定按钮栏：次按钮文字按钮 + 主按钮实色（无蓝色光晕） */}
+      <View className="ecfg-actionbar">
         <View
           className={`ecfg-btn ecfg-btn-ghost${testing ? ' ecfg-btn-disabled' : ''}`}
           onClick={handleTest}

@@ -1,85 +1,124 @@
 @import '../../styles/variables.scss';
 
+/* ============================================================
+ * 电表配置页（去 AI 味设计）
+ * - 状态卡：左条 + 横线分隔，去除绿点+文字组合
+ * - 步骤说明：编号方块 + 紧凑段落，像产品手册
+ * - 输入框：细边白底 + 焦点蓝边（不靠"灰底大圆角"区分）
+ * - 按钮：底部固定栏，小圆角；主按钮实色，次按钮文字按钮
+ * ============================================================ */
+
 .ecfg-page {
   min-height: 100vh;
   background: $background;
-  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  // 给底部固定按钮栏留出空间（按钮栏高 + 安全区）
+  padding: $spacing-md $spacing-md calc(160rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
+/* 通用卡片（去掉 box-shadow，靠 1rpx 边线 + 浅背景区分；更"系统"风格） */
 .ecfg-card {
   background: $card-background;
-  border-radius: $radius-large;
-  box-shadow: $shadow-card;
+  border-radius: $radius-medium;
+  border: 1rpx solid $border-color;
   padding: $spacing-md $spacing-lg;
   margin-bottom: $spacing-md;
 }
 
-/* 状态行 */
-.ecfg-status-row {
+/* ====== 状态行（左侧色条 + 右侧内容，去圆点） ====== */
+.ecfg-status {
   display: flex;
-  align-items: center;
+  align-items: stretch;
+  border-left: 6rpx solid $success;
+  padding-left: $spacing-md;
+  line-height: 1.5;
 }
 
-.ecfg-status-dot {
-  width: 14rpx;
-  height: 14rpx;
-  border-radius: 50%;
-  background: $success;
-  margin-right: $spacing-sm;
+.ecfg-status.empty {
+  border-left-color: $warning;
 }
 
-.ecfg-status-dot.warn {
-  background: $warning;
+.ecfg-status-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
 }
 
-.ecfg-status-text {
+.ecfg-status-title {
   font-size: $font-size-md;
   font-weight: 600;
-}
-
-.ecfg-status-text.ok {
   color: $text-primary;
 }
 
-.ecfg-status-text.empty {
-  color: $warning;
-}
-
-.ecfg-preview {
+.ecfg-status-preview {
   display: block;
-  margin-top: $spacing-sm;
-  font-size: $font-size-sm;
+  margin-top: 6rpx;
+  font-size: $font-size-xs;
   color: $text-tertiary;
   word-break: break-all;
 }
 
-/* 说明步骤 */
+.ecfg-status-preview.empty {
+  color: $text-secondary;
+}
+
+/* ====== 步骤说明（编号方块 + 短段落） ====== */
 .ecfg-card-title {
   display: block;
   font-size: $font-size-md;
   font-weight: 600;
   color: $text-primary;
-  margin-bottom: $spacing-sm;
+  margin-bottom: $spacing-md;
+}
+
+.ecfg-steps {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
 }
 
 .ecfg-step {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: $spacing-sm;
   font-size: $font-size-sm;
   color: $text-secondary;
   line-height: 1.6;
-  margin-bottom: $spacing-xs;
+}
+
+.ecfg-step-num {
+  flex-shrink: 0;
+  width: 36rpx;
+  height: 36rpx;
+  line-height: 36rpx;
+  text-align: center;
+  font-size: $font-size-xs;
+  font-weight: 600;
+  color: $primary-color;
+  background: $primary-light;
+  border-radius: 8rpx;
+  margin-top: 2rpx;
+}
+
+.ecfg-step-text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
 }
 
 .ecfg-warn {
   display: block;
-  margin-top: $spacing-sm;
+  margin-top: $spacing-md;
+  padding-top: $spacing-sm;
+  border-top: 1rpx dashed $border-color;
   font-size: $font-size-xs;
   color: $warning;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
-/* 输入区 */
+/* ====== 输入区（细边白底，不靠灰底区分） ====== */
 .ecfg-input-head {
   display: flex;
   align-items: center;
@@ -87,24 +126,35 @@
   margin-bottom: $spacing-sm;
 }
 
-.ecfg-card-title {
+.ecfg-card-title.no-margin {
   margin-bottom: 0;
 }
 
 .ecfg-counter {
   font-size: $font-size-xs;
   color: $text-tertiary;
+  font-variant-numeric: tabular-nums;
+}
+
+.ecfg-textarea-wrap {
+  border: 1rpx solid $border-color;
+  border-radius: $radius-small;
+  background: $card-background;
+  padding: $spacing-sm $spacing-md;
+  transition: border-color 0.15s ease;
+
+  &:focus-within {
+    border-color: $primary-color;
+  }
 }
 
 .ecfg-textarea {
   width: 100%;
-  min-height: 200rpx;
+  min-height: 180rpx;
   box-sizing: border-box;
   font-size: $font-size-sm;
   color: $text-primary;
-  background: $background;
-  border-radius: $radius-medium;
-  padding: $spacing-sm $spacing-md;
+  background: transparent;
   line-height: 1.6;
 }
 
@@ -112,40 +162,45 @@
   color: $text-tertiary;
 }
 
-/* 按钮行 */
-.ecfg-btns {
+/* ====== 底部固定按钮栏 ====== */
+.ecfg-actionbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   gap: $spacing-md;
-  margin-top: $spacing-lg;
-  padding: 0 $spacing-md;
+  padding: $spacing-md $spacing-md calc(#{$spacing-md} + env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.96);
+  border-top: 1rpx solid $border-color;
+  backdrop-filter: saturate(180%) blur(8rpx);
 }
 
 .ecfg-btn {
   flex: 1;
-  border-radius: $radius-full;
-  padding: $spacing-md 0;
   text-align: center;
+  padding: $spacing-md 0;
+  border-radius: $radius-small;
 }
 
 .ecfg-btn-ghost {
-  background: $card-background;
-  border: 1rpx solid $primary-color;
+  background: transparent;
+  // 次按钮改为文字按钮（更克制，不抢主按钮）
 }
 
 .ecfg-btn-primary {
   background: $primary-color;
-  box-shadow: 0 4rpx 12rpx rgba(26, 115, 232, 0.25);
+  // 去掉按钮阴影（避免 AI 风蓝色光晕）
 }
 
 .ecfg-btn-disabled {
   opacity: 0.6;
-  box-shadow: none;
 }
 
 .ecfg-btn-text-ghost {
   font-size: $font-size-md;
-  color: $primary-color;
-  font-weight: 600;
+  color: $text-secondary;
+  font-weight: 500;
 }
 
 .ecfg-btn-text-primary {
