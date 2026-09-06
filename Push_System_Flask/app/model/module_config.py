@@ -194,9 +194,9 @@ DEFAULT_CONFIGS = [
     {
         "module": "weather",
         "key": "daily_push_limit",
-        "value": "8",
+        "value": "4",
         "value_type": "integer",
-        "description": "每日天气推送上限（条/天，0=不限；用于防止白天频繁打扰）",
+        "description": "每日天气推送上限（条/天；≤0 或留空时按默认 4 条兜底，不再支持 0=不限，防白天刷屏）",
         "is_editable": True,
         "is_sensitive": False,
     },

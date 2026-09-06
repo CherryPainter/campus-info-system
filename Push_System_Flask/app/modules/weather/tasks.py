@@ -151,6 +151,9 @@ def _send_markdown(content: str, *, notify_only: bool = False) -> None:
 # 推送守卫：夜间免打扰 + 每日上限
 # ------------------------------------------------------------------
 _PUSH_COUNT_KEY = "weather_daily_push_count"
+# 每日天气推送兜底上限（条/天）：当配置缺失、为 0 或负值时强制采用，
+# 杜绝"0=不限"导致白天连推十几条的刷屏问题。
+_DEFAULT_DAILY_PUSH_LIMIT = 4
 
 
 def _parse_dt(value):
@@ -207,10 +210,18 @@ def _maybe_push(content: str) -> bool:
     try:
         from app.services.config_service import get_config_service
 
-        limit = int(get_config_service().get("weather", "daily_push_limit", 8) or 0)
+        raw_limit = get_config_service().get(
+            "weather", "daily_push_limit", _DEFAULT_DAILY_PUSH_LIMIT
+        )
+        # 解析成 int，任何解析失败都按 0 处理
+        limit = int(raw_limit or 0)
     except Exception:
-        limit = 8
-    if limit > 0 and _get_today_push_count() >= limit:
+        limit = 0
+    # 兜底：配置 ≤0 / 缺失 / 非法时，不视为"不限"，强制用默认上限，
+    # 避免把 daily_push_limit 设成 0 后白天被天气事件连推刷屏。
+    if limit <= 0:
+        limit = _DEFAULT_DAILY_PUSH_LIMIT
+    if _get_today_push_count() >= limit:
         logger.info(f"[天气] 推送被抑制：已达每日上限({limit}条)")
         return False
     _send_markdown(content)

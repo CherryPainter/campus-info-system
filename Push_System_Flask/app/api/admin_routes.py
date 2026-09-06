@@ -567,7 +567,7 @@ def _read_weather_push_config() -> dict:
         "quiet_hours_enabled": True,
         "quiet_hours_start": "23:00",
         "quiet_hours_end": "07:00",
-        "daily_push_limit": 8,
+        "daily_push_limit": 4,
         "alert_enabled": True,
     }
     session = get_db()
@@ -677,7 +677,8 @@ def update_weather_config():
                 val = "true" if str(raw).lower() in ("true", "1", "yes", "on") else "false"
             elif vtype == "integer":
                 try:
-                    val = str(int(raw))
+                    # 每日推送上限：拒绝 0/负（曾把 0 当"不限"导致白天连推刷屏），钳到至少 1
+                    val = str(max(1, int(raw)))
                 except (ValueError, TypeError):
                     continue
             else:
