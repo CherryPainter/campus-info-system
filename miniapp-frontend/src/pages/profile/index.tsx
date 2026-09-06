@@ -222,7 +222,7 @@ export default function ProfilePage() {
             {/* 二维码（保留在上方） */}
             <View
               className="profile-qr"
-              onClick={() => Taro.showToast({ title: '二维码开发中', icon: 'none' })}
+              onClick={() => Taro.showToast({ title: '等待学校开放接口', icon: 'none' })}
             >
               <Text className="iconfont icon-erweima profile-qr-icon" />
             </View>

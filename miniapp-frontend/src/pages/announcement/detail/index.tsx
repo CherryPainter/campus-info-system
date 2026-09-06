@@ -115,7 +115,7 @@ export default function AnnouncementDetail() {
 
   /** 分享 */
   const handleShare = () => {
-    Taro.showToast({ title: '分享功能开发中', icon: 'none' });
+    Taro.showToast({ title: '等待学校开放接口', icon: 'none' });
   };
 
   /** 标记已读 */

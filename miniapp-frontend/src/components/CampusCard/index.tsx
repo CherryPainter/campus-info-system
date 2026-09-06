@@ -15,7 +15,7 @@ interface CampusCardProps {
  * 为避免审核涉"充值/余额"等金融观感，卡面不展示余额金额：
  * - 右侧原"余额（元）"改为"积分"占位 "--"
  * - 原"充值"按钮文案改为"明细"（去金融字眼，仍保留"查看卡内情况"的意会）
- * 三个操作按钮点击均 toast"功能开发中"，不虚构数据。
+ * 三个操作按钮点击均 toast"等待学校开放接口"，不虚构数据。
  * 后端就绪后替换为真实数据与路由。
  */
 export default function CampusCard({ cardNumber }: CampusCardProps) {
@@ -38,21 +38,21 @@ export default function CampusCard({ cardNumber }: CampusCardProps) {
       <View className="campus-actions">
         <View
           className="campus-action"
-          onClick={() => Taro.showToast({ title: '功能开发中', icon: 'none' })}
+          onClick={() => Taro.showToast({ title: '等待学校开放接口', icon: 'none' })}
         >
           <Text className="iconfont icon-RectangleCopy campus-action-icon" />
           <Text className="campus-action-text">明细</Text>
         </View>
         <View
           className="campus-action"
-          onClick={() => Taro.showToast({ title: '功能开发中', icon: 'none' })}
+          onClick={() => Taro.showToast({ title: '等待学校开放接口', icon: 'none' })}
         >
           <Text className="iconfont icon-RectangleCopy1 campus-action-icon" />
           <Text className="campus-action-text">交易记录</Text>
         </View>
         <View
           className="campus-action"
-          onClick={() => Taro.showToast({ title: '功能开发中', icon: 'none' })}
+          onClick={() => Taro.showToast({ title: '等待学校开放接口', icon: 'none' })}
         >
           <Text className="iconfont icon-zhanghuguashi campus-action-icon" />
           <Text className="campus-action-text">卡片挂失</Text>

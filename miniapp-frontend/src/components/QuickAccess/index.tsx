@@ -7,7 +7,7 @@ export interface QuickItem {
   key: string;
   label: string;
   icon: string;
-  /** 点击行为：'tab' + pagePath → 跳 TabBar 页；'page' + pagePath → 跳普通页（需在 pages 注册）；否则弹"敬请期待" */
+  /** 点击行为：'tab' + pagePath → 跳 TabBar 页；'page' + pagePath → 跳普通页（需在 pages 注册）；否则弹"等待学校开放接口" */
   action?: 'tab' | 'page';
   pagePath?: string;
 }
@@ -38,14 +38,14 @@ function handleClick(item: QuickItem): void {
     HANDLE_PAGE[item.action](item.pagePath);
     return;
   }
-  // 后端尚无支撑的能力：明确提示"敬请期待"，不假装有数据
-  Taro.showToast({ title: '敬请期待', icon: 'none' });
+  // 后端尚无支撑的能力：明确提示"等待学校开放接口"，不假装有数据
+  Taro.showToast({ title: '等待学校开放接口', icon: 'none' });
 }
 
 /**
  * 常用功能 8 宫格（原型图核心模块）
  * - 点击有真实跳转目标的（如课表）走 Taro 路由
- * - 后端尚无对应能力的功能（校园卡/通知/空闲教室等）展示图标但不虚构数据，点击 toast"敬请期待"
+ * - 后端尚无对应能力的功能（校园卡/通知/空闲教室等）展示图标但不虚构数据，点击 toast"等待学校开放接口"
  */
 export default function QuickAccess({ items = DEFAULT_ITEMS, title = '常用功能' }: QuickAccessProps) {
   return (

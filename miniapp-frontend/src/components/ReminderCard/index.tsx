@@ -80,7 +80,7 @@ export default function ReminderCard({
         <Text className="reminder-title">近期提醒</Text>
         <Text
           className="reminder-more"
-          onClick={() => Taro.showToast({ title: '更多功能开发中', icon: 'none' })}
+          onClick={() => Taro.showToast({ title: '等待学校开放接口', icon: 'none' })}
         >
           更多 ›
         </Text>

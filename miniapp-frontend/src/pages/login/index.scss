@@ -17,16 +17,8 @@
 }
 
 .login-logo {
-  width: 128rpx;
-  height: 128rpx;
-  border-radius: $radius-large;
-  background: $primary-color;
-  color: $text-inverse;
-  font-size: $font-size-xl;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 360rpx;
+  height: 360rpx;
   margin-bottom: $spacing-lg;
 }
 
@@ -82,10 +74,59 @@
   opacity: 0.7;
 }
 
-.login-tip {
-  display: block;
+.login-btn-disabled {
+  // 未勾选协议时的禁用态：灰底 + 不可点击
+  background: #c9cdd3 !important;
+  opacity: 1;
+}
+
+// ===== 协议勾选区 =====
+.login-agree {
+  display: flex;
+  align-items: flex-start;
   margin-top: $spacing-md;
-  text-align: center;
-  font-size: $font-size-xs;
-  color: $text-tertiary;
+  padding: 0 $spacing-xs;
+
+  .login-agree-check {
+    flex-shrink: 0;
+    width: 32rpx;
+    height: 32rpx;
+    margin-right: $spacing-sm;
+    margin-top: 4rpx;
+    border: 2rpx solid $border-color;
+    border-radius: $radius-small;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+
+    &.checked {
+      background: $primary-color;
+      border-color: $primary-color;
+    }
+
+    .login-agree-check-tick {
+      color: $text-inverse;
+      font-size: 24rpx;
+      line-height: 1;
+    }
+  }
+
+  .login-agree-hover {
+    opacity: 0.7;
+  }
+
+  .login-agree-text {
+    flex: 1;
+    font-size: $font-size-xs;
+    color: $text-tertiary;
+    line-height: 1.6;
+  }
+
+  .login-agree-link {
+    color: $primary-color;
+    text-decoration: underline;
+    margin: 0 4rpx;
+  }
 }

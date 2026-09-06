@@ -1,0 +1,71 @@
+@import '../../styles/variables.scss';
+
+.agreement-page {
+  min-height: 100vh;
+  background: $background;
+  padding: $spacing-md $spacing-lg $spacing-xl;
+  box-sizing: border-box;
+}
+
+.agreement-title {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 600;
+  color: $text-primary;
+  text-align: center;
+  margin-bottom: $spacing-sm;
+}
+
+.agreement-meta {
+  display: block;
+  text-align: center;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-bottom: $spacing-lg;
+}
+
+.agreement-section {
+  margin-bottom: $spacing-lg;
+
+  .section-h {
+    display: block;
+    font-size: $font-size-md;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: $spacing-sm;
+  }
+
+  .section-p {
+    display: block;
+    font-size: $font-size-sm;
+    color: $text-secondary;
+    line-height: 1.8;
+    margin-bottom: $spacing-sm;
+  }
+
+  .section-list {
+    padding-left: $spacing-md;
+
+    .section-li {
+      display: block;
+      font-size: $font-size-sm;
+      color: $text-secondary;
+      line-height: 1.8;
+      margin-bottom: $spacing-xs;
+    }
+  }
+}
+
+.agreement-footer {
+  margin-top: $spacing-xl;
+  padding-top: $spacing-md;
+  border-top: 1rpx solid $border-color;
+  text-align: center;
+
+  .footer-tip {
+    display: block;
+    font-size: $font-size-xs;
+    color: $text-tertiary;
+    line-height: 1.6;
+  }
+}
