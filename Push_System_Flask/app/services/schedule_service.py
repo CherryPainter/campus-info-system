@@ -12,6 +12,7 @@
 - Repository 层负责数据库操作
 """
 
+import json
 import threading
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -111,12 +112,16 @@ class ScheduleService:
             logger.error(f"从数据库加载课表数据失败: {e}")
             return False
 
-    def _transform(self, courses: list) -> list[dict[str, Any]]:
+    def _transform(
+        self, courses: list, week1_monday: date | None = None
+    ) -> list[dict[str, Any]]:
         """
         将数据库模型转换为推送服务需要的格式
 
         Args:
             courses: Course 模型列表
+            week1_monday: 可选。历史学期查看时传入该学期第 1 周的周一基准日，
+                使 full_date/时间戳锚定到该学期真实日历；缺省为 None = 按当前周。
 
         Returns:
             List[Dict]: 转换后的课表数据
@@ -124,8 +129,10 @@ class ScheduleService:
         result = []
 
         for course in courses:
-            # 计算日期（基于当前周次和星期几）
-            course_date = self._calculate_date(course.week_day, course.week_number)
+            # 计算日期（week1_monday 传入时锚定该基准，否则基于当前周次和星期几）
+            course_date = self._calculate_date(
+                course.week_day, course.week_number, week1_monday=week1_monday
+            )
             if course_date is None:
                 continue
 
@@ -181,24 +188,116 @@ class ScheduleService:
                 }
             )
 
+        # 合并同天、同课名、同教室的多条记录为一条
+        # 爬虫可能把一门 5-8 节的课拆成 4 条单节记录分别存储，这里统一合并，
+        # 让前端拿到正确的 periods 数组（如 [5,6,7,8]），而非分散的 [5]/[6]/[7]/[8]。
+        return self._merge_split_courses(result)
+
+    @staticmethod
+    def _merge_split_courses(courses: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        合并同一天、同一课程名、同一教室的多条记录。
+
+        爬虫按单节写入时会产生多条记录（如 5-8 节写成 periods=[5]、[6]、[7]、[8] 各一条），
+        本方法将它们合并为 periods=[5,6,7,8] 的单条记录，schedule_id 取组内第一条。
+
+        Args:
+            courses: _transform 产出的原始记录列表
+
+        Returns:
+            合并后的记录列表（与 /course/list 接口合并口径一致）
+        """
+        if not courses:
+            return courses
+
+        def _normalize_periods(p) -> list[int]:
+            """把 periods 的各种格式统一为 list[int]"""
+            if isinstance(p, list):
+                return [int(x) for x in p if isinstance(x, (int, str)) and str(x).strip().isdigit()]
+            if isinstance(p, str):
+                try:
+                    a = json.loads(p)
+                    if isinstance(a, list):
+                        return [int(x) for x in a if isinstance(x, (int, str)) and str(x).strip().isdigit()]
+                except (json.JSONDecodeError, ValueError):
+                    pass
+                if p.strip():
+                    return [int(x.strip()) for x in p.split(",") if x.strip().isdigit()]
+            return []
+
+        merged: dict[tuple, dict[str, Any]] = {}
+        for c in courses:
+            extra = c.get("extra_info") or {}
+            key = (
+                c.get("day_of_week"),
+                c.get("course_name"),
+                extra.get("classroom") or "",
+                extra.get("full_date") or "",
+            )
+
+            if key in merged:
+                existing = merged[key]
+                # 合并 periods
+                all_p = sorted(set(_normalize_periods(existing.get("periods")) + _normalize_periods(c.get("periods"))))
+                existing["periods"] = all_p
+                existing["period_idx"] = min(all_p) if all_p else existing.get("period_idx")
+
+                # 更新时间：取 periods 最小时对应的 start_time、最大时对应的 end_time
+                if all_p:
+                    # 简单策略：直接取 start_time 最早、end_time 最晚的
+                    if c.get("start_time", "") and c["start_time"] < existing.get("start_time", "99:99"):
+                        existing["start_time"] = c["start_time"]
+                        existing["_timeInfo"]["start_ts"] = c.get("_timeInfo", {}).get("start_ts", existing["_timeInfo"]["start_ts"])
+                    if c.get("end_time", "") and c["end_time"] > existing.get("end_time", "00:00"):
+                        existing["end_time"] = c["end_time"]
+                        existing["_timeInfo"]["end_ts"] = c.get("_timeInfo", {}).get("end_ts", existing["_timeInfo"]["end_ts"])
+            else:
+                merged[key] = dict(c)
+
+        # 合并后 periods 可能已改变（从 [5]/[6]/[7]/[8] → [5,6,7,8]），
+        # 再用课表权威时间覆盖 start_time / end_time，保证时间与 periods 严格对齐。
+        result = list(merged.values())
+        try:
+            from app.utils.course_helpers import apply_timetable_times
+
+            for c in result:
+                fixed = apply_timetable_times(c)
+                c["start_time"] = fixed.get("start_time", c.get("start_time", ""))
+                c["end_time"] = fixed.get("end_time", c.get("end_time", ""))
+        except Exception:
+            pass
+
         return result
 
-    def _calculate_date(self, week_day: int, week_number: int | None) -> date | None:
+    def _calculate_date(
+        self, week_day: int, week_number: int | None, week1_monday: date | None = None
+    ) -> date | None:
         """
         根据星期几和周次计算日期
 
-        锚定规则（与前端周历口径一致）：以「当前真实日历周一」为基准，
-        按 (week_number − 当前教学周) 做相对偏移。这样切换周只是"围绕当前时间
-        查看那个周的课程"，不会把日期跳到教学周真实日历（如第2周跳到 03-09），
-        且 getWeek 返回的 full_date 与前端周历显示日期天然对齐。
+        锚定规则（与前端周历口径一致）：
+        - week1_monday 传入（历史学期/任意学期）：以该学期第 1 周的周一为基准，
+          直接 ``week1_monday + (week_number-1)*7 + (week_day-1)`` 得到真实日历日期。
+        - week1_monday 为 None（当前学期默认）：以「当前真实日历周一」为基准，
+          按 (week_number − 当前教学周) 做相对偏移。这样切换周只是"围绕当前时间
+          查看那个周的课程"，不会把日期跳到教学周真实日历（如第2周跳到 03-09），
+          且 getWeek 返回的 full_date 与前端周历显示日期天然对齐。
 
         Args:
             week_day: 星期几 (1-7)
             week_number: 周次
+            week1_monday: 可选，基准周一；缺省走当前周相对锚定
 
         Returns:
             Optional[date]: 计算出的日期
         """
+        if week1_monday is not None:
+            if week_number is None:
+                week_number = 1
+            return week1_monday + timedelta(
+                weeks=week_number - 1, days=week_day - 1
+            )
+
         today = date.today()
         if week_number is None:
             days_ahead = week_day - today.isoweekday()
@@ -292,6 +391,47 @@ class ScheduleService:
         with self._lock:
             schedules = list(self._schedules)
         return self._enrich_is_today(schedules)
+
+    def get_schedules_for_semester(self, semester_id: int) -> list[dict[str, Any]]:
+        """
+        获取指定学期的整学期课表（ScheduleCourse 形状，供小程序/网页历史学期查看）。
+
+        当前学期直接复用内存缓存（self._schedules）；非当前学期临时查库并按其
+        开学日锚定真实日期（full_date/_timeInfo），避免历史学期被"围绕今天相对偏移"
+        而算错日期。
+
+        Args:
+            semester_id: 目标学期 DB id（如 20252）
+
+        Returns:
+            List[Dict]: 该学期课表 dict 列表
+        """
+        try:
+            from app.repository.course_repository import get_current_semester_id
+
+            if semester_id == get_current_semester_id():
+                return self.get_schedules()
+        except Exception:
+            pass
+
+        # 非当前学期：直接查库（按学期过滤），并解析该学期开学日锚定第 1 周周一
+        session = get_db()
+        try:
+            courses = CourseRepository.get_all(session, semester_id=semester_id)
+        finally:
+            session.close()
+
+        week1_monday = None
+        try:
+            from app.services.teaching_week_service import get_semester_start_date
+
+            start = get_semester_start_date(semester_id)
+            if start:
+                week1_monday = start - timedelta(days=start.isoweekday() - 1)
+        except Exception:
+            pass
+
+        return self._transform(courses, week1_monday=week1_monday)
 
     def get_today_schedules(
         self, force_reload: bool = False, target_date: str | None = None

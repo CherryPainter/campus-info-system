@@ -368,36 +368,60 @@ def schedule_today():
 @student_bound_required
 def schedule_week():
     """
-    指定周课表（默认当前教学周）
+    指定周课表（可指定学期，默认当前教学周）
 
     查询参数：
         week_number (int, 可选): 目标周次，缺省取当前教学周（非教学周回退第 1 周）
+        semester_id (int, 可选): 目标学期 DB id；缺省取当前学期
 
     返回：
-        courses: 该周有课的课程列表（按 weeks 字段过滤）
+        courses: 该周有课的课程列表（按 weeks 字段过滤，形状为 ScheduleCourse）
         week_number: 实际查询的周次
-        available_weeks: 可选周次列表（基于开学日推算）
+        available_weeks: 可选周次列表（基于该学期开学日推算）
     """
     from app.services.schedule_service import schedule_service
     from app.services.teaching_week_service import build_available_weeks
     from app.utils.course_helpers import get_current_week_number, is_course_in_week
     from app.repository.course_repository import get_current_semester_id
 
+    semester_id = request.args.get("semester_id", type=int)
+    if semester_id is None:
+        semester_id = get_current_semester_id()
+
     week_number = request.args.get("week_number", type=int)
     if week_number is None:
-        week_number = get_current_week_number() or 1
+        if semester_id == get_current_semester_id():
+            week_number = get_current_week_number() or 1
+        else:
+            # 历史学期：定位第一个有课的周，找不到回退第 1 周
+            from app.core.database import get_db
+            from app.model.course import Course
+            from app.utils.course_helpers import is_course_in_week as _icw
+
+            _db = get_db()
+            try:
+                _all = (
+                    _db.query(Course)
+                    .filter(Course.is_deleted.is_(False), Course.semester_id == semester_id)
+                    .all()
+                )
+                week_number = next(
+                    (w for w in range(1, 26) if any(_icw(c.weeks or "", w) for c in _all)),
+                    1,
+                )
+            finally:
+                _db.close()
     if week_number <= 0:
         return api_error(message="周次无效", http_status=400)
 
-    # 可选周次：与网页端 /course/timetable 口径一致（基于真实当前学期推算）
+    # 可选周次：与网页端 /course/timetable 口径一致（基于所选学期开学日推算）
     try:
-        sem_id = get_current_semester_id()
-        available_weeks = build_available_weeks(sem_id)
+        available_weeks = build_available_weeks(semester_id)
     except Exception as e:
         logger.warning(f"获取可选周次失败（接口降级返回空列表）: {e}")
         available_weeks = []
 
-    all_courses = schedule_service.get_schedules()
+    all_courses = schedule_service.get_schedules_for_semester(semester_id)
     courses = [
         c for c in all_courses if is_course_in_week(c["extra_info"]["weeks"], week_number)
     ]
@@ -406,6 +430,7 @@ def schedule_week():
             "courses": courses,
             "week_number": week_number,
             "available_weeks": available_weeks,
+            "semester_id": semester_id,
         }
     )
 
@@ -414,7 +439,7 @@ def schedule_week():
 @student_bound_required
 def schedule_current():
     """
-    当前教学周信息 + 学期周次面板数据
+    当前教学周信息 + 学期周次面板数据 + 可选学期列表
 
     返回：
         week_number: 当前周次（0 表示非教学周/假期）
@@ -424,17 +449,42 @@ def schedule_current():
         semester_id: 当前学期 ID（如 20261）
         semester_name: 当前学期名称（如 "2026-2027 秋季"）
         available_weeks: 可选周次列表 [{week_number, start_date, end_date, is_teaching}]
+        semesters: 可选学期列表（与网页端 /course/semesters 同口径，基于当前学年
+                   向前候选生成，供周次选择器左列"学年"滚轮使用）：
+                   [{id, name, academic_year, term, is_current}, ...]
     """
     from datetime import date
 
     from app.utils.course_helpers import get_current_week_number
-    from app.repository.course_repository import get_current_semester_id, semester_info_from_id
+    from app.repository.course_repository import (
+        get_current_semester_id,
+        semester_info_from_id,
+        candidate_semester_pairs,
+    )
     from app.services.teaching_week_service import build_available_weeks
 
     week_number = get_current_week_number()
     today = date.today()
     sem_id = get_current_semester_id()
     sem_info = semester_info_from_id(sem_id)
+
+    # 可选学期列表（与网页端一致：当前学年往前 3 学年 × 每学年 2 学期，新→旧）
+    semesters = []
+    try:
+        for _eams_id, _db in candidate_semester_pairs(years_back=3, years_forward=0):
+            _si = semester_info_from_id(_db)
+            semesters.append(
+                {
+                    "id": _db,
+                    "name": _si["semester_name"],
+                    "academic_year": _si["academic_year"],
+                    "term": _si["term"],
+                    "is_current": _db == sem_id,
+                }
+            )
+    except Exception:
+        semesters = []
+
     try:
         available_weeks = build_available_weeks(sem_id)
     except Exception:
@@ -448,6 +498,7 @@ def schedule_current():
             "semester_id": sem_id,
             "semester_name": sem_info.get("semester_name", ""),
             "available_weeks": available_weeks,
+            "semesters": semesters,
         }
     )
 
