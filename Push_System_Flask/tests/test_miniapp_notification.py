@@ -92,6 +92,11 @@ def _patch_get_db(db_session):
         "app.utils.jwt_auth.get_db", return_value=db_session
     ):
         # student_bound_required 要求身份已绑定：为 token 对应的 user_id=1 预置绑定身份
+        # student_required 的 USER_GONE 校验要求 users 表存在启用用户（user_id=1）
+        if db_session.query(User).filter_by(id=1).first() is None:
+            db_session.add(
+                User(id=1, username="u1", password_hash="x", role="student")
+            )
         profile = db_session.query(StudentProfile).filter_by(user_id=1).first()
         if profile is None:
             profile = StudentProfile(user_id=1)

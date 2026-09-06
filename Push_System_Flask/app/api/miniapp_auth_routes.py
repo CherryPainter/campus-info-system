@@ -129,6 +129,30 @@ def miniapp_refresh():
         logger.warning(f"小程序 Token 刷新失败: {e}")
         return api_error(message=message, http_status=401)
 
+    # 刷新成功后再校验用户仍存在且启用：refresh_token 签名有效 ≠ 用户仍存在
+    # （清库/删除/禁用后旧 refresh_token 可无限换出"有效"新 token，与 student_required
+    # 的 USER_GONE 同码）。拦截后小程序端走「401 → refresh 失败 → 清 token →
+    # 静默重新登录」闭环自动恢复，不会死循环（请求层有 _retried 防重放标记）。
+    _payload = _jwt.decode(
+        new_tokens["refresh_token"], jwt_manager.secret_key, algorithms=["HS256"]
+    )
+    _uid = int(_payload.get("user_id"))
+    from app.core.database import get_db
+    from app.model.user import User
+
+    _db = get_db()
+    try:
+        _alive = (
+            _db.query(User).filter_by(id=_uid, is_active=True).first() is not None
+        )
+    finally:
+        _db.close()
+    if not _alive:
+        logger.warning(f"小程序 refresh 拒绝: 用户不存在或已禁用 user_id={_uid}")
+        return api_error(
+            message="账号状态已变更，请重新登录", http_status=401, code="USER_GONE"
+        )
+
     logger.info("小程序 access_token 刷新成功")
     return api_success(
         access_token=new_tokens["access_token"],

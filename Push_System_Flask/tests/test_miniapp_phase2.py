@@ -47,12 +47,18 @@ class _FakeQuery:
 
     def first(self):
         from app.model.student_profile import StudentProfile
+        from app.model.user import User
 
         if self._model is StudentProfile:
             # 模拟已通过预录名单完成身份绑定（student_bound_required 要求 student_number 非空）
             from types import SimpleNamespace
 
             return SimpleNamespace(student_number="20260001", electricity_cookie="")
+        if self._model is User:
+            # 模拟当前用户存在且启用（student_required 的 USER_GONE 存在性校验）
+            from types import SimpleNamespace
+
+            return SimpleNamespace(id=1)
         return None
 
 
@@ -181,6 +187,39 @@ def test_admin_token_403(client, admin_token):
     ):
         resp = client.get(path, headers={"Authorization": f"Bearer {admin_token}"})
         assert resp.status_code == 403, path
+
+
+class _GoneUserQuery:
+    """查询桩：恒查不到（模拟用户已被删除/禁用）"""
+
+    def filter_by(self, *a, **k):
+        return self
+
+    def first(self):
+        return None
+
+
+class _GoneUserSession:
+    """会话桩：任何查询返回空，模拟 users 表无该用户"""
+
+    def query(self, model, *a, **k):
+        return _GoneUserQuery()
+
+    def close(self):
+        pass
+
+
+def test_deleted_user_returns_401_user_gone(client, student_token):
+    """回归（2026-09-06）：清库/删号后旧 token 仍签名有效，
+    student_required 必须查库拦截为 401 USER_GONE，
+    而不是一路放行到 bind 落库才报外键 500。"""
+    with mock.patch("app.core.database.get_db", return_value=_GoneUserSession()):
+        resp = client.get(
+            "/api/miniapp/weather/current",
+            headers={"Authorization": f"Bearer {student_token}"},
+        )
+    assert resp.status_code == 401
+    assert resp.get_json().get("code") == "USER_GONE"
 
 
 # ==================== 课表 ====================

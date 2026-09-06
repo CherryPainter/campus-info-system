@@ -46,6 +46,40 @@ def student_required(f):
             logger.warning(f'学生权限验证失败: user={user.get("username")}, role={role}')
             return jsonify({"status": "error", "message": "权限不足，需要学生身份"}), 403
 
+        # 用户存在性校验：token 签名有效 ≠ 用户仍存在。
+        # 清库/删除/禁用后旧 token 若不在此拦截，会一路放行到落库才以外键错误 500
+        # （2026-09-06 实例：bind 命中 student_profiles.user_id 外键失败报 500）。
+        # 返回 401 让小程序端走「refresh 失败 → 清 token → 静默重新登录」闭环。
+        user_id = user.get("user_id")
+        if user_id is not None:
+            from app.core.database import get_db
+            from app.model.user import User
+
+            db = get_db()
+            try:
+                # 注意按模型类查询（db.query(User) 而非 User.id），
+                # 便于测试桩按模型路由，SQL 语义等价
+                alive = (
+                    db.query(User).filter_by(id=int(user_id), is_active=True).first()
+                    is not None
+                )
+            finally:
+                db.close()
+            if not alive:
+                logger.warning(
+                    f"用户不存在或已禁用，拒绝访问: user_id={user_id}, path={request.path}"
+                )
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": "账号状态已变更，请重新登录",
+                            "code": "USER_GONE",
+                        }
+                    ),
+                    401,
+                )
+
         return f(*args, **kwargs)
 
     return decorated_function
