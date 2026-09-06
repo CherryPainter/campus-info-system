@@ -6,7 +6,7 @@ import Taro from '@tarojs/taro';
 import { login as loginApi } from '@/api/auth';
 import { wxLogin } from '@/utils/auth';
 import { useAuthStore } from '@/stores/authStore';
-import loginIllustration from '@/assets/images/login-illustration.jpg';
+import loginIllustration from '@/assets/images/login-illustration.png';
 import './index.scss';
 
 /**
