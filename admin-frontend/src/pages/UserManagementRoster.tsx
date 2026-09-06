@@ -14,7 +14,7 @@
  * - 绑定码：单个生成展示（仅一次）/ 勾选批量生成导出
  * - 绑定状态列：已认领显示用户名与时间
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Card,
@@ -96,6 +96,8 @@ export default function UserManagementRoster() {
   const [tree, setTree] = useState<OrgUnit[]>([]);
   const [treeLoading, setTreeLoading] = useState(false);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
+  // 组织树展开状态（受控）：单一学校时默认展开到「专业」层，增删改不必反复手动展开
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
   const [orgModal, setOrgModal] = useState<{
     mode: "create" | "rename";
     nodeType?: string; // create 时新建的类型
@@ -174,6 +176,34 @@ export default function UserManagementRoster() {
     load();
   }, [load]);
 
+  // 左栏与右栏等高：实时测量右栏高度作为左栏 maxHeight，
+  // 左栏内容超出该高度时内部滚动（右栏翻页/筛选导致高度变化时自动跟随）。
+  const rightRef = useRef<HTMLDivElement>(null);
+  const [leftMaxHeight, setLeftMaxHeight] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const el = rightRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const sync = () => setLeftMaxHeight(el.offsetHeight);
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // 只有一个学校时默认展开到「专业」层（展开学校 + 各学院），
+  // 班级层不自动展开，避免一次性铺开过长。仅首次加载时自动应用，
+  // 之后完全交由用户手动展开/收起（受控）。
+  const autoExpandedRef = useRef(false);
+  useEffect(() => {
+    if (treeLoading || tree.length === 0 || autoExpandedRef.current) return;
+    autoExpandedRef.current = true;
+    if (tree.length === 1) {
+      const keys: React.Key[] = [tree[0].id];
+      (tree[0].children || []).forEach((c) => keys.push(c.id));
+      setExpandedKeys(keys);
+    }
+  }, [tree, treeLoading]);
+
   // ---- 组织树操作 ----
   const handleOrgOk = async () => {
     if (!orgModal) return;
@@ -187,6 +217,13 @@ export default function UserManagementRoster() {
         });
         if (res.status === "success") {
           message.success("已创建");
+          // 新建后自动展开父节点，保证新节点立即可见（不必再手动展开）
+          const parentId = orgModal.parent?.id;
+          if (parentId != null) {
+            setExpandedKeys((prev) =>
+              prev.includes(parentId) ? prev : [...prev, parentId]
+            );
+          }
           setOrgModal(null);
           orgForm.resetFields();
           loadTree();
@@ -691,7 +728,15 @@ export default function UserManagementRoster() {
       variant={isMobile ? "borderless" : undefined}
       styles={{ body: { padding: isMobile ? 0 : 24 } }}
     >
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          // 桌面端并排等高；移动端纵向堆叠（否则左栏 width:100% 会把右栏挤没）
+          flexDirection: isMobile ? "column" : "row",
+          alignItems: "stretch",
+        }}
+      >
         {/* 左：组织树 */}
         <Card
           size="small"
@@ -714,8 +759,15 @@ export default function UserManagementRoster() {
               新建学校
             </Button>
           }
-          style={{ width: isMobile ? "100%" : 300, flexShrink: 0 }}
-          styles={{ body: { padding: 8, maxHeight: 560, overflow: "auto" } }}
+          style={{
+            width: isMobile ? "100%" : 300,
+            flexShrink: 0,
+            // 与右栏等高：stretch 拉伸 + 以右栏实测高度封顶（溢出则内部滚动）
+            display: "flex",
+            flexDirection: "column",
+            maxHeight: isMobile ? undefined : leftMaxHeight,
+          }}
+          styles={{ body: { padding: 8, flex: 1, minHeight: 0, overflow: "auto" } }}
         >
           {treeLoading ? (
             <div style={{ textAlign: "center", padding: 24 }}>
@@ -742,7 +794,8 @@ export default function UserManagementRoster() {
           ) : (
             <Tree
               treeData={treeData}
-              defaultExpandAll={false}
+              expandedKeys={expandedKeys}
+              onExpand={(keys) => setExpandedKeys(keys)}
               showLine
               blockNode
               selectedKeys={selectedClassId ? [selectedClassId] : []}
@@ -765,7 +818,7 @@ export default function UserManagementRoster() {
         )}
 
         {/* 右：名单 */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div ref={rightRef} style={{ flex: 1, minWidth: 0 }}>
           {/* 操作栏 */}
           <div
             style={{
