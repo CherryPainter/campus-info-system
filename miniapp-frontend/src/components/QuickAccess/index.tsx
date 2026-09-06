@@ -15,8 +15,8 @@ export interface QuickItem {
 export const DEFAULT_ITEMS: QuickItem[] = [
   { key: 'schedule', label: '课表查询', icon: 'kechengbiao', action: 'page', pagePath: '/pages/coursetable/index' },
   { key: 'electricity', label: '电量查询', icon: 'dianchi', action: 'page', pagePath: '/pages/electricity/index' },
-  { key: 'card', label: '校园卡充值', icon: 'xiaoyuanqia-' },
-  { key: 'notice', label: '通知公告', icon: 'tongzhi' },
+  { key: 'card', label: '校园卡', icon: 'xiaoyuanqia-' },
+  { key: 'notice', label: '通知公告', icon: 'tongzhi', action: 'page', pagePath: '/pages/announcement/index/index' },
   { key: 'classroom', label: '空闲教室', icon: 'kongxianjiaoshi' },
   { key: 'weather', label: '天气预报', icon: 'tianqi', action: 'page', pagePath: '/pages/weather/index' },
   { key: 'calendar2', label: '校历查询', icon: 'rili' },

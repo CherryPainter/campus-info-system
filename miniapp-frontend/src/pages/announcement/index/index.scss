@@ -1,0 +1,146 @@
+@import '../../../styles/variables.scss';
+
+/* 通知公告总览页（先看板后列表）
+ * - 整体白底列表，不靠大圆角卡片堆叠
+ * - 上：「置顶公告」专区（独立标题 + 卡片）
+ * - 下：「全部公告」列表（含全部条目）
+ * - 单条之间用细分割线，置顶条目用左侧色条强化
+ * - 标签颜色与首页 NoticeCard / 详情页统一
+ */
+
+.alist-page {
+  min-height: 100vh;
+  background: $background;
+  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.alist-empty-wrap {
+  padding-top: 120rpx;
+}
+
+/* 分区（置顶专区 / 全部公告） */
+.alist-section {
+  margin-bottom: $spacing-md;
+}
+
+.alist-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 4rpx $spacing-sm;
+}
+
+.alist-section-title {
+  font-size: $font-size-md;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.alist-section-count {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}
+
+/* 列表卡片容器 */
+.alist-card {
+  background: $card-background;
+  border-radius: $radius-small;
+  overflow: hidden;
+  border: 1rpx solid $border-color;
+}
+
+.alist-item {
+  padding: $spacing-md $spacing-md;
+  border-bottom: 1rpx solid $border-color;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  // 置顶条目：左侧色条
+  &-top {
+    border-left: 6rpx solid $error;
+    padding-left: $spacing-md - 6rpx;
+  }
+}
+
+.alist-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.alist-item-title {
+  font-size: $font-size-md;
+  font-weight: 600;
+  color: $text-primary;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.alist-item-summary {
+  display: block;
+  font-size: $font-size-sm;
+  color: $text-secondary;
+  line-height: 1.5;
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.alist-item-meta {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  margin-top: 4rpx;
+}
+
+.alist-item-dept {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}
+
+.alist-item-time {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 标签：与首页 NoticeCard / 详情页统一样式 */
+.alist-tag {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: $font-size-xs;
+  font-weight: 600;
+  padding: 2rpx 12rpx;
+  border-radius: 6rpx;
+
+  &.tag-top {
+    background: rgba(207, 19, 34, 0.08);
+    color: #cf1322;
+  }
+
+  &.tag-cat {
+    background: rgba(26, 115, 232, 0.1);
+    color: $primary-color;
+  }
+}
+
+/* 触底加载 / 加载中 / 没有更多 */
+.alist-more {
+  display: flex;
+  justify-content: center;
+  padding: $spacing-md 0;
+}
+
+.alist-more-text {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}

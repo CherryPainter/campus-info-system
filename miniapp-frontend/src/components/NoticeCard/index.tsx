@@ -56,9 +56,9 @@ export default function NoticeCard() {
     Taro.navigateTo({ url: `/pages/announcement/detail/index?id=${id}` });
   };
 
-  /** 点击"更多"暂用 Toast（列表页待建） */
+  /** 点击"更多"进入通知公告列表页 */
   const goToList = () => {
-    Taro.showToast({ title: '通知列表开发中', icon: 'none' });
+    Taro.navigateTo({ url: '/pages/announcement/index/index' });
   };
 
   return (

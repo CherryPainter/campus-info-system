@@ -10,6 +10,7 @@ export default defineAppConfig({
     'pages/login/index',
     'pages/weather/index',
     'pages/announcement/detail/index',
+    'pages/announcement/index/index',
     'pages/favorites/index',
     'pages/feedback/submit/index',
     'pages/feedback/list/index',
