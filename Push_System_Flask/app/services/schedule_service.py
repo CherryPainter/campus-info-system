@@ -91,11 +91,17 @@ class ScheduleService:
                 transformed = self._transform(courses)
 
                 with self._lock:
-                    # 检查数据是否有变化
-                    if len(transformed) != len(self._schedules):
-                        self._schedules = transformed
-                        self._last_updated = datetime.now()
-                        logger.info(f"从数据库加载了 {len(self._schedules)} 条课表数据")
+                    # 隐患修复：原条件 `if len(transformed) != len(self._schedules)`
+                    # 只比条数，条数不变但内容变化（如 UPDATE 某条记录的 periods/period_idx）
+                    # 会导致缓存永远不刷新、API 持续返回旧数据。
+                    # 定时器反正每 60 秒重读 DB，取消条数门控直接覆盖更稳妥。
+                    prev_count = len(self._schedules)
+                    self._schedules = transformed
+                    self._last_updated = datetime.now()
+                    if prev_count != len(transformed):
+                        logger.info(
+                            f"从数据库加载了 {len(self._schedules)} 条课表数据"
+                        )
                     self._data_ready = True
 
                 return True
