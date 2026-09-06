@@ -9,9 +9,10 @@ import './index.scss';
 
 /**
  * 设置页（仅保留「通用」与「退出登录」）
- * - 账号设置（头像/昵称/学号/班级）已迁到独立页 pages/profile-edit/index：
- *   受控表单 + 显式保存按钮，避免之前"行内编辑 + blur 即保存"的隐式提交误触。
- * - 从「我的」页"设置"项可进入账号设置，从本页亦可通过顶部入口跳转。
+ * - 顶部「个人资料」入口指向 `pages/profile-detail/index`：包含头像/身份信息/
+ *   基础资料/编辑资料/注销账号，是相对完善的个人资料页。
+ * - 编辑表单（受控 + 显式保存）在 `pages/profile-edit/index`，从详情页底部进入，
+ *   避免之前"行内编辑 + blur 即保存"的隐式提交误触。
  */
 
 export default function SettingsPage() {
@@ -69,8 +70,8 @@ export default function SettingsPage() {
     });
   };
 
-  const goAccountEdit = () => {
-    Taro.navigateTo({ url: '/pages/profile-edit/index' });
+  const goProfileDetail = () => {
+    Taro.navigateTo({ url: '/pages/profile-detail/index' });
   };
 
   const goElectricityConfig = () => {
@@ -83,11 +84,11 @@ export default function SettingsPage() {
 
   return (
     <View className="set-page">
-      {/* 账号设置入口（跳转独立页） */}
-      <Text className="set-card-title">账号</Text>
+      {/* 个人资料入口（指向详情页，包含头像/身份/基础资料/编辑/注销） */}
+      <Text className="set-card-title">个人资料</Text>
       <View className="set-card" style={{ marginTop: '8rpx' }}>
-        <View className="set-cell" onClick={goAccountEdit}>
-          <Text className="set-cell-label">账号设置</Text>
+        <View className="set-cell" onClick={goProfileDetail}>
+          <Text className="set-cell-label">个人资料</Text>
           <Text className="set-arrow">›</Text>
         </View>
       </View>

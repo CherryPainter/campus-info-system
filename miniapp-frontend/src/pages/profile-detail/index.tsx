@@ -40,7 +40,7 @@ export default function ProfileDetail() {
   });
 
   const name =
-    profile?.nickname || profile?.real_name || user?.username || '同学';
+    profile?.nickname || user?.username || '同学';
 
   const handleDelete = () => {
     Taro.showModal({
@@ -113,9 +113,15 @@ export default function ProfileDetail() {
         </View>
       </View>
 
-      {/* 基础资料 */}
+      {/* 基础资料（仅展示后端有采集入口 + 名单带出的字段；删除真实姓名/手机号/年级） */}
       <View className="detail-card">
         <Text className="detail-card-title">基础资料</Text>
+        <View className="detail-row">
+          <Text className="detail-row-label">昵称</Text>
+          <Text className="detail-row-value">
+            {profile?.nickname || '未设置'}
+          </Text>
+        </View>
         <View className="detail-row">
           <Text className="detail-row-label">校园卡号</Text>
           <Text className="detail-row-value">
@@ -129,14 +135,6 @@ export default function ProfileDetail() {
         <View className="detail-row">
           <Text className="detail-row-label">专业</Text>
           <Text className="detail-row-value">{profile?.major || '--'}</Text>
-        </View>
-        <View className="detail-row">
-          <Text className="detail-row-label">年级</Text>
-          <Text className="detail-row-value">{profile?.grade || '--'}</Text>
-        </View>
-        <View className="detail-row">
-          <Text className="detail-row-label">手机号</Text>
-          <Text className="detail-row-value">{profile?.phone || '--'}</Text>
         </View>
         <View
           className="detail-row detail-row-link"

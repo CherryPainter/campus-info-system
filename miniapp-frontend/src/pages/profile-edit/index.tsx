@@ -7,29 +7,49 @@ import { useAuthStore } from '@/stores/authStore';
 import { useUserStore } from '@/stores/userStore';
 import './index.scss';
 
-const FIELD_MAXLEN: Record<string, number> = {
-  nickname: 20,
+/**
+ * 字段最大长度（与后端 StudentProfile 模型 String(N) 对齐，超长后端会被截断/拒绝）
+ *
+ * 仅保留后端真正需要的字段（2026-09-06 精简）：
+ * - nickname（必填）
+ * - campus_card_number（校园卡/一卡通号）
+ * - college / major（学院、专业；名单绑定后通常已有，但允许学生补充/纠错）
+ *
+ * 移除字段及原因：
+ * - real_name：小程序未提供采集入口，且后端身份绑定逻辑没从名单拷贝过来，
+ *   学生填了也是空，徒增表单负担 → 移除；后端模型字段保留，需要时再走采集
+ * - phone：小程序完全没有采集入口（仅后端模型占位），恒为 null → 移除
+ * - grade：后端模型有但没有采集入口，恒为 null → 移除
+ */
+const FIELD_MAXLEN = {
+  nickname: 50,
   campus_card_number: 30,
-};
+  college: 100,
+  major: 100,
+} as const;
 
-type FieldKey = 'nickname' | 'campus_card_number';
+type FieldKey = keyof typeof FIELD_MAXLEN;
 
 /**
- * 账号设置（独立页）
- * 设计：受控表单 + 显式保存按钮（不沿用之前"blur 即保存"的隐式提交，
- * 避免误触；保存按钮按下前所有改动只在本地预览，不写后端）。
+ * 编辑资料页（受控表单 + 显式保存）
  *
- * 提交策略：一次 updateProfile 提交全部字段（用户一次操作完成全部修改）。
- * 注意：学号/班级/学校由「身份绑定」管理，此处只读展示，不可修改。
+ * 设计要点：
+ * - 受控 `<Input value>` 必须配 onInput 更新 state，否则打不进字。
+ * - 一次 updateProfile 提交全部字段，用户一次操作完成所有修改。
+ * - 学号/班级/学校由「身份绑定」管理，此处只读展示，不允许编辑。
+ * - 表单字段：nickname（必填）/ campus_card_number / college / major
+ * - 头像单独走 updateAvatar 接口，不与其他字段混合提交。
  */
 export default function ProfileEditPage() {
   const { user, setUser } = useAuthStore();
   const { profile, setProfile } = useUserStore();
 
-  // 本地表单（受控 + onInput）：初始从 profile/avatar 拷贝，profile 加载/变更后回填
+  // 本地表单（受控 + onInput）：初始从 profile 拷贝，profile 加载/变更后回填
   const [form, setForm] = useState<Record<FieldKey, string>>({
     nickname: '',
     campus_card_number: '',
+    college: '',
+    major: '',
   });
   const [avatarSrc, setAvatarSrc] = useState<string | null>(user?.avatar || null);
   const [saving, setSaving] = useState(false);
@@ -40,6 +60,8 @@ export default function ProfileEditPage() {
     setForm((f) => ({
       nickname: f.nickname || profile.nickname || '',
       campus_card_number: f.campus_card_number || profile.campus_card_number || '',
+      college: f.college || profile.college || '',
+      major: f.major || profile.major || '',
     }));
   }, [profile]);
 
@@ -74,17 +96,26 @@ export default function ProfileEditPage() {
     }
   };
 
-  /** 显式保存：trim 后全字段提交；昵称必填 */
+  /**
+   * 显式保存：trim 后全字段提交；昵称必填；空串视为清空（存 NULL）。
+   * 后端只接受白名单字段，不在白名单的（学号/班级/学校）即使前端被绕也无效。
+   */
   const handleSave = async () => {
     if (saving) return;
+    const trimAll = (s: string) => s.trim();
+
     const payload = {
-      nickname: (form.nickname || '').trim(),
-      campus_card_number: (form.campus_card_number || '').trim(),
+      nickname: trimAll(form.nickname),
+      campus_card_number: trimAll(form.campus_card_number),
+      college: trimAll(form.college),
+      major: trimAll(form.major),
     };
+
     if (!payload.nickname) {
       Taro.showToast({ title: '昵称不能为空', icon: 'none' });
       return;
     }
+
     setSaving(true);
     try {
       const res = await userApi.updateProfile(payload);
@@ -100,7 +131,28 @@ export default function ProfileEditPage() {
     }
   };
 
-  const displayName = form.nickname || profile?.real_name || user?.username || '同学';
+  const displayName = form.nickname || user?.username || '同学';
+
+  // 渲染单行输入（label + input）
+  const renderInputRow = (
+    label: string,
+    field: FieldKey,
+    placeholder: string,
+    options: { type?: 'text' | 'number' } = {},
+  ) => (
+    <View className="pedit-row" key={field}>
+      <Text className="pedit-row-label">{label}</Text>
+      <Input
+        className="pedit-row-input"
+        value={form[field]}
+        placeholder={placeholder}
+        placeholderClass="pedit-row-placeholder"
+        maxlength={FIELD_MAXLEN[field]}
+        type={options.type || 'text'}
+        onInput={(e) => setForm((f) => ({ ...f, [field]: e.detail.value }))}
+      />
+    </View>
+  );
 
   return (
     <View className="pedit-page">
@@ -116,18 +168,6 @@ export default function ProfileEditPage() {
             </View>
           )}
           <Text className="pedit-arrow">›</Text>
-        </View>
-
-        <View className="pedit-row">
-          <Text className="pedit-row-label">昵称</Text>
-          <Input
-            className="pedit-row-input"
-            value={form.nickname}
-            placeholder="设置昵称"
-            placeholderClass="pedit-row-placeholder"
-            maxlength={FIELD_MAXLEN.nickname}
-            onInput={(e) => setForm((f) => ({ ...f, nickname: e.detail.value }))}
-          />
         </View>
 
         {/* 身份信息：由管理员预录名单绑定，只读展示，不可修改 */}
@@ -147,17 +187,14 @@ export default function ProfileEditPage() {
           </View>
         </View>
 
-        <View className="pedit-row">
-          <Text className="pedit-row-label">校园卡号</Text>
-          <Input
-            className="pedit-row-input"
-            value={form.campus_card_number}
-            placeholder="填写校园卡号（一卡通号，非学号）"
-            placeholderClass="pedit-row-placeholder"
-            maxlength={FIELD_MAXLEN.campus_card_number}
-            onInput={(e) => setForm((f) => ({ ...f, campus_card_number: e.detail.value }))}
-          />
-        </View>
+        {/* 学籍信息：学院 / 专业（仅保留有意义的 2 项） */}
+        <View className="pedit-section-title">学籍信息</View>
+        {renderInputRow('学院', 'college', '如：计算机学院')}
+        {renderInputRow('专业', 'major', '如：软件工程')}
+
+        {/* 联系方式：校园卡号（手机号暂无采集入口，已移除） */}
+        <View className="pedit-section-title">联系方式</View>
+        {renderInputRow('校园卡号', 'campus_card_number', '一卡通号，非学号')}
       </View>
 
       <Text className="pedit-hint">点击底部按钮保存所有修改</Text>

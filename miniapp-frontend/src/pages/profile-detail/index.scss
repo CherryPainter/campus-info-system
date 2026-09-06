@@ -10,8 +10,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 60rpx 32rpx 40rpx;
-  background: linear-gradient(180deg, #cfe0ff 0%, #eaf1ff 100%);
+  padding: 60rpx 32rpx 60rpx;
+  // 渐变从顶部蓝到与页面背景 (#f5f6f8) 几乎一致的浅灰，避免与下方白色卡片
+  // 出现一条明显的水平硬分界线（2026-09-06 修复：底部融入）
+  background: linear-gradient(180deg, #cfe0ff 0%, #eaf1ff 50%, #f5f6f8 100%);
 }
 
 .detail-avatar {

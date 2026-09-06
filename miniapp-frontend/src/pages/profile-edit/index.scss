@@ -144,3 +144,11 @@
   color: $text-inverse;
   font-weight: 600;
 }
+
+/* 大卡片内分组标题（如「学籍信息」「联系方式」）：淡背景 + 小字，与 pedit-identity 同风格 */
+.pedit-section-title {
+  padding: $spacing-sm $spacing-lg $spacing-xs;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  background: $background;
+}

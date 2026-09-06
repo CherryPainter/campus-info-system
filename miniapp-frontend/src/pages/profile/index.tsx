@@ -314,7 +314,8 @@ export default function ProfilePage() {
           <FeedbackBadge count={msgUnread} />
           <Text className="profile-arrow">›</Text>
         </View>
-        <View className="profile-item" onClick={() => Taro.switchTab({ url: '/pages/schedule/index' })}>
+        {/* 我的课表：跳到课表详情页（周视图，含周次切换/课程卡片），而不是首页 tabBar 的「时间轴」 */}
+        <View className="profile-item" onClick={() => Taro.navigateTo({ url: '/pages/coursetable/index' })}>
           <View className="profile-item-icon-wrap">
             <Text className="iconfont icon-kechengbiao profile-item-icon" />
           </View>
