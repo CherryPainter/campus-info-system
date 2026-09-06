@@ -402,6 +402,48 @@ class StudentRosterService:
             session.close()
 
     @staticmethod
+    def export(school=None, class_id=None, keyword=None):
+        """不分页查询名单（导出 CSV 用），复用与 list 相同的筛选与绑定聚合逻辑。"""
+        session = get_db()
+        try:
+            query = session.query(StudentRoster)
+            if school:
+                query = query.filter(StudentRoster.school == school)
+            if class_id:
+                query = query.filter(StudentRoster.class_id == class_id)
+            if keyword:
+                kw = f"%{keyword}%"
+                query = query.filter(
+                    or_(
+                        StudentRoster.student_number.like(kw),
+                        StudentRoster.class_name.like(kw),
+                        StudentRoster.college.like(kw),
+                        StudentRoster.major.like(kw),
+                        StudentRoster.real_name.like(kw),
+                    )
+                )
+            rows = query.order_by(StudentRoster.id.desc()).all()
+            items = [row.to_dict() for row in rows]
+            numbers = {it["student_number"] for it in items if it.get("student_number")}
+            profiles = []
+            users = []
+            if numbers:
+                prof_rows = (
+                    session.query(StudentProfile)
+                    .filter(StudentProfile.student_number.in_(numbers))
+                    .all()
+                )
+                profiles = [p.to_dict() for p in prof_rows]
+                uids = [p.user_id for p in prof_rows if p.user_id]
+                if uids:
+                    user_rows = session.query(User).filter(User.id.in_(uids)).all()
+                    users = [u.to_dict() for u in user_rows]
+            _merge_binding(items, profiles, users)
+            return items
+        finally:
+            session.close()
+
+    @staticmethod
     def update(roster_id, class_id=None, real_name=None, remark=None, is_active=None):
         """
         编辑名单条目（学校/学号只读，防止破坏绑定语义）。

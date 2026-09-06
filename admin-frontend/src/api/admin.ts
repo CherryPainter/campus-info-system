@@ -743,6 +743,13 @@ export const rosterApi = {
       "/admin/roster/students/bind-codes",
       { ids }
     ),
+  /** 导出名单 CSV（按当前筛选 school/class_id/keyword 全量导出） */
+  exportStudents: (params?: {
+    school?: string;
+    class_id?: number;
+    keyword?: string;
+  }) =>
+    request.get("/admin/roster/students/export", { params, responseType: "blob" }),
 };
 
 /** 组织树 API（学校/学院/专业/班级，/api/admin/roster/org） */

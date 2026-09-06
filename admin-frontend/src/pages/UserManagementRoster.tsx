@@ -464,6 +464,25 @@ export default function UserManagementRoster() {
           message.error("未生成任何绑定码");
           return;
         }
+        // CSV 导出（学号,姓名,绑定码），用浏览器 Blob + URL 触发下载
+        const exportCodesCsv = () => {
+          const lines = ["学号,姓名,绑定码"];
+          codes.forEach((c) => {
+            const name = (c.real_name || "").replace(/,/g, " ");
+            lines.push(`${c.student_number || ""},${name},${c.code || ""}`);
+          });
+          const blob = new Blob(["\uFEFF" + lines.join("\n")], {
+            type: "text/csv;charset=utf-8",
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `绑定码_${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "")}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        };
         modal.info({
           title: `已生成 ${codes.length} 个绑定码（仅本次可见）`,
           width: 560,
@@ -491,6 +510,16 @@ export default function UserManagementRoster() {
               ))}
               <div style={{ paddingTop: 8, color: "#888" }}>
                 请复制后私下发放给对应学生；绑定成功即失效，再次生成将作废旧码
+              </div>
+              <div style={{ paddingTop: 12 }}>
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<DownloadOutlined />}
+                  onClick={exportCodesCsv}
+                >
+                  导出 CSV
+                </Button>
               </div>
             </div>
           ),
@@ -558,6 +587,27 @@ export default function UserManagementRoster() {
     return false; // 阻止 antd Upload 自动上传
   };
 
+  /** 导出名单 CSV（按当前筛选 school/class_id/keyword 全量导出不分页） */
+  const handleExport = async () => {
+    try {
+      const blob = (await rosterApi.exportStudents({
+        class_id: selectedClassId ?? undefined,
+        keyword: keyword || undefined,
+      })) as unknown as Blob;
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `学生名单_${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "")}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      message.success("已导出当前筛选下的全部名单");
+    } catch {
+      message.error("导出失败，请稍后重试");
+    }
+  };
+
   const columns = [
     {
       title: "学号",
@@ -620,7 +670,8 @@ export default function UserManagementRoster() {
     {
       title: "绑定状态",
       key: "binding",
-      width: 150,
+      width: 180,
+      ellipsis: true,
       render: (_: unknown, record: RosterStudent) =>
         record.bound_username ? (
           <Tag color="blue" title={record.bound_at ? `绑定于 ${record.bound_at}` : undefined}>
@@ -859,6 +910,9 @@ export default function UserManagementRoster() {
             >
               <Button icon={<UploadOutlined />}>批量导入</Button>
             </Upload>
+            <Button icon={<DownloadOutlined />} onClick={handleExport}>
+              导出名单
+            </Button>
             <Button icon={<DownloadOutlined />} href="/api/admin/roster/template" target="_blank">
               下载模板
             </Button>

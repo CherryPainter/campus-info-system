@@ -163,6 +163,71 @@ def list_students():
     )
 
 
+@admin_roster_bp.route("/students/export", methods=["GET"])
+@admin_required
+def export_students():
+    """导出名单 CSV（按当前筛选 school / class_id / keyword 全量导出，不分页）。
+
+    列顺序与前端表格展示一致：学号、姓名、学校、学院、专业、班级、状态、备注、
+    是否已发码、绑定用户名、绑定时间、创建时间。csv 模块负责引号/逗号/换行转义。
+    """
+    school = (request.args.get("school") or "").strip() or None
+    class_id = request.args.get("class_id", type=int) or None
+    keyword = (request.args.get("keyword") or "").strip() or None
+
+    items = StudentRosterService.export(school=school, class_id=class_id, keyword=keyword)
+
+    buf = io.StringIO()
+    # utf-8-sig 让 Excel 直接打开中文不乱码；csv 引用器自动处理逗号/换行/引号
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "学号",
+            "姓名",
+            "学校",
+            "学院",
+            "专业",
+            "班级",
+            "状态",
+            "备注",
+            "是否已发码",
+            "绑定用户名",
+            "绑定时间",
+            "创建时间",
+        ]
+    )
+    for it in items:
+        writer.writerow(
+            [
+                it.get("student_number") or "",
+                it.get("real_name") or "",
+                it.get("school") or "",
+                it.get("college") or "",
+                it.get("major") or "",
+                it.get("class_name") or "",
+                "启用" if it.get("is_active") else "停用",
+                it.get("remark") or "",
+                "是" if it.get("has_bind_code") else "否",
+                it.get("bound_username") or "",
+                (it.get("bound_at") or "").replace("T", " ")[:19],
+                (it.get("created_at") or "").replace("T", " ")[:19],
+            ]
+        )
+
+    # 文件名带筛选条件与时间戳，便于多次导出区分
+    from datetime import datetime as _dt
+
+    suffix_parts = [school or "全部学校", class_id and f"class_{class_id}" or None]
+    suffix = "_".join(p for p in suffix_parts if p)
+    filename = f"学生名单_{suffix}_{_dt.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+    return Response(
+        buf.getvalue().encode("utf-8-sig"),
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @admin_roster_bp.route("/students", methods=["POST"])
 @admin_required
 def create_student():
