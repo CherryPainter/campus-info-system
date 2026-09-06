@@ -284,8 +284,17 @@ export default function SchedulePage() {
     const merged: typeof sorted = [];
     for (const c of sorted) {
       const last = merged[merged.length - 1];
-      if (last && last.course_name === c.course_name && last.day_of_week === c.day_of_week) {
-        // 同名同天 → 合并 periods
+      // 合并同名相邻课程（数据库可能按单节存储：periods=[5]、[6] 分两条，
+      // 合并后 periods=[5,6]，显示为"5-6节"而非两行单节）
+      // 合并条件改用具体日期 full_date（而非抽象 day_of_week）：
+      // schedule_today 按 full_date 精确匹配一天，一天内 full_date 都相同，
+      // 用 full_date 更精确且避免极端边界下跨日合并把多条课的 periods 拼成过大区间。
+      if (
+        last &&
+        last.course_name === c.course_name &&
+        last.extra_info?.full_date === c.extra_info?.full_date
+      ) {
+        // 同名同具体日期 → 合并 periods
         const pLast = Array.isArray(last.periods) ? last.periods : [];
         const pCur = Array.isArray(c.periods) ? c.periods : [];
         const combined = [...new Set([...pLast, ...pCur])].sort((a, b) => a - b);
