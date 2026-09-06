@@ -8,6 +8,13 @@
 
 > 类型：**功能重构（未发版）**。电量模块用户化改造：每个宿舍独立电表，爬虫 Cookie 改由学生在小程序自配（不再全局共享），数据按用户隔离存储，推送改为小程序站内通知（企业微信电量推送整体移除）；消息中心三合一：合并「校园通知」与「自定义推送」为单页 Tab 切换，新增独立富文本编辑页（WangEditor v5）；小程序校园通知卡片接入真实数据；修复小程序端 401（注入 dev token）；修复小程序电表 Cookie 保存/测试被 XSS 中间件误判拦截；「我的」页消息入口（替换二维码占位 + 未读角标 + 新公告提醒）；修复校园卡误用学号；小程序请求层 access token 预刷新（消除过期后首请求 401 噪音）；新增学生身份绑定 + 预录学生名单（强制绑定：未绑定仅显示引导页；管理员单条/批量录入名单，学校+学号+班级三项全匹配才放行）；**学生身份组织树化 + 一次性绑定码**（学校→学院→专业→班级由树维护、学生挂班级继承全路径，学校选项动态化；绑定门禁升级为「学校+学号+管理员发放的一次性码」，杜绝先到先得冒绑）。
 
+### 修复：小程序「个人资料」页无样式（2026-09-04）
+- **现象（用户反馈）**：「我的」页顶部用户条点进去的"个人资料"页面只有纯文本堆叠（学号/班级/学校/学院/专业等都挤在 default Text 字体），不像其他页面有卡片、标题、按钮样式；「编辑资料」跳的「账号设置」页样式正常。
+- **根因**：`miniapp-frontend/src/pages/profile-detail/index.tsx` 用了大量 `detail-*` 类名，但**漏了 `import './index.scss';`**——scss 文件齐全且定义了所有类，却从未进 bundle，所以页面上全是裸 Text/View 默认渲染。同目录 `profile-edit/index.tsx:8` 正确 import，作为对照。
+- **扫描**：用 shell 遍历所有有 scss 配对的页面，只此一个漏 import。
+- **修复**：在 profile-detail `index.tsx` 末尾加 `import './index.scss';`，重新 `build:weapp:clean`（dist 已生成，`profile-detail/index.wxss` 1733 字节）。tsc 0 错误。
+- **铁律**：新增 Taro 页面模板时必须 `import './index.scss';`，建议后续加 ESLint 规则自动检查（每个 pages/*/index.tsx 有同名 scss 时必须 import）。
+
 ### 修复：小程序旧 token 用户已删除时 bind 报 500（2026-09-04）
 - **现象（用户反馈）**：小程序身份绑定页提交后 `POST /api/miniapp/student/bind` 返回 **500**；此前所有业务接口 `403`（未绑定属正常拦截，会跳绑定页）。日志：`IntegrityError (1452) Cannot add or update a child row ... student_profiles FOREIGN KEY (user_id) REFERENCES users (id)`。
 - **根因**：组织树化重构「存量清空重录」时删除了旧的微信登录账号（users 表只剩管理员，最大 id=74），但**小程序本地还缓存着旧 JWT（user_id=75）**。JWT 签名有效（SECRET_KEY 未变），而 `student_required` 与 `miniapp_refresh` 只验签名/角色、**不查库校验用户仍存在** → 请求一路放行：业务接口查不到 profile → 403 引导绑定（正常）；绑定码校验通过后 INSERT `student_profiles` 时 FK `user_id→users.id` 失败 → 500。

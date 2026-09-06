@@ -20,6 +20,7 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { useAuthStore } from '@/stores/authStore';
 import { getProfile, deleteAccount } from '@/api/user';
 import type { StudentProfile } from '@/types/api';
+import './index.scss';
 
 export default function ProfileDetail() {
   const { user, refreshToken, logout: clearAuth } = useAuthStore();
