@@ -19,6 +19,10 @@
     font-weight: 700;
     line-height: 1.4;
     margin-bottom: 12rpx;
+    // 长课程名（如「综合实训（毕业设计）：智慧人工服务平台开发」）强制可换行，
+    // 避免单行过长被截断或溢出；并允许文本在任意字符间断行
+    word-break: break-all;
+    overflow-wrap: anywhere;
   }
 
   .cd-header-sub {
@@ -26,11 +30,14 @@
     font-size: 26rpx;
     opacity: 0.9;
     margin-bottom: 24rpx;
+    word-break: break-all;
+    overflow-wrap: anywhere;
   }
 
   .cd-header-meta {
     display: flex;
     gap: 32rpx;
+    flex-wrap: wrap; // 窄屏两个 meta-item 自动换行，避免挤在同一行
     margin-bottom: 16rpx;
 
     .cd-header-meta-item {
