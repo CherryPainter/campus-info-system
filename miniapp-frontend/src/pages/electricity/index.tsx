@@ -392,7 +392,7 @@ export default function ElectricityPage() {
           </View>
         </View>
         <View className="state-wrap" style={{ paddingTop: '160rpx' }}>
-          <Text className="state-title">未配置电表 Cookie</Text>
+          <Text className="state-title">未配置电表接入信息</Text>
           <Text className="state-desc">每个宿舍有独立的电表，配置后即可自动采集电量数据</Text>
           <View
             className="state-retry"

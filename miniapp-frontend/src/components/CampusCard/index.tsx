@@ -11,9 +11,12 @@ interface CampusCardProps {
 /**
  * 校园卡（蓝色卡，§14 + 原型图）
  * 卡片编号展示 campus_card_number（校园卡号），不再误用学号。
- * 后端目前没有任何校园卡接口（余额/充值/交易记录/卡片挂失），
- * 按"不虚构数据"原则：余额显示"--"+提示"未开通/敬请期待"，三个操作按钮点击 toast"敬请期待"。
- * 后端就绪后只需替换余额展示逻辑，三个按钮再接真实路由。
+ * 后端目前没有任何校园卡接口（充值/积分明细/交易记录/卡片挂失）。
+ * 为避免审核涉"充值/余额"等金融观感，卡面不展示余额金额：
+ * - 右侧原"余额（元）"改为"积分"占位 "--"
+ * - 原"充值"按钮文案改为"明细"（去金融字眼，仍保留"查看卡内情况"的意会）
+ * 三个操作按钮点击均 toast"功能开发中"，不虚构数据。
+ * 后端就绪后替换为真实数据与路由。
  */
 export default function CampusCard({ cardNumber }: CampusCardProps) {
   return (
@@ -28,7 +31,7 @@ export default function CampusCard({ cardNumber }: CampusCardProps) {
           )}
         </View>
         <View className="campus-balance">
-          <Text className="campus-balance-label">余额（元）</Text>
+          <Text className="campus-balance-label">积分</Text>
           <Text className="campus-balance-value">--</Text>
         </View>
       </View>
@@ -38,7 +41,7 @@ export default function CampusCard({ cardNumber }: CampusCardProps) {
           onClick={() => Taro.showToast({ title: '功能开发中', icon: 'none' })}
         >
           <Text className="iconfont icon-RectangleCopy campus-action-icon" />
-          <Text className="campus-action-text">充值</Text>
+          <Text className="campus-action-text">明细</Text>
         </View>
         <View
           className="campus-action"

@@ -669,7 +669,7 @@ def electricity_refresh():
     if not cookie:
         return api_success(
             data={"electricity": None, "cookie_configured": False},
-            message="未配置电表 Cookie，请前往设置中配置",
+            message="未配置电表接入信息，请前往设置中配置",
         )
     svc = get_electricity_service(user_id=user_id, cookie=cookie)
     electricity = svc.refresh_remaining_power()
@@ -798,9 +798,9 @@ def electricity_cookie_put():
     data = request.get_json(silent=True) or {}
     cookie = str(data.get("cookie") or "").strip()
     if not cookie:
-        return api_error(message="Cookie 不能为空", http_status=400)
+        return api_error(message="接入信息不能为空", http_status=400)
     if len(cookie) > 4096:
-        return api_error(message="Cookie 过长（上限 4096 字符）", http_status=400)
+        return api_error(message="接入信息过长（上限 4096 字符）", http_status=400)
 
     db = get_db()
     try:
@@ -811,7 +811,7 @@ def electricity_cookie_put():
         profile.electricity_cookie = cookie
         db.commit()
         logger.info(f"[miniapp] 用户 {user_id} 已更新电表 Cookie")
-        return api_success(message="电表 Cookie 已保存")
+        return api_success(message="电表接入信息已保存")
     except Exception as exc:
         db.rollback()
         logger.error(f"[miniapp] 保存电表 Cookie 失败 user_id={user_id}: {exc}")
@@ -837,7 +837,7 @@ def electricity_cookie_test():
     data = request.get_json(silent=True) or {}
     cookie = str(data.get("cookie") or "").strip()
     if not cookie:
-        return api_error(message="Cookie 不能为空", http_status=400)
+        return api_error(message="接入信息不能为空", http_status=400)
 
     crawler = ElectricityCrawler(cookie=cookie)
     is_valid, reason = crawler.check_cookie_valid()

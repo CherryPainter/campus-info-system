@@ -241,7 +241,7 @@ export default function ProfilePage() {
           </View>
         </View>
 
-        {/* 校园卡（蓝卡，展示校园卡号；占位：后端无余额/交易接口），放在 hero 区让自定义背景渐变铺到卡下沿 */}
+        {/* 校园卡（蓝卡，展示校园卡号；占位：后端无校园卡数据接口，卡面不含余额金额/充值，规避审核金融观感），放在 hero 区让自定义背景渐变铺到卡下沿 */}
         <CampusCard cardNumber={profile?.campus_card_number} />
       </View>
 
@@ -276,7 +276,7 @@ export default function ProfilePage() {
         <View className="dorm-foot">
           {cookieConfigured === false ? (
             <>
-              <Text className="dorm-foot-time">未配置电表 Cookie</Text>
+              <Text className="dorm-foot-time">未配置电表接入信息</Text>
               <View
                 className="dorm-foot-btn"
                 onClick={() => Taro.navigateTo({ url: '/pages/electricity-config/index' })}

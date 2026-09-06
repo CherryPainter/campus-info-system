@@ -45,7 +45,7 @@ export default function ElectricityConfigPage() {
     if (testing) return;
     const value = cookie.trim();
     if (!value) {
-      Taro.showToast({ title: '请先粘贴 Cookie', icon: 'none' });
+      Taro.showToast({ title: '请先粘贴鉴权信息', icon: 'none' });
       return;
     }
     setTesting(true);
@@ -53,9 +53,9 @@ export default function ElectricityConfigPage() {
       const res = await electricityApi.testCookie(value);
       const { valid, reason } = res?.data || { valid: false, reason: '' };
       if (valid) {
-        Taro.showToast({ title: 'Cookie 有效', icon: 'success' });
+        Taro.showToast({ title: '鉴权信息有效', icon: 'success' });
       } else {
-        Taro.showToast({ title: reason || 'Cookie 无效', icon: 'none', duration: 2500 });
+        Taro.showToast({ title: reason || '鉴权信息无效', icon: 'none', duration: 2500 });
       }
     } catch (e) {
       Taro.showToast({ title: (e as Error).message || '测试失败', icon: 'none' });
@@ -68,11 +68,11 @@ export default function ElectricityConfigPage() {
     if (saving) return;
     const value = cookie.trim();
     if (!value) {
-      Taro.showToast({ title: '请先粘贴 Cookie', icon: 'none' });
+      Taro.showToast({ title: '请先粘贴鉴权信息', icon: 'none' });
       return;
     }
     if (value.length > MAX_LEN) {
-      Taro.showToast({ title: `Cookie 过长（上限 ${MAX_LEN} 字符）`, icon: 'none' });
+      Taro.showToast({ title: `内容过长（上限 ${MAX_LEN} 字符）`, icon: 'none' });
       return;
     }
     setSaving(true);
@@ -94,7 +94,7 @@ export default function ElectricityConfigPage() {
       <View className={`ecfg-status${configured ? '' : ' empty'}`}>
         <View className="ecfg-status-main">
           <Text className="ecfg-status-title">
-            {configured ? '已配置电表 Cookie' : '尚未配置电表 Cookie'}
+            {configured ? '已配置电表接入信息' : '尚未配置电表接入信息'}
           </Text>
           {configured ? (
             <Text className="ecfg-status-preview">当前：{preview}</Text>
@@ -106,22 +106,24 @@ export default function ElectricityConfigPage() {
 
       {/* 获取说明：编号方块 + 段落 */}
       <View className="ecfg-card">
-        <Text className="ecfg-card-title">如何获取 Cookie</Text>
+        <Text className="ecfg-card-title">如何取得接入信息</Text>
         <View className="ecfg-steps">
           <View className="ecfg-step">
             <Text className="ecfg-step-num">1</Text>
             <Text className="ecfg-step-text">
-              打开「重庆科创职业学院」微信公众号，进入「注册缴费」→「宿舍电费」，绑定您宿舍的电表
+              在您用来缴纳宿舍电费的校内服务里，先打开一次您宿舍的电费查询，确认能正常看到用电数据
             </Text>
           </View>
           <View className="ecfg-step">
             <Text className="ecfg-step-num">2</Text>
-            <Text className="ecfg-step-text">使用抓包工具（如 Charles、Fiddler 等）开启抓包</Text>
+            <Text className="ecfg-step-text">
+              打开电脑或手机的调试面板，把刚才那次电费查询产生的数据记录调出来
+            </Text>
           </View>
           <View className="ecfg-step">
             <Text className="ecfg-step-num">3</Text>
             <Text className="ecfg-step-text">
-              在公众号内点开「用量记录」，在抓包结果中找到 dk.cqie.cn 的请求，复制请求头中 Cookie 一行的完整内容
+              在记录里找到电费查询那条请求，把请求附带的整段较长的字符一并复制
             </Text>
           </View>
           <View className="ecfg-step">
@@ -130,20 +132,20 @@ export default function ElectricityConfigPage() {
           </View>
         </View>
         <Text className="ecfg-warn">
-          Cookie 含您的登录凭证，仅保存在您自己的账号下，请勿分享给他人
+          该信息仅用于自动读取您本人宿舍的电量，只会保存在您自己的账号下，请勿外传
         </Text>
       </View>
 
       {/* 输入区：标题 + 字数 + 细边白底输入框（焦点蓝边） */}
       <View className="ecfg-card">
         <View className="ecfg-input-head">
-          <Text className="ecfg-card-title no-margin">Cookie</Text>
+          <Text className="ecfg-card-title no-margin">接入信息</Text>
           <Text className="ecfg-counter">{cookie.length}/{MAX_LEN}</Text>
         </View>
         <View className="ecfg-textarea-wrap">
           <Textarea
             className="ecfg-textarea"
-            placeholder="粘贴完整的 Cookie 字符串…"
+            placeholder="粘贴完整的接入字符…"
             placeholderClass="ecfg-placeholder"
             maxlength={MAX_LEN}
             value={cookie}
