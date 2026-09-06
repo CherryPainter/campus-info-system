@@ -159,7 +159,11 @@ def get_current_teaching_week() -> int | None:
 
         today = date.today()
         weeks_max = _get_weeks_max()
-        weeks_passed = (today - start).days // 7 + 1
+        # 锚定到「开学日所在周的真实周一」再算周次，与 build_available_weeks 保持同一口径。
+        # 否则开学日若不是周一（如 2026-09-01 是周二），用 (today-start)//7+1 算出的周次
+        # 会比真实周历少/多算一天，导致课表「今天」高亮错位、与周历日期对不齐。
+        week1_monday = start - timedelta(days=start.isoweekday() - 1)
+        weeks_passed = (today - week1_monday).days // 7 + 1
         if today >= start and 1 <= weeks_passed <= weeks_max:
             return weeks_passed
         return None
@@ -185,9 +189,14 @@ def build_available_weeks(
         return []
     if weeks_max is None:
         weeks_max = _get_weeks_max()
+    # 锚定到「开学日所在周的真实周一」，而非把开学日直接当周一。
+    # 开学日若不是周一（如 2026-09-01 是周二），原写法会让整张周历日期比真实日历
+    # 整体偏移 (开学日星期几-1) 天，表现为课表表头/周历的「今天」比实际日期多一天，
+    # 且与 schedule_service._calculate_date（按真实周一锚定推送日期）口径不一致。
+    week1_monday = start - timedelta(days=start.isoweekday() - 1)
     weeks: list[dict] = []
     for i in range(1, weeks_max + 1):
-        ws = start + timedelta(days=(i - 1) * 7)
+        ws = week1_monday + timedelta(days=(i - 1) * 7)
         we = ws + timedelta(days=6)
         weeks.append(
             {

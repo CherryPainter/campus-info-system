@@ -33,9 +33,16 @@ export function getSemesterStartDate(semesterId?: number): Date {
 export function getWeekDate(weekNumber: number, weekDay: number, semesterId?: number): string {
   const semesterStart = getSemesterStartDate(semesterId);
 
-  // 计算该周的周一日期
+  // 先锚定到「开学日所在周的真实周一」，与后端 build_available_weeks 同一口径。
+  // 开学日若不是周一（如 2026-09-01 是周二），直接把开学日当周一会让整周日期
+  // 比真实日历整体偏移 (开学日星期几-1) 天，与课表表头/周历显示的「今天」对不齐。
   const weekMonday = new Date(semesterStart);
-  weekMonday.setDate(semesterStart.getDate() + (weekNumber - 1) * 7);
+  const dow = weekMonday.getDay(); // 0=周日,1=周一..6=周六
+  const diffToMonday = dow === 0 ? -6 : 1 - dow;
+  weekMonday.setDate(weekMonday.getDate() + diffToMonday);
+
+  // 再按周次推算该周的周一
+  weekMonday.setDate(weekMonday.getDate() + (weekNumber - 1) * 7);
 
   // 计算该天的日期（weekDay: 1=周一, 7=周日）
   const targetDate = new Date(weekMonday);

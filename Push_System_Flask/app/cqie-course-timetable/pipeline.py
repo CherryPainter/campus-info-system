@@ -258,6 +258,17 @@ def parse_period_name(period_name: str, default_period: int) -> list:
     if not period_name:
         return [default_period]
 
+    # 方法0: 匹配 "第X至Y节" 范围格式（连续大课跨多节，如 第五至八节 -> [5,6,7,8]）
+    # 必须在枚举格式之前处理，否则 "第五至八节" 会被方法1只截到 "第五" 而丢中间节次。
+    range_match = re.match(
+        r"第([一二三四五六七八九十]+)至([一二三四五六七八九十]+)节", period_name
+    )
+    if range_match:
+        a = chinese_num_map.get(range_match.group(1))
+        b = chinese_num_map.get(range_match.group(2))
+        if a and b and a <= b:
+            return list(range(a, b + 1))
+
     # 方法1: 匹配 "第X、Y、Z节" 格式
     # 先匹配开头的 "第X"
     match = re.match(r"第([一二三四五六七八九十]+)节?", period_name)

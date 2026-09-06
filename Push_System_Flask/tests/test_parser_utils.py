@@ -81,3 +81,37 @@ class TestCountDistinctWeeks:
 
     def test_empty_activities(self):
         assert pu._count_distinct_weeks([]) == 0
+
+
+class TestParsePeriodNameRange:
+    """回归测试：import 环节用 period_name 重推 periods 时，必须支持 '第X至Y节' 范围格式。
+
+    历史 bug：综合实训（毕业设计）'第五至八节' 被旧解析器只截到 '第五'，
+    落库 periods=[5] 而非 [5,6,7,8]，导致课表只显示 1 格。
+    """
+
+    def setup_method(self):
+        from pipeline import parse_period_name
+
+        self.parse = parse_period_name
+
+    def test_range_to_format(self):
+        assert self.parse("第五至八节", 1) == [5, 6, 7, 8]
+
+    def test_range_first_to_fourth(self):
+        assert self.parse("第一至四节", 1) == [1, 2, 3, 4]
+
+    def test_range_eleven_to_twelve(self):
+        assert self.parse("第十一至十二节", 1) == [11, 12]
+
+    def test_range_ten_to_twelve(self):
+        assert self.parse("第十至十二节", 1) == [10, 11, 12]
+
+    def test_enum_still_works(self):
+        assert self.parse("第一、二节", 1) == [1, 2]
+
+    def test_single_still_works(self):
+        assert self.parse("第五节", 5) == [5]
+
+    def test_empty_falls_back_to_default(self):
+        assert self.parse("", 3) == [3]

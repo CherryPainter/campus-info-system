@@ -692,6 +692,8 @@ def import_courses():
                 "八": 8,
                 "九": 9,
                 "十": 10,
+                "十一": 11,
+                "十二": 12,
             }
 
             def parse_cn_num(cn_str: str, mapping=cn_num_map) -> int:
@@ -704,23 +706,35 @@ def import_courses():
                     return 0
 
             if period_name:
-                # 匹配 "第一、二节" 格式（支持中文数字）
-                match = re.match(
-                    r"第([一二三四五六七八九十\d]+)、([一二三四五六七八九十\d]+)节", period_name
+                # 匹配 "第五至八节" 范围格式（连续大课跨多节，如 第五至八节 -> [5,6,7,8]）
+                # 必须在枚举格式之前处理，否则 "第五至八节" 会被下面的单节格式只截到 "第五"。
+                range_match = re.match(
+                    r"第([一二三四五六七八九十\d]+)至([一二三四五六七八九十\d]+)节", period_name
                 )
-                if match:
-                    first = parse_cn_num(match.group(1))
-                    second = parse_cn_num(match.group(2))
+                if range_match:
+                    first = parse_cn_num(range_match.group(1))
+                    second = parse_cn_num(range_match.group(2))
                     if first > 0 and second > 0 and first <= second:
                         periods = list(range(first, second + 1))
                         period_idx = first
                 else:
-                    # 匹配 "第一节" 格式（支持中文数字）
-                    single_match = re.match(r"第([一二三四五六七八九十\d]+)节", period_name)
-                    if single_match:
-                        period_idx = parse_cn_num(single_match.group(1))
-                        if period_idx > 0:
-                            periods = [period_idx]
+                    # 匹配 "第一、二节" 格式（支持中文数字）
+                    match = re.match(
+                        r"第([一二三四五六七八九十\d]+)、([一二三四五六七八九十\d]+)节", period_name
+                    )
+                    if match:
+                        first = parse_cn_num(match.group(1))
+                        second = parse_cn_num(match.group(2))
+                        if first > 0 and second > 0 and first <= second:
+                            periods = list(range(first, second + 1))
+                            period_idx = first
+                    else:
+                        # 匹配 "第一节" 格式（支持中文数字）
+                        single_match = re.match(r"第([一二三四五六七八九十\d]+)节", period_name)
+                        if single_match:
+                            period_idx = parse_cn_num(single_match.group(1))
+                            if period_idx > 0:
+                                periods = [period_idx]
 
             # 如果解析失败，使用 period_idx（爬虫返回的是结束节次，需要推断起始节次）
             if not periods and period_idx > 0:

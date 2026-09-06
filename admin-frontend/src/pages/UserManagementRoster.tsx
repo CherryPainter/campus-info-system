@@ -20,6 +20,7 @@ import {
   Card,
   Space,
   Tag,
+  Divider,
   Modal,
   Form,
   Input,
@@ -721,7 +722,23 @@ export default function UserManagementRoster() {
               <Spin />
             </div>
           ) : treeData.length === 0 ? (
-            <Empty description="暂无组织，请先新建学校" style={{ padding: "16px 0" }} />
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="还没有任何组织"
+              style={{ padding: "8px 0 4px" }}
+            >
+              <Button
+                type="primary"
+                size="small"
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  setOrgModal({ mode: "create", nodeType: "school" });
+                  orgForm.resetFields();
+                }}
+              >
+                新建学校
+              </Button>
+            </Empty>
           ) : (
             <Tree
               treeData={treeData}
@@ -733,6 +750,19 @@ export default function UserManagementRoster() {
             />
           )}
         </Card>
+
+        {/* 左右分栏：非移动端显示竖向分隔线（移动端为上下堆叠，靠 gap 分隔） */}
+        {!isMobile && (
+          <Divider
+            type="vertical"
+            style={{
+              height: "auto",
+              alignSelf: "stretch",
+              margin: "0 4px",
+              borderColor: "rgba(0,0,0,0.06)",
+            }}
+          />
+        )}
 
         {/* 右：名单 */}
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -795,8 +825,25 @@ export default function UserManagementRoster() {
             {classFilterTag}
           </div>
 
-          <div style={{ marginBottom: 8, color: "rgba(128,128,128,0.9)", fontSize: 12 }}>
-            左侧选中班级可只看该班；「添加学生」选择班级后，学校/学院/专业由组织树继承，无需填写
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              marginBottom: 12,
+              color: tree.length === 0 ? "#d46b08" : "rgba(128,128,128,0.9)",
+              fontSize: 12,
+            }}
+          >
+            {tree.length === 0 ? (
+              <span>
+                请先在左侧「组织架构」点击「新建学校」，逐级创建 学院 → 专业 → 班级 后，再来添加学生名单。
+              </span>
+            ) : (
+              <span>
+                左侧选中班级可只看该班学生；添加学生时选好班级，学校 / 学院 / 专业由组织树自动继承，无需填写。
+              </span>
+            )}
           </div>
 
           {loading && items.length === 0 ? (
@@ -804,7 +851,16 @@ export default function UserManagementRoster() {
               <Spin />
             </div>
           ) : items.length === 0 ? (
-            <Empty description="暂无名单记录" style={{ padding: "48px 0" }} />
+            <Empty
+              description={
+                tree.length === 0
+                  ? "尚未创建组织，暂无法添加学生"
+                  : selectedClassId
+                  ? "该班级暂无学生名单"
+                  : "暂无学生名单记录"
+              }
+              style={{ padding: "48px 0" }}
+            />
           ) : (
             <ResponsiveTable
               columns={columns}
