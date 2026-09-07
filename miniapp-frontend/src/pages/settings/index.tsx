@@ -125,7 +125,7 @@ export default function SettingsPage() {
         </View>
       </View>
 
-      <Text className="set-version">校园宜知行 v0.1.0</Text>
+      <Text className="set-version">校园宜知行 v1.0.0</Text>
     </View>
   );
 }

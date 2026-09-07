@@ -667,13 +667,13 @@ export default function CourseTablePage() {
             <View className="ct-cols">
             {dayList.map((day) => {
               const dayDate = currentMonday.add(day - 1, 'day');
-              const dateNum = dayDate.date();
+              const dateLabel = dayDate.format('MM/DD');
               const isToday = dayDate.format('YYYY-MM-DD') === todayStr;
               return (
                 <View className={`ct-col ${isToday ? 'ct-col-today' : ''}`} key={day}>
                   <View className={`ct-cell ct-day-head ${isToday ? 'ct-day-head-today' : ''}`}>
                     <Text className="ct-day-week">{WEEK_LABELS[day % 7]}</Text>
-                    <Text className="ct-day-date">{dateNum}</Text>
+                    <Text className="ct-day-date">{dateLabel}</Text>
                   </View>
                     {periodList.map((p) => {
                       const cell = map[day]?.[p];

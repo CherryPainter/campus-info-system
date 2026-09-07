@@ -132,6 +132,11 @@
   border-left: 6rpx solid $primary-color;
 }
 
+/* 已读留档：整卡灰化弱化（不再高亮，但仍完整保留在列表原时间位） */
+.msg-item.is-read {
+  opacity: 0.6;
+}
+
 .msg-item-head {
   display: flex;
   align-items: center;
@@ -172,11 +177,25 @@
   word-break: break-all;
 }
 
-.msg-item-time {
-  display: block;
-  margin-top: $spacing-sm;
+.msg-item-group {
+  /* 时间胶囊的包裹：不额外加间距，卡片自身的 margin-bottom 分隔相邻组 */
+}
+
+/* 时间分组胶囊（仿微信消息列表：半透明深色圆角胶囊，居中） */
+.msg-time-pill {
+  display: flex;
+  justify-content: center;
+  /* 顶部不留自间距：分隔交给上方卡片/头部的 margin，胶囊只贴紧所属组的首张卡 */
+  margin: 0 0 $spacing-xs;
+}
+
+.msg-time-pill-text {
   font-size: $font-size-xs;
-  color: $text-tertiary;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 6rpx 24rpx;
+  border-radius: 999rpx;
+  line-height: 1.5;
 }
 
 /* 分页 / 空态 */

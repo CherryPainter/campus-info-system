@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useLoad, useDidShow, usePullDownRefresh, useReachBottom, stopPullDownRefresh } from '@tarojs/taro';
+import dayjs from 'dayjs';
 
 import * as notificationsApi from '@/api/notifications';
 import type { AnnouncementItem, UserNotificationItem } from '@/types/api';
@@ -34,6 +35,46 @@ const CATEGORY_LABEL: Record<string, string> = {
 function getAnnounceTag(item: AnnouncementItem): { text: string; isTop: boolean } {
   if (item.is_top) return { text: '置顶', isTop: true };
   return { text: item.category_label || '通知', isTop: false };
+}
+
+/**
+ * 相邻两条消息间隔超过该分钟数，视为进入新时间段，
+ * 后发（较旧）一组的上方插入一个居中时间胶囊（仿微信消息列表）。
+ */
+const GROUP_GAP_MINUTES = 10;
+
+/** 把后端 "YYYY-MM-DD HH:mm:ss" 转成可被 dayjs 可靠解析的本地时间（空格换 T 规避非 ISO 解析歧义） */
+function toDay(ts: string | null): dayjs.Dayjs | null {
+  if (!ts) return null;
+  const d = dayjs(ts.replace(' ', 'T'));
+  return d.isValid() ? d : null;
+}
+
+/** 智能时间文案：今天→HH:mm；昨天→"昨天 HH:mm"；今年→MM-DD HH:mm；更早→YYYY-MM-DD HH:mm */
+function smartTimeLabel(ts: string | null): string {
+  const t = toDay(ts);
+  if (!t) return '';
+  const now = dayjs();
+  const today = now.format('YYYY-MM-DD');
+  const yesterday = now.subtract(1, 'day').format('YYYY-MM-DD');
+  const d = t.format('YYYY-MM-DD');
+  const hm = t.format('HH:mm');
+  if (d === today) return hm;
+  if (d === yesterday) return `昨天 ${hm}`;
+  if (t.year() === now.year()) return t.format('MM-DD HH:mm');
+  return t.format('YYYY-MM-DD HH:mm');
+}
+
+/**
+ * 判断列表第 i 条（列表为时间倒序，i 越小越新）上方是否需要时间胶囊：
+ * 首条固定显示（给列表顶部一个时间锚点）；与相邻上一条（更新的那条）间隔 ≥ 阈值则新起胶囊。
+ */
+function needTimeCapsule(items: UserNotificationItem[], i: number): boolean {
+  if (i === 0) return true;
+  const cur = toDay(items[i].created_at);
+  const prev = toDay(items[i - 1].created_at);
+  if (!cur || !prev) return true;
+  return prev.diff(cur, 'minute', true) >= GROUP_GAP_MINUTES;
 }
 
 export default function MessagesPage() {
@@ -212,21 +253,26 @@ export default function MessagesPage() {
         </View>
       ) : (
         <>
-          {items.map((item) => (
-            <View
-              key={item.id}
-              className={`msg-item${item.is_read ? '' : ' unread'}`}
-              onClick={() => markOneRead(item)}
-            >
-              <View className="msg-item-head">
-                <Text className="msg-item-cat">{categoryText(item.category)}</Text>
-                {!item.is_read && <Text className="msg-item-dot" />}
+          {items.map((item, i) => (
+            <View key={item.id} className="msg-item-group">
+              {needTimeCapsule(items, i) && (
+                <View className="msg-time-pill">
+                  <Text className="msg-time-pill-text">{smartTimeLabel(item.created_at)}</Text>
+                </View>
+              )}
+              <View
+                className={`msg-item${item.is_read ? ' is-read' : ' unread'}`}
+                onClick={() => markOneRead(item)}
+              >
+                <View className="msg-item-head">
+                  <Text className="msg-item-cat">{categoryText(item.category)}</Text>
+                  {!item.is_read && <Text className="msg-item-dot" />}
+                </View>
+                <Text className="msg-item-title">{item.title}</Text>
+                {item.content ? (
+                  <Text className="msg-item-content">{item.content}</Text>
+                ) : null}
               </View>
-              <Text className="msg-item-title">{item.title}</Text>
-              {item.content ? (
-                <Text className="msg-item-content">{item.content}</Text>
-              ) : null}
-              <Text className="msg-item-time">{item.created_at || ''}</Text>
             </View>
           ))}
           {loadingMore ? (

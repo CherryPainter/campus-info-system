@@ -322,7 +322,20 @@ export default function Messages() {
               置顶
             </Tag>
           )}
-          <span style={{ fontWeight: 500 }}>{text}</span>
+          <span
+            style={{
+              fontWeight: 500,
+              display: "inline-block",
+              maxWidth: 180,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              verticalAlign: "bottom",
+            }}
+            title={text}
+          >
+            {text}
+          </span>
         </Space>
       ),
     },

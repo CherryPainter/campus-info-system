@@ -23,6 +23,9 @@ export default defineAppConfig({
     'pages/profile-detail/index',
     'pages/user-agreement/index',
     'pages/privacy-policy/index',
+    'pages/campus-card/index',
+    'pages/classroom/index',
+    'pages/calendar/index',
   ],
   // 底部 TabBar：3 项（首页 / 时间轴 / 我的）
   // 图标由 iconfont 字体渲染成 PNG（96x96）：src/assets/tabbar/ 下
@@ -62,4 +65,7 @@ export default defineAppConfig({
     navigationBarTextStyle: 'black',
     backgroundColor: '#f6f7fb',
   },
+  // 启用组件按需注入：未访问到的页面/组件代码不打包进首屏，可减小包大小并加快启动。
+  // Taro 编译产物兼容性良好，副作用是首次进入某页面时该页代码才下载注入。
+  lazyCodeLoading: 'requiredComponents',
 });

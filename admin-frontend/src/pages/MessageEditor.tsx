@@ -51,7 +51,7 @@ import {
 } from "@ant-design/icons";
 import { announcementApi, CATEGORY_OPTIONS, type AnnouncementPayload } from "@/api/announcement";
 import { pushApi, type CustomPush, type PushTemplate } from "@/api/admin";
-import { tokenStorage } from "@/utils/token";
+import request from "@/api/request";
 import { useMessage } from "@/utils/message";
 import dayjs from "dayjs";
 import "../styles/iconfont.css";
@@ -452,12 +452,25 @@ export default function MessageEditor() {
     },
     MENU_CONF: {
       uploadImage: {
-        server: "/api/admin/announcements/upload-image",
-        fieldName: "file",
-        maxFileSize: 20 * 1024 * 1024,
-        allowedFileTypes: ["image/*"],
-        headers: {
-          Authorization: `Bearer ${tokenStorage.getAccessToken() || ""}`,
+        // 不使用内置 server 上传：其 XHR 不经过 axios 拦截器，不会自动刷新过期的
+        // access token，导致 token 过期后正文图片上传被后端 admin_required 判 401。
+        // 改用 customUpload 走统一 request（自动带 Authorization 并刷新过期 token）。
+        customUpload: async (file: any, insertFn: any) => {
+          try {
+            const formData = new FormData();
+            formData.append("file", file);
+            // 注意：request 的响应拦截器已解包一层（直接返回 response.data），
+            // 因此 res 即为后端原始返回体本身 {"errno":0,"data":{"url","alt","href"}}，
+            // 切勿再取 res.data（那会丢掉外层的 errno 字段，导致误判上传失败）。
+            const res: any = await request.post("/admin/announcements/upload-image", formData);
+            if (res && res.errno === 0 && res.data && res.data.url) {
+              insertFn(res.data.url, res.data.alt || "", res.data.href || "");
+            } else {
+              antMessage.error((res && res.message) || "图片上传失败");
+            }
+          } catch (e: any) {
+            antMessage.error(e?.message || "图片上传失败");
+          }
         },
       },
     },
@@ -843,6 +856,21 @@ export default function MessageEditor() {
                         style={{ minHeight: 400, height: "auto" }}
                         onCreated={(editor: any) => {
                           setEditorInstance(editor);
+                          // 防御性兜底：WangEditor 5.1.x 在 requestIdleCallback 空闲遍历正文
+                          // 节点做变更上报（reportAllChanges）时，若 content 含损坏/孤儿节点
+                          // （如指向缺失文件的 <img>）会抛
+                          // "Cannot read properties of undefined (reading 'startTime')" 内部崩溃。
+                          // 该内部记账对单用户编辑器非必需，包裹 try-catch 吞掉异常即可消除干扰。
+                          if (typeof editor.reportAllChanges === "function") {
+                            const _orig = editor.reportAllChanges.bind(editor);
+                            editor.reportAllChanges = (...args: any[]) => {
+                              try {
+                                return _orig(...args);
+                              } catch (err) {
+                                console.warn("[WangEditor] reportAllChanges 内部异常已忽略:", err);
+                              }
+                            };
+                          }
                         }}
                       />
                     </div>

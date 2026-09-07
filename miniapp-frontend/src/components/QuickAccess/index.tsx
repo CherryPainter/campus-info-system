@@ -15,11 +15,11 @@ export interface QuickItem {
 export const DEFAULT_ITEMS: QuickItem[] = [
   { key: 'schedule', label: '课表查询', icon: 'kechengbiao', action: 'page', pagePath: '/pages/coursetable/index' },
   { key: 'electricity', label: '电量查询', icon: 'dianchi', action: 'page', pagePath: '/pages/electricity/index' },
-  { key: 'card', label: '校园卡', icon: 'xiaoyuanqia-' },
+  { key: 'card', label: '校园卡', icon: 'xiaoyuanqia-', action: 'page', pagePath: '/pages/campus-card/index' },
   { key: 'notice', label: '通知公告', icon: 'tongzhi', action: 'page', pagePath: '/pages/announcement/index/index' },
-  { key: 'classroom', label: '空闲教室', icon: 'kongxianjiaoshi' },
+  { key: 'classroom', label: '空闲教室', icon: 'kongxianjiaoshi', action: 'page', pagePath: '/pages/classroom/index' },
   { key: 'weather', label: '天气预报', icon: 'tianqi', action: 'page', pagePath: '/pages/weather/index' },
-  { key: 'calendar2', label: '校历查询', icon: 'rili' },
+  { key: 'calendar2', label: '校历查询', icon: 'rili', action: 'page', pagePath: '/pages/calendar/index' },
   { key: 'more', label: '更多功能', icon: 'gengduogongneng_24' },
 ];
 
@@ -44,8 +44,9 @@ function handleClick(item: QuickItem): void {
 
 /**
  * 常用功能 8 宫格（原型图核心模块）
- * - 点击有真实跳转目标的（如课表）走 Taro 路由
- * - 后端尚无对应能力的功能（校园卡/通知/空闲教室等）展示图标但不虚构数据，点击 toast"等待学校开放接口"
+ * - 点击有真实业务的（课表/电量/通知公告/天气）跳对应页面
+ * - 学校侧尚未接入的（校园卡/空闲教室/校历查询）跳各自占位页，页面空态提示"暂无最新数据"
+ * - 仅"更多功能"暂无独立页，点击 toast 提示
  */
 export default function QuickAccess({ items = DEFAULT_ITEMS, title = '常用功能' }: QuickAccessProps) {
   return (

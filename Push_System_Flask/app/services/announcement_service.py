@@ -11,10 +11,14 @@
 - 所有 DB 会话由本服务自行开启与关闭，路由层不持有 session。
 """
 
+import os
+import re
+import time
 from datetime import datetime
 
 from sqlalchemy import and_, or_
 
+from app.core.config import Config
 from app.core.database import get_db
 from app.core.logger import get_logger
 from app.model.announcement import (
@@ -26,8 +30,162 @@ from app.model.announcement import (
     AnnouncementFavorite,
     AnnouncementRead,
 )
+from app.model.custom_push import CustomPush
 
 logger = get_logger(__name__)
+
+# ==================== 正文图片（WangEditor）引用与回收 ====================
+# 富文本上传的图片存于 output/announcement-images/，与
+# announcement_routes.IMAGE_SUBDIR 保持一致。
+# 历史问题：编辑公告把图片从正文删掉后，磁盘文件一直留着，堆积成孤儿图
+# （也是线上出现 404 坏图、触发 WangEditor 内部崩溃的来源）。
+# 因此在「更新 / 删除公告」提交后自动回收不再被任何正文引用的图片。
+
+_IMAGE_TAG_RE = re.compile(r'<img\b[^>]*?src\s*=\s*["\']([^"\']*)["\'][^>]*?>', re.IGNORECASE)
+
+# 全量 GC 的默认保护期（小时）：年龄小于此值的文件即便无人引用也不删，
+# 避免误删「刚上传、管理员还在编辑尚未保存进公告正文」的图。
+DEFAULT_MIN_AGE_HOURS = 24
+
+
+def _announcement_image_root():
+    """正文图片存储根目录（output/announcement-images/）"""
+    root = os.path.join(Config.OUTPUT_DIR, "announcement-images")
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def _extract_image_names(html):
+    """从富文本 HTML 中提取所有 /api/announcement-images/<name> 引用的文件名集合"""
+    if not html:
+        return set()
+    names = set()
+    for m in _IMAGE_TAG_RE.finditer(html):
+        src = m.group(1) or ""
+        if "announcement-images/" not in src:
+            continue
+        name = src.split("announcement-images/")[-1].split("?")[0].split("#")[0]
+        if name:
+            names.add(name)
+    return names
+
+
+def _is_image_referenced(db, name, exclude_announcement_id=None):
+    """该图片是否仍被任何未软删公告 / 自定义推送正文引用
+
+    用 'announcement-images/<name>' 做子串匹配：'/' 边界可避免
+    'abc.png' 误匹配到 'xabc.png' 这类前缀重叠的文件名。
+    """
+    needle = f"announcement-images/{name}"
+    q = db.query(Announcement).filter(
+        Announcement.is_deleted.is_(False),
+        Announcement.content.like(f"%{needle}%"),
+    )
+    if exclude_announcement_id is not None:
+        q = q.filter(Announcement.id != exclude_announcement_id)
+    if q.first():
+        return True
+    if db.query(CustomPush).filter(CustomPush.content.like(f"%{needle}%")).first():
+        return True
+    return False
+
+
+def _delete_unreferenced_images(db, names, exclude_announcement_id=None):
+    """删除不再被任何正文引用的图片文件，返回实际删除的文件名列表"""
+    deleted = []
+    if not names:
+        return deleted
+    root = _announcement_image_root()
+    for name in names:
+        if not name:
+            continue
+        if _is_image_referenced(db, name, exclude_announcement_id):
+            continue
+        path = os.path.join(root, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            os.remove(path)
+            deleted.append(name)
+        except OSError as e:
+            logger.warning(f"公告正文图片清理失败（跳过）: {name} - {e}")
+    if deleted:
+        logger.info(f"公告正文图片自动回收: 已删除 {len(deleted)} 张 - {deleted}")
+    return deleted
+
+
+def collect_referenced_announcement_images(db):
+    """汇总当前所有未软删公告 / 自定义推送正文引用的图片文件名集合"""
+    referenced = set()
+    for (content,) in db.query(Announcement.content).filter(
+        Announcement.is_deleted.is_(False), Announcement.content.isnot(None)
+    ):
+        referenced |= _extract_image_names(content)
+    for (content,) in db.query(CustomPush.content).filter(CustomPush.content.isnot(None)):
+        referenced |= _extract_image_names(content)
+    return referenced
+
+
+def _older_than(path, hours):
+    """文件是否已超过保护期（hours<=0 表示不做年龄限制）"""
+    if hours <= 0:
+        return True
+    try:
+        return (time.time() - os.path.getmtime(path)) >= hours * 3600
+    except OSError:
+        return False
+
+
+def list_unused_announcement_images(db, min_age_hours=DEFAULT_MIN_AGE_HOURS):
+    """只统计不删除：返回无人引用且已过保护期的图片文件名列表
+
+    保护期用于避免误删「刚上传、管理员还在编辑尚未保存」的图片。
+    """
+    referenced = collect_referenced_announcement_images(db)
+    root = _announcement_image_root()
+    out = []
+    for fname in os.listdir(root):
+        if fname in referenced:
+            continue
+        path = os.path.join(root, fname)
+        if not os.path.isfile(path):
+            continue
+        if not _older_than(path, min_age_hours):
+            continue
+        out.append(fname)
+    return out
+
+
+def cleanup_all_unused_announcement_images(db=None, min_age_hours=DEFAULT_MIN_AGE_HOURS):
+    """全量回收：删除 output/announcement-images/ 下不被任何正文引用的图片
+
+    与「更新 / 删除时自动回收」互补——后者只处理当次改动产生的孤儿，
+    本函数用于清理历史遗留孤儿图（实例间未同步、早期版本留下的、或正文里
+    坏图引用被清理后残留的文件）。未传 db 时自行开启并关闭会话。
+
+    min_age_hours：保护期，只回收年龄超过该小时数且无人引用的文件，
+    防止删掉刚上传、尚未保存进公告正文的图。传 0 表示不做年龄限制。
+    返回被删除的文件名列表。
+    """
+    owns_session = db is None
+    if owns_session:
+        db = get_db()
+    try:
+        removed = []
+        root = _announcement_image_root()
+        for fname in list_unused_announcement_images(db, min_age_hours):
+            path = os.path.join(root, fname)
+            try:
+                os.remove(path)
+                removed.append(fname)
+            except OSError as e:
+                logger.warning(f"公告正文图片全量清理失败（跳过）: {fname} - {e}")
+        if removed:
+            logger.info(f"公告正文图片全量回收: 已删除 {len(removed)} 张")
+        return removed
+    finally:
+        if owns_session:
+            db.close()
 
 # 允许写入的字段（管理端创建/更新时的白名单，防止越权写 view_count 等）
 _EDITABLE_FIELDS = {
@@ -223,9 +381,14 @@ class AnnouncementService:
                 title = str(data.get("title") or "").strip()
                 if not title:
                     raise ValueError("标题不能为空")
+            # 更新前记下旧正文引用的图片，提交后回收「本次被移除且已无人引用」的图
+            old_images = _extract_image_names(item.content) if "content" in data else set()
             self._apply_updates(item, data)
             db.commit()
             db.refresh(item)
+            if old_images:
+                removed = old_images - _extract_image_names(item.content)
+                _delete_unreferenced_images(db, removed, exclude_announcement_id=announcement_id)
             logger.info(f"公告已更新: id={announcement_id}")
             return item.to_dict(with_content=True)
         finally:
@@ -265,8 +428,12 @@ class AnnouncementService:
             )
             if not item:
                 return False
+            # 记下正文引用的图片：软删后该公告不再计入引用，可回收其独占的图
+            images = _extract_image_names(item.content)
             item.is_deleted = True
             db.commit()
+            if images:
+                _delete_unreferenced_images(db, images, exclude_announcement_id=announcement_id)
             logger.info(f"公告已删除（软删）: id={announcement_id}")
             return True
         finally:

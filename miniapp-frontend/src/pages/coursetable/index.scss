@@ -78,7 +78,7 @@
 
 .week-calendar {
   margin: 0 $spacing-lg;
-  padding: $spacing-md $spacing-sm;
+  padding: 10rpx $spacing-sm;
   border-radius: $radius-large;
 
   .week-calendar-head {
@@ -86,7 +86,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 0 $spacing-sm;
-    margin-bottom: $spacing-md;
+    margin-bottom: 0;
   }
 
   .week-calendar-badge {
@@ -265,25 +265,26 @@
   background: #f0f2f5;
 }
 
-// 列头（星期 + 日期上下排列，日期嵌入课表星期里）
+// 列头（星期 + MM/DD 两行竖排，均小字灰，视觉轻盈统一）
 .ct-day-head {
-  height: 72rpx;
+  height: 64rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-weight: 600;
 }
 
 .ct-day-week {
   font-size: 20rpx;
   color: $text-secondary;
+  font-weight: 400;
   line-height: 1.2;
 }
 
 .ct-day-date {
-  font-size: 22rpx;
-  color: $text-primary;
+  font-size: 20rpx;
+  color: $text-tertiary;
+  font-weight: 400;
   line-height: 1.2;
   margin-top: 2rpx;
 }
@@ -324,13 +325,12 @@
   }
 
   .ct-day-date {
-    width: 32rpx;
-    height: 32rpx;
-    line-height: 32rpx;
-    border-radius: 50%;
-    background: $primary-color;
-    color: #fff;
-    text-align: center;
+    color: $primary-color;
+    background: $primary-light;
+    border-radius: 999rpx;
+    padding: 2rpx 12rpx;
+    margin-top: 4rpx;
+    line-height: 1.4;
   }
 }
 

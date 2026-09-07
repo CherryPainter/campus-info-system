@@ -29,6 +29,7 @@ get_spider_status = _executors.get_spider_status
 _send_weekly_image = _executors._send_weekly_image
 _is_in_teaching_week = _executors._is_in_teaching_week
 clean_old_processes = _executors.clean_old_processes
+run_image_gc = _executors.run_image_gc
 
 
 def start_scheduler(app):
@@ -157,6 +158,18 @@ def start_scheduler(app):
         hour=3,
         minute=0,
         id="clean_sessions_job",
+        replace_existing=True,
+    )
+
+    # 4.6 每天凌晨3:30 回收孤儿图片（公告正文图 + 反馈截图）
+    #     带 24 小时保护期，不会误删刚上传、尚未保存/提交的在途图片。
+    #     错开 3:00 的 Session 清理，避免同一时刻两个重任务叠加。
+    scheduler_state._scheduler.add_job(
+        run_image_gc,
+        "cron",
+        hour=3,
+        minute=30,
+        id="image_gc_job",
         replace_existing=True,
     )
 

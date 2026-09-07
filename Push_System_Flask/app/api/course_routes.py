@@ -26,6 +26,23 @@ from app.utils.auth_middleware import admin_required, jwt_required
 logger = get_logger(__name__)
 course_bp = Blueprint("course", __name__, url_prefix="/course")
 
+
+def _reload_schedule_cache() -> None:
+    """课程数据写库成功后，主动刷新课表内存缓存。
+
+    课表服务（schedule_service 单例）每 60 秒自动重读一次数据库；若管理端
+    刚导入/新增/修改/删除课程，小程序端要等最长 60 秒才能拉到新数据。
+    这里在写库 commit 成功后立即触发一次重载，让变更即时生效。
+    函数内延迟导入并吞掉异常，避免写库接口因缓存刷新失败而误报 500。
+    """
+    try:
+        from app.services.schedule_service import schedule_service
+
+        schedule_service.load_schedules()
+    except Exception as e:
+        logger.warning(f"[课程] 课表缓存主动刷新失败（忽略，等待定时器兜底）: {e}")
+
+
 # 课程时间 / 周次相关的纯函数与常量已下沉到 app.utils.course_helpers。
 # 这里只导入本文件路由处理函数实际用到的名字（其余名字由调用方直接 import course_helpers）。
 from app.tasks.scheduler import _is_in_teaching_week
@@ -407,6 +424,7 @@ def create_or_update_course():
                 added_courses.append(course)
 
             session.commit()
+            _reload_schedule_cache()
 
             all_courses = updated_courses + added_courses
             logger.info(
@@ -480,6 +498,7 @@ def create_or_update_course():
             created_courses.append(course)
 
         session.commit()
+        _reload_schedule_cache()
 
         logger.info(
             f'[课程] 创建课程: {data["course_name"]} (节次: {periods_str}, 共{len(created_courses)}条)'
@@ -565,6 +584,7 @@ def update_course(course_id: int):
         course.data_source = "admin"
         course.updated_at = datetime.utcnow()
         session.commit()
+        _reload_schedule_cache()
 
         logger.info(f"[课程] 更新课程: {course.course_name}")
         return api_success(message="课程更新成功", data=course.to_dict())
@@ -586,6 +606,7 @@ def delete_course(course_id: int):
         course_name = course.course_name
         session.delete(course)
         session.commit()
+        _reload_schedule_cache()
 
         logger.info(f"[课程] 硬删除课程: {course_name}")
         return api_success(message="课程已删除")
@@ -608,6 +629,7 @@ def toggle_push(course_id: int):
 
         course.push_enabled = push_enabled
         session.commit()
+        _reload_schedule_cache()
 
         status = "开启" if push_enabled else "关闭"
         logger.info(f"[课程] {status}推送提醒: {course.course_name}")
@@ -778,6 +800,7 @@ def import_courses():
         try:
             created_count, updated_count = CourseRepository.create_batch(session, transformed_data)
             session.commit()
+            _reload_schedule_cache()
 
             logger.info(
                 f"[课程] 导入 {created_count} 门（新增 {created_count} / 更新 {updated_count}）"

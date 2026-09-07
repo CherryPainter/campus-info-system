@@ -610,3 +610,26 @@ def cleanup_expired_sessions():
             logger.info(f"[Session清理] 已清理 {count} 条过期会话")
     except Exception as e:
         logger.error(f"[Session清理] 清理失败: {e}")
+
+
+def run_image_gc():
+    """回收孤儿图片（由定时任务调用）
+
+    清理两类落盘图片里的孤儿：
+    1. 公告正文图 output/announcement-images/
+       主要回收发生在「更新/删除公告提交后」，这里是兜底清理历史遗留。
+    2. 反馈截图 output/feedback-images/
+       反馈没有删除/编辑接口，孤儿来自「上传了截图但没提交反馈」，只能靠 GC。
+
+    两类都带 24 小时保护期，不会误删刚上传、尚未保存/提交的在途图片。
+    """
+    try:
+        from app.services.feedback_image_gc import run_image_gc as _gc
+
+        result = _gc() or {}
+        ann = len(result.get("announcement") or [])
+        fb = len(result.get("feedback") or [])
+        if ann or fb:
+            logger.info(f"[图片回收] 公告 {ann} 张、反馈 {fb} 张孤儿图已清理")
+    except Exception as e:
+        logger.error(f"[图片回收] 清理失败: {e}")

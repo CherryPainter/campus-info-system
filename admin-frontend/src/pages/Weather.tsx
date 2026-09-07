@@ -106,6 +106,8 @@ export default function Weather() {
   const [alertHistoryLoading, setAlertHistoryLoading] = useState(false);
   const [config, setConfig] = useState<WeatherConfig>({});
   const [form] = Form.useForm();
+  // 天气预警推送总开关独立切换（页面顶部 Card extra，即时保存，无需切到"模块配置"Tab）
+  const [savingAlertToggle, setSavingAlertToggle] = useState(false);
   // 列表轮询开关（触发天气任务时开启）
   const [listPolling, setListPolling] = useState(false);
   // 假期模式状态：active 时手动触发天气任务会被后端静默拦截，前端同步禁用触发按钮
@@ -224,6 +226,29 @@ export default function Weather() {
       }
     } catch (error) {
       message.error("保存配置失败");
+    }
+  };
+
+  // 企业微信天气预警推送总开关（仅关推送渠道，不影响天气数据采集 / 小程序展示）
+  const handleAlertToggle = async (checked: boolean) => {
+    setSavingAlertToggle(true);
+    // 乐观更新，立即反映开关状态，失败再回滚
+    setConfig((prev) => ({ ...prev, alert_enabled: checked }));
+    try {
+      const res = await adminApi.updateWeatherConfig({ alert_enabled: checked });
+      if (res.status === "success") {
+        message.success(checked ? "已开启企业微信天气预警推送" : "已关闭企业微信天气预警推送");
+        // 与"模块配置"Tab 里的开关保持同步
+        form.setFieldsValue({ alert_enabled: checked });
+      } else {
+        setConfig((prev) => ({ ...prev, alert_enabled: !checked }));
+        message.error("保存失败");
+      }
+    } catch (error: any) {
+      setConfig((prev) => ({ ...prev, alert_enabled: !checked }));
+      message.error(error?.response?.data?.message || "保存失败");
+    } finally {
+      setSavingAlertToggle(false);
     }
   };
 
@@ -812,7 +837,28 @@ export default function Weather() {
 
   return (
     <div>
-      <Card>
+      <Card
+        title={
+          <Space>
+            <CloudOutlined />
+            <span>天气管理</span>
+          </Space>
+        }
+        extra={
+          isAdmin && (
+            <Space>
+              <span style={{ color: "#666", fontSize: 13 }}>企业微信天气预警推送</span>
+              <Switch
+                checked={Boolean(config.alert_enabled)}
+                loading={savingAlertToggle}
+                onChange={handleAlertToggle}
+                checkedChildren="开"
+                unCheckedChildren="关"
+              />
+            </Space>
+          )
+        }
+      >
         <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabs} />
       </Card>
     </div>

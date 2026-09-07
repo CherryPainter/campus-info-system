@@ -44,6 +44,8 @@ export default function Settings() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState<string | number | boolean>('');
   const [saving, setSaving] = useState(false);
+  // 天气预警推送总开关（天气折叠面板顶部独立快捷开关，免去在通用表格里翻找 alert_enabled）
+  const [alertToggleSaving, setAlertToggleSaving] = useState(false);
 
   // MFA 状态
   const [mfaEnabled, setMfaEnabled] = useState(false);
@@ -203,6 +205,59 @@ export default function Settings() {
       setSaving(false);
     }
   };
+
+  // 企业微信天气预警推送总开关（仅关预警推送，不影响天气数据采集/小程序展示）
+  const handleAlertToggle = async (checked: boolean) => {
+    setAlertToggleSaving(true);
+    // 乐观更新，失败回滚
+    setConfigs((prev) => {
+      const weather = prev['weather'];
+      if (!weather) return prev;
+      return {
+        ...prev,
+        weather: {
+          ...weather,
+          configs: weather.configs.map((c) =>
+            c.key === 'alert_enabled' ? { ...c, value: checked } : c
+          ),
+        },
+      };
+    });
+    try {
+      const res = await configApi.update('weather', 'alert_enabled', checked);
+      if (res.status === 'success') {
+        message.success(checked ? '已开启企业微信天气预警推送' : '已关闭企业微信天气预警推送');
+      } else {
+        throw new Error('保存失败');
+      }
+    } catch (error: any) {
+      // 回滚
+      setConfigs((prev) => {
+        const weather = prev['weather'];
+        if (!weather) return prev;
+        return {
+          ...prev,
+          weather: {
+            ...weather,
+            configs: weather.configs.map((c) =>
+              c.key === 'alert_enabled' ? { ...c, value: !checked } : c
+            ),
+          },
+        };
+      });
+      message.error(error?.response?.data?.message || '保存失败');
+    } finally {
+      setAlertToggleSaving(false);
+    }
+  };
+
+  // 天气面板顶部快捷开关的当前值（从 configs.weather 分组里找 alert_enabled）
+  const alertEnabled = (() => {
+    const w = configs['weather'];
+    const item = w?.configs?.find((c) => c.key === 'alert_enabled');
+    if (!item) return true;
+    return String(item.value).toLowerCase() !== 'false';
+  })();
 
   const renderValueInput = (config: ModuleConfigItem) => {
     const isEditing = editingKey === `${config.module}.${config.key}`;
@@ -468,6 +523,36 @@ export default function Settings() {
                 ),
                 children: (
                   <>
+                    {module === 'weather' && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          border: '1px solid #d9f7be',
+                          background: '#f6ffed',
+                          borderRadius: 8,
+                          padding: '10px 14px',
+                          marginBottom: 12,
+                          flexWrap: 'wrap',
+                          gap: 8,
+                        }}
+                      >
+                        <Space>
+                          <span style={{ fontWeight: 600 }}>企业微信天气预警推送</span>
+                          <Tooltip title="仅关闭推送渠道，不影响天气数据采集与小程序展示；关闭后不再向企业微信推送气象预警，历史记录仍会正常保存">
+                            <QuestionCircleOutlined style={{ color: '#999', cursor: 'help' }} />
+                          </Tooltip>
+                        </Space>
+                        <Switch
+                          checked={alertEnabled}
+                          loading={alertToggleSaving}
+                          onChange={handleAlertToggle}
+                          checkedChildren="开"
+                          unCheckedChildren="关"
+                        />
+                      </div>
+                    )}
                     {isMobile ? (
                       // 移动端紧凑卡片：一行"配置项名 + 当前值 + 操作"，下一行说明，
                       // 替代 ResponsiveTable 的"4 字段竖排"（每项 4 行文字，手机上眼花）

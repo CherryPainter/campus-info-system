@@ -1,0 +1,18 @@
+@import '../../styles/variables.scss';
+
+/* 功能占位页：整屏居中一句提示文字 */
+.fp-wrap {
+  min-height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-xl $spacing-lg calc(48rpx + env(safe-area-inset-bottom));
+  background: $background;
+  text-align: center;
+}
+
+.fp-text {
+  font-size: $font-size-md;
+  color: $text-tertiary;
+}

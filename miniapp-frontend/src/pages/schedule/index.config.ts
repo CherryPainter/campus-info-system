@@ -3,6 +3,7 @@
 const config = {
   navigationStyle: 'custom',
   backgroundColor: '#f6f7fb',
+  enablePullDownRefresh: true,
 };
 
 export default config;

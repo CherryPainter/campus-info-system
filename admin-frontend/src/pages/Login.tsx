@@ -85,10 +85,6 @@ export default function Login() {
       /* 忽略 */
     }
   }, []);
-  // 是否有可返回的上一页：仅用于"栈底提示条"判断（直达登录页/微信内打开时
-  // 左滑手势在栈底只会刷新页面，提示用户没有上一页可退）。
-  const [canGoBack] = useState(() => window.history.length > 1);
-
   // 清除错误消息
   const clearError = useCallback(() => {
     setErrorMessage(null);
@@ -251,17 +247,6 @@ export default function Login() {
           padding: "20px 16px",
         }}
       >
-        {/* 栈底提示：直达登录页（扫码/输入网址/微信内打开链接）时左滑只会刷新，
-            明确告知没有上一页可返回，避免用户反复左滑产生“退不出”的困惑 */}
-        {!canGoBack && (
-          <Alert
-            type="info"
-            showIcon
-            closable
-            style={{ width: "100%", maxWidth: 400, marginBottom: 16 }}
-            message="当前页面是第一个打开的页面，没有上一页可返回；如需退出请直接关闭浏览器标签页"
-          />
-        )}
         {/* 登录卡片 */}
         <Card
           style={{

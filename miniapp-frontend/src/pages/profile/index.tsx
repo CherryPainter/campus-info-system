@@ -359,7 +359,7 @@ export default function ProfilePage() {
         <Text className="logout-text">退出登录</Text>
       </View>
 
-      <Text className="profile-version">校园宜知行 v0.1.0</Text>
+      <Text className="profile-version">校园宜知行 v1.0.0</Text>
     </View>
   );
 }
