@@ -402,7 +402,10 @@ export default function SchedulePage() {
       ) : (
         <View className="timeline-list">
           {displayCourses.map((c, idx) => {
-            const st = courseStatus(c);
+            // 传 selectedDate 让 courseStatus 按"选中的那一天"重算时间戳——
+            // _timeInfo.start_ts 是按课程在 DB 存的 week_number 算的，
+            // 与当前显示周可能不一致；不重算会把将来的课判为「已结束」（2026-09-08 用户反馈）
+            const st = courseStatus(c, selectedDate);
             const statusMap: Record<string, TimelineStatus> = {
               upcoming: 'upcoming',
               ongoing: 'ongoing',

@@ -42,6 +42,14 @@
 - SCSS：删除 6 组 hero 编辑孤儿类（`detail-hero-avatar` / `-editable` / `-hover` / `-change` / `detail-hero-name-input` / `-placeholder`）；新增 `.detail-avatar-edit` / `.detail-avatar-sm` / `.detail-avatar-text-sm` / `.detail-avatar-edit-hint` / `.detail-avatar-edit-hover` / `.detail-row-value-input` / `.detail-row-value-placeholder`。
 - 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 18.92s 成功（备份 `dist_bak_20260908_193958`）；产物 `dist/pages/profile-detail/index.wxss` 确认新类（`detail-avatar-edit` / `detail-avatar-sm` / `detail-row-value-input`）已编入、旧 hero 类全部 0 命中、`process.env` 残留 0。
 
+### 修复：时间轴切换到未来周后，课程状态全部误判为「已结束」（2026-09-08）
+- **症状**：用户在时间轴页切到将来周（如第 3 周，对应日期 9/14-9/20），当日课程全部标"已结束"。实际是将来时，应是"未开始"。
+- **根因**：`CourseCard.courseStatus` 用 `Date.now()` 与课程 `_timeInfo.start_ts` 比较；`start_ts` 是后端按**课程在 DB 里存的 `week_number` 字段**算的（一般是这门课第一次开课的周，对应 9/7 周一 08:10），而**不是**前端当前选中的周。当 `week_number` 与显示周不一致时，比较的时间基准是错的——今天 9/8 已经晚于 9/7 08:10 → 误判"已结束"。
+- **修复**：`courseStatus(course, targetDate?)` 增加可选 `targetDate`（YYYY-MM-DD）参数。提供时按"该日期 + 课程的 `start_time`/`end_time`"重算有效时间戳再比较；不提供时退回 `_timeInfo`（"今天"接口已按今天过滤，行为不变）。时间轴页 `fetchDayCourses` 调用处传入 `selectedDate`。
+- 改动文件：`miniapp-frontend/src/components/CourseCard/index.tsx`、`miniapp-frontend/src/pages/schedule/index.tsx`。
+- 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 18.89s 成功（备份 `dist_bak_20260908_195556`）；`process.env` 残留 0。
+- **未做范围**：课程"时间"显示（`tsToHm(c._timeInfo?.start_ts)`）仍按原 `_timeInfo`——只取 HH:MM 不带日期，故不受此 bug 影响（08:10 / 14:10 一直显示正确）；如要统一以"选中那一天"为基准，只需把同一 `selectedDate` 传进该函数即可，但当前未改。
+
 ## v6.17.1 (2026-09-08)
 
 > 类型：**缺陷修复（patch）**。针对线上暴露的三类问题修复：**宿舍电量三大数据错误**（趋势图按日求和成倍放大、不同页面"本月已用"数值不一致、总容量与剩余电量矛盾）、**小程序站内消息体验**（电量日报等长文改列表摘要 + 详情页）、**小程序网络通道修复**（反馈图片上传、公告附件下载在登录态过期或域名白名单未配时的失败）。
