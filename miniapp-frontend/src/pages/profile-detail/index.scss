@@ -149,52 +149,56 @@
   text-align: center;
 }
 
-/* ==================== hero 头像编辑表单（2026-09-08） ==================== */
+/* ==================== 「编辑信息」卡片内编辑表单（2026-09-08） ====================
+   编辑态时这张卡替换掉「编辑信息 ›」入口卡，内含 头像（可点更换）+ 昵称（Input）。
+   保存 / 取消后卡片再变回入口。 */
 
-/* 头像编辑容器：relative 锚定「更换」角标 */
-.detail-hero-avatar {
-  position: relative;
-}
-
-/* 头像可点编辑：hover 反馈 */
-.detail-hero-avatar-editable {
+/* 头像编辑区：小头像 + 「更换」文字，右对齐，整块可点 */
+.detail-avatar-edit {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
   cursor: pointer;
 }
 
-.detail-hero-avatar-hover {
+.detail-avatar-edit-hover {
   opacity: 0.7;
 }
 
-/* 「更换」角标（absolute 贴右下，蓝底白字胶囊） */
-.detail-hero-avatar-change {
-  position: absolute;
-  right: -8rpx;
-  bottom: 0;
-  background: #1a73e8;
-  color: #fff;
-  font-size: 20rpx;
-  padding: 4rpx 14rpx;
-  border-radius: 24rpx;
-  border: 2rpx solid #fff;
-  line-height: 1.2;
+/* 卡片内小头像 */
+.detail-avatar-sm {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: #fff;
 }
 
-/* 昵称 Input（居中，与 detail-name 同字号，底线表示可编辑） */
-.detail-hero-name-input {
-  margin-top: 20rpx;
-  font-size: 38rpx;
+.detail-avatar-text-sm {
+  color: #fff;
+  font-size: 30rpx;
   font-weight: 600;
+  line-height: 1;
+}
+
+/* 「更换」提示文字（主色蓝，区别于只读的黑字） */
+.detail-avatar-edit-hint {
+  font-size: 26rpx;
+  color: #1a73e8;
+}
+
+/* 昵称 Input：与只读值同字号、右对齐，底线表示可编辑 */
+.detail-row-value-input {
+  font-size: 28rpx;
   color: #1a1a1a;
-  text-align: center;
-  padding: 4rpx 24rpx 8rpx;
-  min-width: 300rpx;
+  text-align: right;
+  max-width: 60%;
+  padding: 4rpx 0 8rpx;
   border-bottom: 2rpx solid #1a73e8;
 }
 
-.detail-hero-name-placeholder {
+.detail-row-value-placeholder {
   color: #ccc;
-  font-size: 38rpx;
-  font-weight: 600;
+  font-size: 28rpx;
 }
 
 /* 编辑态操作条：保存（主色实心）+ 取消（浅色描边）并排 */

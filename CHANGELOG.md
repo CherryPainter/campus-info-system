@@ -8,13 +8,13 @@
 
 > 适用范围：小程序端（miniapp-frontend）。系统主版本号未升（v6.17.1 保持），按"正式发布才升版本号"惯例合入下版。
 
-### 重构：个人资料详情页（hero 变身编辑表单 + 初始全黑 + 保存语义，2026-09-08）
+### 重构：个人资料详情页（初始全黑 + 保存语义，2026-09-08）
 - **初始全黑**：6 个只读行（学号/班级/学校/学院/专业/校园卡号）去掉 `detail-row-locked` 置灰类；`.detail-row-value` 由 `#666` 改 `#1a1a1a`。只读不可编辑的语义靠"无编辑入口"保证，不再用颜色暗示"禁用"。
-- **hero 变身编辑表单**：点「编辑信息」后，hero 区头像可点更换（"更换"角标 + hover 反馈），昵称变居中 Input（蓝下划线）；编辑态整张「编辑信息」卡隐藏（编辑交互唯一发生在 hero，避免重复入口）。非编辑态 hero 纯展示、卡片显示 `编辑信息 ›`。
+- （本条初版曾实现为「hero 变身编辑表单」，**已被下方「编辑表单由 hero 移入卡片」条目取代**，最终编辑交互收敛在「编辑信息」卡内。）
 - **保存语义**：`chooseAvatar` 不再即时 `updateAvatar`，头像改本地暂存 `pendingAvatarUri`；仅「保存」才先 `updateAvatar`(若有) 再 `updateProfile`；「取消」丢弃全部暂存。没点保存后端/全局 store 一个都不改。
 - 改动文件：`miniapp-frontend/src/pages/profile-detail/{index.tsx,index.scss}`。
-- SCSS 同步清理 8 组孤儿类（`detail-row-locked` / `detail-row-link`(+active) / `detail-row-arrow` / `detail-row-input` / `detail-row-placeholder` / `detail-row-avatar` / `detail-avatar-sm` / `detail-avatar-text-sm`），grep 确认无引用后删除。
-- 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 18.60s 成功（备份 `dist_bak_20260908_185306`）；`dist/pages/profile-detail/index.wxss` grep 确认新类（`detail-hero-name-input` / `detail-hero-avatar-change` / `detail-hero-avatar-editable` / `detail-hero-avatar-hover`）已编入、旧孤儿类已剔除。
+- SCSS 同步清理 6 组孤儿类（`detail-row-locked` / `detail-row-link`(+active) / `detail-row-arrow` / `detail-row-input` / `detail-row-placeholder` / `detail-row-avatar`），grep 确认无引用后删除；另 `detail-avatar-sm` / `detail-avatar-text-sm` 当时一并删除，**后续因编辑表单移入卡片而重新引入**（见末条）。
+- 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 18.60s 成功（备份 `dist_bak_20260908_185306`）。
 
 ### 修复：electricity.ts 漏引 ElectricityMonthlyResult 类型（2026-09-08）
 - `Cannot find name 'ElectricityMonthlyResult'`（`miniapp-frontend/src/api/electricity.ts:49,44` / `:50,14`）：类型已在 `src/types/api.ts:307` 定义，纯导入块漏引。
@@ -22,7 +22,7 @@
 - 验证：`tsc --noEmit` 退出码 0。
 
 ### 优化：编辑态下不可编辑行变灰（2026-09-08）
-- 紧接上条「hero 变身编辑表单」迭代：在「非编辑态全黑」基础上加一层**编辑态视觉提示**——进入编辑后，身份信息（学号/班级/学校）+ 学籍信息（学院/专业/校园卡号）的值文字变浅灰（`#b8b8b8`），明确"这些不能改"边界；hero 的头像 / 昵称（可编辑部分）保持黑字 + 蓝下划线突出。取消编辑立即恢复全黑，不污染查看态。
+- 在「非编辑态全黑」基础上加一层**编辑态视觉提示**——进入编辑后，身份信息（学号/班级/学校）+ 学籍信息（学院/专业/校园卡号）的值文字变浅灰（`#b8b8b8`），明确"这些不能改"边界；可编辑的头像 / 昵称（位于「编辑信息」卡内）保持黑字 + 蓝下划线突出。取消编辑立即恢复全黑，不污染查看态。
 - 改动文件：`miniapp-frontend/src/pages/profile-detail/{index.tsx,index.scss}`。6 个 `<Text>` 改为条件 `className`（`editing ? 'detail-row-value detail-row-value-readonly' : 'detail-row-value'`），新增 `.detail-row-value-readonly` 单一样式规则。
 - 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 18.70s 成功；产物 `dist/pages/profile-detail/index.wxss` 确认新类 `detail-row-value-readonly{color:#b8b8b8}` 已编入、基础类 `color:#1a1a1a` 不变、`process.env` 残留 0。
 
@@ -31,6 +31,14 @@
 - **修对比度**：灰色云 / 雨图标在蓝色卡片背景上对比过弱。7 天预报走 CSS `.daily-icon-img { filter: drop-shadow(0 1rpx 4rpx rgba(255,255,255,0.6)); }`（沿 PNG alpha 外缘描白，不改布局）；24 小时折线走 Canvas `ctx.shadowColor/shadowBlur=6` 并在 `drawImage` 后立即重置为 0（避免下方时间文字被镀白边）。晴天图标不受影响。
 - 改动文件：`miniapp-frontend/src/pages/weather/{index.tsx,index.scss}`，新增 `src/utils/weatherIcons.ts` + `src/assets/weather/*.png`(8)。
 - 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 17.99s 成功；产物核对白色光晕已在 wxss、Canvas shadow 已在页面 js、8 张图标以 base64 内联、映射关键词（转义形式）在包内、`process.env` 残留 0。
+
+### 重构：编辑表单由 hero 移入「编辑信息」卡片（2026-09-08）
+- 头像 / 昵称的编辑项改为**卡片承载**：不再把 hero 变成表单，hero 恢复为**始终纯展示**（大头像 + 已保存昵称 + 班级），始终显示已保存的值。
+- 「编辑信息」卡：**非编辑态**是 `编辑信息 ›` 入口；点击后**这张卡原地被编辑表单替换**——「头像」行（小头像 + 蓝色「更换」，可点选图）+「昵称」行（Input，蓝下划线）；**保存 / 取消后再变回** `编辑信息 ›` 入口卡。
+- 保存语义不变：头像本地暂存 `pendingAvatarUri`、昵称暂存 `nickname` state，仅点保存才提交；取消丢弃全部暂存。编辑中 hero 不跟着变（始终展示已保存值），保存后才更新。
+- 改动文件：`miniapp-frontend/src/pages/profile-detail/{index.tsx,index.scss}`。
+- SCSS：删除 6 组 hero 编辑孤儿类（`detail-hero-avatar` / `-editable` / `-hover` / `-change` / `detail-hero-name-input` / `-placeholder`）；新增 `.detail-avatar-edit` / `.detail-avatar-sm` / `.detail-avatar-text-sm` / `.detail-avatar-edit-hint` / `.detail-avatar-edit-hover` / `.detail-row-value-input` / `.detail-row-value-placeholder`。
+- 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 18.92s 成功（备份 `dist_bak_20260908_193958`）；产物 `dist/pages/profile-detail/index.wxss` 确认新类（`detail-avatar-edit` / `detail-avatar-sm` / `detail-row-value-input`）已编入、旧 hero 类全部 0 命中、`process.env` 残留 0。
 
 ## v6.17.1 (2026-09-08)
 
