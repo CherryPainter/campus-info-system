@@ -11,8 +11,12 @@
  *
  * 用模块级 shown 标志保证同一页面生命周期内只触发一次跳转，避免 401 / 心跳 / 多请求并发重复跳转。
  * 失效原因写入 sessionStorage，供登录页挂载时兜底再提示一次“为何被登出”。
+ *
+ * 提示形式：上视口气泡（antd message.warning，自动 1.5s 后消失），不再用居中 Modal 阻塞视线，
+ * 也不再塞到登录卡片里——跳转后到 /login 页时由 LoginPage 的 useEffect 再读 sessionStorage
+ * 用 message 兜底弹一次，让用户知道"为什么被登出"。
  */
-import { Modal } from "antd";
+import { message } from "antd";
 
 export type SessionRevokeReason =
   | "new_login"
@@ -52,36 +56,34 @@ function buildMessage(detail?: SessionExpiryDetail): string {
 /**
  * 触发会话失效跳转：直接 replace 到登录页，停留不超 1.8s 让用户看清原因。
  * 跳转每次都执行（不依赖 shown 标志），确保任何一次 401 / 心跳失效都能落地跳登录页；
- * 弹窗仅展示一次，避免并发请求重复弹框。失效原因写入 sessionStorage，供登录页兜底提示。
+ * 提示仅展示一次，避免并发请求重复气泡。失效原因写入 sessionStorage，供登录页兜底提示。
+ *
+ * 注意：此处使用 antd **静态** message（不通过 App.useApp()）——因为调用方在 axios 拦截器与
+ * 心跳钩子中，经常在 React 上下文之外触发，拿不到 useApp 实例；静态 message 不带 ConfigProvider
+ * 主题，但对"会话失效"这种强一致提示影响很小。
  */
 export function notifySessionExpired(detail?: SessionExpiryDetail): void {
   const msg = buildMessage(detail);
 
-  // 兜底：写入 sessionStorage，供登录页挂载时再提示一次“为何被登出”
+  // 兜底：写入 sessionStorage，供登录页挂载时再提示一次"为何被登出"
   try {
     sessionStorage.setItem("session_expired_reason", msg);
   } catch {
     /* 隐私模式等不可用时忽略 */
   }
 
-  // 跳转每次都执行：即使用户不点“重新登录”，也定时回到登录页，
+  // 跳转每次都执行：即使用户不点"重新登录"，也定时回到登录页，
   // 避免停留在已失效会话页面、点啥都无反应（无需手动刷新感知）。
   window.setTimeout(() => {
     window.location.replace("/login");
   }, 1800);
 
-  // 弹窗仅展示一次（shown 只控制弹窗，不控制跳转）
+  // 气泡仅展示一次（shown 只控制气泡，不控制跳转）
   if (shown) return;
   shown = true;
-  Modal.warning({
-    title: "登录会话已失效",
+  // 顶部气泡，1.5s 自动消失（在 1.8s 跳转之前让用户能看到）
+  message.warning({
     content: msg,
-    okText: "重新登录",
-    centered: true,
-    closable: false,
-    onOk: () => {
-      // replace 避免失效页残留在历史栈（左滑返回又回到已失效页）
-      window.location.replace("/login");
-    },
+    duration: 1.5,
   });
 }

@@ -541,7 +541,10 @@ export default function UserManagementRoster() {
       message.success("已复制，请私下发放给学生");
     } catch {
       message.error("复制失败，请手动复制");
+      return;
     }
+    // 复制成功后关闭弹窗（按钮文案"复制并关闭"承诺的语义）
+    setCodeModal({ rosterId: null, code: null, loading: false });
   };
 
   /** 批量导入：校验文件类型 → 上传 → 结果弹窗（成功数 + 失败明细） */

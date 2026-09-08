@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Form, Input, Button, Card, Typography, Modal, Divider, Space, App, Checkbox, Alert } from "antd";
+import { Form, Input, Button, Card, Typography, Modal, Divider, Space, App, Checkbox } from "antd";
 import {
   UserOutlined,
   LockOutlined,
@@ -63,7 +63,6 @@ export default function Login() {
   const [mfaCode, setMfaCode] = useState("");
   const [mfaLoading, setMfaLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [sessionExpiredMsg, setSessionExpiredMsg] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
   const [form] = Form.useForm();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,12 +72,13 @@ export default function Login() {
   const randomBg = useRandomBackground();
 
   // 会话失效兜底提示：request 拦截器 / 心跳在跳登录页前会把失效原因写入
-  // sessionStorage，这里读取并展示，随后清除，避免重复提示。
+  // sessionStorage，这里读取并用顶部气泡提示，随后清除，避免重复提示。
+  // 不再"塞到登录卡片里"——按用户要求改为上视口气泡（与 sessionExpiry.ts 同一形式）。
   useEffect(() => {
     try {
       const reason = sessionStorage.getItem("session_expired_reason");
       if (reason) {
-        setSessionExpiredMsg(reason);
+        message.warning(reason, 3);
         sessionStorage.removeItem("session_expired_reason");
       }
     } catch {
@@ -286,18 +286,6 @@ export default function Login() {
               管理后台登录
             </Text>
           </div>
-
-          {/* 会话失效兜底提示（request 拦截器 / 心跳自动跳登录页时已写入原因） */}
-          {sessionExpiredMsg && (
-            <Alert
-              type="warning"
-              showIcon
-              closable
-              style={{ marginBottom: 16, textAlign: "left" }}
-              message="登录会话已失效"
-              description={sessionExpiredMsg}
-            />
-          )}
 
           {/* 错误提示 - 左对齐显示 */}
           {errorMessage && (
