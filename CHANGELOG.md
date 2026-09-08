@@ -1,6 +1,6 @@
 # 校园信息聚合与智能推送系统 · 更新日志
 
-> 版本号规则：后端 `.env` / `app/core/config.py` 的 `APP_VERSION`、前端 `package.json` 的 `version`、前端 `src/version.ts` 的 `APP_VERSION` 以及各部署/配置文档须保持一致。
+> 版本号规则：后端 `.env` / `app/core/config.py` 的 `APP_VERSION`、前端 `package.json` 的 `version`、前端 `src/version.ts` 的 `APP_VERSION`（**管理端 `admin-frontend/src/version.ts` 与小程序端 `miniapp-frontend/src/version.ts` 各一份**）以及各部署/配置文档须保持一致。
 
 ---
 
@@ -8,7 +8,7 @@
 
 > 适用范围：小程序端（miniapp-frontend）。系统主版本号未升（v6.17.1 保持），按"正式发布才升版本号"惯例合入下版。
 
-### 重构：个人资料详情页（初始全黑 + 保存语义，2026-09-08）
+### 重构：个人资料详情页按用户示意图重排编辑布局
 - **初始全黑**：6 个只读行（学号/班级/学校/学院/专业/校园卡号）去掉 `detail-row-locked` 置灰类；`.detail-row-value` 由 `#666` 改 `#1a1a1a`。只读不可编辑的语义靠"无编辑入口"保证，不再用颜色暗示"禁用"。
 - （本条初版曾实现为「hero 变身编辑表单」，**已被下方「编辑表单由 hero 移入卡片」条目取代**，最终编辑交互收敛在「编辑信息」卡内。）
 - **保存语义**：`chooseAvatar` 不再即时 `updateAvatar`，头像改本地暂存 `pendingAvatarUri`；仅「保存」才先 `updateAvatar`(若有) 再 `updateProfile`；「取消」丢弃全部暂存。没点保存后端/全局 store 一个都不改。
@@ -96,6 +96,25 @@
 - 前端补丁类修复需重新构建后生效。
 
 ### 修复：小程序天气图标跨设备不一致（2026-09-08）
+- 天气状况图标由 emoji 改为统一 PNG 素材（晴/多云/阴/雨/大雨/雪/雷/雾 8 张），杜绝 emoji 在不同设备渲染不一致。`WeatherCard`、7 天预报、24h 折线图 Canvas 三处改 `<Image>` / `ctx.drawImage` 引用本地素材。
+
+### 修复：个人资料编辑信息卡两行基线对齐 + 编辑资料按钮文字横排（2026-09-08 晚）
+- **症状 1 对齐**：编辑信息卡「头像」行与「昵称」行右侧内容（圆 + › / Input + ›）**基线错位**——头像行偏高、昵称行偏低。**症状 2 按钮文字竖排**：底部「编辑资料 ›」入口按钮中，"编辑资料"四字 + › 箭头被垂直堆叠成一列。
+- **对齐根因**：`.detail-row-right` 内子项最高 72rpx（圆），昵称行 Input 默认 ~40rpx 不强制，两行行高不同（128rpx vs 96rpx），`.detail-row { align-items: center }` 让两行基线错位。
+- **按钮竖排根因**：Taro 3.x `<Text>` 默认 `display: block`，在 flex row 容器内仍按 block 排（不横排）——表现就是按钮内 4 字 + 箭头竖成一列。
+- **修复**：
+  - `.detail-row-right` 加 `height: 72rpx; justify-content: flex-end`，强制头像行 / 昵称行右侧容器等高 → 两行基线对齐。
+  - `.detail-edit-entry` 加 `flex-direction: row; white-space: nowrap`，子 Text（`.detail-edit-entry-text` / `.detail-edit-entry-arrow`）显式 `display: inline-block`，保证文字横排。
+- 改动文件：`miniapp-frontend/src/pages/profile-detail/{index.tsx,index.scss}`。
+- 验证：`tsc --noEmit` 0；`build:weapp` 成功；产物 `.detail-row-right{height:72rpx}` 与 `.detail-edit-entry{flex-direction:row}` 生效。
+
+### 修复：admin-frontend 会话失效改上视口气泡 + 绑定码"复制并关闭"真正关闭（2026-09-08 晚）
+- **症状 1 会话失效提示塞卡片**：原本走 `Modal.warning` 居中弹窗，且 `Login.tsx` 还在登录卡片内渲染 `Alert` 显示失效原因——双层冗余、阻塞视线，且用户不希望塞到登录卡片里。
+- **修复 1**：删除 `Login.tsx` 中 `sessionExpiredMsg` state + Alert 渲染，改为读 `sessionStorage("session_expired_reason")` 后直接调 `message.warning(reason, 3)`（顶部气泡，3s 自动消失）；`sessionExpiry.ts:76` 居中 `Modal.warning` 改为静态 `message.warning({ content, duration: 1.5 })`（顶部气泡，跳转 1.8s 前可见）。静态 `message` 不用 `App.useApp()`——因调用方在 axios 拦截器 / 心跳钩子中常脱离 React 上下文。
+- **症状 2 "复制并关闭"不关弹窗**：`UserManagementRoster.tsx` 的 `copyCode` 仅复制 + `message.success`，未调 `setCodeModal` 置空 `rosterId`，弹窗可见性由 `codeModal.rosterId !== null` 控制，复制成功后没置空所以不关。
+- **修复 2**：`copyCode` 复制成功后追加 `setCodeModal({ rosterId: null, code: null, loading: false })`；复制失败保留弹窗给用户重试。
+- 改动文件：`admin-frontend/src/utils/sessionExpiry.ts`、`admin-frontend/src/pages/Login.tsx`、`admin-frontend/src/pages/UserManagementRoster.tsx`。
+- 验证：`tsc --noEmit` 0；`npm run build` 成功（12.10s）；产物含 `message.warning` 调用。
 - 天气状况图标由 emoji 改为统一 PNG 素材（晴/多云/阴/雨/大雨/雪/雷/雾 8 张），杜绝 emoji 在不同设备渲染不一致。`WeatherCard`、7 天预报、24h 折线图 Canvas 三处改 `<Image>` / `ctx.drawImage` 引用本地素材。
 
 ## v6.17.0 (2026-09-07)

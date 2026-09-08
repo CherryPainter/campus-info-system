@@ -1,6 +1,6 @@
 {
   "name": "miniapp-frontend",
-  "version": "1.0.0",
+  "version": "6.17.1",
   "private": true,
   "description": "校园信息聚合与智能推送系统 - 微信小程序客户端",
   "scripts": {
