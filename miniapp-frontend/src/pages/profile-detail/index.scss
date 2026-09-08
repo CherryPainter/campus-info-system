@@ -112,6 +112,12 @@
   max-width: 60%;
 }
 
+/* 编辑态下不可编辑行的值变灰——明确"非可编辑"边界
+   （仅 hero 的头像/昵称可改，身份/学籍信息只读；2026-09-08） */
+.detail-row-value-readonly {
+  color: #b8b8b8;
+}
+
 .detail-danger-zone {
   margin: 60rpx 24rpx 0;
   display: flex;

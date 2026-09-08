@@ -21,6 +21,11 @@
 - 改动：导入块补 `ElectricityMonthlyResult`。type-only，babel 编译擦除，运行时无影响。
 - 验证：`tsc --noEmit` 退出码 0。
 
+### 优化：编辑态下不可编辑行变灰（2026-09-08）
+- 紧接上条「hero 变身编辑表单」迭代：在「非编辑态全黑」基础上加一层**编辑态视觉提示**——进入编辑后，身份信息（学号/班级/学校）+ 学籍信息（学院/专业/校园卡号）的值文字变浅灰（`#b8b8b8`），明确"这些不能改"边界；hero 的头像 / 昵称（可编辑部分）保持黑字 + 蓝下划线突出。取消编辑立即恢复全黑，不污染查看态。
+- 改动文件：`miniapp-frontend/src/pages/profile-detail/{index.tsx,index.scss}`。6 个 `<Text>` 改为条件 `className`（`editing ? 'detail-row-value detail-row-value-readonly' : 'detail-row-value'`），新增 `.detail-row-value-readonly` 单一样式规则。
+- 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 18.70s 成功；产物 `dist/pages/profile-detail/index.wxss` 确认新类 `detail-row-value-readonly{color:#b8b8b8}` 已编入、基础类 `color:#1a1a1a` 不变、`process.env` 残留 0。
+
 ### 优化：小程序天气页图标由 emoji 换真实 PNG + 修复弱对比度（2026-09-08）
 - **换真图**：天气状况图标此前全用 emoji，不同设备渲染不一致。改为 8 张和风天气 PNG（晴 / 多云 / 阴 / 小雨 / 大雨 / 雪 / 雷 / 雾），新增 `miniapp-frontend/src/assets/weather/` 与映射工具 `src/utils/weatherIcons.ts`（`textToIconKey` 中文状况 → 图标 key，含「多云」优先判 sun-cloud、「大雨/暴雨」→ heavy-rain）。接入点：天气页 7 天预报 `<Image>`、24 小时折线图 Canvas `drawImage`。
 - **修对比度**：灰色云 / 雨图标在蓝色卡片背景上对比过弱。7 天预报走 CSS `.daily-icon-img { filter: drop-shadow(0 1rpx 4rpx rgba(255,255,255,0.6)); }`（沿 PNG alpha 外缘描白，不改布局）；24 小时折线走 Canvas `ctx.shadowColor/shadowBlur=6` 并在 `drawImage` 后立即重置为 0（避免下方时间文字被镀白边）。晴天图标不受影响。

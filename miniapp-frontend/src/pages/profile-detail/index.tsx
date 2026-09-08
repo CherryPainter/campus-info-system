@@ -4,8 +4,8 @@
  * 入口：首页「我的」页顶部头像+昵称区域（点击跳此页）
  *
  * 设计（2026-09-08 重构）：
- * - 身份信息 / 学籍信息（学号/班级/学校/学院/专业/校园卡号）：始终**黑色**正常字体展示，
- *   只读不可编辑（绑定后锁定，不开放编辑入口）。视觉上去掉"置灰=禁用"感。
+ * - 身份信息 / 学籍信息（学号/班级/学校/学院/专业/校园卡号）：**非编辑态**全黑正常展示（不带"置灰"感）；
+ *   **编辑态**值文字变灰，明确"不可编辑"边界（仅 hero 的头像+昵称可改）。
  * - hero 区（头像 + 昵称 + 班级）：非编辑态为纯展示；点击「编辑信息」后**变身编辑表单**——
  *   头像可点更换（本地暂存，不即时上传）、昵称变为 Input。班级仍只读。
  * - 「编辑信息」卡：唯一的编辑入口。非编辑态显示 `编辑信息 ›`；编辑态整张卡隐藏（编辑交互
@@ -216,15 +216,15 @@ export default function ProfileDetail() {
         <Text className="detail-card-title">身份信息</Text>
         <View className="detail-row">
           <Text className="detail-row-label">学号</Text>
-          <Text className="detail-row-value">{profile?.student_number || '--'}</Text>
+          <Text className={editing ? 'detail-row-value detail-row-value-readonly' : 'detail-row-value'}>{profile?.student_number || '--'}</Text>
         </View>
         <View className="detail-row">
           <Text className="detail-row-label">班级</Text>
-          <Text className="detail-row-value">{profile?.class_name || '--'}</Text>
+          <Text className={editing ? 'detail-row-value detail-row-value-readonly' : 'detail-row-value'}>{profile?.class_name || '--'}</Text>
         </View>
         <View className="detail-row">
           <Text className="detail-row-label">学校</Text>
-          <Text className="detail-row-value">{profile?.school || '--'}</Text>
+          <Text className={editing ? 'detail-row-value detail-row-value-readonly' : 'detail-row-value'}>{profile?.school || '--'}</Text>
         </View>
       </View>
 
@@ -233,15 +233,15 @@ export default function ProfileDetail() {
         <Text className="detail-card-title">学籍信息</Text>
         <View className="detail-row">
           <Text className="detail-row-label">学院</Text>
-          <Text className="detail-row-value">{profile?.college || '--'}</Text>
+          <Text className={editing ? 'detail-row-value detail-row-value-readonly' : 'detail-row-value'}>{profile?.college || '--'}</Text>
         </View>
         <View className="detail-row">
           <Text className="detail-row-label">专业</Text>
-          <Text className="detail-row-value">{profile?.major || '--'}</Text>
+          <Text className={editing ? 'detail-row-value detail-row-value-readonly' : 'detail-row-value'}>{profile?.major || '--'}</Text>
         </View>
         <View className="detail-row">
           <Text className="detail-row-label">校园卡号</Text>
-          <Text className="detail-row-value">
+          <Text className={editing ? 'detail-row-value detail-row-value-readonly' : 'detail-row-value'}>
             {profile?.campus_card_number || '未绑定'}
           </Text>
         </View>
