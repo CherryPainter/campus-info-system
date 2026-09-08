@@ -50,6 +50,13 @@
 - 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 18.89s 成功（备份 `dist_bak_20260908_195556`）；`process.env` 残留 0。
 - **未做范围**：课程"时间"显示（`tsToHm(c._timeInfo?.start_ts)`）仍按原 `_timeInfo`——只取 HH:MM 不带日期，故不受此 bug 影响（08:10 / 14:10 一直显示正确）；如要统一以"选中那一天"为基准，只需把同一 `selectedDate` 传进该函数即可，但当前未改。
 
+### 修复：编辑信息卡片内小头像变白、无头像用户看不到占位文字（2026-09-08）
+- **症状**：点击「编辑信息」进入编辑态后，卡内「头像」行的圆形小头像显示为空白（无头像用户看不到蓝底"w"占位符），与顶部 hero 的蓝底占位头像不一致。
+- **根因**：`.detail-avatar-sm` 写了 `background: #fff`，且该规则在 SCSS 中定义于 `.detail-avatar-placeholder` **之后**——同优先级下后写者覆盖，把占位符蓝底 `#6e8efb` 覆盖成白底，白字"w"在白底上不可见 → 视觉空白圆圈。顶部 hero 无此问题是因为 `.detail-avatar-placeholder` 定义晚于 `.detail-avatar`。
+- **修复**：从 `.detail-avatar-sm` 删除 `background: #fff`，该类只保留尺寸/形状；背景交给 `.detail-avatar-placeholder`（蓝底）或由图片本身覆盖（`<Image>` 情况背景本就不可见，删除无影响）。加注释说明"勿在此写背景"。
+- 改动文件：`miniapp-frontend/src/pages/profile-detail/index.scss`。
+- 验证：`npm run build:weapp` 成功（备份 `dist_bak_20260908_200704`）；产物 `detail-avatar-sm{border-radius:50%;height:72rpx;width:72rpx}`（无背景）+ `detail-avatar-placeholder{...background:#6e8efb...}` 并存、`process.env` 残留 0。
+
 ## v6.17.1 (2026-09-08)
 
 > 类型：**缺陷修复（patch）**。针对线上暴露的三类问题修复：**宿舍电量三大数据错误**（趋势图按日求和成倍放大、不同页面"本月已用"数值不一致、总容量与剩余电量矛盾）、**小程序站内消息体验**（电量日报等长文改列表摘要 + 详情页）、**小程序网络通道修复**（反馈图片上传、公告附件下载在登录态过期或域名白名单未配时的失败）。
