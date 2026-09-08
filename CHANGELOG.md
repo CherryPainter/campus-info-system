@@ -50,6 +50,18 @@
 - 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 18.89s 成功（备份 `dist_bak_20260908_195556`）；`process.env` 残留 0。
 - **未做范围**：课程"时间"显示（`tsToHm(c._timeInfo?.start_ts)`）仍按原 `_timeInfo`——只取 HH:MM 不带日期，故不受此 bug 影响（08:10 / 14:10 一直显示正确）；如要统一以"选中那一天"为基准，只需把同一 `selectedDate` 传进该函数即可，但当前未改。
 
+### 修复：时间轴抽屉打开时 tab 栏仍可见（2026-09-08）
+- **症状**：点时间轴页周次徽标弹出「学期+周」选择器抽屉时，底部 custom tabBar 仍可见并盖在抽屉下方，视觉割裂。
+- **根因**：项目用 `tabBar.custom: true`（自定义 TabBar），微信的 `wx.hideTabBar` **对 custom TabBar 不生效**（官方文档：custom 模式需"控制 custom-tab-bar 组件自身的 return"）。drawer `position:fixed; bottom:0` 也只能贴到**页面视口**底部，够不到框架层渲的 custom-tab-bar。
+- **修复**（走项目已有的 `eventCenter` 事件总线，与 `TAB_INDEX_EVENT` 同一范式）：
+  - `src/utils/tabBarState.ts` 新增 `setTabBarHidden(bool)` / `getTabBarHidden()` / `TABBAR_HIDDEN_EVENT` 事件。
+  - `src/custom-tab-bar/index.tsx` 订阅 `TABBAR_HIDDEN_EVENT`，`hidden=true` 时 `return null`。
+  - `src/pages/schedule/index.tsx` 抽屉开关 `useEffect` 改调 `setTabBarHidden(showWeekPicker)`。
+- 改动文件：`utils/tabBarState.ts`、`custom-tab-bar/index.tsx`、`pages/schedule/index.tsx`。
+- 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 成功；`process.env` 残留 0。
+- **先前错误尝试**：第一版用 `Taro.hideTabBar({ animation: false })`，对 custom TabBar 无效（用户反馈"还是这个样"），已撤回。
+- **说明**：滚轮本身（`<PickerView>` 编译为微信原生 `<picker-view>`）是原生的；抽屉外壳（半透明遮罩 + 底部弹卡 + 取消/确定栏）是自定义 CSS。本修复只动 tabBar 可见性，不改抽屉实现。
+
 ### 修复：编辑信息卡片内小头像变白、无头像用户看不到占位文字（2026-09-08）
 - **症状**：点击「编辑信息」进入编辑态后，卡内「头像」行的圆形小头像显示为空白（无头像用户看不到蓝底"w"占位符），与顶部 hero 的蓝底占位头像不一致。
 - **根因**：`.detail-avatar-sm` 写了 `background: #fff`，且该规则在 SCSS 中定义于 `.detail-avatar-placeholder` **之后**——同优先级下后写者覆盖，把占位符蓝底 `#6e8efb` 覆盖成白底，白字"w"在白底上不可见 → 视觉空白圆圈。顶部 hero 无此问题是因为 `.detail-avatar-placeholder` 定义晚于 `.detail-avatar`。

@@ -2,7 +2,13 @@ import { useState, useEffect } from 'react';
 import { View, Text, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { getSharedBadgeCount } from '@/utils/feedbackBadge';
-import { getTabIndex, setTabIndex, TAB_INDEX_EVENT } from '@/utils/tabBarState';
+import {
+  getTabIndex,
+  setTabIndex,
+  TAB_INDEX_EVENT,
+  getTabBarHidden,
+  TABBAR_HIDDEN_EVENT,
+} from '@/utils/tabBarState';
 import homeIcon from '@/assets/tabbar/home.png';
 import homeActiveIcon from '@/assets/tabbar/home-active.png';
 import timelineIcon from '@/assets/tabbar/timeline.png';
@@ -43,16 +49,21 @@ export default function CustomTabBar() {
   // 初值取模块级选中态（而非硬编码 0），避免重建后闪烁回首页
   const [current, setCurrent] = useState<number>(() => getTabIndex());
   const [badge, setBadge] = useState<number>(() => getSharedBadgeCount());
+  // 是否隐藏：用于"全屏弹窗/抽屉"等场景临时藏起（custom tabBar 不能用 wx.hideTabBar 控制）
+  const [hidden, setHidden] = useState<boolean>(() => getTabBarHidden());
 
-  // 挂载：订阅选中态广播 + 角标广播；卸载时解绑
+  // 挂载：订阅选中态广播 + 角标广播 + 显隐广播；卸载时解绑
   useEffect(() => {
     const onTabIndex = (idx: number) => setCurrent(idx);
     const onBadge = (n: number) => setBadge(n);
+    const onHidden = (h: boolean) => setHidden(h);
     Taro.eventCenter.on(TAB_INDEX_EVENT, onTabIndex);
     Taro.eventCenter.on(BADGE_EVENT, onBadge);
+    Taro.eventCenter.on(TABBAR_HIDDEN_EVENT, onHidden);
     return () => {
       Taro.eventCenter.off(TAB_INDEX_EVENT, onTabIndex);
       Taro.eventCenter.off(BADGE_EVENT, onBadge);
+      Taro.eventCenter.off(TABBAR_HIDDEN_EVENT, onHidden);
     };
   }, []);
 
@@ -69,6 +80,10 @@ export default function CustomTabBar() {
     setCurrent(idx); // 乐观即时高亮
     Taro.switchTab({ url: TAB_LIST[idx].pagePath });
   };
+
+  // 隐藏态：return null 即可不渲染。custom tabBar 不能靠 wx.hideTabBar 控，
+  // 必须由组件自身 return null；外部通过 setTabBarHidden(true/false) 触发。
+  if (hidden) return null;
 
   return (
     <View className="custom-tabbar">

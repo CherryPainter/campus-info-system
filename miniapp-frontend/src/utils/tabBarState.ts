@@ -34,3 +34,34 @@ export function setTabIndex(idx: number): void {
     /* eventCenter 未就绪时忽略（首帧） */
   }
 }
+
+// ============================================================
+// 自定义 TabBar 显隐控制（2026-09-08）
+// ------------------------------------------------------------
+// 背景：项目用 tabBar.custom=true，微信的 wx.hideTabBar 对自定义 TabBar **不生效**，
+// 必须靠"控制 custom-tab-bar 组件自身的 return"才能藏起来。
+// 走法：模块级 + eventCenter 广播，custom-tab-bar 组件订阅 TABBAR_HIDDEN_EVENT，
+// 收到 true 时 return null；跟 TAB_INDEX_EVENT 是同一套范式。
+// 用法：setTabBarHidden(true) 开抽屉 / 弹窗等需要全屏展示的场景；关闭时 setTabBarHidden(false)。
+// ============================================================
+
+let _tabBarHidden = false;
+
+/** TabBar 当前是否应隐藏 */
+export function getTabBarHidden(): boolean {
+  return _tabBarHidden;
+}
+
+/** TabBar 显隐变化事件名 */
+export const TABBAR_HIDDEN_EVENT = 'tabbar:hidden';
+
+/** 更新 TabBar 显隐并广播（幂等） */
+export function setTabBarHidden(hidden: boolean): void {
+  if (_tabBarHidden === hidden) return;
+  _tabBarHidden = hidden;
+  try {
+    Taro.eventCenter.trigger(TABBAR_HIDDEN_EVENT, hidden);
+  } catch {
+    /* eventCenter 未就绪时忽略（首帧） */
+  }
+}

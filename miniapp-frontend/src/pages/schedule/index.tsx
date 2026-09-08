@@ -3,7 +3,7 @@ import { View, Text, Swiper, SwiperItem, ScrollView, PickerView, PickerViewColum
 import { useLoad, useDidShow, usePullDownRefresh, stopPullDownRefresh, getWindowInfo } from '@tarojs/taro';
 import dayjs from 'dayjs';
 
-import { setTabIndex } from '@/utils/tabBarState';
+import { setTabIndex, setTabBarHidden } from '@/utils/tabBarState';
 
 import * as scheduleApi from '@/api/schedule';
 import * as notificationApi from '@/api/notification';
@@ -99,6 +99,14 @@ export default function SchedulePage() {
       fetchDayCourses(selectedDate);
     }
   }, [selectedDate, fetchDayCourses]);
+
+  // 抽屉打开时藏起 custom tabBar。
+  // 注意：wx.hideTabBar 对 custom tabBar **不生效**（tabBar.custom=true 模式下），
+  // 必须通过 eventCenter 广播让 custom-tab-bar 组件自己 return null。
+  // 这里走 tabBarState.setTabBarHidden（与 TAB_INDEX_EVENT 同一范式）。
+  useEffect(() => {
+    setTabBarHidden(showWeekPicker);
+  }, [showWeekPicker]);
 
   // 加载周信息 + 周历有课标记 + 学期周次面板数据（与选中日期无关，一次性拉取）
   const loadAll = async () => {
