@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, ScrollView, Canvas } from '@tarojs/components';
+import { View, Text, ScrollView, Canvas, Image } from '@tarojs/components';
 import { useLoad, getWindowInfo, stopPullDownRefresh, usePullDownRefresh } from '@tarojs/taro';
 import Taro from '@tarojs/taro';
 
+import { getWeatherIconSrc } from '@/utils/weatherIcons';
 import * as weatherApi from '@/api/weather';
 import type {
   WeatherNow,
@@ -176,17 +177,6 @@ function getCurvePoints(pts: { x: number; y: number }[]): { x: number; y: number
 /**
  * 天气文字 → emoji 图标（Canvas 内绘制用）
  */
-function getWeatherIconEmoji(text?: string | null): string {
-  if (!text) return '🌤';
-  if (text.includes('晴')) return text.includes('多云') ? '⛅' : '☀';
-  if (text.includes('云')) return '☁';
-  if (text.includes('雨')) return text.includes('大雨') || text.includes('暴雨') ? '🌧' : '🌦';
-  if (text.includes('雪')) return '❄';
-  if (text.includes('雷')) return '⛈';
-  if (text.includes('雾') || text.includes('霾')) return '🌫';
-  return '🌤';
-}
-
 // 星期中文
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 function getWeekdayLabel(fxDate?: string, index = 0): string {
@@ -447,6 +437,12 @@ export default function WeatherPage() {
   const canvasWRef = useRef(0);   // Canvas 实际渲染宽度（px）
   const canvasHRef = useRef(0);
 
+  // 时间轴天气图标：Canvas 2D 的 drawImage 必须传 Image 对象（不能传 base64/路径字符串）。
+  // 这里用 ref 缓存「src → Image|loading|error」，懒加载本地 PNG 后触发重绘补画。
+  const iconCacheRef = useRef<Record<string, any>>({});
+  const chartDataRef = useRef<any[] | null>(null);      // 最近一次绘制用的 hourly 数据（供图标加载后重绘）
+  const drawChartRef = useRef<any>(null);                // 指向最新 drawChart（图标 onload 回调触发重绘用）
+
   // 横向平移状态（自接管触摸，不依赖 ScrollView 原生滚动）
   const offsetRef = useRef(0);     // 当前向左滚动的像素数（可为负：让"现在"右移）
   const minOffsetRef = useRef(0);  // 最小 offset（负数，允许"现在"移到屏幕中间区域）
@@ -522,6 +518,8 @@ export default function WeatherPage() {
     const W = canvasWRef.current;
     const H = canvasHRef.current;
     if (!ctx || !W || !H || data.length < 2) return;
+    chartDataRef.current = data;
+    drawChartRef.current = drawChart;   // 图标异步加载完成后据此重绘补画
 
     const padX = 4;   // 等宽布局，仅保留极小边距防止圆点/气泡贴边裁切
     const curveTop = 46;   // 顶部预留空间，容纳最高温标注 + 节点圆，避免溢出
@@ -702,11 +700,44 @@ export default function WeatherPage() {
       const isNow = i === _nowIdx;   // 唯一匹配：距当前时间最近的点
       const isActive = i === idx;
 
-      // 天气图标 emoji
-      ctx.fillStyle = '#fff';
-      ctx.font = isActive ? `600 ${40}px sans-serif` : `500 ${36}px sans-serif`;
-      ctx.textBaseline = 'top';
-      ctx.fillText(getWeatherIconEmoji(h.text), px, timeY);
+      // 天气图标 PNG（替代 emoji，避免不同设备渲染不一致）
+      // 注意：Canvas 2D 的 drawImage 只接受 Image/Canvas 对象，直接把 base64/路径字符串传入会
+      // 抛 parameter error，导致下方时间文字绘制被中断（表现为"时间轴文字消失"）。
+      // 因此这里懒加载本地 PNG → Image 对象后再绘制：未就绪时先跳过图标，绝不影响时间文字。
+      const iconSize = isActive ? 36 : 32;
+      {
+        const src = getWeatherIconSrc(h.text);
+        const cached = iconCacheRef.current[src];
+        if (cached === 'loading' || cached === 'error') {
+          // 加载中/加载失败：本次先跳过图标（不抛异常，时间文字照常画）
+        } else if (cached) {
+          // 白色光晕：提升灰色云/雨图标在蓝色图表背景上的对比度（2026-09-08）；
+          // ctx.shadow 沿 PNG 透明形状外缘描白，不影响下方时间文字（drawImage 后立刻重置）。
+          ctx.shadowColor = 'rgba(255,255,255,0.7)';
+          ctx.shadowBlur = 6;
+          ctx.drawImage(cached, px - iconSize / 2, timeY, iconSize, iconSize);
+          ctx.shadowBlur = 0;
+        } else {
+          // 首次遇到：标记 loading 并异步加载；onload 成功后补一次重绘把图标画上
+          iconCacheRef.current[src] = 'loading';
+          try {
+            const img = canvasRef.current?.createImage?.();
+            if (img) {
+              img.onload = () => {
+                iconCacheRef.current[src] = img;
+                const d = chartDataRef.current;
+                if (d && d.length) drawChartRef.current?.(d);
+              };
+              img.onerror = () => { iconCacheRef.current[src] = 'error'; };
+              img.src = src;
+            } else {
+              iconCacheRef.current[src] = 'error';
+            }
+          } catch {
+            iconCacheRef.current[src] = 'error';
+          }
+        }
+      }
 
       // 时间文字
       const t = h.fxTime || h.fx_time || '';
@@ -1070,7 +1101,7 @@ export default function WeatherPage() {
                 <Text className="daily-week">{getWeekdayLabel(d.fx_date, i)}</Text>
                 <Text className="daily-date">{d.fx_date ? d.fx_date.slice(5) : ''}</Text>
                 <View className="daily-icon-wrap">
-                  <Text className="daily-icon">{getWeatherIconEmoji(d.text_day)}</Text>
+                  <Image className="daily-icon-img" src={getWeatherIconSrc(d.text_day)} mode="aspectFit" />
                   {d.pop != null && Number(d.pop) >= 60 && (
                     <View className="daily-pop-badge">{Math.round(Number(d.pop))}%</View>
                   )}

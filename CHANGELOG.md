@@ -21,6 +21,12 @@
 - 改动：导入块补 `ElectricityMonthlyResult`。type-only，babel 编译擦除，运行时无影响。
 - 验证：`tsc --noEmit` 退出码 0。
 
+### 优化：小程序天气页图标由 emoji 换真实 PNG + 修复弱对比度（2026-09-08）
+- **换真图**：天气状况图标此前全用 emoji，不同设备渲染不一致。改为 8 张和风天气 PNG（晴 / 多云 / 阴 / 小雨 / 大雨 / 雪 / 雷 / 雾），新增 `miniapp-frontend/src/assets/weather/` 与映射工具 `src/utils/weatherIcons.ts`（`textToIconKey` 中文状况 → 图标 key，含「多云」优先判 sun-cloud、「大雨/暴雨」→ heavy-rain）。接入点：天气页 7 天预报 `<Image>`、24 小时折线图 Canvas `drawImage`。
+- **修对比度**：灰色云 / 雨图标在蓝色卡片背景上对比过弱。7 天预报走 CSS `.daily-icon-img { filter: drop-shadow(0 1rpx 4rpx rgba(255,255,255,0.6)); }`（沿 PNG alpha 外缘描白，不改布局）；24 小时折线走 Canvas `ctx.shadowColor/shadowBlur=6` 并在 `drawImage` 后立即重置为 0（避免下方时间文字被镀白边）。晴天图标不受影响。
+- 改动文件：`miniapp-frontend/src/pages/weather/{index.tsx,index.scss}`，新增 `src/utils/weatherIcons.ts` + `src/assets/weather/*.png`(8)。
+- 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 17.99s 成功；产物核对白色光晕已在 wxss、Canvas shadow 已在页面 js、8 张图标以 base64 内联、映射关键词（转义形式）在包内、`process.env` 残留 0。
+
 ## v6.17.1 (2026-09-08)
 
 > 类型：**缺陷修复（patch）**。针对线上暴露的三类问题修复：**宿舍电量三大数据错误**（趋势图按日求和成倍放大、不同页面"本月已用"数值不一致、总容量与剩余电量矛盾）、**小程序站内消息体验**（电量日报等长文改列表摘要 + 详情页）、**小程序网络通道修复**（反馈图片上传、公告附件下载在登录态过期或域名白名单未配时的失败）。

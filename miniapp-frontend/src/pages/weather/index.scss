@@ -369,8 +369,13 @@
     margin: 10rpx 0;
   }
 
-  .daily-icon {
-    font-size: 44rpx;
+  .daily-icon-img {
+    width: 48rpx;
+    height: 48rpx;
+    display: block;
+    // 白色光晕：提升灰色云/雨图标在蓝色卡片背景上的对比度（2026-09-08）；
+    // 沿图标形状描白边，不改布局/不加重几何。太阳/晴等本身显眼，加了也无害且风格一致。
+    filter: drop-shadow(0 1rpx 4rpx rgba(255, 255, 255, 0.6));
   }
 
   // 降水概率角标（图标右上角，仅 >=60% 时由组件渲染；无胶囊，仅白字）
