@@ -69,6 +69,25 @@
   border-bottom: 1rpx solid #f0f0f0;
 }
 
+/* 标题行变体：作为可点击入口（未编辑态用），左文右箭头，flex 布局 */
+.detail-card-title-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.detail-card-title-link:active {
+  opacity: 0.55;
+  background: #f8f8f8;
+}
+
+.detail-card-title-arrow {
+  font-size: 36rpx;
+  color: #ccc;
+  line-height: 1;
+}
+
 .detail-row {
   display: flex;
   justify-content: space-between;
@@ -88,23 +107,9 @@
 
 .detail-row-value {
   font-size: 28rpx;
-  color: #666;
+  color: #1a1a1a;
   text-align: right;
   max-width: 60%;
-}
-
-.detail-row-link {
-  cursor: pointer;
-}
-
-.detail-row-link:active {
-  background: #f8f8f8;
-}
-
-.detail-row-arrow {
-  font-size: 36rpx;
-  color: #ccc;
-  line-height: 1;
 }
 
 .detail-danger-zone {
@@ -136,4 +141,83 @@
   font-size: 24rpx;
   color: #999;
   text-align: center;
+}
+
+/* ==================== hero 头像编辑表单（2026-09-08） ==================== */
+
+/* 头像编辑容器：relative 锚定「更换」角标 */
+.detail-hero-avatar {
+  position: relative;
+}
+
+/* 头像可点编辑：hover 反馈 */
+.detail-hero-avatar-editable {
+  cursor: pointer;
+}
+
+.detail-hero-avatar-hover {
+  opacity: 0.7;
+}
+
+/* 「更换」角标（absolute 贴右下，蓝底白字胶囊） */
+.detail-hero-avatar-change {
+  position: absolute;
+  right: -8rpx;
+  bottom: 0;
+  background: #1a73e8;
+  color: #fff;
+  font-size: 20rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 24rpx;
+  border: 2rpx solid #fff;
+  line-height: 1.2;
+}
+
+/* 昵称 Input（居中，与 detail-name 同字号，底线表示可编辑） */
+.detail-hero-name-input {
+  margin-top: 20rpx;
+  font-size: 38rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+  text-align: center;
+  padding: 4rpx 24rpx 8rpx;
+  min-width: 300rpx;
+  border-bottom: 2rpx solid #1a73e8;
+}
+
+.detail-hero-name-placeholder {
+  color: #ccc;
+  font-size: 38rpx;
+  font-weight: 600;
+}
+
+/* 编辑态操作条：保存（主色实心）+ 取消（浅色描边）并排 */
+.detail-edit-actions {
+  margin: 32rpx 24rpx 0;
+  display: flex;
+  gap: 20rpx;
+}
+
+.detail-save-btn {
+  flex: 1;
+  height: 92rpx;
+  line-height: 92rpx;
+  text-align: center;
+  background: #1a73e8;
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+  border-radius: 16rpx;
+}
+
+.detail-cancel-btn {
+  flex: 1;
+  height: 92rpx;
+  line-height: 92rpx;
+  text-align: center;
+  background: #fff;
+  color: #666;
+  font-size: 30rpx;
+  border-radius: 16rpx;
+  border: 2rpx solid #e0e0e0;
 }

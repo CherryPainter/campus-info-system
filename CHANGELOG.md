@@ -4,6 +4,44 @@
 
 ---
 
+## Unreleased
+
+> 适用范围：小程序端（miniapp-frontend）。系统主版本号未升（v6.17.1 保持），按"正式发布才升版本号"惯例合入下版。
+
+### 重构：个人资料详情页（hero 变身编辑表单 + 初始全黑 + 保存语义，2026-09-08）
+- **初始全黑**：6 个只读行（学号/班级/学校/学院/专业/校园卡号）去掉 `detail-row-locked` 置灰类；`.detail-row-value` 由 `#666` 改 `#1a1a1a`。只读不可编辑的语义靠"无编辑入口"保证，不再用颜色暗示"禁用"。
+- **hero 变身编辑表单**：点「编辑信息」后，hero 区头像可点更换（"更换"角标 + hover 反馈），昵称变居中 Input（蓝下划线）；编辑态整张「编辑信息」卡隐藏（编辑交互唯一发生在 hero，避免重复入口）。非编辑态 hero 纯展示、卡片显示 `编辑信息 ›`。
+- **保存语义**：`chooseAvatar` 不再即时 `updateAvatar`，头像改本地暂存 `pendingAvatarUri`；仅「保存」才先 `updateAvatar`(若有) 再 `updateProfile`；「取消」丢弃全部暂存。没点保存后端/全局 store 一个都不改。
+- 改动文件：`miniapp-frontend/src/pages/profile-detail/{index.tsx,index.scss}`。
+- SCSS 同步清理 8 组孤儿类（`detail-row-locked` / `detail-row-link`(+active) / `detail-row-arrow` / `detail-row-input` / `detail-row-placeholder` / `detail-row-avatar` / `detail-avatar-sm` / `detail-avatar-text-sm`），grep 确认无引用后删除。
+- 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 18.60s 成功（备份 `dist_bak_20260908_185306`）；`dist/pages/profile-detail/index.wxss` grep 确认新类（`detail-hero-name-input` / `detail-hero-avatar-change` / `detail-hero-avatar-editable` / `detail-hero-avatar-hover`）已编入、旧孤儿类已剔除。
+
+### 修复：electricity.ts 漏引 ElectricityMonthlyResult 类型（2026-09-08）
+- `Cannot find name 'ElectricityMonthlyResult'`（`miniapp-frontend/src/api/electricity.ts:49,44` / `:50,14`）：类型已在 `src/types/api.ts:307` 定义，纯导入块漏引。
+- 改动：导入块补 `ElectricityMonthlyResult`。type-only，babel 编译擦除，运行时无影响。
+- 验证：`tsc --noEmit` 退出码 0。
+
+## v6.17.1 (2026-09-08)
+
+> 类型：**缺陷修复（patch）**。针对线上暴露的三类问题修复：**宿舍电量三大数据错误**（趋势图按日求和成倍放大、不同页面"本月已用"数值不一致、总容量与剩余电量矛盾）、**小程序站内消息体验**（电量日报等长文改列表摘要 + 详情页）、**小程序网络通道修复**（反馈图片上传、公告附件下载在登录态过期或域名白名单未配时的失败）。
+
+### 修复：宿舍电量数据三大错误（2026-09-08）
+- **趋势图数据成倍放大**（实际每天约 7 度，折线图却显示 22 度）：根因是入库去重按「时间戳精确到秒 + 电表原始字符串」匹配，而同一块电表在库中存在多种写法（历史脏数据 `电表: 31栋512照明`、清洗后 `31栋512`），写法一变就匹配不上 → 同一天被反复插入多份；趋势按日求和时被成倍累加、记录条数虚高。修复：新增 `ElectricityRepository.normalize_meter()`（去「电表:」前缀 +「照明」后缀）作为单一真相源，入库去重改为按「用户 + 用电日期 + 归一化电表」维度（保留两块分表、合并写法差异导致的重复）；`ElectricityService.clean_meter` 改为委托 `normalize_meter`。附清理历史脏数据的 `dedupe_electricity.py`（演练 + `--apply`）。
+- **「我的」页与电量详情页"本月已用"不一致**（如 162.93 与 74.04）：此前两页各自拉取用电记录在本地累加（我的页拉 1000 条、详情页只取首屏 20 条），口径不同。改为后端统一按自然月聚合：新增 `GET /api/miniapp/electricity/monthly`（`ElectricityService.get_monthly_usage`），两个页面共用一个数据源。
+- **总容量显示 100 度但剩余 125 度、百分比恒 100%**：`electricity_total_capacity` 表对应用户无记录时，容量管理器回落默认值 100。修复：`update_remaining` 增加首次容量基准——无任何容量记录时以 `max(当前剩余, 100)` 记录初始基准（INITIAL）。
+
+### 新增 / 优化：消息中心电量日报等改「列表摘要 + 详情页」（2026-09-08）
+- 小程序「我的消息」列表不再整篇铺开正文，改为最多 2 行摘要 + 右侧箭头，点击进入新的消息详情页看完整内容，进入即自动标记已读，返回后列表已读态自动刷新。
+- 后端新增 `GET /api/miniapp/notifications/messages/<id>`（`UserNotificationService.get_notification`，按 id + user_id 双过滤防越权）。
+
+### 修复：小程序上传 / 下载在登录态过期或域名未配时的失败（2026-09-08）
+- **反馈图片上传**：`Taro.uploadFile` 不走统一的 request 封装，登录态过期即 401 失败且无自动续期。修复：`request.ts` 新增 `ensureFreshAccessToken()`，`feedbackApi.uploadImage` 上传前预刷新 token、遇 401 强制刷新重试一次；错误归一化——域名未配白名单时明确提示"上传域名未加入小程序白名单"。
+- **公告附件下载用错字段**：详情页原来拿 `file_url`（磁盘存储相对路径）直接 `Taro.downloadFile`，必然失败且绕过鉴权。改为走后端带鉴权的 `download_url`（`/api/miniapp/announcements/attachment/<id>`）并拼完整 URL、带登录态下载，区分 401/404/域名白名单提示。附件类型补 `download_url` 字段。
+- 前端补丁类修复需重新构建后生效。
+
+### 修复：小程序天气图标跨设备不一致（2026-09-08）
+- 天气状况图标由 emoji 改为统一 PNG 素材（晴/多云/阴/雨/大雨/雪/雷/雾 8 张），杜绝 emoji 在不同设备渲染不一致。`WeatherCard`、7 天预报、24h 折线图 Canvas 三处改 `<Image>` / `ctx.drawImage` 引用本地素材。
+
 ## v6.17.0 (2026-09-07)
 
 > 类型：**新功能 + 功能重构（minor）**。在 v6.16.0（微信小程序学生端第一/二阶段）基础上继续深化：**学生身份体系组织树化 + 一次性绑定码门禁**（学校→学院→专业→班级树维护，杜绝先到先得冒绑）、**电量模块用户化**（独立电表、Cookie 学生自配、推送改小程序站内通知）、**消息中心三合一**（校园通知+自定义推送单页 Tab + WangEditor v5 独立编辑页）、**学生名单/绑定合一管理**（学院+专业维度）。**本版补齐运营侧能力**：管理端富文本图片上传修复（token 刷新 + 文件级判定 + 编辑器内部崩溃兜底）、公告正文图 / 反馈截图**孤儿图自动回收**（更新/删除后即时 + 每日 03:30 定时兜底，带 24h 保护期）、**企业微信天气预警推送开关**（天气管理页顶部 + 系统设置页两处独立开关，仅关推送渠道不影响小程序天气数据）、后端**课程缓存主动失效**、小程序课表日期淡化 + 组件按需注入(lazyCodeLoading)。

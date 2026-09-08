@@ -5,6 +5,7 @@ import type {
   ElectricityCookieTestResult,
   ElectricityCurrentResult,
   ElectricityHistoryResult,
+  ElectricityMonthlyResult,
   ElectricityTrendResult,
 } from '@/types/api';
 
@@ -38,6 +39,16 @@ export function getTrend(
   range: 'day' | 'week' | 'month' = 'week',
 ): Promise<ElectricityTrendResult> {
   return get<ElectricityTrendResult>('/api/miniapp/electricity/trend', { range });
+}
+
+/**
+ * 本月累计用电量（后端按自然月聚合）
+ *
+ * 此前由前端各自拉取记录在本地累加，我的页拉 1000 条、详情页只拉首屏 20 条，
+ * 同一月份显示成两个不同数字。统一走后端聚合保证口径一致。
+ */
+export function getMonthlyUsage(): Promise<ElectricityMonthlyResult> {
+  return get<ElectricityMonthlyResult>('/api/miniapp/electricity/monthly');
 }
 
 /** 电表 Cookie 配置状态（脱敏：configured + cookie_preview） */

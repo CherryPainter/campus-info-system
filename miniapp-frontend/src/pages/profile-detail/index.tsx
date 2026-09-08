@@ -1,12 +1,20 @@
 /**
- * 个人资料详情页
+ * 个人资料详情页（hero 原地编辑）
  *
  * 入口：首页「我的」页顶部头像+昵称区域（点击跳此页）
  *
- * 内容：
- * - 顶部头像 + 昵称（与「我的」页 hero 区对齐）
- * - 资料块：学号 / 班级 / 学校（只读，绑定后锁定）+ 校园卡号 / 学院 / 专业 / 年级 / 手机
- * - 底部"注销账号"危险操作（红色按钮 + 二次确认 + 调用 DELETE /auth/user/me）
+ * 设计（2026-09-08 重构）：
+ * - 身份信息 / 学籍信息（学号/班级/学校/学院/专业/校园卡号）：始终**黑色**正常字体展示，
+ *   只读不可编辑（绑定后锁定，不开放编辑入口）。视觉上去掉"置灰=禁用"感。
+ * - hero 区（头像 + 昵称 + 班级）：非编辑态为纯展示；点击「编辑信息」后**变身编辑表单**——
+ *   头像可点更换（本地暂存，不即时上传）、昵称变为 Input。班级仍只读。
+ * - 「编辑信息」卡：唯一的编辑入口。非编辑态显示 `编辑信息 ›`；编辑态整张卡隐藏（编辑交互
+ *   全部发生在 hero，避免重复入口）。
+ * - 底部「保存 / 取消」：仅编辑态出现。**保存语义**——头像与昵称均暂存于本地（pendingAvatarUri /
+ *   nickname state），只有点保存才一次性提交（先 updateAvatar 再 updateProfile）；点取消丢弃
+ *   全部暂存。完全没点保存时后端/全局 store 一个都不会改。
+ * - 学号/班级/学校/学院/专业：由管理员预录名单绑定继承，学生不可自行修改（后端 PUT profile
+ *   白名单虽含 college/major，但业务上应由名单同步，故前端不提供编辑入口）
  *
  * 注销账号（与「退出登录」区别）：
  * - 退出登录：仅撤销当前 token，本地清空，可重新登录
@@ -15,16 +23,25 @@
  */
 
 import { useState } from 'react';
-import { View, Text, Image } from '@tarojs/components';
+import { View, Text, Image, Input } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { useAuthStore } from '@/stores/authStore';
-import { getProfile, deleteAccount } from '@/api/user';
+import { useUserStore } from '@/stores/userStore';
+import { getProfile, updateProfile, updateAvatar, deleteAccount } from '@/api/user';
 import type { StudentProfile } from '@/types/api';
 import './index.scss';
 
 export default function ProfileDetail() {
-  const { user, refreshToken, logout: clearAuth } = useAuthStore();
+  const { user, setUser, refreshToken, logout: clearAuth } = useAuthStore();
+  const { setProfile: syncProfile } = useUserStore();
+  // 页面本地资料源：进入时拉取，展示 + 编辑后合并更新
   const [profile, setProfile] = useState<StudentProfile | null>(null);
+  const [editing, setEditing] = useState(false);
+  // 暂存昵称（本地编辑态，未点保存不写回）
+  const [nickname, setNickname] = useState('');
+  // 暂存头像 data URI（本地编辑态，未点保存不上传）；null = 未选新头像
+  const [pendingAvatarUri, setPendingAvatarUri] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   // 首次进入拉取资料
@@ -39,8 +56,22 @@ export default function ProfileDetail() {
     }
   });
 
-  const name =
-    profile?.nickname || user?.username || '同学';
+  const name = editing
+    ? nickname || user?.username || '同学'
+    : profile?.nickname || user?.username || '同学';
+
+  const enterEdit = () => {
+    // 进入编辑态：预填当前昵称（空则回退 username）
+    setNickname(profile?.nickname || user?.username || '');
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    // 取消编辑：丢弃全部暂存（昵称 + 头像），一个都不写回
+    setEditing(false);
+    setNickname('');
+    setPendingAvatarUri(null);
+  };
 
   const handleDelete = () => {
     Taro.showModal({
@@ -73,61 +104,133 @@ export default function ProfileDetail() {
     });
   };
 
+  // 编辑态选头像：压缩 → base64 → data URI → 仅写入本地 pendingAvatarUri（暂存），
+  // **不**立即调 updateAvatar；只有点保存才由 handleSave 统一提交。
+  const chooseAvatar = async () => {
+    if (!editing) return;
+    try {
+      const res = await Taro.chooseImage({
+        count: 1,
+        sizeType: ['compressed'],
+        sourceType: ['album', 'camera'],
+      });
+      const filePath = res.tempFilePaths[0];
+      Taro.showLoading({ title: '处理中' });
+      const fs = Taro.getFileSystemManager();
+      const base64 = fs.readFileSync(filePath, 'base64');
+      const ext = (filePath.match(/\.([a-zA-Z0-9]+)$/) || [])[1]?.toLowerCase() || 'jpeg';
+      const mimeMap: Record<string, string> = {
+        jpg: 'jpeg', jpeg: 'jpeg', png: 'png', gif: 'gif', webp: 'webp',
+      };
+      const dataUri = `data:image/${mimeMap[ext] || 'jpeg'};base64,${base64}`;
+      setPendingAvatarUri(dataUri);
+    } catch (e) {
+      if ((e as { errMsg?: string })?.errMsg?.includes('cancel')) return;
+      const msg = (e as { message?: string })?.message || '头像处理失败，请重试';
+      Taro.showToast({ title: msg, icon: 'none' });
+    } finally {
+      Taro.hideLoading();
+    }
+  };
+
+  // 保存昵称（头像已在 chooseAvatar 时即时落库）
+  const handleSave = async () => {
+    if (saving) return;
+    const trimmed = nickname.trim();
+    if (!trimmed) {
+      Taro.showToast({ title: '昵称不能为空', icon: 'none' });
+      return;
+    }
+    setSaving(true);
+    try {
+      // 1) 头像（仅当用户真的选过新头像才上传；没选则跳过，沿用后端现值）
+      if (pendingAvatarUri) {
+        const upd = await updateAvatar(pendingAvatarUri);
+        setUser(upd.user);
+      }
+      // 2) 昵称
+      const res = await updateProfile({ nickname: trimmed });
+      const merged = { ...(profile || {}), ...res.profile } as StudentProfile;
+      setProfile(merged);
+      syncProfile(merged);
+      // 清暂存 + 退出编辑
+      setPendingAvatarUri(null);
+      Taro.showToast({ title: '已保存', icon: 'success' });
+      setEditing(false);
+    } catch (e) {
+      const msg = (e as { message?: string })?.message || '保存失败，请重试';
+      Taro.showToast({ title: msg, icon: 'none' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <View className="profile-detail-page">
-      {/* 顶部：头像 + 昵称 */}
+      {/* 顶部：非编辑态为纯展示；编辑态变身编辑表单（头像可点换 + 昵称 Input） */}
       <View className="detail-hero">
-        {user?.avatar ? (
-          <Image src={user.avatar} className="detail-avatar" mode="aspectFill" />
+        {/* 头像：编辑态可点更换（hover 反馈 + 「更换」角标）；非编辑态纯展示 */}
+        <View
+          className={editing ? 'detail-hero-avatar detail-hero-avatar-editable' : 'detail-hero-avatar'}
+          onClick={() => { if (editing) chooseAvatar(); }}
+          hoverClass={editing ? 'detail-hero-avatar-hover' : undefined}
+          hoverStayTime={editing ? 50 : undefined}
+        >
+          {editing && pendingAvatarUri ? (
+            <Image src={pendingAvatarUri} className="detail-avatar" mode="aspectFill" />
+          ) : user?.avatar ? (
+            <Image src={user.avatar} className="detail-avatar" mode="aspectFill" />
+          ) : (
+            <View className="detail-avatar detail-avatar-placeholder">
+              <Text className="detail-avatar-text">{name.slice(0, 1)}</Text>
+            </View>
+          )}
+          {editing && (
+            <View className="detail-hero-avatar-change">
+              <Text>更换</Text>
+            </View>
+          )}
+        </View>
+
+        {/* 昵称：编辑态为 Input；非编辑态为 Text */}
+        {editing ? (
+          <Input
+            className="detail-hero-name-input"
+            value={nickname}
+            placeholder="请输入昵称"
+            placeholderClass="detail-hero-name-placeholder"
+            maxlength={50}
+            onInput={(e) => setNickname(e.detail.value)}
+          />
         ) : (
-          <View className="detail-avatar detail-avatar-placeholder">
-            <Text className="detail-avatar-text">{name.slice(0, 1)}</Text>
-          </View>
+          <Text className="detail-name">{name}</Text>
         )}
-        <Text className="detail-name">{name}</Text>
+
         {profile?.class_name ? (
           <Text className="detail-sub">{profile.class_name}</Text>
         ) : null}
       </View>
 
-      {/* 身份信息（只读，绑定后锁定） */}
+      {/* 身份信息：只读不可编辑，但视觉上**正常黑色**（不带"置灰=禁用"感） */}
       <View className="detail-card">
         <Text className="detail-card-title">身份信息</Text>
         <View className="detail-row">
           <Text className="detail-row-label">学号</Text>
-          <Text className="detail-row-value">
-            {profile?.student_number || '--'}
-          </Text>
+          <Text className="detail-row-value">{profile?.student_number || '--'}</Text>
         </View>
         <View className="detail-row">
           <Text className="detail-row-label">班级</Text>
-          <Text className="detail-row-value">
-            {profile?.class_name || '--'}
-          </Text>
+          <Text className="detail-row-value">{profile?.class_name || '--'}</Text>
         </View>
         <View className="detail-row">
           <Text className="detail-row-label">学校</Text>
-          <Text className="detail-row-value">
-            {profile?.school || '--'}
-          </Text>
+          <Text className="detail-row-value">{profile?.school || '--'}</Text>
         </View>
       </View>
 
-      {/* 基础资料（仅展示后端有采集入口 + 名单带出的字段；删除真实姓名/手机号/年级） */}
+      {/* 学籍信息：只读不可编辑（学院/专业由名单带出），正常黑色字体 */}
       <View className="detail-card">
-        <Text className="detail-card-title">基础资料</Text>
-        <View className="detail-row">
-          <Text className="detail-row-label">昵称</Text>
-          <Text className="detail-row-value">
-            {profile?.nickname || '未设置'}
-          </Text>
-        </View>
-        <View className="detail-row">
-          <Text className="detail-row-label">校园卡号</Text>
-          <Text className="detail-row-value">
-            {profile?.campus_card_number || '未绑定'}
-          </Text>
-        </View>
+        <Text className="detail-card-title">学籍信息</Text>
         <View className="detail-row">
           <Text className="detail-row-label">学院</Text>
           <Text className="detail-row-value">{profile?.college || '--'}</Text>
@@ -136,14 +239,35 @@ export default function ProfileDetail() {
           <Text className="detail-row-label">专业</Text>
           <Text className="detail-row-value">{profile?.major || '--'}</Text>
         </View>
-        <View
-          className="detail-row detail-row-link"
-          onClick={() => Taro.navigateTo({ url: '/pages/profile-edit/index' })}
-        >
-          <Text className="detail-row-label">编辑资料</Text>
-          <Text className="detail-row-arrow">›</Text>
+        <View className="detail-row">
+          <Text className="detail-row-label">校园卡号</Text>
+          <Text className="detail-row-value">
+            {profile?.campus_card_number || '未绑定'}
+          </Text>
         </View>
       </View>
+
+      {/* 「编辑信息」：唯一编辑入口；编辑态整张卡隐藏（编辑交互全发生在 hero，避免重复入口） */}
+      {!editing && (
+        <View className="detail-card">
+          <View className="detail-card-title detail-card-title-link" onClick={enterEdit}>
+            <Text>编辑信息</Text>
+            <Text className="detail-card-title-arrow">›</Text>
+          </View>
+        </View>
+      )}
+
+      {/* 编辑态操作条 */}
+      {editing && (
+        <View className="detail-edit-actions">
+          <View className="detail-save-btn" onClick={handleSave}>
+            <Text>{saving ? '保存中…' : '保存'}</Text>
+          </View>
+          <View className="detail-cancel-btn" onClick={cancelEdit}>
+            <Text>取消</Text>
+          </View>
+        </View>
+      )}
 
       {/* 危险操作：注销账号 */}
       <View className="detail-danger-zone">
