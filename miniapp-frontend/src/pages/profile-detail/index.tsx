@@ -265,8 +265,8 @@ export default function ProfileDetail() {
       {!editing ? (
         <View className="detail-edit-actions">
           <View className="detail-edit-entry" onClick={enterEdit} hoverClass="detail-edit-entry-hover" hoverStayTime={50}>
-            <Text>编辑资料</Text>
-            <Text className="detail-card-title-arrow">›</Text>
+            <Text className="detail-edit-entry-text">编辑资料</Text>
+            <Text className="detail-edit-entry-arrow">›</Text>
           </View>
         </View>
       ) : (
