@@ -7,9 +7,10 @@
  * - 身份信息 / 学籍信息（学号/班级/学校/学院/专业/校园卡号）：**非编辑态**全黑正常展示（不带"置灰"感）；
  *   **编辑态**值文字变灰，明确"不可编辑"边界（可编辑的只有下方「编辑信息」卡内的头像+昵称）。
  * - hero 区（大头像 + 昵称 + 班级）：**始终纯展示**，不参与编辑，始终显示**已保存**的值。
- * - 「编辑信息」卡：唯一的编辑入口，且**编辑态由这张卡替换为编辑表单**——
- *   非编辑态显示 `编辑信息 ›`（入口）；点击后该卡原地变成「头像（可点更换）+ 昵称（Input）」表单；
- *   保存 / 取消后再变回 `编辑信息 ›` 入口卡。
+ * - 「编辑信息」卡：与身份/学籍信息卡同构，承载「头像」「昵称」两行，始终是完整卡片。
+ *   非编辑态：两行**只读黑字**展示（不置灰），标题 `编辑信息 ›` 可点进编辑；
+ *   编辑态：两行**原地替换为真正的编辑表单**（头像可点更换 + 昵称 Input）；
+ *   保存 / 取消后再变回只读展示。
  * - 底部「保存 / 取消」：仅编辑态出现。**保存语义**——头像与昵称均暂存于本地（pendingAvatarUri /
  *   nickname state），只有点保存才一次性提交（先 updateAvatar 再 updateProfile）；点取消丢弃
  *   全部暂存。完全没点保存时后端/全局 store 一个都不会改。
@@ -222,24 +223,25 @@ export default function ProfileDetail() {
         </View>
       </View>
 
-      {/* 「编辑信息」：唯一编辑入口。
-          非编辑态 = 「编辑信息 ›」入口卡；
-          编辑态   = **这张卡被编辑表单替换**（头像可点更换 + 昵称 Input）；
-          保存 / 取消后再变回入口卡。 */}
-      {!editing ? (
-        <View className="detail-card">
+      {/* 「编辑信息」卡：承载 头像 + 昵称（与身份/学籍信息卡同构）。
+          非编辑态：两行**只读展示**（黑色，不置灰），标题带 › 可点进编辑；
+          编辑态  ：两行**原地替换为真正的编辑表单**（头像可点更换 + 昵称 Input）；
+          保存 / 取消后再变回只读展示。 */}
+      <View className="detail-card">
+        {editing ? (
+          <Text className="detail-card-title">编辑信息</Text>
+        ) : (
           <View className="detail-card-title detail-card-title-link" onClick={enterEdit}>
             <Text>编辑信息</Text>
             <Text className="detail-card-title-arrow">›</Text>
           </View>
-        </View>
-      ) : (
-        <View className="detail-card">
-          <Text className="detail-card-title">编辑信息</Text>
+        )}
 
-          {/* 头像：可点更换。选中后仅本地暂存 pendingAvatarUri，未点保存不上传 */}
-          <View className="detail-row">
-            <Text className="detail-row-label">头像</Text>
+        {/* 头像：编辑态可点更换（选图后仅本地暂存 pendingAvatarUri，未点保存不上传）；
+            非编辑态只读展示小头像 */}
+        <View className="detail-row">
+          <Text className="detail-row-label">头像</Text>
+          {editing ? (
             <View
               className="detail-avatar-edit"
               onClick={chooseAvatar}
@@ -257,11 +259,19 @@ export default function ProfileDetail() {
               )}
               <Text className="detail-avatar-edit-hint">更换</Text>
             </View>
-          </View>
+          ) : user?.avatar ? (
+            <Image src={user.avatar} className="detail-avatar-sm" mode="aspectFill" />
+          ) : (
+            <View className="detail-avatar-sm detail-avatar-placeholder">
+              <Text className="detail-avatar-text-sm">{name.slice(0, 1)}</Text>
+            </View>
+          )}
+        </View>
 
-          {/* 昵称：Input，本地暂存，未点保存不提交 */}
-          <View className="detail-row">
-            <Text className="detail-row-label">昵称</Text>
+        {/* 昵称：编辑态为 Input（本地暂存，未点保存不提交）；非编辑态只读黑字 */}
+        <View className="detail-row">
+          <Text className="detail-row-label">昵称</Text>
+          {editing ? (
             <Input
               className="detail-row-value-input"
               value={nickname}
@@ -270,9 +280,11 @@ export default function ProfileDetail() {
               maxlength={50}
               onInput={(e) => setNickname(e.detail.value)}
             />
-          </View>
+          ) : (
+            <Text className="detail-row-value">{name}</Text>
+          )}
         </View>
-      )}
+      </View>
 
       {/* 编辑态操作条 */}
       {editing && (

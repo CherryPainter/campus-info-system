@@ -34,7 +34,9 @@
 
 ### 重构：编辑表单由 hero 移入「编辑信息」卡片（2026-09-08）
 - 头像 / 昵称的编辑项改为**卡片承载**：不再把 hero 变成表单，hero 恢复为**始终纯展示**（大头像 + 已保存昵称 + 班级），始终显示已保存的值。
-- 「编辑信息」卡：**非编辑态**是 `编辑信息 ›` 入口；点击后**这张卡原地被编辑表单替换**——「头像」行（小头像 + 蓝色「更换」，可点选图）+「昵称」行（Input，蓝下划线）；**保存 / 取消后再变回** `编辑信息 ›` 入口卡。
+- 「编辑信息」卡：**与身份/学籍信息卡同构，始终是完整卡片**，承载「头像」「昵称」两行。
+  **非编辑态**两行只读黑字展示（不置灰），标题 `编辑信息 ›` 可点进编辑；点击后两行**原地替换为真正的编辑表单**
+  ——「头像」行（小头像 + 蓝色「更换」，可点选图）+「昵称」行（Input，蓝下划线）；**保存 / 取消后再变回**只读黑字展示。
 - 保存语义不变：头像本地暂存 `pendingAvatarUri`、昵称暂存 `nickname` state，仅点保存才提交；取消丢弃全部暂存。编辑中 hero 不跟着变（始终展示已保存值），保存后才更新。
 - 改动文件：`miniapp-frontend/src/pages/profile-detail/{index.tsx,index.scss}`。
 - SCSS：删除 6 组 hero 编辑孤儿类（`detail-hero-avatar` / `-editable` / `-hover` / `-change` / `detail-hero-name-input` / `-placeholder`）；新增 `.detail-avatar-edit` / `.detail-avatar-sm` / `.detail-avatar-text-sm` / `.detail-avatar-edit-hint` / `.detail-avatar-edit-hover` / `.detail-row-value-input` / `.detail-row-value-placeholder`。
