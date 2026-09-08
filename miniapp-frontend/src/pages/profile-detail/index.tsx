@@ -1,26 +1,26 @@
 /**
- * 个人资料详情页（「编辑信息」卡原地编辑）
+ * 个人资料详情页
  *
  * 入口：首页「我的」页顶部头像+昵称区域（点击跳此页）
  *
- * 设计（2026-09-08 重构）：
- * - 身份信息 / 学籍信息（学号/班级/学校/学院/专业/校园卡号）：**非编辑态**全黑正常展示（不带"置灰"感）；
- *   **编辑态**值文字变灰，明确"不可编辑"边界（可编辑的只有下方「编辑信息」卡内的头像+昵称）。
- * - hero 区（大头像 + 昵称 + 班级）：**始终纯展示**，不参与编辑，始终显示**已保存**的值。
- * - 「编辑信息」卡：与身份/学籍信息卡同构，承载「头像」「昵称」两行，始终是完整卡片。
- *   非编辑态：两行**只读黑字**展示（不置灰），标题 `编辑信息 ›` 可点进编辑；
- *   编辑态：两行**原地替换为真正的编辑表单**（头像可点更换 + 昵称 Input）；
- *   保存 / 取消后再变回只读展示。
- * - 底部「保存 / 取消」：仅编辑态出现。**保存语义**——头像与昵称均暂存于本地（pendingAvatarUri /
- *   nickname state），只有点保存才一次性提交（先 updateAvatar 再 updateProfile）；点取消丢弃
- *   全部暂存。完全没点保存时后端/全局 store 一个都不会改。
- * - 学号/班级/学校/学院/专业：由管理员预录名单绑定继承，学生不可自行修改（后端 PUT profile
- *   白名单虽含 college/major，但业务上应由名单同步，故前端不提供编辑入口）
- *
- * 注销账号（与「退出登录」区别）：
- * - 退出登录：仅撤销当前 token，本地清空，可重新登录
- * - 注销账号：users.is_active=False（软删）+ 撤销 token + 写日志，该微信号无法再次登录
- *   如需恢复请联系管理员在管理端重新启用（users.is_active=True）
+ * 设计（2026-09-08 重构，按用户示意图）：
+ * - 非编辑态布局（自上而下）：
+ *     [hero：大头像 + 已保存昵称 + 班级]
+ *     [身份信息卡：学号/班级/学校]
+ *     [学籍信息卡：学院/专业/校园卡号]
+ *     [「编辑资料 ›」按钮]
+ *     [注销账号]
+ * - 编辑态布局（自上而下）：
+ *     [编辑信息卡：头像行 + 昵称行]   ← 替代 hero 位置（hero 在编辑态隐藏）
+ *     [身份信息卡：学号/班级/学校]     ← 值文字变灰，提示"不可编辑"
+ *     [学籍信息卡：学院/专业/校园卡号] ← 值文字变灰，提示"不可编辑"
+ *     [保存] [取消]                    ← 替代「编辑资料」按钮
+ *     [注销账号]
+ * - 编辑信息卡的"头像行"：点击整行触发 Taro.chooseImage，选图暂存本地（pendingAvatarUri），
+ *   **未点保存不上传**；"昵称行"：右侧是 Input（受控，本地 nickname state）。
+ * - 保存语义：先 updateAvatar（如有新图）→ 再 updateProfile(nickname) → 一次性写回。
+ * - 取消语义：丢弃 pendingAvatarUri 和 nickname，一个都不写回。
+ * - 注销账号：与编辑状态独立，无论是否编辑态都显示。
  */
 
 import { useState } from 'react';
@@ -168,26 +168,64 @@ export default function ProfileDetail() {
 
   return (
     <View className="profile-detail-page">
-      {/* 顶部 hero：始终纯展示（大头像 + 已保存昵称 + 班级），不参与编辑。
-          编辑交互全部发生在下方「编辑信息」卡片里。 */}
-      <View className="detail-hero">
-        {/* 头像：始终展示**已保存**的头像（pendingAvatarUri 未点保存不体现在这里） */}
-        {user?.avatar ? (
-          <Image src={user.avatar} className="detail-avatar" mode="aspectFill" />
-        ) : (
-          <View className="detail-avatar detail-avatar-placeholder">
-            <Text className="detail-avatar-text">{name.slice(0, 1)}</Text>
+      {/* 非编辑态：顶部 hero（大头像 + 已保存昵称 + 班级），编辑态让位给编辑信息卡 */}
+      {!editing && (
+        <View className="detail-hero">
+          {user?.avatar ? (
+            <Image src={user.avatar} className="detail-avatar" mode="aspectFill" />
+          ) : (
+            <View className="detail-avatar detail-avatar-placeholder">
+              <Text className="detail-avatar-text">{name.slice(0, 1)}</Text>
+            </View>
+          )}
+          <Text className="detail-name">{name}</Text>
+          {profile?.class_name ? (
+            <Text className="detail-sub">{profile.class_name}</Text>
+          ) : null}
+        </View>
+      )}
+
+      {/* 编辑态：编辑信息卡（替代 hero 位置）。非编辑态不渲染。 */}
+      {editing && (
+        <View className="detail-card">
+          <Text className="detail-card-title">编辑信息</Text>
+
+          {/* 头像行：整行可点 → 触发选图；右侧 [小圆头像 + 箭头 ›] */}
+          <View className="detail-row detail-row-link" onClick={chooseAvatar} hoverClass="detail-row-hover" hoverStayTime={50}>
+            <Text className="detail-row-label">头像</Text>
+            <View className="detail-row-right">
+              {pendingAvatarUri ? (
+                <Image src={pendingAvatarUri} className="detail-avatar-sm" mode="aspectFill" />
+              ) : user?.avatar ? (
+                <Image src={user.avatar} className="detail-avatar-sm" mode="aspectFill" />
+              ) : (
+                <View className="detail-avatar-sm detail-avatar-placeholder">
+                  <Text className="detail-avatar-text-sm">{name.slice(0, 1)}</Text>
+                </View>
+              )}
+              <Text className="detail-card-title-arrow">›</Text>
+            </View>
           </View>
-        )}
 
-        <Text className="detail-name">{name}</Text>
+          {/* 昵称行：右侧 Input 受控（本地 nickname state，未点保存不提交） */}
+          <View className="detail-row detail-row-nickname">
+            <Text className="detail-row-label">昵称</Text>
+            <View className="detail-row-right">
+              <Input
+                className="detail-row-value-input"
+                value={nickname}
+                placeholder="请输入昵称"
+                placeholderClass="detail-row-value-placeholder"
+                maxlength={50}
+                onInput={(e) => setNickname(e.detail.value)}
+              />
+              <Text className="detail-card-title-arrow">›</Text>
+            </View>
+          </View>
+        </View>
+      )}
 
-        {profile?.class_name ? (
-          <Text className="detail-sub">{profile.class_name}</Text>
-        ) : null}
-      </View>
-
-      {/* 身份信息：只读不可编辑，但视觉上**正常黑色**（不带"置灰=禁用"感） */}
+      {/* 身份信息：编辑态值变灰（不可编辑） */}
       <View className="detail-card">
         <Text className="detail-card-title">身份信息</Text>
         <View className="detail-row">
@@ -204,7 +242,7 @@ export default function ProfileDetail() {
         </View>
       </View>
 
-      {/* 学籍信息：只读不可编辑（学院/专业由名单带出），正常黑色字体 */}
+      {/* 学籍信息：编辑态值变灰（不可编辑） */}
       <View className="detail-card">
         <Text className="detail-card-title">学籍信息</Text>
         <View className="detail-row">
@@ -223,71 +261,15 @@ export default function ProfileDetail() {
         </View>
       </View>
 
-      {/* 「编辑信息」卡：承载 头像 + 昵称（与身份/学籍信息卡同构）。
-          非编辑态：两行**只读展示**（黑色，不置灰），标题带 › 可点进编辑；
-          编辑态  ：两行**原地替换为真正的编辑表单**（头像可点更换 + 昵称 Input）；
-          保存 / 取消后再变回只读展示。 */}
-      <View className="detail-card">
-        {editing ? (
-          <Text className="detail-card-title">编辑信息</Text>
-        ) : (
-          <View className="detail-card-title detail-card-title-link" onClick={enterEdit}>
-            <Text>编辑信息</Text>
+      {/* 底部操作：非编辑态=「编辑资料 ›」入口；编辑态=保存 + 取消 */}
+      {!editing ? (
+        <View className="detail-edit-actions">
+          <View className="detail-edit-entry" onClick={enterEdit} hoverClass="detail-edit-entry-hover" hoverStayTime={50}>
+            <Text>编辑资料</Text>
             <Text className="detail-card-title-arrow">›</Text>
           </View>
-        )}
-
-        {/* 头像：编辑态可点更换（选图后仅本地暂存 pendingAvatarUri，未点保存不上传）；
-            非编辑态只读展示小头像 */}
-        <View className="detail-row">
-          <Text className="detail-row-label">头像</Text>
-          {editing ? (
-            <View
-              className="detail-avatar-edit"
-              onClick={chooseAvatar}
-              hoverClass="detail-avatar-edit-hover"
-              hoverStayTime={50}
-            >
-              {pendingAvatarUri ? (
-                <Image src={pendingAvatarUri} className="detail-avatar-sm" mode="aspectFill" />
-              ) : user?.avatar ? (
-                <Image src={user.avatar} className="detail-avatar-sm" mode="aspectFill" />
-              ) : (
-                <View className="detail-avatar-sm detail-avatar-placeholder">
-                  <Text className="detail-avatar-text-sm">{name.slice(0, 1)}</Text>
-                </View>
-              )}
-              <Text className="detail-avatar-edit-hint">更换</Text>
-            </View>
-          ) : user?.avatar ? (
-            <Image src={user.avatar} className="detail-avatar-sm" mode="aspectFill" />
-          ) : (
-            <View className="detail-avatar-sm detail-avatar-placeholder">
-              <Text className="detail-avatar-text-sm">{name.slice(0, 1)}</Text>
-            </View>
-          )}
         </View>
-
-        {/* 昵称：编辑态为 Input（本地暂存，未点保存不提交）；非编辑态只读黑字 */}
-        <View className="detail-row">
-          <Text className="detail-row-label">昵称</Text>
-          {editing ? (
-            <Input
-              className="detail-row-value-input"
-              value={nickname}
-              placeholder="请输入昵称"
-              placeholderClass="detail-row-value-placeholder"
-              maxlength={50}
-              onInput={(e) => setNickname(e.detail.value)}
-            />
-          ) : (
-            <Text className="detail-row-value">{name}</Text>
-          )}
-        </View>
-      </View>
-
-      {/* 编辑态操作条 */}
-      {editing && (
+      ) : (
         <View className="detail-edit-actions">
           <View className="detail-save-btn" onClick={handleSave}>
             <Text>{saving ? '保存中…' : '保存'}</Text>
@@ -298,7 +280,7 @@ export default function ProfileDetail() {
         </View>
       )}
 
-      {/* 危险操作：注销账号 */}
+      {/* 注销账号：始终显示，与编辑状态独立 */}
       <View className="detail-danger-zone">
         <View
           className="detail-delete-btn"

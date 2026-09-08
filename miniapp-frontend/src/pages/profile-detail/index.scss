@@ -149,31 +149,34 @@
   text-align: center;
 }
 
-/* ==================== 「编辑信息」卡片内编辑表单（2026-09-08） ====================
-   编辑态时这张卡替换掉「编辑信息 ›」入口卡，内含 头像（可点更换）+ 昵称（Input）。
-   保存 / 取消后卡片再变回入口。 */
+/* ==================== 编辑信息卡（编辑态替代 hero，2026-09-08 按示意图重构） ====================
+   「头像」行整行可点选图；右侧 [小圆头像 + 箭头 ›]
+   「昵称」行右侧 [Input + 箭头 ›]
+   A/B 卡（身份/学籍）在编辑态值变灰，提示"不可编辑"。 */
 
-/* 头像编辑区：小头像 + 「更换」文字，右对齐，整块可点 */
-.detail-avatar-edit {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
+.detail-row-link {
   cursor: pointer;
 }
 
-.detail-avatar-edit-hover {
-  opacity: 0.7;
+.detail-row-hover {
+  background: #f8f8f8;
 }
 
-/* 卡片内小头像：只定义尺寸/形状。
-   注意：**不能**在这里写 background——本类写在 .detail-avatar-placeholder 之后，
-   同优先级下会覆盖占位符的蓝底 (#6e8efb)，导致无头像用户的小头像变白、白字"w"
-   看不见（视觉空白圆圈）。背景交给 .detail-avatar-placeholder（蓝底）
-   或图片本身填充（Image 盖住容器，背景本不可见）。 */
+.detail-row-right {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+/* 卡片内小头像：自带蓝底 + 圆角。无头像时占位"W"可见，有头像时 Image 盖住背景。
+   注意：写在这里而不是依赖 .detail-avatar-placeholder 的 background，是为了让蓝底成为
+   该类自身的固有属性，避免与"组合类"的样式应用顺序博弈（之前因 placeholder/sm 同优先级
+   后写者赢导致小圆空心，已踩坑）。 */
 .detail-avatar-sm {
   width: 72rpx;
   height: 72rpx;
   border-radius: 50%;
+  background: #6e8efb;
 }
 
 .detail-avatar-text-sm {
@@ -183,25 +186,37 @@
   line-height: 1;
 }
 
-/* 「更换」提示文字（主色蓝，区别于只读的黑字） */
-.detail-avatar-edit-hint {
-  font-size: 26rpx;
-  color: #1a73e8;
-}
-
-/* 昵称 Input：与只读值同字号、右对齐，底线表示可编辑 */
+/* 昵称 Input：受控，右对齐，使用小程序 input 自带底线作为"可编辑"视觉提示 */
 .detail-row-value-input {
   font-size: 28rpx;
   color: #1a1a1a;
   text-align: right;
-  max-width: 60%;
-  padding: 4rpx 0 8rpx;
-  border-bottom: 2rpx solid #1a73e8;
+  max-width: 70%;
 }
 
 .detail-row-value-placeholder {
   color: #ccc;
   font-size: 28rpx;
+}
+
+/* 非编辑态底部"编辑资料 ›"入口：白底描边按钮 */
+.detail-edit-entry {
+  flex: 1;
+  height: 92rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  background: #fff;
+  color: #333;
+  font-size: 30rpx;
+  border-radius: 16rpx;
+  border: 2rpx solid #e0e0e0;
+  cursor: pointer;
+}
+
+.detail-edit-entry-hover {
+  opacity: 0.7;
 }
 
 /* 编辑态操作条：保存（主色实心）+ 取消（浅色描边）并排 */

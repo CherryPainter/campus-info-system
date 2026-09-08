@@ -50,7 +50,15 @@
 - 验证：`tsc --noEmit` 退出码 0；`npm run build:weapp` 18.89s 成功（备份 `dist_bak_20260908_195556`）；`process.env` 残留 0。
 - **未做范围**：课程"时间"显示（`tsToHm(c._timeInfo?.start_ts)`）仍按原 `_timeInfo`——只取 HH:MM 不带日期，故不受此 bug 影响（08:10 / 14:10 一直显示正确）；如要统一以"选中那一天"为基准，只需把同一 `selectedDate` 传进该函数即可，但当前未改。
 
-### 修复：时间轴抽屉打开时 tab 栏仍可见（2026-09-08）
+### 重构：个人资料页编辑布局按示意图彻底重排（2026-09-08 晚）
+- **症状**：编辑信息卡布局与用户意图反复不一致（之前在底部追加卡片、hero 始终显示等多次走偏）。
+- **最终设计（按用户手绘示意图）**：
+  - **非编辑态**：hero（大头像+昵称+班级）→ 身份信息卡 → 学籍信息卡 → 「编辑资料 ›」按钮 → 注销账号。
+  - **编辑态**：**hero 让位**，「编辑信息卡」替代顶部位置（含头像行+昵称行），下方仍是身份/学籍信息卡（值变灰）→ [保存][取消] 按钮 → 注销账号。
+- **关键改动**：
+  - `index.tsx`：渲染分支重写——hero `{!editing && ...}`，编辑信息卡 `{editing && ...}`，底部按钮按态切换（编辑资料 ↔ 保存+取消）。
+  - `index.scss`：`.detail-avatar-sm` 自带 `background:#6e8efb`（**不依赖** placeholder 类的 background，避免之前"组合类样式应用顺序"踩坑导致空心圆）。删除已无用的 `.detail-avatar-edit`/`.detail-avatar-edit-hover`/`.detail-avatar-edit-hint`。新增 `.detail-row-link`、`.detail-row-hover`、`.detail-row-right`、`.detail-edit-entry`、`.detail-edit-entry-hover`。
+- 验证：`tsc --noEmit` 0；`build:weapp` 成功（128 个产物文件，无 process.env 残留）；产物 `.detail-avatar-sm{background:#6e8efb}` 蓝底生效。
 - **症状**：点时间轴页周次徽标弹出「学期+周」选择器抽屉时，底部 custom tabBar 仍可见并盖在抽屉下方，视觉割裂。
 - **根因**：项目用 `tabBar.custom: true`（自定义 TabBar），微信的 `wx.hideTabBar` **对 custom TabBar 不生效**（官方文档：custom 模式需"控制 custom-tab-bar 组件自身的 return"）。drawer `position:fixed; bottom:0` 也只能贴到**页面视口**底部，够不到框架层渲的 custom-tab-bar。
 - **修复**（走项目已有的 `eventCenter` 事件总线，与 `TAB_INDEX_EVENT` 同一范式）：
