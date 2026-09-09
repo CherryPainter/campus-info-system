@@ -15,15 +15,16 @@
 - **登录引导弹窗**：新增 `components/LoginModal`，首页/我的/时间轴（schedule）游客态渲染登录引导卡，点"确定/登录" `navigateTo` 登录页；登录成功后 `getCurrentPages().length > 1` 则 `navigateBack()` 返回触发页。首页快捷入口 `requireLogin` 时仅 `notice`/`weather` 公开，其余弹登录。
 - **验证**：`test_miniapp_phase2.py` 调整——`test_no_token_401` 仅断言电量/学生资料返回 401；新增 `test_public_endpoints_anonymous_ok` 断言天气/公告 4 接口游客 200；admin 403 仅断言电量；`test_deleted_user_returns_401_user_gone` 改用 `/electricity/current`。**15 项全部通过**。补 `@miniapp_optional` 定义 + 路由 import 后，此前因未导入导致的蓝图加载 `NameError` 已消除。
 
-### 增强：公开接口匿名会话令牌（可溯源 + 按会话限流，2026-09-09）
-- **背景**：天气 / 公告等公开接口对未登录用户零凭证开放，只能按 IP 溯源，同一出口 NAT/校园网下会互相挤占限流桶。
+### 增强：公开接口匿名会话令牌（可溯源，2026-09-09）
+- **背景**：天气 / 公告等公开接口对未登录用户零凭证开放，此前只能按 IP 溯源，无法区分同一出口下的不同匿名访客。
 - **核心约束**：微信小程序 `wx.request` **不维护 cookie**（服务端 `Set-Cookie` 不会自动存/回传），服务端 session cookie 方案在小程序端不可行。
 - **方案**：服务端签发带时间戳的匿名会话令牌 `X-Anon-Token`（格式 `<uuid>.<exp_ts>.<hmac签名>`，TTL 24h，HMAC-SHA256 用 `SECRET_KEY` 签名防篡改）：
-  - 新增 `app/utils/anon_session.py`：`issue_anon_token` / `parse_anon_token`（签名比对 + 过期校验）/ `is_public_path` / `attach_anon_session`（after_request 挂载）。
+  - 新增 `app/utils/anon_session.py`：`issue_anon_token` / `parse_anon_token`（签名比对 + 过期校验）/ `is_public_path` / `attach_anon_session`（after_request 挂载，抽成函数供 `create_app` 与测试夹具共用）。
   - `app/__init__.py` 的 `create_app` 调 `attach_anon_session(app)`：仅对 `/api/miniapp/weather*` 与 `/api/miniapp/announcements*` 下发令牌；客户端回传有效令牌则**原样回写**（会话稳定不旋转），否则签发新令牌；同时 INFO 日志记录 `path/method/status/anon_id/ip` 供溯源。
-  - `app/core/extensions.py` 的 `get_identity_key`：匿名请求优先取 `X-Anon-Token` 的 uuid 作限流身份（`anon:<uuid>`），无有效令牌时**退化为按 IP**（与历史行为一致，无破坏性）。
   - 前端 `utils/request.ts`：`X-Anon-Token` 响应头捕获存本地、请求时回传（`getAnonToken` / `captureAnonToken`）；**未改动 401 游客逻辑**，不影响"先体验后授权"。
-- **验证**：新增 `test_public_endpoint_issues_anon_token`（断言天气接口下发令牌、公告接口回显同一令牌）；`test_miniapp_phase2.py` **16 项全部通过**。
+- **限流职责划分（重要，曾一度回退后修正）**：限流**仍按 IP**（延续原有 `60 per minute` / `10 per second` / `3600 per hour` 兜底），匿名令牌**专职做访问日志溯源，不参与限流 key**。原因：令牌是客户端可自行清空/轮换的，若用它做限流 key，攻击者丢弃令牌重领即可让每次请求落进全新桶、绕开 IP 闸门（可放大约 60 倍）。故 `extensions.get_identity_key` 匿名分支保持 `get_remote_address()` 不变。
+  - 若后续确需"会话级配额"，正确做法是叠加一层**令牌签发节流**（限制单 IP 单位时间可领取的新令牌数），而不是把限流 key 换成会话——本版未实现。
+- **验证**：新增 `test_public_endpoint_issues_anon_token`（断言天气接口下发令牌、公告接口回显同一令牌）；`test_miniapp_phase2.py` **16 项全部通过**；`tsc --noEmit` 退出码 0；`build:weapp:clean` 成功、`process.env` 残留 0。
 
 ### 重构：个人资料详情页按用户示意图重排编辑布局
 - **初始全黑**：6 个只读行（学号/班级/学校/学院/专业/校园卡号）去掉 `detail-row-locked` 置灰类；`.detail-row-value` 由 `#666` 改 `#1a1a1a`。只读不可编辑的语义靠"无编辑入口"保证，不再用颜色暗示"禁用"。
