@@ -122,8 +122,11 @@ export default function SchedulePage() {
   //   - 优先从已加载的 weekCourses 按 day_of_week 过滤（与圆点标记同源，保证一致）
   //   - 降级调 getToday(date) 接口（用于"今天"或非当前教学周的日期）
   const fetchDayCourses = useCallback(async (date: string) => {
-    if (isBindGuideActive()) {
-      // 绑定引导期不发课程日请求（未绑定这些接口必 403）
+    // 游客态 / 绑定引导期都不发课程日请求：
+    // - 游客（isLoggedIn=false）：schedule/today 需登录，游客打必 401（纯浪费+噪音），
+    //   时间轴游客态只渲染引导卡，不发任何需登录接口；
+    // - 引导期（登录成功未绑定）：需绑定接口必 403，同样不发。
+    if (!isLoggedIn || isBindGuideActive()) {
       setLoading(false);
       return;
     }
@@ -148,7 +151,7 @@ export default function SchedulePage() {
     } finally {
       setLoading(false);
     }
-  }, [weekCourses]);
+  }, [weekCourses, isLoggedIn]);
 
   // 选中日期变化 → 加载该日课程（初次 selectedDate=今天，自动加载）
   useEffect(() => {
