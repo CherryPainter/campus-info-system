@@ -1,134 +1,135 @@
 @import '../../styles/variables.scss';
 
+/* 极简分组表单：近白底 + 单张分组卡 + 行内细分隔线，去掉灰填充框/描边/重阴影 */
 .bind-page {
   min-height: 100vh;
-  background: $background;
-  padding: $spacing-lg $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  background: $card-background;
+  padding: $spacing-xl $spacing-lg calc(48rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
-/* 头部说明：不重复导航栏标题，只给一句上下文 */
-.bind-head {
-  padding: $spacing-md 0 $spacing-lg;
-}
-
+/* 顶部一句话引导（不重复导航栏标题） */
 .bind-intro {
-  display: block;
-  font-size: $font-size-sm;
-  line-height: 1.6;
-  color: $text-secondary;
+  padding: $spacing-sm 0 $spacing-lg;
 }
 
-/* 表单容器：白底 + 细边，去掉「灰底上浮卡 + 重阴影」的模板感 */
-.bind-form {
+.bind-intro-text {
+  font-size: $font-size-sm;
+  color: $text-secondary;
+  line-height: 1.6;
+}
+
+/* 分组卡片：浅灰描边圆角容器，内部行用细分隔线，形成"一卡多行"的表单结构 */
+.bind-group {
   background: $card-background;
   border: 1rpx solid $border-color;
   border-radius: $radius-large;
-  padding: $spacing-md;
+  padding: 0 $spacing-lg;
 }
 
-/* 字段分组：相邻分组用细分隔线，形成清晰层级 */
-.bind-field + .bind-field {
-  margin-top: $spacing-lg;
-  padding-top: $spacing-lg;
-  border-top: 1rpx solid $border-color;
+/* 行：字段名左侧、控件右侧，高 104rpx 便于点击 */
+.bind-row {
+  display: flex;
+  align-items: center;
+  height: 108rpx;
 }
 
-.bind-label {
-  display: block;
-  margin-bottom: $spacing-sm;
+.bind-row-label {
+  flex-shrink: 0;
+  width: 160rpx;
   font-size: $font-size-md;
-  font-weight: 600;
+  font-weight: 500;
   color: $text-primary;
 }
 
-/* 学校选择：原生下拉（Picker）所在行，与学号/绑定码输入行视觉统一 */
-.bind-select-row {
-  justify-content: space-between;
-  cursor: pointer;
+/* 行间细分隔线（最后一行后不需要） */
+.bind-row-divider {
+  height: 1rpx;
+  background: $border-color;
 }
 
-.bind-select-value {
+/* 学校行：值右对齐 + 进入箭头 */
+.bind-row-value-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.bind-row-value {
   font-size: $font-size-md;
   color: $text-primary;
 }
 
-.bind-select-placeholder {
+.bind-row-placeholder {
   font-size: $font-size-md;
   color: $text-tertiary;
 }
 
-.bind-select-arrow {
+.bind-row-arrow {
+  margin-left: $spacing-xs;
   font-size: $font-size-sm;
   color: $text-tertiary;
 }
 
+/* 学号 / 绑定码：右对齐可编辑文本 */
+.bind-row-input {
+  flex: 1;
+  height: 100%;
+  text-align: right;
+  font-size: $font-size-md;
+  color: $text-primary;
+}
+
+/* 绑定码等宽感 */
+.bind-code-input {
+  font-family: monospace;
+  letter-spacing: 4rpx;
+}
+
+/* 空态 / 错误态 */
 .bind-school-empty {
-  padding: $spacing-sm 0;
+  flex: 1;
+  text-align: right;
   font-size: $font-size-xs;
   color: $text-tertiary;
 }
 
 .bind-school-login {
   color: $primary-color;
-  text-decoration: underline;
 }
 
-/* 输入行：浅灰填充（现代做法），非描边框 */
-.bind-input-row {
-  display: flex;
-  align-items: center;
-  height: 88rpx;
-  padding: 0 $spacing-md;
-  border-radius: $radius-medium;
-  background: $border-color;
-}
-
-.bind-input {
-  flex: 1;
-  font-size: $font-size-md;
-  color: $text-primary;
-}
-
-/* 绑定码：等宽感 + 字距，便于核对 */
-.bind-code-input {
-  font-family: monospace;
-  letter-spacing: 6rpx;
-}
-
-.bind-placeholder {
-  color: $text-tertiary;
-}
-
-/* 提交：平实主色按钮，去掉发光药丸的模板感 */
+/* 提交：全宽实心主色，圆角适中，克制的按压缩放 */
 .bind-submit {
   margin-top: $spacing-xl;
-  height: 92rpx;
+  height: 96rpx;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: $radius-large;
   background: $primary-color;
-  border-radius: $radius-medium;
   transition: opacity 0.15s ease;
 }
 
 .bind-submit-hover {
-  opacity: 0.88;
+  opacity: 0.86;
 }
 
 .bind-submit-disabled {
-  background: #c9cdd3;
+  background: #c4ccd6;
 }
 
 .bind-submit-text {
-  font-size: $font-size-md;
+  font-size: $font-size-lg;
   color: $text-inverse;
   font-weight: 600;
+  letter-spacing: 2rpx;
 }
 
-.bind-hint {
+/* 底部一句辅助说明 */
+.bind-footnote {
   display: block;
-  margin-top: $spacing-md;
+  margin-top: $spacing-lg;
   text-align: center;
   font-size: $font-size-xs;
   color: $text-tertiary;

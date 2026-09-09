@@ -37,14 +37,12 @@ export default function BindPage() {
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [schoolError, setSchoolError] = useState(false);
-  const [schoolErrorMsg, setSchoolErrorMsg] = useState('');
   const [schoolAuthError, setSchoolAuthError] = useState(false);
 
   // 加载学校列表 + 绑定状态；两个请求独立 catch，避免一个失败导致另一个结果也被丢弃
   const loadData = useCallback(async () => {
     setLoading(true);
     setSchoolError(false);
-    setSchoolErrorMsg('');
     setSchoolAuthError(false);
 
     try {
@@ -55,10 +53,8 @@ export default function BindPage() {
     } catch (err) {
       console.error('[BindPage] getSchools failed:', err);
       setSchoolError(true);
-      const apiErr = err as ApiError;
-      const msg = apiErr?.message || '未知错误';
-      setSchoolErrorMsg(msg);
       // 401/403 = 未登录或会话失效，引导去登录，而非伪装成网络问题
+      const apiErr = err as ApiError;
       setSchoolAuthError(apiErr instanceof ApiError && (apiErr.code === 401 || apiErr.code === 403));
       Taro.showToast({ title: '学校列表加载失败', icon: 'none' });
     }
@@ -128,16 +124,14 @@ export default function BindPage() {
 
   return (
     <View className="bind-page">
-      <View className="bind-head">
-        <Text className="bind-intro">
-          验证学生身份后可接入课程、电费等校园服务。绑定码由管理员发放。
-        </Text>
+      <View className="bind-intro">
+        <Text className="bind-intro-text">选择所在学校并填写认证信息</Text>
       </View>
 
-      <View className="bind-form">
-        {/* 学校选择：原生下拉选择（Picker mode=selector） */}
-        <View className="bind-field">
-          <Text className="bind-label">学校</Text>
+      <View className="bind-group">
+        {/* 学校：分组行，点击弹原生下拉 */}
+        <View className="bind-row">
+          <Text className="bind-row-label">学校</Text>
           {schools.length > 0 ? (
             <Picker
               mode="selector"
@@ -145,11 +139,11 @@ export default function BindPage() {
               value={school ? Math.max(0, schools.indexOf(school)) : 0}
               onChange={(e) => setSchool(schools[Number(e.detail.value)])}
             >
-              <View className="bind-input-row bind-select-row">
-                <Text className={school ? 'bind-select-value' : 'bind-select-placeholder'}>
+              <View className="bind-row-value-wrap">
+                <Text className={school ? 'bind-row-value' : 'bind-row-placeholder'}>
                   {school || '请选择学校'}
                 </Text>
-                <Text className="iconfont icon-a-xiala2 bind-select-arrow" />
+                <Text className="iconfont icon-jinru bind-row-arrow" />
               </View>
             </Picker>
           ) : !loading ? (
@@ -162,7 +156,7 @@ export default function BindPage() {
               </Text>
             ) : schoolError ? (
               <Text className="bind-school-empty" onClick={() => loadData()}>
-                学校列表加载失败：{schoolErrorMsg}，点击重试
+                加载失败，点击重试
               </Text>
             ) : (
               <Text className="bind-school-empty">暂无学校选项，请联系管理员</Text>
@@ -170,48 +164,46 @@ export default function BindPage() {
           ) : null}
         </View>
 
+        <View className="bind-row-divider" />
+
         {/* 学号 */}
-        <View className="bind-field">
-          <Text className="bind-label">学号</Text>
-          <View className="bind-input-row">
-            <Input
-              className="bind-input"
-              value={studentNumber}
-              placeholder="请输入学号"
-              placeholderClass="bind-placeholder"
-              maxlength={30}
-              onInput={(e) => setStudentNumber(e.detail.value)}
-            />
-          </View>
+        <View className="bind-row">
+          <Text className="bind-row-label">学号</Text>
+          <Input
+            className="bind-row-input"
+            value={studentNumber}
+            placeholder="请输入学号"
+            placeholderClass="bind-row-placeholder"
+            maxlength={30}
+            onInput={(e) => setStudentNumber(e.detail.value)}
+          />
         </View>
+
+        <View className="bind-row-divider" />
 
         {/* 绑定码 */}
-        <View className="bind-field">
-          <Text className="bind-label">绑定码</Text>
-          <View className="bind-input-row">
-            <Input
-              className="bind-input bind-code-input"
-              value={bindCode}
-              placeholder="请输入 8 位绑定码"
-              placeholderClass="bind-placeholder"
-              maxlength={8}
-              onInput={(e) => setBindCode(e.detail.value.toUpperCase())}
-            />
-          </View>
+        <View className="bind-row">
+          <Text className="bind-row-label">绑定码</Text>
+          <Input
+            className="bind-row-input bind-code-input"
+            value={bindCode}
+            placeholder="请输入绑定码"
+            placeholderClass="bind-row-placeholder"
+            maxlength={8}
+            onInput={(e) => setBindCode(e.detail.value.toUpperCase())}
+          />
         </View>
-
-        <View
-          className={`bind-submit${submitting ? ' bind-submit-disabled' : ''}`}
-          hoverClass="bind-submit-hover"
-          onClick={handleSubmit}
-        >
-          <Text className="bind-submit-text">{submitting ? '提交中…' : '确认绑定'}</Text>
-        </View>
-
-        <Text className="bind-hint">
-          绑定码一次性有效，由管理员发放；遗失可联系管理员重置
-        </Text>
       </View>
+
+      <View
+        className={`bind-submit${submitting ? ' bind-submit-disabled' : ''}`}
+        hoverClass="bind-submit-hover"
+        onClick={handleSubmit}
+      >
+        <Text className="bind-submit-text">{submitting ? '提交中…' : '确认绑定'}</Text>
+      </View>
+
+      <Text className="bind-footnote">绑定码由管理员发放，一次性有效</Text>
     </View>
   );
 }

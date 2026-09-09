@@ -8,6 +8,16 @@
 
 > 本次发布含管理端「解绑/收回身份」新能力、小程序端身份状态主动监察，以及审核整改/匿名会话令牌/公开接口/登录守卫等增强（覆盖 2026-09-08 ~ 09-09 累积改动）。
 
+### 调整：身份绑定页改极简分组表单（小程序端，2026-09-09）
+- **背景**：用户对绑定页视觉不满意——此前是灰填充框 + 独立字段卡 + 重阴影的"卡片堆叠"样式，被批"这个卡片垃圾死了""渐变才更像 AI"；要求改**简约克制、有设计感**的表单。
+- **方案**（`src/pages/bind/index.tsx` + `index.scss`）：去掉独立字段卡 / 灰填充框 / 渐变 hero，改为**近白底 + 单张分组卡（细描边圆角）+ 行内细分隔线**的 iOS 分组表单式结构：
+  - 顶部一句引导「选择所在学校并填写认证信息」（不重复导航栏标题）；
+  - 单张 `.bind-group` 卡内三行（高 108rpx、细分隔线分隔）：学校（右侧显值 + `.icon-jinru` 进入箭头，点击弹原生 Picker）/ 学号（Input 右对齐）/ 绑定码（Input 右对齐、等宽感）；
+  - 全宽实心主色圆角提交按钮 `.bind-submit`（克制的按压缩放）+ 底部辅助说明「绑定码由管理员发放，一次性有效」；
+  - 逻辑全部保留：学校列表空态/错误态（401/403→引导登录、其余→点击重试）、`handleSubmit` 三段校验、绑定成功 `finishBindGuide` + 返回首页、`useUnload` 时 `cancelBindGuide`。
+  - 顺带清理：`schoolErrorMsg` state 仅 set 无人读（JSX 错误行已是固定文案「加载失败，点击重试」），属死代码，删除声明与两处 setter 调用。
+- **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 成功（19.33s，仅既存 CSS 体积/异步 chunk 警告）；`dist` 无 `process.env` 残留（0）；新类名 `bind-group`/`bind-row-divider`/`bind-footnote`/`bind-intro` 编入 `pages/bind/index.wxss`，旧类名 `bind-form`/`bind-field`/`bind-input-row`/`bind-head` 计数 0。
+
 ### 增强：学生身份「解绑/收回身份」（管理端，2026-09-09）
 - **背景**：此前「学生身份」列表删除一条已绑定名单，只会删白名单行（`StudentRosterService.delete` 仅 `session.delete(row)`）、不碰该学生 `student_profiles`，导致学生身份被"孤儿化"——保留旧身份卡死、且因 `bind_student` 的 `ALREADY_BOUND` 护栏无法重新绑定；管理员也无从收回学生身份。
 - **方案**：管理端「学生身份」列表对已绑定行新增「解绑」按钮，后端新增 `POST /api/admin/roster/students/<id>/unbind`（`@admin_required`）。`StudentRosterService.unbind` 按 `(school, student_number)` 定位绑定用户，清空身份字段（学号/学校/学院/专业/班级/年级/姓名/校园卡号，保留昵称/手机号/电表 cookie），吊销该用户全部活跃会话（强制重新登录走绑定流程），**名单保留**并重发一次性绑定码。
