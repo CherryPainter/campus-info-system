@@ -59,7 +59,14 @@ export default function LoginPage() {
       });
       Taro.showToast({ title: '登录成功', icon: 'success' });
       setTimeout(() => {
-        Taro.switchTab({ url: '/pages/home/index' });
+        // 从登录引导弹窗进入：返回上一页（此时已登录可正常使用）；
+        // 兜底（如会话过期被回收）：回首页
+        const pages = Taro.getCurrentPages();
+        if (pages.length > 1) {
+          Taro.navigateBack();
+        } else {
+          Taro.switchTab({ url: '/pages/home/index' });
+        }
       }, 500);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '登录失败，请重试';

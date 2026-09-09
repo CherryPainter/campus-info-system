@@ -332,83 +332,84 @@
     padding: $spacing-sm 0 $spacing-md;
   }
 
-  // ====== 未来 7 天（横向滚动） ======
-  .daily-scroll {
-    white-space: nowrap;
-    width: 100%;
-  }
-
-  .daily-card {
-    display: inline-flex;
+  // ====== 未来 7 天（纵向列表） ======
+  .daily-list {
+    display: flex;
     flex-direction: column;
+  }
+
+  .daily-row {
+    display: flex;
     align-items: center;
-    width: 150rpx;
-    padding: $spacing-sm 0;
-    margin-right: $spacing-sm;
-    border-radius: $radius-medium;
-    background: rgba(255, 255, 255, 0.14);
+    padding: $spacing-sm $spacing-md;
+    height: 90rpx;
+    box-sizing: border-box;
   }
 
-  .daily-week {
-    font-size: $font-size-sm;
-    color: rgba(255, 255, 255, 0.95);
-    font-weight: 500;
-  }
-
+  // 日期（左侧第一个）
   .daily-date {
-    font-size: 20rpx;
-    color: rgba(255, 255, 255, 0.55);
-    margin-top: 2rpx;
+    font-size: $font-size-md;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 400;
+    width: 120rpx;
+    flex-shrink: 0;
   }
 
+  // 星期（左侧第二个）
+  .daily-week {
+    font-size: $font-size-md;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 400;
+    width: 100rpx;
+    flex-shrink: 0;
+  }
+
+  // 中间：图标 + 右上角降水概率角标
   .daily-icon-wrap {
     position: relative;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
-    margin: 10rpx 0;
+    flex: 1;
   }
 
   .daily-icon-img {
     width: 48rpx;
     height: 48rpx;
     display: block;
-    // 白色光晕：提升灰色云/雨图标在蓝色卡片背景上的对比度（2026-09-08）；
-    // 沿图标形状描白边，不改布局/不加重几何。太阳/晴等本身显眼，加了也无害且风格一致。
-    filter: drop-shadow(0 1rpx 4rpx rgba(255, 255, 255, 0.6));
+    // 白色化：先亮度置0变黑，再反转变白
+    filter: brightness(0) invert(1);
   }
 
-  // 降水概率角标（图标右上角，仅 >=60% 时由组件渲染；无胶囊，仅白字）
+  // 降水概率角标（图标右上角）
   .daily-pop-badge {
     position: absolute;
     top: -6rpx;
-    right: -24rpx;
+    right: -6rpx;
     color: #fff;
-    font-size: 19rpx;
-    font-weight: 700;
-    line-height: 1;
-    text-shadow: 0 1rpx 3rpx rgba(0, 0, 0, 0.5);
-  }
-
-  .daily-temp-max {
-    font-size: $font-size-md;
-    font-weight: 600;
-    color: #fff;
-  }
-
-  .daily-temp-min {
-    font-size: $font-size-sm;
-    color: rgba(255, 255, 255, 0.6);
-    margin-top: 2rpx;
-  }
-
-  .daily-text {
     font-size: 20rpx;
-    color: rgba(255, 255, 255, 0.7);
-    margin-top: 6rpx;
-    white-space: normal;
-    text-align: center;
-    width: 130rpx;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  // 最低温（右侧第一个，偏淡）
+  .daily-temp-min {
+    font-size: $font-size-lg;
+    color: rgba(255, 255, 255, 0.65);
+    font-weight: 400;
+    width: 80rpx;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  // 最高温（右侧第二个，白色醒目）
+  .daily-temp-max {
+    font-size: $font-size-lg;
+    color: #fff;
+    font-weight: 400;
+    width: 80rpx;
+    text-align: right;
+    flex-shrink: 0;
   }
 
   // ====== 生活指数（网格） ======
@@ -420,12 +421,56 @@
 
   .index-card {
     width: calc(33.33% - #{$spacing-sm});
-    background: rgba(255, 255, 255, 0.14);
-    border-radius: $radius-medium;
-    padding: $spacing-sm;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    position: relative;
+    min-height: 160rpx;
+    perspective: 1000rpx;
+    cursor: pointer;
+
+    // 卡片两面共用样式
+    .index-face {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.14);
+      border-radius: $radius-medium;
+      padding: $spacing-sm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      backface-visibility: hidden;
+      transition: transform 0.35s ease-in-out, opacity 0.35s ease-in-out;
+      transform-origin: center center;
+    }
+
+    // 正面：默认显示
+    .index-face--front {
+      transform: scaleX(1);
+      opacity: 1;
+      z-index: 2;
+    }
+
+    // 背面：默认隐藏（缩到 0）
+    .index-face--back {
+      transform: scaleX(0);
+      opacity: 0;
+      z-index: 1;
+    }
+
+    // 翻转状态：正面收起，背面展开
+    &.is-flipped {
+      .index-face--front {
+        transform: scaleX(0);
+        opacity: 0;
+      }
+      .index-face--back {
+        transform: scaleX(1);
+        opacity: 1;
+        z-index: 3;
+      }
+    }
   }
 
   .index-icon {
@@ -454,11 +499,16 @@
     line-height: 1.4;
   }
 
-  // 长按时作为卡片唯一内容：稍大、亮色、多行
+  // 翻转背面作为卡片唯一内容：稍大、亮色、多行
   .index-text--full {
     font-size: 22rpx;
     color: rgba(255, 255, 255, 0.92);
     line-height: 1.55;
+    text-align: center;
+    display: -webkit-box;
+    -webkit-line-clamp: 5;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   // ====== 空气质量（AQI 色条卡片） ======

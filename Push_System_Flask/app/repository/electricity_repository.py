@@ -8,6 +8,7 @@
 """
 
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
@@ -54,16 +55,59 @@ class ElectricityRepository:
         return record
 
     @staticmethod
+    def normalize_meter(raw: Any) -> str:
+        """
+        把电表写法归一化为唯一标识（去噪，用于去重时的比对）
+
+        同一个宿舍在库里会出现多种写法（历史脏数据 + 不同解析路径）：
+          - "电表: 31栋512照明"  →  "31栋512"
+          - "31栋512照明"        →  "31栋512"
+          - "31栋512"            →  "31栋512"
+          - "电表: 310512"       →  "310512"
+          - "310512"             →  "310512"
+
+        注意：一个宿舍通常有**多块分表**（如照明 / 空调），它们归一化后仍然是
+        不同的标识（"31栋512" 与 "310512" 是两块不同的表，用电量各不相同，
+        当天真实用量 = 各分表之和）。因此去重绝不能只按「用户+日期」，
+        必须带上归一化后的电表，否则会把另一块分表当成重复数据误删。
+        """
+        import re
+
+        if raw is None:
+            return "default"
+        s = str(raw).strip()
+        if not s or s == "default":
+            return "default"
+        s = re.sub(r"^电表[:：]\s*", "", s)
+        s = re.sub(r"照明\s*$", "", s)
+        s = s.strip()
+        return s if s else "default"
+
+    @staticmethod
     def create_records_batch(
         session: Session,
         records: list[tuple[datetime, float, str]],
         user_id: int | None = None,
     ) -> int:
         """
-        批量创建用电记录（自动去重）
+        批量创建用电记录（按「用户 + 用电日期 + 归一化电表」去重）
 
-        去重逻辑：同一用户 + 同一时间 + 同一电表 视为重复记录（不管用电量是否相同）
-        因为一天一个电表只有一条记录，用电量可能因爬虫多次获取而略有不同
+        去重逻辑变更说明（重要）：
+            旧逻辑按 (record_time 精确到秒, meter 原始字符串) 精确匹配。但同一个
+            电表在库里存在多种写法——老数据是未清洗的 "电表: 31栋512照明"，
+            新数据经 clean_meter 清洗后变成 "31栋512"——两次爬取的写法对不上，
+            精确匹配永远命中不了，于是同一块表同一天被反复插入多条。
+            趋势图按日求和时被成倍累加：实际每天约 7 度，图上却显示 22 度
+            （7.37 × 3 份重复）；列表总条数也随之虚高到单用户 2000+。
+
+            修正：先用电表写法归一化（normalize_meter）去掉 "电表:" 前缀与
+            "照明" 后缀，再按 (user_id, DATE(record_time), 归一化电表) 去重。
+
+        特别强调：
+            一个宿舍有**多块分表**（如照明 / 空调），归一化后仍是不同标识
+            （"31栋512" 与 "310512" 是两块表，同一天用电量分别是 1.8 和 5.57）。
+            因此去重必须带上电表维度，绝不能只按「用户 + 日期」，
+            否则会把另一块分表当成重复数据误删，日用量直接少算一大截。
 
         Args:
             session: 数据库会话
@@ -71,36 +115,126 @@ class ElectricityRepository:
             user_id: 归属用户ID，None 表示历史全局数据
 
         Returns:
-            int: 实际创建的记录数（去重后）
+            int: 实际创建的记录数（已存在被更新、重复被删除的不计入）
         """
         created_count = 0
         for record_time, usage, meter in records:
-            # 按用户+时间+电表去重（不比较用电量）
+            if record_time is None:
+                continue
+
+            norm_meter = ElectricityRepository.normalize_meter(meter)
+            day_start = record_time.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end = day_start + timedelta(days=1)
+
             q = session.query(ElectricityRecord).filter(
                 and_(
-                    ElectricityRecord.record_time == record_time,
-                    ElectricityRecord.meter == meter,
+                    ElectricityRecord.record_time >= day_start,
+                    ElectricityRecord.record_time < day_end,
                 )
             )
             if user_id is not None:
                 q = q.filter(ElectricityRecord.user_id == user_id)
             else:
                 q = q.filter(ElectricityRecord.user_id.is_(None))
-            existing = q.first()
-            if existing:
-                # 更新用电量（可能有细微差异），删除旧记录插入新的
-                session.delete(existing)
+
+            # 在当天记录里找出「归一化后是同一块表」的那些
+            same_meter = [
+                r
+                for r in q.order_by(ElectricityRecord.id).all()
+                if ElectricityRepository.normalize_meter(r.meter) == norm_meter
+            ]
+
+            if same_meter:
+                # 保留第一条，更新用电量并把电表写法统一为归一化后的值
+                keep = same_meter[0]
+                keep.usage = usage
+                keep.meter = norm_meter
+                for dup in same_meter[1:]:
+                    session.delete(dup)
+                continue
 
             record = ElectricityRecord(
                 record_time=record_time,
                 usage=usage,
-                meter=meter,
+                meter=norm_meter,
                 user_id=user_id,
             )
             session.add(record)
             created_count += 1
         session.flush()
         return created_count
+
+    @staticmethod
+    def deduplicate_records(
+        session: Session,
+        user_id: int | None = None,
+    ) -> dict:
+        """
+        清理历史重复用电记录：同一用户 + 同一日期 + 同一块电表 只保留一条
+
+        用于修复「按 (record_time, meter) 精确字符串去重」时期已经写进库的脏数据
+        （同一块表被写成 "电表: 31栋512照明" 和 "31栋512" 等多种写法，
+        精确匹配不上，导致同一块表同一天被插入多条，趋势图数值成倍放大）。
+
+        分组维度必须是「用户 + 日期 + 归一化电表」：
+            一个宿舍有多块分表（"31栋512" 和 "310512" 是两块不同的表，
+            同一天用电量分别是 1.8 和 5.57），只按「用户+日期」分组会把
+            另一块分表误判为重复而删除，导致日用量少算。
+
+        保留策略（同一分组内）：保留 created_at 最新的一条
+        （学校每日结算值可能随采集时间略有更新），并把电表写法统一为归一化值。
+
+        Args:
+            session: 数据库会话
+            user_id: 指定用户ID；None 表示清理全部用户（含 NULL 的历史全局数据）
+
+        Returns:
+            dict: {"groups": 重复的分组数, "deleted": 删除条数, "kept": 保留条数}
+        """
+        from collections import defaultdict
+
+        q = session.query(ElectricityRecord)
+        if user_id is not None:
+            q = q.filter(ElectricityRecord.user_id == user_id)
+        all_records = q.all()
+
+        # 按 (user_id, 日期, 归一化电表) 分组
+        groups: dict[tuple, list] = defaultdict(list)
+        for r in all_records:
+            if r.record_time is None:
+                continue
+            key = (
+                r.user_id,
+                r.record_time.date(),
+                ElectricityRepository.normalize_meter(r.meter),
+            )
+            groups[key].append(r)
+
+        deleted = 0
+        kept = 0
+        dup_groups = 0
+
+        for _key, items in groups.items():
+            if len(items) <= 1:
+                kept += len(items)
+                # 单条也顺手统一电表写法，便于后续展示与去重
+                if items:
+                    items[0].meter = ElectricityRepository.normalize_meter(items[0].meter)
+                continue
+
+            dup_groups += 1
+            items_sorted = sorted(
+                items, key=lambda rec: (rec.created_at or datetime.min, rec.id), reverse=True
+            )
+            keep = items_sorted[0]
+            keep.meter = ElectricityRepository.normalize_meter(keep.meter)
+            for dup in items_sorted[1:]:
+                session.delete(dup)
+                deleted += 1
+            kept += 1
+
+        session.flush()
+        return {"groups": dup_groups, "deleted": deleted, "kept": kept}
 
     @staticmethod
     def get_records(
@@ -292,6 +426,36 @@ class ElectricityRepository:
         )
 
         return [(m, float(usage or 0)) for m, usage in results]
+
+    @staticmethod
+    def sum_usage_since(
+        session: Session,
+        start_time: datetime,
+        user_id: int | None = None,
+    ) -> float:
+        """
+        统计某个时间点之后的累计用电量（不按电表分组，直接求和）
+
+        用于「本月已用」等自然月累计口径：前端此前各自拉取若干条记录在本地累加，
+        不同页面取的条数不同（我的页取 1000 条、详情页只取首屏 20 条），
+        导致同一个月在两个页面显示成 162.93 / 74.04 两个不同数字。
+        统一由后端聚合后，各页面口径一致。
+
+        Args:
+            session: 数据库会话
+            start_time: 起始时间（含），通常传本月 1 号 00:00
+            user_id: 归属用户ID，None 表示全部
+
+        Returns:
+            float: 累计用电量（度），无记录时返回 0.0
+        """
+        query = session.query(func.sum(ElectricityRecord.usage)).filter(
+            ElectricityRecord.record_time >= start_time
+        )
+        if user_id is not None:
+            query = query.filter(ElectricityRecord.user_id == user_id)
+        total = query.scalar()
+        return float(total or 0.0)
 
     # ==================== 剩余电量相关 ====================
 

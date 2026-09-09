@@ -8,6 +8,13 @@
 
 > 适用范围：小程序端（miniapp-frontend）。系统主版本号未升（v6.17.1 保持），按"正式发布才升版本号"惯例合入下版。
 
+### 修复：小程序审核整改——先体验后授权（2026-09-09）
+- **背景**：微信审核驳回"进入首页即强制授权登录"。按规范放开公开浏览，受限功能改登录引导弹窗。
+- **后端放开公开浏览**：天气（`/weather/current`、`/weather/hourly`）取消鉴权装饰器，游客可直接访问；校园通知（`/announcements` 列表/详情、`/announcements/unread-count`）由 `@student_bound_required` 改为新增的 `@miniapp_optional`（携带合法 token 时写 `g.current_user`，否则 `g.current_user=None` 但始终放行）。`announcement_service.unread_count` 加 `user_id is None → 返回 0` 守卫。
+- **前端拦截器改造**（`utils/request.ts`）：401 分支区分「无 token 游客」与「会话过期」——游客（`getAccessToken()/getRefreshToken()` 均为空）抛 `'请先登录后查看'` 且不强制 `reLaunch` 登录页；仅会话过期才清 token 并跳登录。
+- **登录引导弹窗**：新增 `components/LoginModal`，首页/我的/时间轴（schedule）游客态渲染登录引导卡，点"确定/登录" `navigateTo` 登录页；登录成功后 `getCurrentPages().length > 1` 则 `navigateBack()` 返回触发页。首页快捷入口 `requireLogin` 时仅 `notice`/`weather` 公开，其余弹登录。
+- **验证**：`test_miniapp_phase2.py` 调整——`test_no_token_401` 仅断言电量/学生资料返回 401；新增 `test_public_endpoints_anonymous_ok` 断言天气/公告 4 接口游客 200；admin 403 仅断言电量；`test_deleted_user_returns_401_user_gone` 改用 `/electricity/current`。**15 项全部通过**。补 `@miniapp_optional` 定义 + 路由 import 后，此前因未导入导致的蓝图加载 `NameError` 已消除。
+
 ### 重构：个人资料详情页按用户示意图重排编辑布局
 - **初始全黑**：6 个只读行（学号/班级/学校/学院/专业/校园卡号）去掉 `detail-row-locked` 置灰类；`.detail-row-value` 由 `#666` 改 `#1a1a1a`。只读不可编辑的语义靠"无编辑入口"保证，不再用颜色暗示"禁用"。
 - （本条初版曾实现为「hero 变身编辑表单」，**已被下方「编辑表单由 hero 移入卡片」条目取代**，最终编辑交互收敛在「编辑信息」卡内。）

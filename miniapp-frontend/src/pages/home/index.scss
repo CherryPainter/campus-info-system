@@ -72,3 +72,23 @@
     }
   }
 }
+
+/* 游客态「今日课程」登录引导占位 */
+.home-login-tip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48rpx 0;
+  color: $text-secondary;
+
+  .home-login-tip-text {
+    font-size: $font-size-md;
+    color: $text-secondary;
+  }
+
+  .home-login-tip-arrow {
+    margin-left: 8rpx;
+    font-size: $font-size-md;
+    color: $text-tertiary;
+  }
+}

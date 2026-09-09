@@ -92,6 +92,70 @@ def trigger_fetch_all():
         return api_error(message=f"触发失败: {exc}", http_status=500)
 
 
+@electricity_bp.route("/records/dedupe", methods=["POST"])
+@admin_required
+def dedupe_records():
+    """
+    清理历史重复用电记录（需管理员权限）
+
+    背景：旧版入库去重按 (record_time 精确到秒, meter 字符串) 精确匹配，而爬虫
+    JSON/HTML 两种解析会把同一块电表写成不同字符串（"31栋512" / "310512" /
+    "电表: 31栋512照明"），导致同一天被反复插入多条重复记录。趋势图按日求和时
+    被成倍放大（实际 7 度显示 22 度），记录总条数虚高到单用户 2000+。
+
+    处理：同一用户 + 同一日期只保留一条（优先保留含「栋」的可读电表写法、
+    created_at 最新者），其余删除。
+
+    请求体（可选）：
+        { "user_id": 123 }   // 不传则清理全部用户（含 NULL 的历史全局数据）
+
+    返回：
+        { "groups": 重复天数, "deleted": 删除条数, "kept": 保留条数 }
+    """
+    from app.core.database import get_db
+    from app.model.electricity import ElectricityRecord
+    from app.repository.electricity_repository import ElectricityRepository
+
+    data = request.get_json(silent=True) or {}
+    target_user_id = data.get("user_id")
+    if target_user_id is not None:
+        try:
+            target_user_id = int(target_user_id)
+        except (TypeError, ValueError):
+            return api_error(message="user_id 格式错误", http_status=400)
+
+    session = get_db()
+    try:
+        before = session.query(ElectricityRecord).count()
+        result = ElectricityRepository.deduplicate_records(
+            session=session, user_id=target_user_id
+        )
+        session.commit()
+        after = session.query(ElectricityRecord).count()
+
+        user = g.get("current_user", {})
+        logger.info(
+            f'[电量] {user.get("username")} 清理重复用电记录: '
+            f'user_id={target_user_id or "全部"} {result}'
+        )
+        return api_success(
+            message=f'已清理 {result["deleted"]} 条重复记录',
+            data={
+                "before": before,
+                "after": after,
+                "groups": result["groups"],
+                "deleted": result["deleted"],
+                "kept": result["kept"],
+            },
+        )
+    except Exception as exc:
+        session.rollback()
+        logger.error(f"[电量] 清理重复用电记录失败: {exc}")
+        return api_error(message=f"清理失败: {exc}", http_status=500)
+    finally:
+        session.close()
+
+
 @electricity_bp.route("/records", methods=["DELETE"])
 @admin_required
 def delete_all_records():

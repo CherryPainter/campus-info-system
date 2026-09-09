@@ -1,6 +1,7 @@
 import { get, post } from '@/utils/request';
 import type {
   UnreadCountResult,
+  UserNotificationDetailResult,
   UserNotificationListResult,
   UserNotificationReadResult,
 } from '@/types/api';
@@ -22,6 +23,16 @@ export function getMessages(
   const params: Record<string, unknown> = { limit, offset };
   if (unreadOnly) params.unread_only = 1;
   return get<UserNotificationListResult>('/api/miniapp/notifications/messages', params);
+}
+
+/**
+ * 单条通知详情
+ *
+ * 消息列表只展示摘要（电量日报/月报正文较长，全部铺开会让列表很臃肿），
+ * 点进详情页看完整内容；后端进入详情即自动标记已读。
+ */
+export function getNotificationDetail(id: number): Promise<UserNotificationDetailResult> {
+  return get<UserNotificationDetailResult>(`/api/miniapp/notifications/messages/${id}`);
 }
 
 /** 标记已读：id 指定单条；不传 id 则全部标记已读（联动清空未读公告） */

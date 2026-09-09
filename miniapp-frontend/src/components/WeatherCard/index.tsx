@@ -1,7 +1,8 @@
-import { View, Text } from '@tarojs/components';
+import { View, Text, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
 import type { WeatherNow } from '@/types/api';
+import { getWeatherIconSrc } from '@/utils/weatherIcons';
 import './index.scss';
 
 interface WeatherCardProps {
@@ -13,22 +14,9 @@ interface WeatherCardProps {
   onRetry?: () => void;
 }
 
-/** 天气 → emoji（用户确认：仅天气卡片使用 emoji） */
-function weatherEmoji(text: string = ''): string {
-  if (/雷/.test(text)) return '⛈️';
-  if (/雪/.test(text)) return '❄️';
-  if (/大雨|暴雨/.test(text)) return '🌧️';
-  if (/雨/.test(text)) return '🌦️';
-  if (/雾/.test(text)) return '🌫️';
-  if (/晴/.test(text)) return '☀️';
-  if (/多云/.test(text)) return '⛅';
-  if (/阴/.test(text)) return '☁️';
-  return '☁️';
-}
-
 /**
  * 天气小卡（首页头部右侧，对照原型图布局）
- * - 顶部：当前温度（weather/current）+ 天气 emoji
+ * - 顶部：当前温度（weather/current）+ 天气图标 PNG
  * - 底部：天气文字 + 24h 温度区间（weather/hourly 的最高/最低，原型图"多云 18°~26°"）
  * - 展示字段严格以后端实际返回为准，不虚构
  */
@@ -62,7 +50,7 @@ export default function WeatherCard({ weather, tempRange, loading, error, onRetr
     <View className="weather-mini" onClick={() => Taro.navigateTo({ url: '/pages/weather/index' })}>
       <View className="weather-mini-main">
         <Text className="weather-mini-temp">{temp}°</Text>
-        <Text className="weather-mini-emoji">{weatherEmoji(text)}</Text>
+        <Image className="weather-mini-icon" src={getWeatherIconSrc(text)} mode="aspectFit" />
       </View>
       <View className="weather-mini-bottom">
         <Text className="weather-mini-text">

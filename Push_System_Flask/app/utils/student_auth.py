@@ -12,10 +12,11 @@
 
 import functools
 
+import jwt
 from flask import g, jsonify, request
 
 from app.core.logger import get_logger
-from app.utils.auth_middleware import jwt_required
+from app.utils.auth_middleware import jwt_required, _extract_token, _get_jwt_manager
 
 # 使用统一日志系统
 logger = get_logger(__name__)
@@ -132,6 +133,53 @@ def student_bound_required(f):
         finally:
             db.close()
 
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+def miniapp_optional(f):
+    """
+    可选鉴权装饰器（小程序"先体验后授权"公开浏览类接口用）
+
+    行为：
+    - 携带**合法** access token 时，将用户信息写入 g.current_user（结构同 jwt_required）。
+    - 缺少 token / token 无效 / 过期 / 类型不符 时，g.current_user 置为 None，
+      但**始终放行**请求（游客态），由路由内部按 user_id 是否为 None 决定返回内容
+      （例如公告列表/详情/未读数的已读标记、红点统计对游客返回匿名结果）。
+
+    与 student_required / student_bound_required 的区别：
+    后两者遇无 token 或校验失败会返回 401/403 拦截；本装饰器永不拦截，
+    仅用于天气、公告等合规要求下"游客可匿名浏览"的接口。
+    """
+
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        # 默认游客态：None；路由内用 g.current_user 是否为 None 判断身份
+        g.current_user = None
+
+        token = _extract_token()
+        if not token:
+            return f(*args, **kwargs)
+
+        try:
+            jwt_manager = _get_jwt_manager()
+            payload = jwt_manager.verify_token(token)
+        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, ValueError, RuntimeError):
+            # token 有任何问题都降级为游客，不返回 401（公开浏览接口不拦截）
+            return f(*args, **kwargs)
+
+        if payload.get("type") != "access":
+            return f(*args, **kwargs)
+
+        g.current_user = {
+            "user_id": payload.get("user_id"),
+            "username": payload.get("username"),
+            "role": payload.get("role"),
+            "jti": payload.get("jti"),
+            "type": payload.get("type"),
+            "login_log_id": payload.get("login_log_id"),
+        }
         return f(*args, **kwargs)
 
     return decorated_function

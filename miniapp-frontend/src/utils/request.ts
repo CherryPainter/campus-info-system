@@ -97,6 +97,23 @@ function refreshOnce(): Promise<boolean> {
   return refreshingPromise;
 }
 
+/**
+ * 保证返回一个「未过期」的 accessToken（临近过期则先刷新再返回）
+ *
+ * 供 `Taro.uploadFile` / `Taro.downloadFile` 等**不走 request 封装**的场景使用：
+ * 这些原生 API 没有 401 自动续期能力，若不预先刷新，上传会因 accessToken 过期
+ * 直接 401 失败（表现为「反馈图片传不上去」，而其它接口却正常）。
+ *
+ * @returns 可用的 accessToken；刷新失败或无 token 时返回空串/null
+ */
+export async function ensureFreshAccessToken(force = false): Promise<string | null> {
+  if (force || isAccessTokenExpiringSoon()) {
+    const ok = await refreshOnce();
+    if (!ok) return null;
+  }
+  return getAccessToken();
+}
+
 function redirectToLogin(): void {
   clearTokens();
   Taro.reLaunch({ url: '/pages/login/index' });
@@ -161,7 +178,15 @@ export async function request<T = unknown>(options: RequestOptions): Promise<T> 
     if (ok) {
       return request<T>({ ...options, _retried: true });
     }
-    redirectToLogin();
+    // 区分「会话过期」与「游客 / 已登出」：
+    // - 本地曾持有令牌（登录态失效）→ 清令牌并跳登录页，属正常会话回收；
+    // - 本地无任何令牌（游客首次进入 / 已登出）→ 不强制跳转，交由调用方 .catch
+    //   展示游客态或弹登录引导，满足「先体验后授权」审核规范，避免一进首页就被弹登录。
+    if (!getAccessToken() && !getRefreshToken()) {
+      throw new ApiError('请先登录后查看', 401);
+    }
+    clearTokens();
+    Taro.reLaunch({ url: '/pages/login/index' });
     throw new ApiError('登录已过期，请重新登录', 401);
   }
 

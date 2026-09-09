@@ -26,6 +26,8 @@ interface TimelineItemProps {
   courseColorKey?: CourseColorKey;
   /** 是否为时间轴最后一项（不画底部竖线） */
   isLast?: boolean;
+  /** 点击整条跳转（时间轴页进入课程详情用） */
+  onClick?: () => void;
 }
 
 const STATUS_TAG_CLASS: Record<TimelineStatus, string> = {
@@ -60,10 +62,15 @@ export default function TimelineItem({
   statusText,
   courseColorKey = 'blue',
   isLast,
+  onClick,
 }: TimelineItemProps) {
   const location = [building, classroom].filter(Boolean).join('');
   return (
-    <View className={`timeline-item ${status === 'finished' ? 'timeline-item-finished' : ''}`}>
+    <View
+      className={`timeline-item ${status === 'finished' ? 'timeline-item-finished' : ''}`}
+      onClick={onClick}
+      hoverClass={onClick ? 'timeline-item-hover' : undefined}
+    >
       {/* 左列：时间 + 节次 */}
       <View className="timeline-time-col">
         <Text className="timeline-time">{time}</Text>

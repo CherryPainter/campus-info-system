@@ -1,16 +1,19 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
-import { View, Text, Swiper, SwiperItem, ScrollView, PickerView, PickerViewColumn } from '@tarojs/components';
-import { useLoad, useDidShow, usePullDownRefresh, stopPullDownRefresh, getWindowInfo } from '@tarojs/taro';
+import { View, Text, Swiper, SwiperItem, PickerView, PickerViewColumn } from '@tarojs/components';
+import { useLoad, useDidShow, usePullDownRefresh, stopPullDownRefresh, getWindowInfo, navigateTo } from '@tarojs/taro';
 import dayjs from 'dayjs';
 
 import { setTabIndex, setTabBarHidden } from '@/utils/tabBarState';
 
 import * as scheduleApi from '@/api/schedule';
 import * as notificationApi from '@/api/notification';
-import type { NotificationEvent, ScheduleCourse } from '@/types/api';
+import { useAuthStore } from '@/stores/authStore';
+import LoginModal from '@/components/LoginModal';
+import type { NotificationEvent, ScheduleCourse, ScheduleSemester } from '@/types/api';
 import { tsToHm } from '@/utils/date';
 import TimelineItem, { type CourseColorKey, type TimelineStatus } from '@/components/TimelineItem';
 import { courseStatus } from '@/components/CourseCard';
+import { splitCoursesToBigClasses } from '@/utils/scheduleBigClass';
 import ReminderCard from '@/components/ReminderCard';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
@@ -18,15 +21,28 @@ import './index.scss';
 
 /**
  * 课表页（时间轴样式，按用户确认的原型图）
- * - 顶部：日期 + 周信息
+ * - 顶部：日期 + 周信息（支持切换「学期 + 周」，抄课表页 coursetable 做法）
  * - 周历：本周 7 天（今天高亮）
- * - 时间轴：今日课程按时间排序（圆点竖线 + 状态标签）
+ * - 时间轴：当日课程按时间排序（圆点竖线 + 状态标签）
+ * - 课程展示口径：两节为一节大课（后端合并的整段课程按每 2 节拆回独立大课）
  * - 数据只组合后端真实事件（schedule/today + schedule/current），不虚构
  */
 
 const WEEK_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
+/** 把后端学期名（如 2026-2027-1）格式化为中文展示文本（与课表页一致） */
+function formatSemesterLabel(name: string): string {
+  const m = name.match(/^(\d{4})-(\d{4})-(\d)$/);
+  if (!m) return name;
+  const [, start, end, term] = m;
+  const termText = term === '1' ? '一' : term === '2' ? '二' : term;
+  return `${start}-${end}年 第${termText}学期`;
+}
+
 export default function SchedulePage() {
+  const { isLoggedIn } = useAuthStore();
+  // 游客访问「时间轴」：弹出登录引导
+  const [showLogin, setShowLogin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [statusBarHeight, setStatusBarHeight] = useState(20);
   const [courses, setCourses] = useState<ScheduleCourse[]>([]);
@@ -38,11 +54,17 @@ export default function SchedulePage() {
   const [showWeekPicker, setShowWeekPicker] = useState(false);
   // picker-view 内部选中的周次索引（0-based）
   const [pickerSelected, setPickerSelected] = useState<number>(0);
+  // picker-view 内部选中的学期索引（0-based，对应 semesters 下标）
+  const [pickerSemSelected, setPickerSemSelected] = useState<number>(0);
   // 用户手动选择的显示周次（初始=后端当前周，选周后跟随更新）
   const [displayWeekNumber, setDisplayWeekNumber] = useState<number>(0);
   // 后端返回的学期周次面板数据
   const [availableWeeks, setAvailableWeeks] = useState<{ week_number: number; start_date?: string | null; end_date?: string | null }[]>([]);
   const [semesterName, setSemesterName] = useState('');
+  // 可选学期列表（含 is_current 标记）
+  const [semesters, setSemesters] = useState<ScheduleSemester[]>([]);
+  // 当前选中的学期 id（缺省=当前学期）
+  const [selectedSemesterId, setSelectedSemesterId] = useState<number>(0);
   // 整周课程数据（用于点击其他日期时按 day_of_week 过滤）
   const [weekCourses, setWeekCourses] = useState<ScheduleCourse[]>([]);
   // 本周每天有课的星期几（dayjs day()：0=周日，1-6=周一至周六；后端 day_of_week 1-7）
@@ -65,6 +87,35 @@ export default function SchedulePage() {
       setRemindersLoading(false);
     }
   };
+
+  // 判断给定学期是否为「当前学期」（决定周次日期锚定口径）
+  const isCurrentSemester = useCallback(
+    (semId?: number): boolean => {
+      if (!semId || semId === 0) return true; // 未选 = 当前
+      const cur = semesters.find((s) => s.is_current);
+      return Boolean(cur && cur.id === semId);
+    },
+    [semesters],
+  );
+
+  // 根据周次推算该周周一日期（抄课表页做法）：
+  // - 当前学期：以当前真实日历周一为基准，按 (wn − 当前教学周) 相对偏移（与前端一致）
+  // - 历史学期：用该学期真实周历 available_weeks[wn-1].start_date（后端按开学日推算）
+  const getWeekStartDate = useCallback(
+    (wn: number, semId?: number): string | null => {
+      if (wn < 1) return null;
+      if (!isCurrentSemester(semId)) {
+        const w = availableWeeks.find((x) => x.week_number === wn);
+        if (w?.start_date) return w.start_date;
+      }
+      const today = dayjs();
+      const dow = today.day(); // 0=周日
+      const thisMonday = today.add(dow === 0 ? -6 : 1 - dow, 'day');
+      const baseWk = weekNumber >= 1 ? weekNumber : 1;
+      return thisMonday.add((wn - baseWk) * 7, 'day').format('YYYY-MM-DD');
+    },
+    [weekNumber, isCurrentSemester, availableWeeks],
+  );
 
   // 按日期加载课程：
   //   - 优先从已加载的 weekCourses 按 day_of_week 过滤（与圆点标记同源，保证一致）
@@ -116,8 +167,7 @@ export default function SchedulePage() {
       .catch(() => ({ ok: false as const, d: null }));
     const rawWk = cRes.ok && cRes.d ? cRes.d.week_number : 0;
     const availWeeks = (cRes.ok && cRes.d ? cRes.d.available_weeks : []) || [];
-    // 非教学周时回退到第 1 周（与 coursetable 一致），避免 displayWeekNumber=0
-    // 导致 getStartDateForWeek(0) 算出上周日期、今天不显示
+    // 非教学周时回退到第 1 周（与 coursetable 一致）
     const wkNum = rawWk > 0 ? rawWk : (availWeeks.length > 0 ? availWeeks[0].week_number : 0);
     const isTW = cRes.ok && cRes.d ? cRes.d.is_teaching_week : false;
     setWeekNumber(rawWk);
@@ -127,26 +177,36 @@ export default function SchedulePage() {
       setAvailableWeeks(availWeeks);
       setSemesterName(cRes.d.semester_name || '');
     }
-
-    // 周历有课标记 + 整周课程数据：仅在 weekNumber>=1 时调 week 接口
-    if (rawWk >= 1) {
-      try {
-        const weekRes = await scheduleApi.getWeek(wkNum);
-        const wc = weekRes.data.courses as ScheduleCourse[];
-        setWeekCourses(wc);
-        const set = new Set<number>();
-        wc.forEach((c) => {
-          if (c.day_of_week) set.add(c.day_of_week);
-        });
-        setHasCourseByDow(set);
-      } catch {
-        // 周课表查询失败不影响时间轴主流程
-      }
-    } else {
-      setHasCourseByDow(new Set());
-      setWeekCourses([]);
+    const semList: ScheduleSemester[] = (cRes.ok && cRes.d ? cRes.d.semesters : []) || [];
+    if (semList.length > 0) {
+      setSemesters(semList);
+      setSelectedSemesterId(semList.find((s) => s.is_current)?.id ?? semList[0].id);
     }
+    // 周历锚定到相对当前真实周的周一（wkNum 即当前周，偏移 0；不跳教学周真实日历）
+    await loadWeekCourses(wkNum, semList.length > 0 ? semList.find((s) => s.is_current)?.id ?? semList[0].id : undefined);
   };
+
+  // 加载某学期的整周课程（随选中周次/学期刷新）
+  const loadWeekCourses = useCallback(async (wn: number, semId?: number) => {
+    if (wn < 1) {
+      setWeekCourses([]);
+      setHasCourseByDow(new Set());
+      return;
+    }
+    try {
+      const weekRes = await scheduleApi.getWeek(wn, semId || undefined);
+      const wc = (weekRes.data.courses as ScheduleCourse[]) || [];
+      setWeekCourses(wc);
+      const set = new Set<number>();
+      wc.forEach((c) => {
+        if (c.day_of_week) set.add(c.day_of_week);
+      });
+      setHasCourseByDow(set);
+    } catch {
+      setWeekCourses([]);
+      setHasCourseByDow(new Set());
+    }
+  }, []);
 
   useLoad(() => {
     // custom 导航栏：读取状态栏高度，避免内容被遮挡
@@ -156,9 +216,22 @@ export default function SchedulePage() {
     } catch {
       // 兜底 20
     }
+    // 游客：不拉取需登录的课表数据，直接弹登录引导
+    if (!isLoggedIn) {
+      setShowLogin(true);
+      return;
+    }
     loadAll();
     loadReminders();
   });
+
+  // 登录态变化（游客 → 已登录）：补齐课表数据加载
+  useEffect(() => {
+    if (isLoggedIn) {
+      loadAll();
+      loadReminders();
+    }
+  }, [isLoggedIn]);
 
   usePullDownRefresh(async () => {
     await Promise.all([loadAll(), fetchDayCourses(selectedDate)]);
@@ -171,7 +244,7 @@ export default function SchedulePage() {
   });
 
   // 时间轴是 TabBar 页：切 Tab 离开再回来时页面常驻内存、state 不会自动重置。
-  // 在非首次显示（onShow）时重置到"今天 + 当前教学周"，满足"退出时间轴页面要重置到今天的数据"。
+  // 在非首次显示（onShow）时重置到"今天 + 当前教学周 + 当前学期"，满足"退出时间轴页面要重置到今天的数据"。
   const firstShowRef = useRef(true);
   useDidShow(() => {
     if (firstShowRef.current) {
@@ -179,38 +252,30 @@ export default function SchedulePage() {
       return; // 首次进入走 useLoad 的 loadAll，不额外处理
     }
     const today = dayjs().format('YYYY-MM-DD');
+    const cur = semesters.find((s) => s.is_current);
+    const curId = cur ? cur.id : 0;
+    if (selectedSemesterId !== curId && cur) {
+      setSelectedSemesterId(curId);
+      setSemesterName(cur.name);
+    }
     const targetWk = weekNumber > 0 ? weekNumber : (availableWeeks.length > 0 ? availableWeeks[0].week_number : 1);
-    if (selectedDate !== today || displayWeekNumber !== targetWk) {
+    if (selectedDate !== today || displayWeekNumber !== targetWk || selectedSemesterId !== curId) {
       setSelectedDate(today);
       setDisplayWeekNumber(targetWk);
-      // 周次/日期变化后，下面的 useEffect 会自动重新拉取该周数据与当天课程
+      // 周次/日期/学期变化后，下面的 useEffect 会自动重新拉取该周数据与当天课程
     }
   });
 
-  // 根据周次推算该周周一日期：以「当前真实日历周一」为基准，按 (wn − 当前教学周) 相对偏移。
-  // 这样切换周只是"围绕当前时间查看那个周的课程"，不会把日期跳到教学周真实日历（如第2周跳到 03-09），
-  // 且与后端 _calculate_date 口径一致（前后端都围绕当前附近 ±N 周）。
-  const getStartDateForWeek = useCallback((wn: number): string => {
-    const today = dayjs();
-    const dow = today.day(); // 0=周日
-    const thisMonday = today.add(dow === 0 ? -6 : 1 - dow, 'day');
-    const baseWk = weekNumber >= 1 ? weekNumber : 1;
-    return thisMonday.add((wn - baseWk) * 7, 'day').format('YYYY-MM-DD');
-  }, [weekNumber]);
-
   // 周历锚定：基于教学周 start_date（非真实日历），选周/滑动后日期对齐
   const currentMonday = useMemo(() => {
-    const sd = getStartDateForWeek(displayWeekNumber);
-    return dayjs(sd);
-  }, [displayWeekNumber, getStartDateForWeek]);
+    const sd = getWeekStartDate(displayWeekNumber, selectedSemesterId);
+    return dayjs(sd || undefined);
+  }, [displayWeekNumber, selectedSemesterId, getWeekStartDate]);
 
   // 本周 7 天（基于 currentMonday，联动星期标签）
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => currentMonday.add(i, 'day'));
   }, [currentMonday]);
-
-  // 本周 7 天（周一 ~ 周日），基于 currentMonday 联动
-  // (已上移为基于 displayWeekNumber + availableWeeks start_date 的 useMemo)
 
   const todayStr = dayjs().format('YYYY-MM-DD');
 
@@ -228,110 +293,137 @@ export default function SchedulePage() {
     // Swiper key 随 displayWeekNumber 变化而重建，current 自动回 1
   }, [availableWeeks, displayWeekNumber]);
 
-  // 教学周次变化 → 重新拉取该周的课表数据（有课标记 + 时间轴）
+  // 教学周次/学期变化 → 重新拉取该周的课表数据（有课标记 + 时间轴）
   useEffect(() => {
     if (displayWeekNumber >= 1) {
-      scheduleApi.getWeek(displayWeekNumber).then((res) => {
-        const wc = res.data.courses as ScheduleCourse[];
-        setWeekCourses(wc);
-        const set = new Set<number>();
-        wc.forEach((c) => { if (c.day_of_week) set.add(c.day_of_week); });
-        setHasCourseByDow(set);
-      }).catch(() => { /* 周数据加载失败不影响时间轴 */ });
+      scheduleApi
+        .getWeek(displayWeekNumber, selectedSemesterId || undefined)
+        .then((res) => {
+          const wc = res.data.courses as ScheduleCourse[];
+          setWeekCourses(wc);
+          const set = new Set<number>();
+          wc.forEach((c) => {
+            if (c.day_of_week) set.add(c.day_of_week);
+          });
+          setHasCourseByDow(set);
+        })
+        .catch(() => {
+          /* 周数据加载失败不影响时间轴 */
+        });
       // 同时刷新选中日期的时间轴（日期可能因教学周锚定而变）
       fetchDayCourses(selectedDate);
     } else {
       setHasCourseByDow(new Set());
       setWeekCourses([]);
     }
-  }, [displayWeekNumber]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayWeekNumber, selectedSemesterId]);
 
   // 点击周次：切换到该教学周（用 start_date 锚定日期，与课表页一致）
   const pickWeek = useCallback((wn: number) => {
     setDisplayWeekNumber(wn);
     setShowWeekPicker(false);
     // 选中日期：如果今天在该周内则选今天，否则选周一（不用 isBetween 插件，避免额外依赖）
-    const sd = getStartDateForWeek(wn);
-    const sundayStr = dayjs(sd).add(6, 'day').format('YYYY-MM-DD');
+    const sd = getWeekStartDate(wn, selectedSemesterId);
+    const sundayStr = dayjs(sd || undefined).add(6, 'day').format('YYYY-MM-DD');
     const todayStr2 = dayjs().format('YYYY-MM-DD');
-    setSelectedDate(todayStr2 >= sd && todayStr2 <= sundayStr ? todayStr2 : sd);
-  }, [getStartDateForWeek]);
+    setSelectedDate(todayStr2 >= (sd || '') && todayStr2 <= sundayStr ? todayStr2 : (sd || todayStr2));
+  }, [getWeekStartDate, selectedSemesterId]);
 
-  // 打开 picker 时自动滚动到当前显示的周次
+  // 打开 picker 时自动滚动到当前显示的学期 + 周次
   const openWeekPicker = useCallback(() => {
-    if (availableWeeks.length > 0 && displayWeekNumber > 0) {
-      const idx = availableWeeks.findIndex((w) => w.week_number === displayWeekNumber);
-      setPickerSelected(idx >= 0 ? idx : 0);
-    } else {
-      setPickerSelected(0);
-    }
+    // 右列用 availableWeeks 下标；左列用 selectedSemesterId 下标
+    const wkIdx = availableWeeks.findIndex((w) => w.week_number === displayWeekNumber);
+    setPickerSelected(wkIdx >= 0 ? wkIdx : 0);
+    const semIdx = semesters.findIndex((s) => s.id === selectedSemesterId);
+    setPickerSemSelected(semIdx >= 0 ? semIdx : 0);
     setShowWeekPicker(true);
-  }, [availableWeeks, displayWeekNumber]);
+  }, [availableWeeks, displayWeekNumber, semesters, selectedSemesterId]);
 
-  // picker-view 滚动选中变化
+  // picker-view 滚动选中变化（双列：左=学期，右=周）
   const onPickerChange = useCallback((e: any) => {
-    setPickerSelected(e.detail.value);
+    const value = e.detail.value;
+    if (!Array.isArray(value)) return;
+    const [semIdx, weekIdx] = value;
+    if (typeof semIdx === 'number') setPickerSemSelected(semIdx);
+    if (typeof weekIdx === 'number') setPickerSelected(weekIdx);
   }, []);
 
-  // picker 确认选择
-  const confirmPicker = useCallback(() => {
-    if (availableWeeks.length > 0) {
-      const wn = availableWeeks[pickerSelected]?.week_number;
-      if (wn) pickWeek(wn);
+  // picker 确认选择（学期 + 周）
+  const confirmPicker = useCallback(async () => {
+    const sem = semesters[pickerSemSelected];
+    const targetWeek = availableWeeks[pickerSelected]?.week_number ?? (pickerSelected + 1);
+    if (sem && sem.id !== selectedSemesterId) {
+      // 切换学期：先切后端数据并刷新该学期周历，再应用周次
+      setSelectedSemesterId(sem.id);
+      setSemesterName(sem.name);
+      let weeks: { week_number: number; start_date?: string | null }[] = [];
+      try {
+        const res = await scheduleApi.getWeek(targetWeek, sem.id);
+        weeks = (res.data.available_weeks || []) as { week_number: number; start_date?: string | null }[];
+      } catch {
+        weeks = [];
+      }
+      setAvailableWeeks(weeks);
+      await loadWeekCourses(targetWeek, sem.id);
+    } else {
+      await loadWeekCourses(targetWeek, selectedSemesterId || undefined);
     }
+    setDisplayWeekNumber(targetWeek);
     setShowWeekPicker(false);
-  }, [availableWeeks, pickerSelected, pickWeek]);
+  }, [semesters, pickerSemSelected, selectedSemesterId, pickerSelected, loadWeekCourses]);
 
-  // 显示课程：courses 已是选中日期按 full_date 查询的结果，仅按时间排序
+  // 学期列表（左列展示用）
+  const semesterList = useMemo(
+    () => semesters.map((s) => formatSemesterLabel(s.name)).filter(Boolean),
+    [semesters],
+  );
+
+  // 显示课程：两节为一节大课——把当日课程按每 2 节拆成独立大课，再按时间排序
   const displayCourses = useMemo(() => {
-    const sorted = [...courses].sort(
+    const split = splitCoursesToBigClasses(courses);
+    return [...split].sort(
       (a, b) => (a._timeInfo?.start_ts || 0) - (b._timeInfo?.start_ts || 0),
     );
-    // 合并同名相邻课程（数据库可能按单节存储：periods=[5]、[6] 分两条，
-    // 合并后 periods=[5,6]，显示为"5-6节"而非两行单节）
-    const merged: typeof sorted = [];
-    for (const c of sorted) {
-      const last = merged[merged.length - 1];
-      // 合并同名相邻课程（数据库可能按单节存储：periods=[5]、[6] 分两条，
-      // 合并后 periods=[5,6]，显示为"5-6节"而非两行单节）
-      // 合并条件改用具体日期 full_date（而非抽象 day_of_week）：
-      // schedule_today 按 full_date 精确匹配一天，一天内 full_date 都相同，
-      // 用 full_date 更精确且避免极端边界下跨日合并把多条课的 periods 拼成过大区间。
-      if (
-        last &&
-        last.course_name === c.course_name &&
-        last.extra_info?.full_date === c.extra_info?.full_date
-      ) {
-        // 同名同具体日期 → 合并 periods
-        const pLast = Array.isArray(last.periods) ? last.periods : [];
-        const pCur = Array.isArray(c.periods) ? c.periods : [];
-        const combined = [...new Set([...pLast, ...pCur])].sort((a, b) => a - b);
-        merged[merged.length - 1] = { ...last, periods: combined };
-      } else {
-        merged.push({ ...c });
-      }
-    }
-    return merged;
   }, [courses]);
 
   const weekText = displayWeekNumber > 0 ? `第 ${displayWeekNumber} 周` : '非教学周';
   // 胶囊显示教学状态
   const badgeText = displayWeekNumber > 0 ? '教学周' : '假期';
 
+  // 游客态：展示登录引导，不渲染需登录的课表内容
+  if (!isLoggedIn) {
+    return (
+      <View className="page schedule-page" style={{ paddingTop: `${statusBarHeight}px` }}>
+        <Text className="schedule-nav-title">时间轴</Text>
+        <View className="schedule-guard">
+          <Text className="schedule-guard-text">登录后查看你的课表时间轴</Text>
+          <View className="schedule-guard-btn" onClick={() => setShowLogin(true)}>
+            <Text className="schedule-guard-btn-text">登录 / 注册</Text>
+          </View>
+        </View>
+        <LoginModal visible={showLogin} onCancel={() => setShowLogin(false)} />
+      </View>
+    );
+  }
+
   return (
     <View className="page schedule-page" style={{ paddingTop: `${statusBarHeight}px` }}>
       {/* 自定义导航栏标题：左对齐粗体大字（与首页"校园宜知行"同款） */}
       <Text className="schedule-nav-title">时间轴</Text>
 
-      {/* 白色圆角矩形卡：头部（年月 + 教学周胶囊 + 下箭头 | 今天）+ 周历 7 天 */}
+      {/* 白色圆角矩形卡：头部（学期+年月 + 教学周胶囊 + 下箭头 | 今天）+ 周历 7 天 */}
       <View className="card week-calendar">
-        {/* 头部行：第 X 周 + 教学周胶囊 + 旋转箭头（左），今天（右） */}
+        {/* 头部行：学期+第 X 周 + 教学周胶囊 + 旋转箭头（左），今天（右） */}
         <View className="week-calendar-head">
           <View
             className="schedule-week-picker"
             onClick={openWeekPicker}
           >
-            <Text className="schedule-month-text">{displayWeekNumber > 0 ? `第 ${displayWeekNumber} 周` : '非教学周'}</Text>
+            <Text className="schedule-month-text">
+              {semesterName ? formatSemesterLabel(semesterName) + ' ' : ''}
+              {displayWeekNumber > 0 ? `第 ${displayWeekNumber} 周` : '非教学周'}
+            </Text>
             <View className="week-calendar-badge">
               <Text className="week-calendar-badge-text">{badgeText}</Text>
             </View>
@@ -340,27 +432,32 @@ export default function SchedulePage() {
           <Text
             className="schedule-today-btn"
             onClick={() => {
+              const cur = semesters.find((s) => s.is_current);
+              const curId = cur ? cur.id : 0;
+              if (selectedSemesterId !== curId && cur) {
+                setSelectedSemesterId(curId);
+                setSemesterName(cur.name);
+              }
               setSelectedDate(todayStr);
-              setDisplayWeekNumber(weekNumber);
+              setDisplayWeekNumber(weekNumber > 0 ? weekNumber : (availableWeeks.length > 0 ? availableWeeks[0].week_number : 1));
             }}
           >
             今天
           </Text>
         </View>
 
-
         {/* 周历行：Swiper 左右滑动切换教学周（key 随周次重建），每页 7 天横排 */}
         <Swiper
           className="week-swiper"
-          key={displayWeekNumber}
+          key={`${displayWeekNumber}-${selectedSemesterId}`}
           current={1}
           onChange={onSwiperChange}
           duration={200}
         >
           {[-1, 0, 1].map((offset) => {
             const wn = displayWeekNumber + offset;
-            const sd = getStartDateForWeek(wn);
-            const monday = dayjs(sd);
+            const sd = getWeekStartDate(wn, selectedSemesterId);
+            const monday = dayjs(sd || undefined);
             const days = Array.from({ length: 7 }, (_, i) => monday.add(i, 'day'));
             return (
               <SwiperItem key={wn}>
@@ -464,6 +561,13 @@ export default function SchedulePage() {
                 statusText={statusTextMap[st]}
                 courseColorKey={courseColorKey}
                 isLast={idx === displayCourses.length - 1}
+                onClick={() => {
+                  // 拆分的合成 id 形如 "X#p5-6"，详情页需要原始 id
+                  const originalId = c.schedule_id.split('#p')[0];
+                  navigateTo({
+                    url: `/pages/coursedetail/index?id=${originalId}&week_number=${displayWeekNumber || 1}`,
+                  });
+                }}
               />
             );
           })}
@@ -478,7 +582,7 @@ export default function SchedulePage() {
         onRetry={loadReminders}
       />
 
-      {/* 底部弹出周次选择器：半透明遮罩 + 从底部滑入 + 纵向滚轮选周次 */}
+      {/* 底部弹出周次/学期选择器：半透明遮罩 + 从底部滑入 + 双列滚轮（左=学期，右=周） */}
       {showWeekPicker && (
         <View className="week-picker-mask" onClick={() => setShowWeekPicker(false)}>
           <View className="week-picker-modal" onClick={(e) => e.stopPropagation()}>
@@ -486,7 +590,7 @@ export default function SchedulePage() {
             <View className="week-picker-header">
               <Text className="week-picker-cancel" onClick={() => setShowWeekPicker(false)}>取消</Text>
               {semesterName ? (
-                <Text className="week-picker-title">{semesterName}</Text>
+                <Text className="week-picker-title">{formatSemesterLabel(semesterName)}</Text>
               ) : (
                 <View />
               )}
@@ -494,13 +598,20 @@ export default function SchedulePage() {
             </View>
             {/* 分隔线 */}
             <View className="week-picker-divider" />
-            {/* PickerView 纵向滚动 */}
+            {/* PickerView 双列滚动：左列学期，右列周次 */}
             <View className="week-picker-body">
               <PickerView
                 className="week-picker-view"
-                value={[pickerSelected]}
+                value={[pickerSemSelected, pickerSelected]}
                 onChange={onPickerChange}
               >
+                <PickerViewColumn>
+                  {(semesterList.length > 0 ? semesterList : [semesterName].filter(Boolean)).map((s, i) => (
+                    <View className="week-picker-item" key={`${s}-${i}`}>
+                      <Text className="week-picker-item-text">{s}</Text>
+                    </View>
+                  ))}
+                </PickerViewColumn>
                 <PickerViewColumn>
                   {availableWeeks.map((w) => (
                     <View className="week-picker-item" key={w.week_number}>

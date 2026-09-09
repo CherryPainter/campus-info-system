@@ -1,11 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { View, Text, Image } from '@tarojs/components';
 import Taro, { useLoad, useDidShow } from '@tarojs/taro';
 
 import * as electricityApi from '@/api/electricity';
 import * as userApi from '@/api/user';
 import * as notificationsApi from '@/api/notifications';
-import type { ElectricityCurrent, ElectricityRecord } from '@/types/api';
+import type { ElectricityCurrent } from '@/types/api';
 import dayjs from 'dayjs';
 import { logout as logoutApi } from '@/api/auth';
 import { useAuthStore } from '@/stores/authStore';
@@ -13,6 +13,7 @@ import { useUserStore } from '@/stores/userStore';
 import { setTabIndex } from '@/utils/tabBarState';
 import CampusCard from '@/components/CampusCard';
 import FeedbackBadge from '@/components/FeedbackBadge';
+import LoginModal from '@/components/LoginModal';
 import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
 import './index.scss';
 
@@ -25,8 +26,10 @@ import './index.scss';
  * - 功能列表（我的消息/我的课表/收藏/反馈/设置/退出登录）
  */
 export default function ProfilePage() {
-  const { user, refreshToken, logout: clearAuth } = useAuthStore();
+  const { user, refreshToken, logout: clearAuth, isLoggedIn } = useAuthStore();
   const { profile, setProfile } = useUserStore();
+  // 游客访问「我的」：弹出登录引导
+  const [showLogin, setShowLogin] = useState(false);
   // 反馈未读红点（已受理未查看的反馈数）
   const { count: feedbackUnread, refresh: refreshFeedbackBadge } = useFeedbackBadge();
   // 消息未读（站内通知 + 新公告，消息图标角标）
@@ -51,7 +54,9 @@ export default function ProfilePage() {
   };
 
   const loadAll = async () => {
-    // 并行：电量当前值 + 用电历史（本月聚合）+ 资料（无缓存时拉取）
+    // 并行：电量当前值 + 本月累计（后端聚合）+ 资料（无缓存时拉取）
+    // 说明：本月已用改由后端 /electricity/monthly 按自然月 SUM 返回，
+    // 不再前端拉取 1000 条记录本地累加（此前与详情页取数条数不同导致两处数值不一致）
     const [eRes, hRes, pRes] = await Promise.all([
       electricityApi
         .getCurrent()
@@ -62,26 +67,9 @@ export default function ProfilePage() {
         }))
         .catch(() => ({ ok: false as const, d: null, configured: null })),
       electricityApi
-        .getHistory(1000)
-        .then((r) => {
-          const records = r.data.records as ElectricityRecord[];
-          // 本月（按 record_time 北京时间字符串判断），累加 usage
-          const monthStart = dayjs().startOf('month');
-          const sum = records.reduce((acc, rec) => {
-            const t = rec.record_time || rec.time;
-            if (!t) return acc;
-            const d = dayjs(t);
-            if (d.isValid() && (d.isAfter(monthStart) || d.isSame(monthStart))) {
-              return acc + Number(rec.usage || 0);
-            }
-            return acc;
-          }, 0);
-          // 取第一条 record 的 meter 作为楼栋号来源
-          // （electricity_remaining.meter 是 'default'，真实楼栋号在 electricity_records.meter）
-          const meter = records.length > 0 ? records[0].meter : '';
-          return { ok: true as const, d: { sum, meter } };
-        })
-        .catch(() => ({ ok: false as const, d: { sum: 0, meter: '' } })),
+        .getMonthlyUsage()
+        .then((r) => ({ ok: true as const, d: { sum: r.data.month_used ?? 0 } }))
+        .catch(() => ({ ok: false as const, d: { sum: 0 } })),
       !profile
         ? userApi
             .getProfile()
@@ -95,9 +83,10 @@ export default function ProfilePage() {
     setMonthUsed(hRes.ok ? hRes.d.sum : 0);
     // 更新时间统一显示"访问这一刻"（本次请求已确认数据真实性），覆盖后端爬取时间戳
     if (eRes.ok && eRes.d) setUpdateTime(dayjs().format('YYYY-MM-DD HH:mm:ss'));
-    // 楼栋信息：取自 electricity_records.meter（hRes.d.meter），回退 class_name
-    if (hRes.ok && hRes.d.meter) {
-      const cleaned = cleanMeter(hRes.d.meter);
+    // 楼栋信息：取自电量接口的 meter（后端 get_building_meter 已从用电记录解析出可读楼栋，
+    // 形如"31栋512照明"），清洗后展示；拿不到时回退班级名
+    if (eRes.ok && eRes.d?.meter) {
+      const cleaned = cleanMeter(eRes.d.meter);
       if (cleaned) setRoomText(cleaned);
     }
     if (pRes.ok && pRes.d) setProfile(pRes.d);
@@ -120,6 +109,11 @@ export default function ProfilePage() {
       if (info.statusBarHeight) setStatusBarHeight(info.statusBarHeight);
     } catch {
       // 兜底 20
+    }
+    // 游客：不拉取需登录的数据，直接弹登录引导
+    if (!isLoggedIn) {
+      setShowLogin(true);
+      return;
     }
     loadAll();
     // 打开"我的"页即触发一次电量轻量刷新（后端 60s 冷却），完成后更新最新值
@@ -166,6 +160,16 @@ export default function ProfilePage() {
     loadMsgUnread();
   });
 
+  // 登录态变化（游客 → 已登录，如从登录页返回）：补齐需登录的数据加载
+  useEffect(() => {
+    if (isLoggedIn) {
+      loadAll();
+      refreshElectricity();
+      refreshFeedbackBadge();
+      loadMsgUnread();
+    }
+  }, [isLoggedIn]);
+
   const handleLogout = () => {
     Taro.showModal({
       title: '退出登录',
@@ -190,6 +194,37 @@ export default function ProfilePage() {
   const majorGrade = [profile?.major, profile?.grade ? `${profile.grade}级` : '']
     .filter(Boolean)
     .join(' · ');
+
+  // 游客态：展示登录引导，不渲染需登录的内容（资料/电量/消息）
+  if (!isLoggedIn) {
+    return (
+      <View className="page profile-page">
+        <View
+          className="profile-hero"
+          style={{ paddingTop: `calc(${statusBarHeight}px + 80rpx)` }}
+        >
+          <View className="profile-header">
+            <View className="profile-header-info" onClick={() => setShowLogin(true)}>
+              <View className="profile-avatar profile-avatar-placeholder">
+                <Text className="profile-avatar-text">游</Text>
+              </View>
+              <View className="profile-info">
+                <Text className="profile-name">未登录</Text>
+                <Text className="profile-sub">登录后查看个人资料与数据</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+        <View className="card profile-guard">
+          <Text className="profile-guard-text">登录后可查看宿舍用电、校园通知、个人资料等功能</Text>
+          <View className="profile-guard-btn" onClick={() => setShowLogin(true)}>
+            <Text className="profile-guard-btn-text">登录 / 注册</Text>
+          </View>
+        </View>
+        <LoginModal visible={showLogin} onCancel={() => setShowLogin(false)} />
+      </View>
+    );
+  }
 
   return (
     <View className="page profile-page">
@@ -359,7 +394,7 @@ export default function ProfilePage() {
         <Text className="logout-text">退出登录</Text>
       </View>
 
-      <Text className="profile-version">校园宜知行 v1.0.0</Text>
+      <Text className="profile-version">校园宜知行 v1.1.0</Text>
     </View>
   );
 }

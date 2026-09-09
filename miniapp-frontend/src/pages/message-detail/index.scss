@@ -1,0 +1,61 @@
+@import '../../styles/variables.scss';
+
+/* 消息详情：内容直接平铺，白色背景，不用卡片包裹 */
+.msgd-page {
+  min-height: 100vh;
+  background: #ffffff;
+  padding: $spacing-lg $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.msgd-tip {
+  padding: $spacing-xl 0;
+  text-align: center;
+  color: $text-tertiary;
+  font-size: $font-size-md;
+}
+
+/* 头部：分类标签 + 时间 */
+.msgd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $spacing-sm;
+}
+
+.msgd-cat {
+  font-size: $font-size-xs;
+  color: $primary-color;
+  background: $primary-light;
+  padding: 4rpx 16rpx;
+  border-radius: $radius-full;
+}
+
+.msgd-time {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}
+
+.msgd-title {
+  display: block;
+  font-size: $font-size-lg;
+  font-weight: 600;
+  color: $text-primary;
+  line-height: 1.5;
+}
+
+.msgd-divider {
+  height: 1rpx;
+  background: $border-color;
+  margin: $spacing-md 0;
+}
+
+/* 正文：纯文本、\n 换行，pre-wrap 保留原始排版（电量日报等含多行统计） */
+.msgd-content {
+  display: block;
+  font-size: $font-size-md;
+  color: $text-secondary;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

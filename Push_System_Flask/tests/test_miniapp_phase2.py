@@ -45,6 +45,25 @@ class _FakeQuery:
     def filter_by(self, *a, **k):
         return self
 
+    def filter(self, *a, **k):
+        return self
+
+    def order_by(self, *a, **k):
+        return self
+
+    def offset(self, *a, **k):
+        return self
+
+    def limit(self, *a, **k):
+        return self
+
+    def count(self):
+        # 无真实数据时查询返回空结果集
+        return 0
+
+    def all(self):
+        return []
+
     def first(self):
         from app.model.student_profile import StudentProfile
         from app.model.user import User
@@ -170,20 +189,31 @@ def _course(**over):
 
 
 def test_no_token_401(client):
+    # 需登录的接口：无 token 仍返回 401
     for path in (
-        "/api/miniapp/schedule/today",
-        "/api/miniapp/weather/current",
         "/api/miniapp/electricity/current",
+        "/api/miniapp/student/profile",
     ):
         assert client.get(path).status_code == 401, path
 
 
-def test_admin_token_403(client, admin_token):
+def test_public_endpoints_anonymous_ok(client):
+    # 天气 / 公告为校园公开信息，游客（无 token）可直接浏览，满足「先体验后授权」审核规范
     for path in (
-        "/api/miniapp/schedule/today",
-        "/api/miniapp/schedule/week",
         "/api/miniapp/weather/current",
+        "/api/miniapp/weather/hourly",
+        "/api/miniapp/announcements",
+        "/api/miniapp/announcements/unread-count",
+    ):
+        resp = client.get(path)
+        assert resp.status_code == 200, path
+
+
+def test_admin_token_403(client, admin_token):
+    # 仍受 student_required 保护的接口：admin token 返回 403
+    for path in (
         "/api/miniapp/electricity/history",
+        "/api/miniapp/electricity/current",
     ):
         resp = client.get(path, headers={"Authorization": f"Bearer {admin_token}"})
         assert resp.status_code == 403, path
@@ -212,10 +242,11 @@ class _GoneUserSession:
 def test_deleted_user_returns_401_user_gone(client, student_token):
     """回归（2026-09-06）：清库/删号后旧 token 仍签名有效，
     student_required 必须查库拦截为 401 USER_GONE，
-    而不是一路放行到 bind 落库才报外键 500。"""
+    而不是一路放行到 bind 落库才报外键 500。
+    （用仍受 student_bound_required 保护的电量接口验证该路径；天气/公告已放开为公开）"""
     with mock.patch("app.core.database.get_db", return_value=_GoneUserSession()):
         resp = client.get(
-            "/api/miniapp/weather/current",
+            "/api/miniapp/electricity/current",
             headers={"Authorization": f"Bearer {student_token}"},
         )
     assert resp.status_code == 401

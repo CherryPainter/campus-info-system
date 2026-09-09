@@ -86,6 +86,37 @@ class UserNotificationService:
             session.close()
 
     @staticmethod
+    def get_notification(user_id: int, notification_id: int) -> dict | None:
+        """
+        查询单条站内通知详情
+
+        必须同时按 id 与 user_id 过滤：id 由客户端传入，若不校验归属会出现
+        越权读取他人消息（IDOR）。查不到时返回 None，由路由层转 404。
+
+        Args:
+            user_id: 当前登录用户ID（取自 JWT，不接受客户端传参）
+            notification_id: 通知ID
+
+        Returns:
+            Optional[Dict]: 通知 dict；不存在或不属于该用户时返回 None
+        """
+        from app.model.user_notification import UserNotification
+
+        session = get_db()
+        try:
+            record = (
+                session.query(UserNotification)
+                .filter(
+                    UserNotification.id == notification_id,
+                    UserNotification.user_id == user_id,
+                )
+                .first()
+            )
+            return record.to_dict() if record else None
+        finally:
+            session.close()
+
+    @staticmethod
     def unread_count(user_id: int) -> int:
         """查询某用户的未读通知数"""
         session = get_db()

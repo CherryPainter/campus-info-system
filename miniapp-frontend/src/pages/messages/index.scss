@@ -119,13 +119,16 @@
   color: $text-tertiary;
 }
 
-/* 消息条目 */
+/* 消息条目：flex 布局 = 左侧主内容（可点跳详情）+ 右侧箭头 */
 .msg-item {
+  display: flex;
+  align-items: center;
   background: $card-background;
   border-radius: $radius-large;
   box-shadow: $shadow-card;
-  padding: $spacing-md $spacing-lg;
-  margin-bottom: $spacing-md;
+  padding: $spacing-lg $spacing-lg;
+  /* 上下间距加宽，让列表更透气 */
+  margin-bottom: $spacing-lg;
 }
 
 .msg-item.unread {
@@ -135,6 +138,20 @@
 /* 已读留档：整卡灰化弱化（不再高亮，但仍完整保留在列表原时间位） */
 .msg-item.is-read {
   opacity: 0.6;
+}
+
+.msg-item-main {
+  flex: 1;
+  min-width: 0; /* 允许子元素在 flex 容器内收缩换行 */
+}
+
+/* 右侧「查看详情」箭头 */
+.msg-item-arrow {
+  flex-shrink: 0;
+  margin-left: $spacing-sm;
+  font-size: 40rpx;
+  color: $text-tertiary;
+  line-height: 1;
 }
 
 .msg-item-head {
@@ -167,13 +184,16 @@
   line-height: 1.5;
 }
 
+/* 列表摘要：最多 2 行省略（完整正文在消息详情页看，避免长日报撑爆列表） */
 .msg-item-content {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   margin-top: $spacing-xs;
   font-size: $font-size-sm;
   color: $text-secondary;
   line-height: 1.7;
-  white-space: pre-wrap;
   word-break: break-all;
 }
 
@@ -181,18 +201,19 @@
   /* 时间胶囊的包裹：不额外加间距，卡片自身的 margin-bottom 分隔相邻组 */
 }
 
-/* 时间分组胶囊（仿微信消息列表：半透明深色圆角胶囊，居中） */
+/* 时间分组胶囊（半透明深色圆角胶囊居中；"再淡一点"→ 降低底色透明度，
+   上下留白加大 → 时间戳与卡片间更透气） */
 .msg-time-pill {
   display: flex;
   justify-content: center;
-  /* 顶部不留自间距：分隔交给上方卡片/头部的 margin，胶囊只贴紧所属组的首张卡 */
-  margin: 0 0 $spacing-xs;
+  /* 上下都留白：与上方卡片/下方卡片拉开 */
+  margin: $spacing-sm 0 $spacing-md;
 }
 
 .msg-time-pill-text {
   font-size: $font-size-xs;
   color: #fff;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.22); /* 原 0.35 → 0.22，更淡 */
   padding: 6rpx 24rpx;
   border-radius: 999rpx;
   line-height: 1.5;

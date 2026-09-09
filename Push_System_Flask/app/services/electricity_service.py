@@ -15,7 +15,6 @@
 """
 
 import logging
-import re
 import time
 from datetime import datetime, timedelta
 from typing import Any
@@ -90,23 +89,20 @@ class ElectricityService:
         清洗电表名：去掉爬虫可能附加的 "电表:" 前缀和 "照明" 后缀等噪声，
         统一为楼栋+寝室号（如 "31栋512"）。空值兜底 "default"。
 
+        实现委托给 ElectricityRepository.normalize_meter（单一真相源），
+        入库去重与展示清洗共用同一套归一化规则，避免两处规则不一致
+        导致「清洗后的值」与「库里历史值」对不上而重复插入。
+
         历史脏数据格式（爬虫 _parse_json 拼前缀 / _parse_html 原文本）：
           - "电表: 31栋512照明" → "31栋512"
           - "电表: 310512" → "310512"
           - "31栋512照明" → "31栋512"
           - "310512" → "310512"
+
+        注意：一个宿舍可能有多块分表（如 "31栋512" 与 "310512"），
+        归一化后仍是不同标识，各自保留，不能互相合并。
         """
-        if raw is None:
-            return "default"
-        s = str(raw).strip()
-        if not s or s == "default":
-            return "default"
-        # 去掉 "电表:" "电表：" 前缀
-        s = re.sub(r"^电表[:：]\s*", "", s)
-        # 去掉 "照明" 后缀
-        s = re.sub(r"照明\s*$", "", s)
-        s = s.strip()
-        return s if s else "default"
+        return ElectricityRepository.normalize_meter(raw)
 
     @staticmethod
     def _utc_to_local(ts: Any) -> Any:
@@ -638,6 +634,60 @@ class ElectricityService:
                 "start_time": start_time.isoformat(),
                 "end_time": end_time.isoformat(),
             }
+        finally:
+            session.close()
+
+    def get_monthly_usage(self) -> dict[str, Any]:
+        """
+        获取本月（自然月 1 号起）累计用电量（按用户隔离，后端统一聚合）
+
+        背景：此前「本月已用」由前端各自拉取记录在本地累加——我的页拉 1000 条、
+        详情页只拉首屏 20 条，同一月份算出 162.93 / 74.04 两个不同值。
+        改由后端按 user_id + 自然月聚合，保证各页面口径一致。
+
+        Returns:
+            Dict: {"month_used": 本月累计(度), "month_start": "YYYY-MM-DD", "days": 已统计天数}
+        """
+        session = get_db()
+        try:
+            now = datetime.now()
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # 学校系统每日 00 点后结算前一天，记录时间会比用电日多约 1 天，
+            # 上界留到明天，避免当天结算记录被漏掉
+            total = ElectricityRepository.sum_usage_since(
+                session=session, start_time=month_start, user_id=self._user_id
+            )
+            return {
+                "month_used": round(total, 2),
+                "month_start": month_start.strftime("%Y-%m-%d"),
+                "days": max(1, (now - month_start).days + 1),
+            }
+        finally:
+            session.close()
+
+    def deduplicate_records(self) -> dict[str, Any]:
+        """
+        清理本用户（user_id=None 时为全库）的历史重复用电记录
+
+        同一用户同一日期只保留一条，删除因电表写法不一致（"31栋512"/"310512"）
+        产生的重复行。用于修复此前已经写进库的脏数据。
+
+        Returns:
+            Dict: {"groups": 重复天数, "deleted": 删除条数, "kept": 保留条数}
+        """
+        session = get_db()
+        try:
+            result = ElectricityRepository.deduplicate_records(
+                session=session, user_id=self._user_id
+            )
+            session.commit()
+            logger.info(
+                f"[ElectricityService] 重复用电记录清理完成(user_id={self._user_id}): {result}"
+            )
+            return result
+        except Exception:
+            session.rollback()
+            raise
         finally:
             session.close()
 

@@ -303,6 +303,18 @@ export interface ElectricityTrendResult extends ApiSuccess {
   data: { points: ElectricityTrendPoint[] };
 }
 
+/** 本月累计用电（后端按自然月聚合，/api/miniapp/electricity/monthly） */
+export interface ElectricityMonthlyResult extends ApiSuccess {
+  data: {
+    /** 本月累计用电量（度） */
+    month_used: number;
+    /** 本月起始日期 YYYY-MM-DD */
+    month_start: string;
+    /** 已统计天数 */
+    days: number;
+  };
+}
+
 // ==================== 电表 Cookie 配置（/api/miniapp/electricity/cookie） ====================
 
 export interface ElectricityCookieConfigResult extends ApiSuccess {
@@ -341,6 +353,13 @@ export interface UserNotificationListResult extends ApiSuccess {
     total_unread: number; // 两者之和（角标用）
     offset: number;
     limit: number;
+  };
+}
+
+/** 单条通知详情（列表只放摘要，点进详情页看全文，后端进入即记已读） */
+export interface UserNotificationDetailResult extends ApiSuccess {
+  data: {
+    notification: UserNotificationItem;
   };
 }
 
@@ -415,7 +434,13 @@ export interface AnnouncementAttachment {
   file_name: string;
   file_size: number;
   file_size_label: string; // 如 "1.2 MB"
+  /** 磁盘相对路径（不可直接下载，勿用） */
   file_url: string;
+  /**
+   * 小程序端下载入口（相对接口路径，需拼 API_BASE_URL）
+   * 形如 /api/miniapp/announcements/attachment/<id>，走带鉴权的下载接口
+   */
+  download_url?: string;
 }
 
 /** 相关推荐条目（详情页底部）*/

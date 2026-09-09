@@ -51,9 +51,13 @@ class DatabaseManager:
 
         self._engine = create_engine(
             database_url,
-            pool_pre_ping=True,  # 自动检测断开的连接
-            pool_recycle=3600,  # 连接回收时间
-            echo=False,  # 关闭 SQL 日志
+            pool_pre_ping=True,   # 取出连接前自动 ping，检测断开的连接
+            pool_recycle=1800,    # 连接最大存活时间（秒），从 3600 缩短到 1800，避免 MySQL wait_timeout 断开
+            pool_size=10,         # 连接池大小
+            max_overflow=20,      # 超出 pool_size 后最多可额外创建的连接数
+            pool_use_lifo=True,   # LIFO 模式：最近使用的连接优先被复用，减少连接过期概率
+            pool_timeout=30,      # 获取连接超时时间（秒）
+            echo=False,           # 关闭 SQL 日志
         )
 
         # 创建 Session 工厂

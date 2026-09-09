@@ -324,3 +324,35 @@
   font-size: $font-size-xs;
   color: $text-tertiary;
 }
+
+/* 游客态登录引导卡 */
+.profile-guard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48rpx 32rpx;
+
+  .profile-guard-text {
+    font-size: $font-size-md;
+    color: $text-secondary;
+    text-align: center;
+    line-height: 40rpx;
+    margin-bottom: 32rpx;
+  }
+
+  .profile-guard-btn {
+    width: 360rpx;
+    height: 80rpx;
+    border-radius: 40rpx;
+    background: $primary-color;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    .profile-guard-btn-text {
+      font-size: $font-size-md;
+      font-weight: 600;
+      color: #ffffff;
+    }
+  }
+}

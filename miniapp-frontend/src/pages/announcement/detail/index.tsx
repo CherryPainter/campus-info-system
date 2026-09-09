@@ -3,8 +3,9 @@ import { View, Text, RichText } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { Icon } from '@nutui/nutui-react-taro';
 import * as announcementsApi from '@/api/announcements';
-import type { AnnouncementDetail } from '@/types/api';
-import { API_BASE_URL } from '@/utils/request';
+import type { AnnouncementAttachment, AnnouncementDetail } from '@/types/api';
+import { API_BASE_URL, ensureFreshAccessToken } from '@/utils/request';
+import dayjs from 'dayjs';
 
 import './index.scss';
 
@@ -132,21 +133,54 @@ export default function AnnouncementDetail() {
     Taro.redirectTo({ url: `/pages/announcement/detail/index?id=${relatedId}` });
   };
 
-  /** 下载附件 */
-  const downloadAttachment = (att: any) => {
-    if (att.file_url) {
-      Taro.downloadFile({
-        url: att.file_url,
-        success: (res) => {
-          if (res.statusCode === 200 && res.tempFilePath) {
-            Taro.openDocument({ filePath: res.tempFilePath, showMenu: true });
-          }
-        },
-        fail: () => {
-          Taro.showToast({ title: '下载失败', icon: 'none' });
-        },
-      });
+  /**
+   * 下载附件
+   *
+   * 必须走后端带鉴权的下载接口（att.download_url，形如 /api/miniapp/announcements/attachment/<id>），
+   * 而不是 att.file_url（那是磁盘相对路径，无法直接下载，且直连会绕过可见性鉴权）。
+   * downloadFile 需带 token（该接口是 @student_bound_required），并做登录预刷新防过期。
+   */
+  const downloadAttachment = async (att: AnnouncementAttachment) => {
+    // 优先用后端给的鉴权下载接口；拿不到时兜底文件路径（拼成完整 URL）
+    const path = att.download_url || att.file_url;
+    if (!path) {
+      Taro.showToast({ title: '附件地址缺失', icon: 'none' });
+      return;
     }
+    const full = /^https?:\/\//.test(path) ? path : `${API_BASE_URL}${path}`;
+
+    // downloadFile 不走 request 封装，需手动补 token 刷新（同反馈图片上传的处理）
+    const token = await ensureFreshAccessToken();
+    Taro.showLoading({ title: '下载中…' });
+    Taro.downloadFile({
+      url: full,
+      header: token ? { Authorization: `Bearer ${token}` } : {},
+      success: (res) => {
+        if (res.statusCode === 200 && res.tempFilePath) {
+          Taro.openDocument({ filePath: res.tempFilePath, showMenu: true });
+        } else if (res.statusCode === 401) {
+          Taro.showToast({ title: '登录已过期，请重新登录', icon: 'none' });
+        } else if (res.statusCode === 404) {
+          Taro.showToast({ title: '附件不存在或已删除', icon: 'none' });
+        } else {
+          Taro.showToast({ title: '下载失败', icon: 'none' });
+        }
+      },
+      fail: (err) => {
+        const msg = (err as { errMsg?: string })?.errMsg || '';
+        // downloadFile 域名白名单是独立的，报 domain list 时给出明确提示
+        if (/url not in domain list/i.test(msg)) {
+          Taro.showToast({
+            title: '下载域名未加入白名单，请在微信后台配置 downloadFile 合法域名',
+            icon: 'none',
+            duration: 3000,
+          });
+        } else {
+          Taro.showToast({ title: '下载失败', icon: 'none' });
+        }
+      },
+      complete: () => Taro.hideLoading(),
+    });
   };
 
   if (!id || Number.isNaN(id)) {
@@ -219,11 +253,7 @@ export default function AnnouncementDetail() {
               )}
               {detail.published_at && (
                 <Text className="sign-date">
-                  {new Date(detail.published_at).toLocaleDateString('zh-CN', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                  })}
+                  {dayjs(detail.published_at).format('YYYY年M月D日')}
                 </Text>
               )}
             </View>

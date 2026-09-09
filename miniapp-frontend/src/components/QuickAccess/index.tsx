@@ -26,6 +26,15 @@ export const DEFAULT_ITEMS: QuickItem[] = [
 interface QuickAccessProps {
   items?: QuickItem[];
   title?: string;
+  /**
+   * 是否需要登录才能使用：true 时，非公开功能项点击会触发 onLogin 引导，
+   * 不直接跳转。用于「先体验后授权」——游客可点公开项，受限项弹登录。
+   */
+  requireLogin?: boolean;
+  /** 免登录的公开功能 key（requireLogin=true 时白名单） */
+  publicKeys?: string[];
+  /** 受限功能点击回调（弹登录引导） */
+  onLogin?: () => void;
 }
 
 const HANDLE_PAGE: Record<string, (path: string) => void> = {
@@ -33,7 +42,12 @@ const HANDLE_PAGE: Record<string, (path: string) => void> = {
   page: (path) => Taro.navigateTo({ url: path }),
 };
 
-function handleClick(item: QuickItem): void {
+function handleClick(item: QuickItem, ctx?: QuickAccessProps): void {
+  // 需登录且当前项不在公开白名单 → 引导登录，不直接跳转
+  if (ctx?.requireLogin && !(ctx.publicKeys || []).includes(item.key)) {
+    ctx.onLogin?.();
+    return;
+  }
   if (item.action && item.pagePath && HANDLE_PAGE[item.action]) {
     HANDLE_PAGE[item.action](item.pagePath);
     return;
@@ -48,7 +62,8 @@ function handleClick(item: QuickItem): void {
  * - 学校侧尚未接入的（校园卡/空闲教室/校历查询）跳各自占位页，页面空态提示"暂无最新数据"
  * - 仅"更多功能"暂无独立页，点击 toast 提示
  */
-export default function QuickAccess({ items = DEFAULT_ITEMS, title = '常用功能' }: QuickAccessProps) {
+export default function QuickAccess({ items = DEFAULT_ITEMS, title = '常用功能', requireLogin, publicKeys, onLogin }: QuickAccessProps) {
+  const ctx: QuickAccessProps = { requireLogin, publicKeys, onLogin };
   return (
     <View className="card quick-access">
       <View className="card-header">
@@ -57,7 +72,7 @@ export default function QuickAccess({ items = DEFAULT_ITEMS, title = '常用功�
       </View>
       <View className="quick-grid">
         {items.map((item) => (
-          <View key={item.key} className="quick-cell" onClick={() => handleClick(item)}>
+          <View key={item.key} className="quick-cell" onClick={() => handleClick(item, ctx)}>
             <View className="quick-icon-wrap">
               <Text className={`iconfont icon-${item.icon}`} />
             </View>

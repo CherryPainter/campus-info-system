@@ -24,9 +24,10 @@
     }
   }
 
-  .weather-mini-emoji {
-    font-size: 48rpx;
-    line-height: 1;
+  .weather-mini-icon {
+    width: 48rpx;
+    height: 48rpx;
+    display: block;
   }
 
   .weather-mini-bottom {

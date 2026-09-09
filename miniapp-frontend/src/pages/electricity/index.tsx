@@ -78,10 +78,14 @@ export default function ElectricityPage() {
     setLoading(true);
     setError(false);
     try {
-      const [cRes, hRes, tRes] = await Promise.all([
+      const [cRes, hRes, tRes, mRes] = await Promise.all([
         electricityApi.getCurrent().catch(() => null),
         electricityApi.getHistory(RECORD_PAGE, 0).catch(() => null),
         electricityApi.getTrend(trendTab).catch(() => null),
+        // 本月已用：改由后端按自然月聚合返回。
+        // 此前只把首屏 20 条记录里属于本月的 usage 相加，导致详情页 74.04、
+        // 我的页 162.93 两个口径（我的页拉 1000 条），统一走后端后一致
+        electricityApi.getMonthlyUsage().catch(() => null),
       ]);
       setCookieConfigured(cRes?.data?.cookie_configured ?? null);
       setCurrent(cRes?.data?.electricity ?? null);
@@ -100,18 +104,8 @@ export default function ElectricityPage() {
       if (hRes?.data?.fetch_triggered) {
         Taro.showToast({ title: '正在首次采集电量数据，请稍后下拉刷新查看', icon: 'none', duration: 2500 });
       }
-      // 本月已用：累加本月用电记录（按 record_time / time 判断月份）
-      const monthStart = dayjs().startOf('month');
-      const used = recs.reduce((acc, r) => {
-        const t = r.record_time || r.time;
-        if (!t) return acc;
-        const d = dayjs(t);
-        if (d.isValid() && (d.isAfter(monthStart) || d.isSame(monthStart, 'day'))) {
-          return acc + Number(r.usage || 0);
-        }
-        return acc;
-      }, 0);
-      setMonthUsed(used);
+      // 本月已用：直接用后端聚合结果（month_used），不再用首屏记录本地累加
+      setMonthUsed(mRes?.data?.month_used ?? 0);
     } catch {
       setError(true);
     } finally {

@@ -245,3 +245,11 @@
     }
   }
 }
+
+// 可点击：按下时整体轻微透明+卡片颜色加深，给用户点击反馈
+.timeline-item-hover {
+  opacity: 0.75;
+  .timeline-card {
+    box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+  }
+}

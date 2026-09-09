@@ -135,17 +135,9 @@ export default function MessagesPage() {
     }
   };
 
-  /** 单条标记已读（乐观更新，失败回滚） */
-  const markOneRead = async (item: UserNotificationItem) => {
-    if (item.is_read) return;
-    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, is_read: true } : i)));
-    setUnreadCount((c) => Math.max(0, c - 1));
-    try {
-      await notificationsApi.markRead(item.id);
-    } catch {
-      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, is_read: false } : i)));
-      setUnreadCount((c) => c + 1);
-    }
+  /** 跳消息详情页（进入详情即自动记已读，返回后再刷新列表已读态） */
+  const goDetail = (id: number) => {
+    Taro.navigateTo({ url: `/pages/message-detail/index?id=${id}` });
   };
 
   /** 全部已读：站内通知 + 新公告一次清空 */
@@ -173,13 +165,15 @@ export default function MessagesPage() {
     loadFirst();
   });
 
-  // 非首次显示（从公告详情返回）时刷新未读公告
+  // 非首次显示（从公告/消息详情返回）时刷新：公告已读态、消息已读态、未读数
   const firstShowRef = useRef(true);
   useDidShow(() => {
     if (firstShowRef.current) {
       firstShowRef.current = false;
       return;
     }
+    // 从消息详情返回时，那条消息已在后端记为已读 → 重拉第一页刷新已读态与未读数
+    loadFirst();
     refreshAnnouncements();
   });
 
@@ -262,16 +256,20 @@ export default function MessagesPage() {
               )}
               <View
                 className={`msg-item${item.is_read ? ' is-read' : ' unread'}`}
-                onClick={() => markOneRead(item)}
+                onClick={() => goDetail(item.id)}
               >
-                <View className="msg-item-head">
-                  <Text className="msg-item-cat">{categoryText(item.category)}</Text>
-                  {!item.is_read && <Text className="msg-item-dot" />}
+                <View className="msg-item-main">
+                  <View className="msg-item-head">
+                    <Text className="msg-item-cat">{categoryText(item.category)}</Text>
+                    {!item.is_read && <Text className="msg-item-dot" />}
+                  </View>
+                  <Text className="msg-item-title">{item.title}</Text>
+                  {item.content ? (
+                    // 列表只放摘要（最多 2 行省略），完整正文在消息详情页看
+                    <Text className="msg-item-content">{item.content}</Text>
+                  ) : null}
                 </View>
-                <Text className="msg-item-title">{item.title}</Text>
-                {item.content ? (
-                  <Text className="msg-item-content">{item.content}</Text>
-                ) : null}
+                <Text className="msg-item-arrow">›</Text>
               </View>
             </View>
           ))}

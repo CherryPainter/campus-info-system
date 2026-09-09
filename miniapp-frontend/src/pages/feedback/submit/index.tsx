@@ -72,8 +72,11 @@ export default function FeedbackSubmitPage() {
         try {
           const url = await feedbackApi.uploadImage(p);
           urls.push(url);
-        } catch {
-          Taro.showToast({ title: '有图片上传失败', icon: 'none' });
+        } catch (e) {
+          // 暴露真实原因（原来是笼统的"有图片上传失败"，线上无法定位问题）。
+          // 常见：uploadFile 域名未加入小程序白名单 / 图片过大被 nginx 拒绝 / 登录过期
+          const msg = (e as Error).message || '图片上传失败';
+          Taro.showToast({ title: msg, icon: 'none', duration: 3000 });
         }
       }
       if (urls.length) setImages((prev) => [...prev, ...urls].slice(0, MAX_IMAGES));

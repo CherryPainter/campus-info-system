@@ -701,7 +701,9 @@ class AnnouncementService:
             db.close()
 
     def unread_count(self, user_id):
-        """未读数（首页红点）"""
+        """未读数（首页红点）；匿名用户返回 0"""
+        if user_id is None:
+            return 0
         db = get_db()
         try:
             read_ids = [

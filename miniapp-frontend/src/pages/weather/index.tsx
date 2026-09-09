@@ -401,8 +401,38 @@ export default function WeatherPage() {
   const [air, setAir] = useState<WeatherAir | null>(null);
   const [minutely, setMinutely] = useState<{ summary?: string; minutely: WeatherMinutelyItem[] } | null>(null);
   const [error, setError] = useState(false);
-  // 生活指数长按状态：记录当前长按的卡片 key（type 或 name），null 表示未长按
+  // 生活指数翻转状态：记录当前翻转的卡片 key，null 表示未翻转
   const [pressedIndex, setPressedIndex] = useState<string | null>(null);
+  // 翻转自动恢复的定时器引用
+  const flipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * 生活指数卡片点击处理：
+   * 1. 点击卡片翻转到背面显示描述
+   * 2. 2.5 秒后自动翻转回正面
+   * 3. 再次点击同一张卡片立即翻回
+   */
+  const handleIndexClick = useCallback((key: string) => {
+    setPressedIndex((prev) => {
+      if (prev === key) {
+        // 同一张卡片再次点击 → 立即翻回
+        if (flipTimerRef.current) {
+          clearTimeout(flipTimerRef.current);
+          flipTimerRef.current = null;
+        }
+        return null;
+      }
+      // 翻转到新卡片 → 先清旧定时器再启动新定时器
+      if (flipTimerRef.current) {
+        clearTimeout(flipTimerRef.current);
+      }
+      flipTimerRef.current = setTimeout(() => {
+        setPressedIndex(null);
+        flipTimerRef.current = null;
+      }, 2500);
+      return key;
+    });
+  }, []);
   // 页面背景渐变（以当前实时天气为准，固定不变，不随折线滑动切换）
   const [bgGradient, setBgGradient] = useState<{ from: string; via: string; to: string }>(() => getGradient(weather?.text));
   // 天气特效类型（以当前实时天气为准，固定不变）
@@ -693,30 +723,34 @@ export default function WeatherPage() {
 
     // ====== 5. 时间轴（图标 + 时间文字，随曲线一起平移） ======
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
     // 「现在」锚点 _nowIdx 已在上方统一计算（气泡与时间轴标签共用），此处直接复用，避免分歧
     data.forEach((h, i) => {
       const px = pointX(i);
       if (px < -40 || px > W + 40) return;   // 不可见跳过
       const isNow = i === _nowIdx;   // 唯一匹配：距当前时间最近的点
       const isActive = i === idx;
+      const isEmphasized = isNow || isActive;   // 需要强调的点（图标同步放大）
 
       // 天气图标 PNG（替代 emoji，避免不同设备渲染不一致）
       // 注意：Canvas 2D 的 drawImage 只接受 Image/Canvas 对象，直接把 base64/路径字符串传入会
       // 抛 parameter error，导致下方时间文字绘制被中断（表现为"时间轴文字消失"）。
       // 因此这里懒加载本地 PNG → Image 对象后再绘制：未就绪时先跳过图标，绝不影响时间文字。
-      const iconSize = isActive ? 36 : 32;
+      const iconSize = isEmphasized ? 36 : 30;   // 强调点 36px，普通点 30px（同步文字放大）
       {
         const src = getWeatherIconSrc(h.text);
         const cached = iconCacheRef.current[src];
         if (cached === 'loading' || cached === 'error') {
           // 加载中/加载失败：本次先跳过图标（不抛异常，时间文字照常画）
         } else if (cached) {
-          // 白色光晕：提升灰色云/雨图标在蓝色图表背景上的对比度（2026-09-08）；
-          // ctx.shadow 沿 PNG 透明形状外缘描白，不影响下方时间文字（drawImage 后立刻重置）。
-          ctx.shadowColor = 'rgba(255,255,255,0.7)';
-          ctx.shadowBlur = 6;
-          ctx.drawImage(cached, px - iconSize / 2, timeY, iconSize, iconSize);
-          ctx.shadowBlur = 0;
+          const iconX = px - iconSize / 2;
+          const iconY = timeY;
+          // 白色化：用 filter 的 brightness(0) invert(1) 把图标变成纯白
+          // save/restore 保证不影响后续绘制
+          ctx.save();
+          ctx.filter = 'brightness(0) invert(1)';
+          ctx.drawImage(cached, iconX, iconY, iconSize, iconSize);
+          ctx.restore();
         } else {
           // 首次遇到：标记 loading 并异步加载；onload 成功后补一次重绘把图标画上
           iconCacheRef.current[src] = 'loading';
@@ -739,13 +773,12 @@ export default function WeatherPage() {
         }
       }
 
-      // 时间文字
+      // 时间文字（与图标共享同一 px 中心，严格对齐）
       const t = h.fxTime || h.fx_time || '';
       const hour = t.includes(' ') ? t.split(' ')[1].slice(0, 5) : t.slice(11, 16);
       const label = isNow ? '现在' : hour;
       ctx.fillStyle = isNow ? '#fff' : isActive ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.5)';
-      ctx.font = (isNow || isActive) ? '600 12px sans-serif' : '400 11px sans-serif';
-      ctx.textBaseline = 'top';
+      ctx.font = isEmphasized ? '600 12px sans-serif' : '400 11px sans-serif';
       ctx.fillText(label, px, textY);
 
       // ====== 降水概率角标（仅 >=60% 时显示在图标右上角，白字无描边）======
@@ -754,8 +787,8 @@ export default function WeatherPage() {
         const bText = `${Math.round(popVal)}%`;
         ctx.font = '700 10px sans-serif';
         const bW = ctx.measureText(bText).width;
-        // 紧贴图标右上角：图标字号~36px，右边缘≈px+22；角标定位在图标右上方
-        const bx = px + 20;
+        // 紧贴图标右上角：角标定位在图标右上方
+        const bx = px + iconSize / 2 - 4;
         const by = timeY - 4;
         if (bx > -bW && bx < W) {
           ctx.textAlign = 'left';
@@ -1091,31 +1124,32 @@ export default function WeatherPage() {
         </View>
       )}
 
-      {/* ====== 未来 7 天 ====== */}
-      <View className="weather-section">
-        <Text className="weather-section-title">未来 7 天</Text>
-        {daily.length > 0 ? (
-          <ScrollView scrollX className="daily-scroll" showScrollbar={false}>
-            {daily.map((d, i) => (
-              <View className="daily-card" key={d.fx_date || i}>
-                <Text className="daily-week">{getWeekdayLabel(d.fx_date, i)}</Text>
-                <Text className="daily-date">{d.fx_date ? d.fx_date.slice(5) : ''}</Text>
-                <View className="daily-icon-wrap">
-                  <Image className="daily-icon-img" src={getWeatherIconSrc(d.text_day)} mode="aspectFit" />
-                  {d.pop != null && Number(d.pop) >= 60 && (
-                    <View className="daily-pop-badge">{Math.round(Number(d.pop))}%</View>
-                  )}
-                </View>
-                <Text className="daily-temp-max">{Math.round(Number(d.temp_max) || 0)}°</Text>
-                <Text className="daily-temp-min">{Math.round(Number(d.temp_min) || 0)}°</Text>
-                <Text className="daily-text">{d.text_day || ''}</Text>
+      {/* ====== 未来 7 天（纵向列表） ====== */}
+      {daily.length > 0 ? (
+        <View className="daily-list">
+          {daily.map((d, i) => {
+            const tMax = Math.round(Number(d.temp_max) || 0);
+            const tMin = Math.round(Number(d.temp_min) || 0);
+            return (
+            <View className="daily-row" key={d.fx_date || i}>
+              {/* 左侧：日期 + 星期 */}
+              <Text className="daily-date">{d.fx_date ? d.fx_date.slice(5) : ''}</Text>
+              <Text className="daily-week">{getWeekdayLabel(d.fx_date, i)}</Text>
+              {/* 中间：图标 + 右上角降水概率角标 */}
+              <View className="daily-icon-wrap">
+                <Image className="daily-icon-img" src={getWeatherIconSrc(d.text_day)} mode="aspectFit" />
+                {d.pop != null && Number(d.pop) >= 10 && (
+                  <Text className="daily-pop-badge">{Math.round(Number(d.pop))}%</Text>
+                )}
               </View>
-            ))}
-          </ScrollView>
-        ) : (
-          <Text className="weather-placeholder">暂无数据</Text>
-        )}
-      </View>
+              {/* 右侧：最低温 + 最高温 */}
+              <Text className="daily-temp-min">{tMin}°</Text>
+              <Text className="daily-temp-max">{tMax}°</Text>
+            </View>
+            );
+          })}
+        </View>
+      ) : null}
 
       {/* ====== 信息卡（透明底，核心4项横排+次要底行） ====== */}
       <View className="weather-info-card">
@@ -1239,25 +1273,24 @@ export default function WeatherPage() {
         {indices.length > 0 ? (
           <View className="indices-grid">
             {indices.map((it) => {
-              const isPressed = pressedIndex === (it.type || it.name);
+              const key = it.type || it.name;
+              const isFlipped = pressedIndex === key;
               return (
               <View
-                className="index-card"
-                key={it.type || it.name}
-                onLongPress={() => setPressedIndex(it.type || it.name || null)}
-                onTouchEnd={() => setPressedIndex(null)}
+                className={`index-card ${isFlipped ? 'is-flipped' : ''}`}
+                key={key}
+                onClick={() => handleIndexClick(key)}
               >
-                {isPressed ? (
-                  // 长按时：图标/名字/值全部隐藏，仅显示描述
+                {/* 正面：图标 + 名字 + 等级 */}
+                <View className="index-face index-face--front">
+                  <Text className={`iconfont index-icon icon-${getIndexIconClass(it.type, it.name)}`} />
+                  <Text className="index-name">{it.name || ''}</Text>
+                  <Text className="index-category">{it.category || ''}</Text>
+                </View>
+                {/* 背面：描述文字 */}
+                <View className="index-face index-face--back">
                   <Text className="index-text index-text--full">{it.text || it.category || ''}</Text>
-                ) : (
-                  // 默认：图标 + 名字 + 值（等级）
-                  <>
-                    <Text className={`iconfont index-icon icon-${getIndexIconClass(it.type, it.name)}`} />
-                    <Text className="index-name">{it.name || ''}</Text>
-                    <Text className="index-category">{it.category || ''}</Text>
-                  </>
-                )}
+                </View>
               </View>
               );
             })}

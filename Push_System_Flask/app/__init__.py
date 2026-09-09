@@ -135,8 +135,45 @@ def create_app(config_class=None):
 
     @app.errorhandler(Exception)
     def handle_uncaught_exception(error):
-        """捕获所有未处理的异常 - 返回通用错误信息，隐藏详细错误"""
+        """捕获所有未处理的异常 - 返回通用错误信息，隐藏详细错误
+        特殊处理：数据库连接断开时自动清理连接池，便于下次请求重建连接
+        """
+        from sqlalchemy.exc import OperationalError
+
         logger.error(f"Uncaught Exception: {error}", exc_info=True)
+
+        # 检测数据库连接断开类错误（Lost connection / MySQL server has gone away 等）
+        is_db_connection_error = False
+        if isinstance(error, OperationalError):
+            err_msg = str(error).lower()
+            if any(keyword in err_msg for keyword in [
+                "lost connection",
+                "mysql server has gone away",
+                "connection refused",
+                "can't connect to mysql",
+                "broken pipe",
+                "connection reset by peer",
+            ]):
+                is_db_connection_error = True
+
+        if is_db_connection_error:
+            try:
+                from app.core.database import db_manager
+
+                # 丢弃所有旧连接，下次请求时会自动重建新连接
+                db_manager.engine.dispose()
+                logger.warning("检测到数据库连接断开，已主动清理连接池，下次请求将重建连接")
+                return (
+                    jsonify({
+                        "status": "error",
+                        "message": "网络波动，请下拉刷新重试",
+                        "code": "DB_CONNECTION_LOST",
+                    }),
+                    503,
+                )
+            except Exception as dispose_err:
+                logger.error(f"清理连接池失败: {dispose_err}")
+
         return jsonify({"status": "error", "message": "服务器内部错误，请稍后重试"}), 500
 
     # ========== 安全响应头（增强浏览器安全） ==========

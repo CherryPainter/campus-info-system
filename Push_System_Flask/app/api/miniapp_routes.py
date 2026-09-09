@@ -30,6 +30,7 @@
 - PUT  /api/miniapp/electricity/cookie         保存本人电表 Cookie
 - POST /api/miniapp/electricity/cookie/test    测试 Cookie 有效性
 - GET  /api/miniapp/notifications/messages     个人站内通知列表（含未读公告提醒）
+- GET  /api/miniapp/notifications/messages/<id> 单条通知详情（列表只放摘要，点进看全文并自动记已读）
 - POST /api/miniapp/notifications/messages/read 标记已读（指定或全部，全部联动清公告）
 - GET  /api/miniapp/notifications/unread-count 消息未读统计（站内通知+公告，角标用）
 - GET  /api/miniapp/notifications/upcoming     近期提醒（学校日历事件）
@@ -51,7 +52,11 @@ from flask import Blueprint, g, request
 
 from app.core.api_response import api_error, api_success
 from app.core.logger import get_logger
-from app.utils.student_auth import student_bound_required, student_required
+from app.utils.student_auth import (
+    miniapp_optional,
+    student_bound_required,
+    student_required,
+)
 
 # 使用统一日志系统
 logger = get_logger(__name__)
@@ -425,6 +430,21 @@ def schedule_week():
     courses = [
         c for c in all_courses if is_course_in_week(c["extra_info"]["weeks"], week_number)
     ]
+
+    # ===== 端到端诊断日志（临时，定位"切周无数据"）=====
+    logger.warning(
+        f"[DIAG-week] sem={semester_id} week={week_number} "
+        f"raw_count={len(all_courses)} filtered={len(courses)}"
+    )
+    for _c in all_courses:
+        logger.warning(
+            f"[DIAG-week]   id={_c.get('id')} name={_c.get('course_name')} "
+            f"weeks={_c['extra_info'].get('weeks')!r} "
+            f"week_number_field={_c.get('week_number')} source={_c.get('data_source')} "
+            f"in_week={is_course_in_week(_c['extra_info'].get('weeks'), week_number)}"
+        )
+    # ===================================================
+
     return api_success(
         data={
             "courses": courses,
@@ -507,7 +527,6 @@ def schedule_current():
 
 
 @miniapp_bp.route("/weather/current", methods=["GET"])
-@student_bound_required
 def weather_current():
     """
     实时天气（30 分钟 TTL，过期返回旧数据并后台刷新）
@@ -521,7 +540,6 @@ def weather_current():
 
 
 @miniapp_bp.route("/weather/hourly", methods=["GET"])
-@student_bound_required
 def weather_hourly():
     """
     24 小时逐小时预报（60 分钟 TTL，过期返回旧数据并后台刷新）
@@ -762,6 +780,26 @@ def electricity_trend():
     return api_success(data={"points": points})
 
 
+@miniapp_bp.route("/electricity/monthly", methods=["GET"])
+@student_bound_required
+def electricity_monthly():
+    """
+    本月累计用电量（后端按自然月聚合，按 JWT 用户隔离）
+
+    修复说明：此前「本月已用」由前端各自拉取用电记录在本地累加——我的页拉 1000 条、
+    详情页只拉首屏 20 条，同一月份在两处显示成 162.93 / 74.04 两个不同数字。
+    改为后端统一按 user_id + 自然月 SUM，两个页面共用同一口径。
+
+    返回：
+        { "month_used": 本月累计(度), "month_start": "YYYY-MM-DD", "days": 已统计天数 }
+    """
+    from app.services.electricity_service import get_electricity_service
+
+    user_id = int(g.current_user["user_id"])
+    svc = get_electricity_service(user_id=user_id)
+    return api_success(data=svc.get_monthly_usage())
+
+
 @miniapp_bp.route("/electricity/cookie", methods=["GET"])
 @student_bound_required
 def electricity_cookie_get():
@@ -905,6 +943,35 @@ def user_notifications_list():
     )
 
 
+@miniapp_bp.route("/notifications/messages/<int:notification_id>", methods=["GET"])
+@student_bound_required
+def user_notification_detail(notification_id: int):
+    """
+    个人站内通知详情（供消息详情页展示完整内容）
+
+    消息列表只展示摘要（电量日报等正文较长，全部铺开会让列表很臃肿），
+    点进详情页再看完整内容，并在此处标记已读。
+
+    安全：以 JWT 中的 user_id 过滤，客户端无法读取他人消息。
+
+    返回：
+        { "notification": {...} }
+    """
+    from app.services.user_notification_service import user_notification_service
+
+    user_id = int(g.current_user["user_id"])
+    detail = user_notification_service.get_notification(user_id, notification_id)
+    if not detail:
+        return api_error(message="消息不存在", http_status=404)
+
+    # 进入详情即视为已读
+    if not detail.get("is_read"):
+        user_notification_service.mark_read(user_id, notification_id)
+        detail["is_read"] = True
+
+    return api_success(data={"notification": detail})
+
+
 @miniapp_bp.route("/notifications/messages/read", methods=["POST"])
 @student_bound_required
 def user_notifications_read():
@@ -1039,7 +1106,7 @@ def notifications_all():
 
 
 @miniapp_bp.route("/announcements", methods=["GET"])
-@student_bound_required
+@miniapp_optional
 def announcements_list():
     """校园通知列表（仅已发布、未过期，置顶优先）
 
@@ -1055,7 +1122,7 @@ def announcements_list():
     """
     from app.services.announcement_service import announcement_service
 
-    user_id = int(g.current_user["user_id"])
+    user_id = int(g.current_user["user_id"]) if g.current_user else None
     category = request.args.get("category") or None
     page = request.args.get("page", type=int) or 1
     page_size = request.args.get("page_size", type=int) or 20
@@ -1076,23 +1143,23 @@ def announcements_list():
 
 
 @miniapp_bp.route("/announcements/unread-count", methods=["GET"])
-@student_bound_required
+@miniapp_optional
 def announcements_unread_count():
-    """未读通知数（首页角标/红点用）"""
+    """未读通知数（首页角标/红点用）；游客返回 0"""
     from app.services.announcement_service import announcement_service
 
-    user_id = int(g.current_user["user_id"])
+    user_id = int(g.current_user["user_id"]) if g.current_user else None
     return api_success(data={"unread": announcement_service.unread_count(user_id)})
 
 
 @miniapp_bp.route("/announcements/<int:announcement_id>", methods=["GET"])
-@student_bound_required
+@miniapp_optional
 def announcement_detail(announcement_id):
-    """通知详情（含正文、附件、同分类相关推荐；首次访问自动记已读并累加阅读数）"""
+    """通知详情（含正文、附件、同分类相关推荐；登录用户首次访问自动记已读并累加阅读数，游客只读不记）"""
     from app.services.announcement_service import announcement_service
 
-    user_id = int(g.current_user["user_id"])
-    data = announcement_service.detail_for_user(user_id, announcement_id)
+    user_id = int(g.current_user["user_id"]) if g.current_user else None
+    data = announcement_service.detail_for_user(user_id, announcement_id, mark_read=bool(g.current_user))
     if not data:
         return api_error(message="通知不存在或已撤回", http_status=404)
     return api_success(data={"announcement": data})

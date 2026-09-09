@@ -136,6 +136,23 @@ class ElectricityCapacityManager:
             )
             last_remaining = last_remaining_record.remaining if last_remaining_record else None
 
+            # 首次记录：该用户还没有任何容量基准时，以当前剩余电量作为初始总容量。
+            # 否则会出现「剩余 125 度、总容量却显示默认 100 度」的矛盾
+            # （总容量取不到就回落 DEFAULT_CAPACITY=100，百分比被钳成 100%）。
+            if not self._get_latest_capacity_record(session):
+                initial_capacity = max(current_remaining, self.DEFAULT_CAPACITY)
+                record = self._record_capacity(
+                    session=session,
+                    total_capacity=initial_capacity,
+                    remaining_at_record=current_remaining,
+                    reason=RecordReason.INITIAL.value,
+                )
+                logger.info(
+                    f"[CapacityManager] 初始化容量基准: 当前剩余 {current_remaining}度，"
+                    f"记录总容量 {initial_capacity}度"
+                )
+                return False, record
+
             # 检测是否充值（电量突然增加）—— 仅当有历史数据可比较时
             if (
                 last_remaining is not None
