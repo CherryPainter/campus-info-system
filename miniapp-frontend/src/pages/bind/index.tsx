@@ -22,6 +22,7 @@ import { View, Text, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
 import * as userApi from '@/api/user';
+import { ApiError } from '@/utils/request';
 import { useUserStore } from '@/stores/userStore';
 import './index.scss';
 
@@ -35,11 +36,15 @@ export default function BindPage() {
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [schoolError, setSchoolError] = useState(false);
+  const [schoolErrorMsg, setSchoolErrorMsg] = useState('');
+  const [schoolAuthError, setSchoolAuthError] = useState(false);
 
   // 加载学校列表 + 绑定状态；两个请求独立 catch，避免一个失败导致另一个结果也被丢弃
   const loadData = useCallback(async () => {
     setLoading(true);
     setSchoolError(false);
+    setSchoolErrorMsg('');
+    setSchoolAuthError(false);
 
     try {
       const schoolsRes = await userApi.getSchools();
@@ -49,7 +54,12 @@ export default function BindPage() {
     } catch (err) {
       console.error('[BindPage] getSchools failed:', err);
       setSchoolError(true);
-      Taro.showToast({ title: '学校列表加载失败，请检查网络', icon: 'none' });
+      const apiErr = err as ApiError;
+      const msg = apiErr?.message || '未知错误';
+      setSchoolErrorMsg(msg);
+      // 401/403 = 未登录或会话失效，引导去登录，而非伪装成网络问题
+      setSchoolAuthError(apiErr instanceof ApiError && (apiErr.code === 401 || apiErr.code === 403));
+      Taro.showToast({ title: '学校列表加载失败', icon: 'none' });
     }
 
     try {
@@ -133,12 +143,20 @@ export default function BindPage() {
               </View>
             ))}
           {!loading && schools.length === 0 && (
-            <Text
-              className="bind-school-empty"
-              onClick={() => schoolError && loadData()}
-            >
-              {schoolError ? '学校列表加载失败，点击重试' : '暂无学校选项，请联系管理员'}
-            </Text>
+            schoolAuthError ? (
+              <Text
+                className="bind-school-empty bind-school-login"
+                onClick={() => Taro.navigateTo({ url: '/pages/login/index' })}
+              >
+                登录已失效，请先登录
+              </Text>
+            ) : schoolError ? (
+              <Text className="bind-school-empty" onClick={() => loadData()}>
+                学校列表加载失败：{schoolErrorMsg}，点击重试
+              </Text>
+            ) : (
+              <Text className="bind-school-empty">暂无学校选项，请联系管理员</Text>
+            )
           )}
           </View>
         </View>

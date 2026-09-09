@@ -80,6 +80,11 @@
   color: $text-tertiary;
 }
 
+.bind-school-login {
+  color: $primary-color;
+  text-decoration: underline;
+}
+
 /* 输入行：浅灰填充（现代做法），非描边框 */
 .bind-input-row {
   display: flex;
