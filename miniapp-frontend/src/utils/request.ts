@@ -173,23 +173,26 @@ function handleSessionExpired(): void {
 export function resetSessionExpiredNotice(): void {
   sessionExpiredNotified = false;
 }
-/** 身份未绑定防抖标记：多个业务请求同时 403 时只触发一次跳转 */
-let isRedirectingToBind = false;
-
-/** 403 code=STUDENT_NOT_BOUND 时统一跳身份绑定页（navigateTo 保留栈，原生顶栏「< 返回」可直接回原页面） */
-function redirectToBind(): void {
-  if (isRedirectingToBind) return;
-  isRedirectingToBind = true;
-  // 清空本地身份缓存：解绑/未绑定后，"我的"/校园卡/UserInfoCard 不应再显旧学号班级
+/**
+ * 403 code=STUDENT_NOT_BOUND 时的统一处理
+ *
+ * 注意：**此处不再自动跳转绑定页**。原因（审核整改复盘 #14）：
+ * - 此前 `navigateTo` 会把绑定页「压栈」到当前页（登录页 / Tab 页）之上，
+ *   造成「登录页没消失」「绑定页层层叠加」的导航混乱；
+ * - 登录成功后未绑定的引导跳转，由登录页 `handleLogin` 自己 `redirectTo` 绑定页
+ *   （替换登录页，登录页随之消失）统一负责；
+ * - 会话中被解绑 / 其它场景下「已登录未绑定」的回收，由 `useBindStatusWatcher`
+ *   （Tab 页 `useDidShow`）统一降级为游客态负责。
+ * 因此拦截器只负责：清空本地身份缓存（避免「我的」页显旧学号班级）+ 抛出可读错误，
+ * 由调用方按游客态 / 登录引导处理，不再参与任何页面跳转，从根上杜绝绑定页叠加。
+ */
+function handleStudentNotBound(): void {
+  // 清空本地身份缓存：解绑 / 未绑定后，"我的"/校园卡不应再显旧学号班级
   try {
     useUserStore.getState().setProfile(null);
   } catch {
     /* 忽略 */
   }
-  Taro.navigateTo({ url: '/pages/bind/index' });
-  setTimeout(() => {
-    isRedirectingToBind = false;
-  }, 2000);
 }
 
 export async function request<T = unknown>(options: RequestOptions): Promise<T> {
@@ -261,7 +264,7 @@ export async function request<T = unknown>(options: RequestOptions): Promise<T> 
   if (res.statusCode === 403 && auth) {
     const body = res.data as { code?: string };
     if (body?.code === 'STUDENT_NOT_BOUND') {
-      redirectToBind();
+      handleStudentNotBound();
       throw new ApiError('请先完成身份认证', 403, res.data);
     }
   }

@@ -85,6 +85,13 @@
 - **合规**：全程只回退本地状态，**不强制跳转**任何页面；游客仍可浏览天气/公告等公开内容。
 - **验证**：`tsc --noEmit` 退出码 0、错误 0；`build:weapp` 成功（`Compiled successfully`）；产物 `dist` 中 `process.env` 残留计数 0；登录页 bundle 含 `redirectTo` 至 `pages/bind/index` 逻辑。
 
+### 修复：登录成功未绑定 / 会话解绑 的导航叠加（2026-09-09 第十四轮）
+- **复现**：登录成功但未绑定 → 身份绑定页"压"在登录页之上（登录页没消失）；点返回退回登录页；再返回登录态虽被清，却又弹出一次身份绑定页。
+- **根因**：`utils/request.ts` 的 `redirectToBind()` 用 `Taro.navigateTo` 把绑定页**压栈**到当前页（登录页 / Tab 页）之上。登录后若某个后台业务请求命中 403 `STUDENT_NOT_BOUND`，拦截器就把绑定页 push 到登录页上方，与登录页 `handleLogin` 自己的 `redirectTo`（替换登录页）相互打架，造成登录页残留 + 绑定页层层叠加。
+- **修复**：`redirectToBind` 改为 `handleStudentNotBound`，**不再自动跳转**。拦截器只负责清空本地身份缓存（`useUserStore.setProfile(null)`，避免"我的"页显旧学号）+ 抛出可读错误。绑定页进入路径收敛为两处：①登录页 `handleLogin` 检测到未绑定用 `redirectTo` 替换登录页进入（登录页随之消失）；②会话中被解绑后由 `useBindStatusWatcher` 降级为游客态，用户重新登录再次进入。同步更新 `pages/bind/index.tsx` 顶部注释（原"由请求层统一跳转"已不实）。
+- **效果**：登录成功未绑定 → 登录页消失、仅余一个绑定页；放弃绑定点原生返回 → 回到上一 Tab 页、`useDidShow` 的 watcher 立即回退游客态，**不再弹出第二个绑定页**。
+- **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 成功（20.41s，`Compiled successfully`）；`dist` 中 `process.env` 残留 0。
+
 ### 重构：个人资料详情页按用户示意图重排编辑布局
 - **初始全黑**：6 个只读行（学号/班级/学校/学院/专业/校园卡号）去掉 `detail-row-locked` 置灰类；`.detail-row-value` 由 `#666` 改 `#1a1a1a`。只读不可编辑的语义靠"无编辑入口"保证，不再用颜色暗示"禁用"。
 - （本条初版曾实现为「hero 变身编辑表单」，**已被下方「编辑表单由 hero 移入卡片」条目取代**，最终编辑交互收敛在「编辑信息」卡内。）
