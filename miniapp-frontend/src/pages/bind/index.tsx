@@ -17,7 +17,7 @@
  * 合规：使用 WeChat 原生标准顶栏（左侧自动 `< 返回`、居中标题），
  * 不在页面内自绘任何拒绝/退出入口。页面内不再重复顶栏标题。
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View, Text, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
@@ -34,29 +34,40 @@ export default function BindPage() {
   const [bindCode, setBindCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [schoolError, setSchoolError] = useState(false);
 
-  // 挂载时：拉学校列表；若已绑定（重复进入），直接回首页
-  useEffect(() => {
-    (async () => {
-      try {
-        const [schoolsRes, statusRes] = await Promise.all([
-          userApi.getSchools(),
-          userApi.getBindStatus(),
-        ]);
-        if (schoolsRes.status === 'success') {
-          setSchools(schoolsRes.schools || []);
-        }
-        if (statusRes.status === 'success' && statusRes.bound) {
-          Taro.switchTab({ url: '/pages/home/index' });
-          return;
-        }
-      } catch {
-        // 网络异常时仍允许停留在绑定页重试
-      } finally {
-        setLoading(false);
+  // 加载学校列表 + 绑定状态；两个请求独立 catch，避免一个失败导致另一个结果也被丢弃
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setSchoolError(false);
+
+    try {
+      const schoolsRes = await userApi.getSchools();
+      if (schoolsRes.status === 'success') {
+        setSchools(schoolsRes.schools || []);
       }
-    })();
+    } catch (err) {
+      console.error('[BindPage] getSchools failed:', err);
+      setSchoolError(true);
+      Taro.showToast({ title: '学校列表加载失败，请检查网络', icon: 'none' });
+    }
+
+    try {
+      const statusRes = await userApi.getBindStatus();
+      if (statusRes.status === 'success' && statusRes.bound) {
+        Taro.switchTab({ url: '/pages/home/index' });
+        return;
+      }
+    } catch {
+      // 绑定状态查询失败不阻断页面，允许用户停留在绑定页重试
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -121,9 +132,14 @@ export default function BindPage() {
                 </Text>
               </View>
             ))}
-            {!loading && schools.length === 0 && (
-              <Text className="bind-school-empty">暂无学校选项，请联系管理员</Text>
-            )}
+          {!loading && schools.length === 0 && (
+            <Text
+              className="bind-school-empty"
+              onClick={() => schoolError && loadData()}
+            >
+              {schoolError ? '学校列表加载失败，点击重试' : '暂无学校选项，请联系管理员'}
+            </Text>
+          )}
           </View>
         </View>
 
