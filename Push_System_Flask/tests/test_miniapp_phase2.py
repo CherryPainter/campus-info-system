@@ -203,13 +203,34 @@ def test_no_token_401(client):
 
 def test_public_endpoints_anonymous_ok(client):
     # 天气 / 公告为校园公开信息，游客（无 token）可直接浏览，满足「先体验后授权」审核规范
+    # 7 个天气端点全部公开（含 2026-09-09 新增的 alerts/daily/indices/air/minutely）；
+    # cache/fetcher 用 mock 兜底，避免测试依赖真实 Redis / 外网回源
+    fake_cache = mock.MagicMock(get=mock.MagicMock(return_value=None))
+    fake_fetcher = mock.MagicMock(
+        fetch_daily=mock.MagicMock(return_value=[]),
+        fetch_indices=mock.MagicMock(return_value=[]),
+        fetch_airquality=mock.MagicMock(return_value=None),
+        fetch_minutely=mock.MagicMock(return_value=None),
+    )
     for path in (
         "/api/miniapp/weather/current",
         "/api/miniapp/weather/hourly",
+        "/api/miniapp/weather/alerts",
+        "/api/miniapp/weather/daily",
+        "/api/miniapp/weather/indices",
+        "/api/miniapp/weather/air",
+        "/api/miniapp/weather/minutely",
         "/api/miniapp/announcements",
         "/api/miniapp/announcements/unread-count",
     ):
-        resp = client.get(path)
+        with mock.patch.object(
+            weather_service, "get_active_alerts", return_value=[]
+        ), mock.patch(
+            "app.modules.weather.tasks._make_cache", return_value=fake_cache
+        ), mock.patch(
+            "app.modules.weather.tasks._make_fetcher", return_value=fake_fetcher
+        ):
+            resp = client.get(path)
         assert resp.status_code == 200, path
 
 

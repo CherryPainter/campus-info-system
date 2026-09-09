@@ -551,10 +551,9 @@ def weather_hourly():
 
 
 @miniapp_bp.route("/weather/alerts", methods=["GET"])
-@student_bound_required
 def weather_alerts():
     """
-    生效中的天气预警
+    生效中的天气预警（公开浏览：与 weather/current 一致，无用户身份依赖）
     """
     from app.services.weather_service import weather_service
 
@@ -563,10 +562,9 @@ def weather_alerts():
 
 
 @miniapp_bp.route("/weather/daily", methods=["GET"])
-@student_bound_required
 def weather_daily():
     """
-    未来 7 天逐天预报（缓存 3 小时，未命中按需回源）
+    未来 7 天逐天预报（缓存 3 小时，未命中按需回源；公开浏览，无用户身份依赖）
     """
     from app.modules.weather.cache import DAILY_TTL
     from app.modules.weather.tasks import _make_cache, _make_fetcher
@@ -581,10 +579,9 @@ def weather_daily():
 
 
 @miniapp_bp.route("/weather/indices", methods=["GET"])
-@student_bound_required
 def weather_indices():
     """
-    生活指数（缓存 6 小时，未命中按需回源）
+    生活指数（缓存 6 小时，未命中按需回源；公开浏览，无用户身份依赖）
     """
     from app.modules.weather.cache import INDICES_TTL
     from app.modules.weather.tasks import _make_cache, _make_fetcher
@@ -599,10 +596,9 @@ def weather_indices():
 
 
 @miniapp_bp.route("/weather/air", methods=["GET"])
-@student_bound_required
 def weather_air():
     """
-    实时空气质量 AQI（缓存 30 分钟，未命中按需回源）
+    实时空气质量 AQI（缓存 30 分钟，未命中按需回源；公开浏览，无用户身份依赖）
     """
     from app.modules.weather.cache import AIR_TTL
     from app.modules.weather.tasks import _make_cache, _make_fetcher
@@ -617,10 +613,9 @@ def weather_air():
 
 
 @miniapp_bp.route("/weather/minutely", methods=["GET"])
-@student_bound_required
 def weather_minutely():
     """
-    分钟级降水（缓存 30 分钟，未命中按需回源）
+    分钟级降水（缓存 30 分钟，未命中按需回源；公开浏览，无用户身份依赖）
     """
     from app.modules.weather.cache import MINUTELY_TTL
     from app.modules.weather.tasks import _make_cache, _make_fetcher

@@ -26,6 +26,12 @@
   - 若后续确需"会话级配额"，正确做法是叠加一层**令牌签发节流**（限制单 IP 单位时间可领取的新令牌数），而不是把限流 key 换成会话——本版未实现。
 - **验证**：新增 `test_public_endpoint_issues_anon_token`（断言天气接口下发令牌、公告接口回显同一令牌）；`test_miniapp_phase2.py` **16 项全部通过**；`tsc --noEmit` 退出码 0；`build:weapp:clean` 成功、`process.env` 残留 0。
 
+### 修复：天气页 5 个端点漏放公开，补齐"先体验后授权"（2026-09-09）
+- **背景**：天气页（`pages/weather/index.tsx`）对未登录用户 5 个端点 401——`/weather/daily`、`/weather/alerts`、`/weather/air`、`/weather/indices`、`/weather/minutely`。先前只放了 `current` 和 `hourly` 两个端点，**漏了同一类公开信息**。
+- **修复**：去掉这 5 个端点的 `@student_bound_required` 装饰器（`app/api/miniapp_routes.py:553-634`）。这 5 个端点只读和风天气/空气质量/分钟降水/生活指数缓存，不依赖任何用户身份，与 `current`/`hourly` 同性质，理应一并公开。
+- **测试**：`test_public_endpoints_anonymous_ok` 扩展为覆盖 9 个公开端点（7 天气 + 2 公告）；cache/fetcher 用 mock 兜底避免依赖真实 Redis/外网。`test_miniapp_phase2.py` **16 项全过**。
+- **前端零改动**：`utils/request.ts` 不变；天气页已是无脑发请求，鉴权放开后 401 自动消失。
+
 ### 增强：登录守卫 hook + 游客态完整 UI + 受限功能登录引导（2026-09-09）
 - **背景**：游客进入「我的」页只渲染极简占位（"未登录"卡片 + 登录按钮），与首页"先体验后授权"完整 UI 不一致；公告详情页点击「收藏/已阅」直接发请求再 401 报错，弹错乱弹窗。两类问题都需要"游客态保留 UI + 点击再引导登录"。
 - **新增 `useLoginGuard` hook**（`src/hooks/useLoginGuard.ts`）：封装"未登录 → 弹 LoginModal；已登录 → 执行 action"模式。点 LoginModal「确定」跳登录页，登录成功后由用户重新点击触发原动作（不自动重放，规避副作用重复）。
