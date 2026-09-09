@@ -42,40 +42,29 @@
   color: $text-primary;
 }
 
-/* 学校选项：两列网格，比自由换行更规整 */
-.bind-schools {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: $spacing-sm;
+/* 学校选择：原生下拉（Picker）所在行，与学号/绑定码输入行视觉统一 */
+.bind-select-row {
+  justify-content: space-between;
+  cursor: pointer;
 }
 
-.bind-school-chip {
-  padding: $spacing-sm;
-  text-align: center;
-  border-radius: $radius-medium;
-  border: 1rpx solid $border-color;
-  background: $card-background;
-  transition: all 0.15s ease;
+.bind-select-value {
+  font-size: $font-size-md;
+  color: $text-primary;
 }
 
-.bind-school-chip-active {
-  border-color: $primary-color;
-  background: $primary-light;
+.bind-select-placeholder {
+  font-size: $font-size-md;
+  color: $text-tertiary;
 }
 
-.bind-school-text {
+.bind-select-arrow {
   font-size: $font-size-sm;
-  color: $text-secondary;
-}
-
-.bind-school-text-active {
-  font-size: $font-size-sm;
-  color: $primary-color;
-  font-weight: 600;
+  color: $text-tertiary;
 }
 
 .bind-school-empty {
-  grid-column: 1 / -1;
+  padding: $spacing-sm 0;
   font-size: $font-size-xs;
   color: $text-tertiary;
 }

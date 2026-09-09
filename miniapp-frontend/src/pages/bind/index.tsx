@@ -18,7 +18,7 @@
  * 不在页面内自绘任何拒绝/退出入口。页面内不再重复顶栏标题。
  */
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, Input } from '@tarojs/components';
+import { View, Text, Input, Picker } from '@tarojs/components';
 import Taro, { useUnload } from '@tarojs/taro';
 
 import * as userApi from '@/api/user';
@@ -135,22 +135,24 @@ export default function BindPage() {
       </View>
 
       <View className="bind-form">
-        {/* 学校选择 */}
+        {/* 学校选择：原生下拉选择（Picker mode=selector） */}
         <View className="bind-field">
           <Text className="bind-label">学校</Text>
-          <View className="bind-schools">
-            {schools.map((s) => (
-              <View
-                key={s}
-                className={`bind-school-chip${school === s ? ' bind-school-chip-active' : ''}`}
-                onClick={() => setSchool(s)}
-              >
-                <Text className={school === s ? 'bind-school-text-active' : 'bind-school-text'}>
-                  {s}
+          {schools.length > 0 ? (
+            <Picker
+              mode="selector"
+              range={schools}
+              value={school ? Math.max(0, schools.indexOf(school)) : 0}
+              onChange={(e) => setSchool(schools[Number(e.detail.value)])}
+            >
+              <View className="bind-input-row bind-select-row">
+                <Text className={school ? 'bind-select-value' : 'bind-select-placeholder'}>
+                  {school || '请选择学校'}
                 </Text>
+                <Text className="iconfont icon-a-xiala2 bind-select-arrow" />
               </View>
-            ))}
-          {!loading && schools.length === 0 && (
+            </Picker>
+          ) : !loading ? (
             schoolAuthError ? (
               <Text
                 className="bind-school-empty bind-school-login"
@@ -165,8 +167,7 @@ export default function BindPage() {
             ) : (
               <Text className="bind-school-empty">暂无学校选项，请联系管理员</Text>
             )
-          )}
-          </View>
+          ) : null}
         </View>
 
         {/* 学号 */}

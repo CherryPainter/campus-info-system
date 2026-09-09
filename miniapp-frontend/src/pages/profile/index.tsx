@@ -17,6 +17,7 @@ import LoginModal from '@/components/LoginModal';
 import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
 import { useLoginGuard } from '@/hooks/useLoginGuard';
 import { useBindStatusWatcher } from '@/hooks/useBindStatusWatcher';
+import { isBindGuideActive } from '@/utils/bindGuard';
 import './index.scss';
 
 /**
@@ -115,14 +116,7 @@ export default function ProfilePage() {
       // 兜底 20
     }
     // 游客态：保留完整 UI（"先体验后授权"），仅数据用占位、点击用 LoginModal 引导登录
-    if (!isLoggedIn) return;
-    loadAll();
-    // 打开"我的"页即触发一次电量轻量刷新（后端 60s 冷却），完成后更新最新值
-    refreshElectricity();
-    // 反馈未读红点
-    refreshFeedbackBadge();
-    // 消息未读角标
-    loadMsgUnread();
+    refreshPrivate();
   });
 
   // 电量轻量刷新（后台触发，成功后更新展示值；更新时间显示"访问这一刻"）
@@ -141,6 +135,18 @@ export default function ProfilePage() {
     }).catch(() => { /* 刷新失败保留缓存 */ });
   };
 
+  // 一次性拉取"我的"页全部需登录/绑定的数据。
+  // 引导期（登录成功未绑定、正被引导去绑定页）内不发任何私有请求：
+  // 未绑定阶段这些接口必然 403，发了纯浪费 + 刷 403 噪音（此前用 isLoggedIn 判定，
+  // 但登录成功未绑定 isLoggedIn 已为 true，仍会误发，根因同绑定引导护栏）。
+  const refreshPrivate = () => {
+    if (!isLoggedIn || isBindGuideActive()) return;
+    loadAll();
+    refreshElectricity();
+    refreshFeedbackBadge();
+    loadMsgUnread();
+  };
+
   // "我的"是 TabBar 第 2 项：每次显示广播自身下标，保证 TabBar 选中态与任意进入路径一致
   useDidShow(() => {
     setTabIndex(2);
@@ -153,24 +159,13 @@ export default function ProfilePage() {
       firstShowRef.current = false;
       return; // 首次进入走 useLoad，不重复
     }
-    // 游客态不拉取需登录的数据
-    if (!isLoggedIn) return;
-    loadAll();
-    refreshElectricity();
-    // 从反馈详情返回后刷新红点（查看一条即 -1）
-    refreshFeedbackBadge();
-    // 从消息页返回后刷新未读角标（已读会减数）
-    loadMsgUnread();
+    refreshPrivate();
   });
 
   // 登录态变化（游客 → 已登录，如从登录页返回）：补齐需登录的数据加载
   useEffect(() => {
-    if (isLoggedIn) {
-      loadAll();
-      refreshElectricity();
-      refreshFeedbackBadge();
-      loadMsgUnread();
-    }
+    refreshPrivate();
+    // 游客态 / 绑定引导期不发私有请求，故不依赖 isLoggedIn 单值（refreshPrivate 内部判定）
   }, [isLoggedIn]);
 
   const handleLogout = () => {

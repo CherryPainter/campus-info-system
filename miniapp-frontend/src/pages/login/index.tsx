@@ -7,7 +7,7 @@ import * as userApi from '@/api/user';
 import { wxLogin } from '@/utils/auth';
 import { resetPrivateClickCount } from '@/hooks/useLoginGuard';
 import { resetBindNotice } from '@/hooks/useBindStatusWatcher';
-import { beginBindGuide } from '@/utils/bindGuard';
+import { beginBindGuide, finishBindGuide } from '@/utils/bindGuard';
 import { useAuthStore } from '@/stores/authStore';
 import loginIllustration from '@/assets/images/login-illustration.png';
 import './index.scss';
@@ -59,11 +59,17 @@ export default function LoginPage() {
       resetPrivateClickCount();
       resetBindNotice();
 
+      // 进入绑定引导期（先置位，覆盖下面的 await 窗口）：
+      // setAuth 使 isLoggedIn=true 后，后台已挂载的 Tab 页会因 useEffect([isLoggedIn])
+      // 立刻重拉"需绑定"的私有接口；未绑定前这些必然 403，纯浪费 + 刷 403 噪音。
+      // 引导期置位后这些页面不再发私有请求；request 层撞 403 也只清缓存不降级。
+      beginBindGuide();
+
       // 立即确认身份绑定状态（@student_required，未绑定返回 bound:false 而不 403）：
-      // - 已绑定 → 返回上一页正常使用；
-      // - 未绑定 → 用绑定页**替换**登录页（redirectTo），避免返回时退回"已登录"的登录页。
-      //   完成绑定即可正常使用；若放弃绑定直接返回，由 Tab 页 watcher 与绑定页
-      //   useUnload 兜底撤销登录态，不会卡在"已登录却啥也用不了"的死状态。
+      // - 已绑定 → 结束引导期，返回上一页正常使用；
+      // - 未绑定 → 保持引导期，用绑定页**替换**登录页（redirectTo），避免返回时退回
+      //   "已登录"的登录页。完成绑定即可正常使用；若放弃绑定直接返回，由 Tab 页
+      //   watcher 与绑定页 useUnload 兜底撤销登录态，不会卡在"已登录却啥也用不了"。
       let bound = false;
       try {
         const st = await userApi.getBindStatus();
@@ -74,6 +80,7 @@ export default function LoginPage() {
       }
 
       if (bound) {
+        finishBindGuide();
         Taro.showToast({ title: '登录成功', icon: 'success' });
         setTimeout(() => {
           const pages = Taro.getCurrentPages();
@@ -84,9 +91,6 @@ export default function LoginPage() {
           }
         }, 500);
       } else {
-        // 进入绑定引导期：标记生效期间 request 层撞 403 只清缓存、不把登录态降级，
-        // 避免后台 Tab 页 useEffect 抢发业务请求触发「已退出登录」反噬正要引导绑定的登录态。
-        beginBindGuide();
         Taro.showToast({ title: '登录成功，请先完成身份认证', icon: 'none' });
         setTimeout(() => {
           Taro.redirectTo({ url: '/pages/bind/index' });

@@ -18,6 +18,7 @@ import QuickAccess from '@/components/QuickAccess';
 import LoginModal from '@/components/LoginModal';
 import { runPrivateClick } from '@/hooks/useLoginGuard';
 import { useBindStatusWatcher } from '@/hooks/useBindStatusWatcher';
+import { isBindGuideActive } from '@/utils/bindGuard';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
 import { splitCoursesToBigClasses } from '@/utils/scheduleBigClass';
@@ -63,15 +64,16 @@ export default function HomePage() {
           return { ok: true as const, d: range };
         })
         .catch(() => ({ ok: false as const, d: null })),
-      // 今日课程需登录：游客不调用，交由卡片登录引导占位
-      isLoggedIn
+      // 今日课程需登录：游客或"登录成功未绑定的引导期"不调用（绑定期发了必然 403，
+      // 纯浪费 + 刷 403 噪音），交由卡片登录引导占位
+      isLoggedIn && !isBindGuideActive()
         ? scheduleApi
             .getToday()
             .then((r) => ({ ok: true as const, d: r.data.courses }))
             .catch(() => ({ ok: false as const, d: [] as ScheduleCourse[] }))
         : Promise.resolve({ ok: true as const, d: [] as ScheduleCourse[] }),
-      // 个人资料需登录：游客跳过；已登录始终拉最新（解绑后 403 触发跳绑定页、缓存清空）
-      isLoggedIn
+      // 个人资料需登录：游客/绑定引导期跳过（解绑后 403 触发跳绑定页、缓存清空）
+      isLoggedIn && !isBindGuideActive()
         ? userApi
             .getProfile()
             .then((r) => ({ ok: true as const, d: r.profile }))

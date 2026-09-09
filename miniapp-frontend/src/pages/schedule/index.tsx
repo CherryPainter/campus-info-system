@@ -4,6 +4,7 @@ import { useLoad, useDidShow, usePullDownRefresh, stopPullDownRefresh, getWindow
 import dayjs from 'dayjs';
 
 import { setTabIndex, setTabBarHidden } from '@/utils/tabBarState';
+import { isBindGuideActive } from '@/utils/bindGuard';
 
 import * as scheduleApi from '@/api/schedule';
 import * as notificationApi from '@/api/notification';
@@ -121,6 +122,11 @@ export default function SchedulePage() {
   //   - 优先从已加载的 weekCourses 按 day_of_week 过滤（与圆点标记同源，保证一致）
   //   - 降级调 getToday(date) 接口（用于"今天"或非当前教学周的日期）
   const fetchDayCourses = useCallback(async (date: string) => {
+    if (isBindGuideActive()) {
+      // 绑定引导期不发课程日请求（未绑定这些接口必 403）
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       // 从选中日期反推 day_of_week（dayjs: 0=周日 → 后端 7）
@@ -219,14 +225,15 @@ export default function SchedulePage() {
     // 合规（微信审核「不得反复弹窗或强制用户登录才能体验」）：
     // 游客进入时间轴**不再自动弹登录弹窗**，只渲染下方引导卡；
     // 是否登录由用户主动点击「登录 / 注册」决定，取消后不再打扰。
-    if (!isLoggedIn) return;
+    // 绑定引导期（登录成功未绑定、正去绑定页）同样不拉课表：未绑定这些接口必 403。
+    if (!isLoggedIn || isBindGuideActive()) return;
     loadAll();
     loadReminders();
   });
 
-  // 登录态变化（游客 → 已登录）：补齐课表数据加载
+  // 登录态变化（游客 → 已登录）：补齐课表数据加载（引导期不发，避免 403 浪费）
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn && !isBindGuideActive()) {
       loadAll();
       loadReminders();
     }
