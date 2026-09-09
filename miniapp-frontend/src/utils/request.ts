@@ -201,11 +201,12 @@ function handleStudentNotBound(): void {
   } catch {
     /* 忽略 */
   }
+  const wasLoggedIn = useAuthStore.getState().isLoggedIn;
+  // 已是游客（可能已被 useBindStatusWatcher 先行回收）：不重复降级、不重复提示
+  if (!wasLoggedIn) return;
   // 2) 已登录则降级为游客（不跳转、不弹窗）
   try {
-    if (useAuthStore.getState().isLoggedIn) {
-      useAuthStore.getState().logout();
-    }
+    useAuthStore.getState().logout();
   } catch {
     /* 忽略 */
   }

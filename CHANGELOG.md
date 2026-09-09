@@ -168,6 +168,13 @@
 - 改动文件：`miniapp-frontend/src/pages/profile-detail/index.scss`。
 - 验证：`npm run build:weapp` 成功（备份 `dist_bak_20260908_200704`）；产物 `detail-avatar-sm{border-radius:50%;height:72rpx;width:72rpx}`（无背景）+ `detail-avatar-placeholder{...background:#6e8efb...}` 并存、`process.env` 残留 0。
 
+### 修复：拦截器与 watcher 重复弹「身份未绑定」提示（2026-09-09）
+- **症状**：从子页（如 coursetable）原生返回 Tab 页时，可能先后弹出两条「身份未绑定」类提示——先由 `useBindStatusWatcher` 的 `revokeSession`（Tab 页 `useDidShow` 探 `bind-status` 判未绑定→降级游客 + 弹一次 toast），再由仍在飞行中的业务请求撞 403 `STUDENT_NOT_BOUND` 触发 `handleStudentNotBound` 又弹一次。
+- **根因**：第十五轮在 `handleStudentNotBound` 加了 `logout()` 降级 + toast，与 watcher 的回收构成「双保险」，但两者都可能弹 toast，缺「谁先到谁提示」的互斥。
+- **修复**：`handleStudentNotBound` 进入时先读 `const wasLoggedIn = useAuthStore.getState().isLoggedIn`；**若已是游客（说明 watcher 已先行回收降级），则早退**——不再重复 `logout()`、不再重复提示。仅当拦截器比 watcher 先到（请求 403 时本地仍 `isLoggedIn=true`）才由其负责降级 + 提示。配合既有模块级 `studentNotBoundNotified` 节流（3 秒窗口内只提示一次），并发多请求也仅提示一次。
+- 改动文件：`miniapp-frontend/src/utils/request.ts`。
+- 验证：`tsc --noEmit` 退出码 0；`build:weapp` 20.30s `Compiled successfully`；`dist` 中 `process.env` 残留 0。
+
 ## v6.17.1 (2026-09-08)
 
 > 类型：**缺陷修复（patch）**。针对线上暴露的三类问题修复：**宿舍电量三大数据错误**（趋势图按日求和成倍放大、不同页面"本月已用"数值不一致、总容量与剩余电量矛盾）、**小程序站内消息体验**（电量日报等长文改列表摘要 + 详情页）、**小程序网络通道修复**（反馈图片上传、公告附件下载在登录态过期或域名白名单未配时的失败）。
