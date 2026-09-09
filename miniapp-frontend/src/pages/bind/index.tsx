@@ -100,9 +100,8 @@ export default function BindPage() {
   return (
     <View className="bind-page">
       <View className="bind-card">
-        <Text className="bind-title">身份认证</Text>
         <Text className="bind-desc">
-          请选择学校并填写学号与绑定码完成身份认证。绑定码由学校管理员发放，仅限本校在读学生使用。
+          验证学生身份后可接入课程、电费等校园服务。绑定码由管理员发放。
         </Text>
 
         {/* 学校选择（动态：管理端已建学校） */}
@@ -154,11 +153,11 @@ export default function BindPage() {
           className={`bind-submit${submitting ? ' bind-submit-disabled' : ''}`}
           onClick={handleSubmit}
         >
-          <Text className="bind-submit-text">{submitting ? '提交中…' : '提交认证'}</Text>
+          <Text className="bind-submit-text">{submitting ? '提交中…' : '确认绑定'}</Text>
         </View>
 
         <Text className="bind-hint">
-          绑定码为一次性凭证，请向管理员获取；如无法通过认证，请联系管理员
+          绑定码一次性有效，由管理员发放；遗失可联系管理员重置
         </Text>
       </View>
     </View>
