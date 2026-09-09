@@ -277,7 +277,7 @@ export default function AnnouncementDetail() {
                     <View
                       key={att.id}
                       className="attach-item"
-                      onClick={() => downloadAttachment(att)}
+                      onClick={() => guard(() => downloadAttachment(att))}
                     >
                       <View className="attach-icon">
                         <Text className="attach-file-icon">&#x1F4CE;</Text>
