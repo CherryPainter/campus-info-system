@@ -7,6 +7,7 @@ import * as userApi from '@/api/user';
 import { wxLogin } from '@/utils/auth';
 import { resetPrivateClickCount } from '@/hooks/useLoginGuard';
 import { resetBindNotice } from '@/hooks/useBindStatusWatcher';
+import { beginBindGuide } from '@/utils/bindGuard';
 import { useAuthStore } from '@/stores/authStore';
 import loginIllustration from '@/assets/images/login-illustration.png';
 import './index.scss';
@@ -83,6 +84,9 @@ export default function LoginPage() {
           }
         }, 500);
       } else {
+        // 进入绑定引导期：标记生效期间 request 层撞 403 只清缓存、不把登录态降级，
+        // 避免后台 Tab 页 useEffect 抢发业务请求触发「已退出登录」反噬正要引导绑定的登录态。
+        beginBindGuide();
         Taro.showToast({ title: '登录成功，请先完成身份认证', icon: 'none' });
         setTimeout(() => {
           Taro.redirectTo({ url: '/pages/bind/index' });

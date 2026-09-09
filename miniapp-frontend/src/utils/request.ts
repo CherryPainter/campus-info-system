@@ -3,6 +3,7 @@ import Taro from '@tarojs/taro';
 import { getAccessToken, getRefreshToken, isAccessTokenExpiringSoon, setTokens } from './storage';
 import { useUserStore } from '@/stores/userStore';
 import { useAuthStore } from '@/stores/authStore';
+import { isBindGuideActive } from '@/utils/bindGuard';
 
 /**
  * 统一请求层（全项目唯一出口）
@@ -204,6 +205,11 @@ function handleStudentNotBound(): void {
   const wasLoggedIn = useAuthStore.getState().isLoggedIn;
   // 已是游客（可能已被 useBindStatusWatcher 先行回收）：不重复降级、不重复提示
   if (!wasLoggedIn) return;
+  // 绑定引导期护栏：登录成功未绑定、正被引导去绑定页时，后台 Tab 页的
+  // `useEffect([isLoggedIn])` 会用未绑定 token 抢发 @student_bound_required 业务请求撞 403。
+  // 此 403 属预期（未绑定阶段本就无业务访问权），不应把「正要引导绑定」的登录态降级、
+  // 更不该弹「已退出登录」。此处仅清缓存（上面已做），跳过 logout 与提示，交给绑定页。
+  if (isBindGuideActive()) return;
   // 2) 已登录则降级为游客（不跳转、不弹窗）
   try {
     useAuthStore.getState().logout();

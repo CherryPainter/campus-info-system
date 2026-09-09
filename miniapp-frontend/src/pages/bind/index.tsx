@@ -19,10 +19,11 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { View, Text, Input } from '@tarojs/components';
-import Taro from '@tarojs/taro';
+import Taro, { useUnload } from '@tarojs/taro';
 
 import * as userApi from '@/api/user';
 import { ApiError } from '@/utils/request';
+import { finishBindGuide, cancelBindGuide } from '@/utils/bindGuard';
 import { useUserStore } from '@/stores/userStore';
 import './index.scss';
 
@@ -79,6 +80,12 @@ export default function BindPage() {
     loadData();
   }, [loadData]);
 
+  // 离开绑定页（无论成功跳走还是用户返回）：结束/取消绑定引导期，
+  // 避免标记残留、把后续真正的 403（如会话中被解绑）也误判为"引导期"而吞掉降级。
+  useUnload(() => {
+    cancelBindGuide();
+  });
+
   const handleSubmit = async () => {
     if (submitting) return;
     const s = school.trim();
@@ -105,6 +112,7 @@ export default function BindPage() {
       });
       if (res.status === 'success' && res.bound) {
         if (res.profile) setProfile(res.profile);
+        finishBindGuide();
         Taro.showToast({ title: '绑定成功', icon: 'success' });
         setTimeout(() => Taro.switchTab({ url: '/pages/home/index' }), 600);
       } else {
