@@ -67,6 +67,13 @@
 - **认证环节也给出口**：`pages/bind/index.tsx` 新增「暂不认证，先去逛逛」（保留登录态回首页）与「退出登录」；`useBindStatusWatcher` 检测到被管理员解绑后不再 `reLaunch` 绑定页，仅清缓存 + 提示一次（同一学号只提示一次）。`pages/profile-detail` 注销账号后由 `reLaunch` 登录页改为 `switchTab` 首页游客态。
 - **验证**：`tsc --noEmit` 0 错误；`rm -rf dist && npm run build:weapp` 成功（仅既存的 app-origin.wxss 体积与 NoAsyncChunks 警告）；产物 `process.env` 残留 0；新增文案均以 unicode 转义形式进入 `dist/pages/login/index.js`、`dist/pages/bind/index.js`、`dist/common.js`。
 
+### 重构：登录/身份验证页改用 WeChat 原生顶栏（2026-09-09）
+- **用户复盘**：上一轮在登录页自绘了左上「‹ 返回」+ 底部「暂不登录，随便看看」+ tip 文案，绑定页加了「暂不认证，先去逛逛」+「退出登录」。实测发现自绘 + 原生顶栏的双重入口体感割裂，要求统一改为 WeChat 原生标准顶栏（左侧自动 `< 返回`、居中标题），与"退出公告"等页面一致。
+- **登录页**（`pages/login/index.{ts,scss,config.ts}`）：去掉 `navigationStyle: 'custom'`、新增 `navigationBarTitleText: '登录'`；删除自绘的 `.login-nav` / `.login-skip` / `.login-guest-tip` 及对应 handler。
+- **身份验证页**（`pages/bind/index.{ts,scss}`）：配置本就是原生顶栏；删除 `.bind-foot`（"暂不认证，先去逛逛" + "退出登录"）及 `handleSkip / handleLogout`；`useEffect` 与提交成功后跳转首页由 `reLaunch` 改为 `switchTab`。
+- **`utils/request.ts`**：`redirectToBind` 由 `reLaunch` 改为 `navigateTo`，**保留栈**让原生 `< 返回` 能直接回上一页（原 reLaunch 会清栈变死路）。
+- **验证**：`tsc --noEmit` 0 错误；`build:weapp` 21.65s 成功；产物 `login-skip / login-guest-tip / login-nav / bind-foot / bind-skip / bind-logout` 自定义类与「暂不登录」「暂不认证」文案均消失；`dist/pages/login/index.json` 确认 `navigationBarTitleText: "登录"`、无 `navigationStyle: custom`；`process.env` 残留 0。
+
 ### 重构：个人资料详情页按用户示意图重排编辑布局
 - **初始全黑**：6 个只读行（学号/班级/学校/学院/专业/校园卡号）去掉 `detail-row-locked` 置灰类；`.detail-row-value` 由 `#666` 改 `#1a1a1a`。只读不可编辑的语义靠"无编辑入口"保证，不再用颜色暗示"禁用"。
 - （本条初版曾实现为「hero 变身编辑表单」，**已被下方「编辑表单由 hero 移入卡片」条目取代**，最终编辑交互收敛在「编辑信息」卡内。）
