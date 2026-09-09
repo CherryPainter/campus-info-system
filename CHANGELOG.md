@@ -187,6 +187,37 @@
 - 验证：`tsc --noEmit` 0；`build:weapp` 19.93s `Compiled successfully`；`dist` 新类名（bind-form/bind-field/bind-intro/bind-input-row 各 2 处）编译进去、旧类名（bind-card/bind-title/bind-desc 全 0）清除、`process.env` 残留 0。
 - 提交 `44044a4`（本地，未推送）。
 
+### 修复：身份绑定页「学校列表」被前端错误吞噬误显为数据丢失（2026-09-09）
+- **症状**：预览设备进入绑定页，学校处显示「暂无学校选项」，用户误以为学校数据丢失。后端 `/api/miniapp/student/schools` 逻辑正确，本地库 `org_units` 表存在 `school` 节点（`id=2, name=cqie`），数据本身未丢。
+- **根因**：原 `useEffect` 用 `Promise.all([getSchools(), getBindStatus()])`，**任一请求失败即进 `catch` 且空处理**——`getSchools` 一旦失败（网络抖动 / 预览设备指向无数据环境 / 后端偶发 5xx），`schools` 永远停在 `[]`，前端把「加载失败」伪装成「暂无数据」，造成数据丢失的错觉。
+- **修复**（`pages/bind/index.tsx`，提交 `881df30`）：
+  - 拆为独立 `loadData`：两个请求各自 `try/catch`，`getSchools` 失败不影响绑定状态查询，反之亦然。
+  - `getSchools` 失败时 `setSchoolError(true)` + `Taro.showToast('学校列表加载失败，请检查网络')`，不再静默。
+  - 空状态按 `schoolError` 区分：「加载失败，点击重试」（可点击 `loadData()` 重拉）/ 「暂无学校选项，请联系管理员」（真无数据）。
+  - 绑定状态查询失败不阻断页面，用户可停留重试。
+- **验证**：`tsc --noEmit` 0；`build:weapp` 20.02s `Compiled successfully`；`dist` 中 `process.env` 残留 0、新类名 `bind-school-chip` 编入 `index.wxss`/`index.js`、错误文案「学校列表加载失败…」以 unicode 转义进入 `index.js`。
+- **后续提示**：若上传新 `dist` 后学校列表仍空，需检查小程序 `baseUrl` 是否指向正确后端（本地 `29528` vs 生产 `yuetang.cloud`）及该环境 `org_units` 是否确有 `school` 节点。
+
+### 修复：绑定页学校列表「加载失败」透出真实错误并引导登录（2026-09-09 夜间）
+- **复现**：用户实测学校列表仍「加载失败」。经全链路核查，数据层与服务端均无问题——本地库 `org_units` 确有 `school` 节点（`id=2, name=cqie`）；生产 `yuetang.cloud` 的 `/api/miniapp/student/schools` 实测可达，无 token 返回 `401 缺少认证令牌`、带合法 token 即返回数据（路由 `student_schools` + `OrgUnitService.list_schools` + `OrgUnit.to_dict` 均正确）。
+- **结论**：「加载失败」是 `getSchools()` 请求**真抛错**（非 2xx 或网络层），而非数据丢失。结合 `request.ts` 拦截器行为，最可能原因是打该接口时请求**未携带有效学生 token**（401 被拒）——即用户停留在绑定页时本地无有效会话（如开发者工具直接打开了绑定页未先登录、或登录态过期）。token 链路本身正确：`useAuthStore.setAuth` 已调用 `setTokens` 持久化，`request.ts` 从 storage 读取并注入 `Authorization`。
+- **修复**（`pages/bind/index.tsx` + `index.scss`，提交 `a3eff6f`）：
+  - `getSchools` 失败时不再笼统 toast「请检查网络」，而是把真实错误（`ApiError.message` / `code`）记录下来；
+  - 空状态按成因三态显示：**401/403（未登录/会话失效）→「登录已失效，请先登录」**（可点跳登录页）；**其它请求错误 →「学校列表加载失败：<真实原因>，点击重试」**；**真无数据 →「暂无学校选项，请联系管理员」**。
+- **验证**：`tsc --noEmit` 0；`build:weapp` 19.65s `Compiled successfully`；`dist` `process.env` 残留 0、「登录已失效，请先登录」以 unicode 转义编入 `index.js`。
+- **给用户**：上传新 `dist` 后若仍提示「加载失败」，请点开微信开发者工具「Network」面板看 `/api/miniapp/student/schools` 的**状态码**——401/403 即未登录（先走登录）；500 即后端报错（看响应体）；`net::ERR` 即网络/合法域名未配。
+
+### 修复：登录成功未绑定时被后台请求反噬降级游客（2026-09-09 夜间）
+
+- **症状**：登录成功 → 提示「身份未绑定，已退出登录」→ 过一秒才弹出身份绑定页。时序错乱，用户以为登录又被踢下线。
+- **根因**：登录成功 `setAuth` 后 `isLoggedIn` 变 true，后台**已 mount 的 Tab 页**（用户来源页，如首页/我的）的 `useEffect([isLoggedIn])` 会**立即**重新 `loadAll()`。其中 `getProfile`（首页还有 `getToday`）是 `@student_bound_required` 接口，**未绑定用户必然 403 `STUDENT_NOT_BOUND`** → `request.ts` 拦截器 `handleStudentNotBound()` 把「刚登录、正要引导绑定」的登录态误判为无效登录态 → `logout()` 降级游客 + 弹「身份未绑定，已退出登录」。随后 `handleLogin` 的 `redirectTo('/pages/bind/index')` 才执行，于是用户看到「刚登录又被退出 → 才进绑定页」。这与登录页正要引导绑定的流程打架，属顺序 bug。
+- **修复**：新增模块级「绑定引导期」护栏 `utils/bindGuard.ts`（`beginBindGuide`/`finishBindGuide`/`cancelBindGuide`/`isBindGuideActive`，单一 `var` 标志）：
+  - 登录页判定未绑定、`redirectTo` 绑定页**前** `beginBindGuide()`；
+  - `request.ts` 的 `handleStudentNotBound()` 在引导期生效时**只清 `profile`、跳过 `logout()` 与「已退出登录」提示**——未绑定期后台 403 属预期（本就无业务访问权），不应反噬正要引导绑定的登录态；
+  - 绑定成功 `finishBindGuide()`；离开绑定页（`useUnload`）`cancelBindGuide()`，**防止标志残留**误吞后续真正的 403（如会话中被解绑）降级。
+- **产物单实例验证**：`bindGuard` 编译为 webpack 模块 2807（位于共享 common.js，`$m`=isBindGuideActive/`MB`=beginBindGuide/SV=finishBindGuide/vj=cancelBindGuide，单一 `var r`）；login 页 `p=s(2807)` 调 `MB`、request 的 `handleStudentNotBound` 读 `(0,m.$m)()` 均解析到**同一模块实例**，跨 chunk 单实例标志成立（无复制分裂）。
+- **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 21.33s `Compiled successfully`；`dist` `process.env` 残留 0。
+
 ## v6.17.1 (2026-09-08)
 
 > 类型：**缺陷修复（patch）**。针对线上暴露的三类问题修复：**宿舍电量三大数据错误**（趋势图按日求和成倍放大、不同页面"本月已用"数值不一致、总容量与剩余电量矛盾）、**小程序站内消息体验**（电量日报等长文改列表摘要 + 详情页）、**小程序网络通道修复**（反馈图片上传、公告附件下载在登录态过期或域名白名单未配时的失败）。
