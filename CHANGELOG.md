@@ -74,6 +74,17 @@
 - **`utils/request.ts`**：`redirectToBind` 由 `reLaunch` 改为 `navigateTo`，**保留栈**让原生 `< 返回` 能直接回上一页（原 reLaunch 会清栈变死路）。
 - **验证**：`tsc --noEmit` 0 错误；`build:weapp` 21.65s 成功；产物 `login-skip / login-guest-tip / login-nav / bind-foot / bind-skip / bind-logout` 自定义类与「暂不登录」「暂不认证」文案均消失；`dist/pages/login/index.json` 确认 `navigationBarTitleText: "登录"`、无 `navigationStyle: custom`；`process.env` 残留 0。
 
+### 修复：登录成功未绑定身份 / 会话中被解绑 的死状态回收（2026-09-09）
+- **问题**：① 登录成功但用户不绑定身份，此时 `isLoggedIn=true` 但所有业务接口一律 403 `STUDENT_NOT_BOUND`——既用不了功能、又无出口退回游客态；② 会话中被管理员解绑后本地仍保留登录态，同样卡在"已登录却啥都干不了"的半死状态。
+- **登录页补"登录后立刻确认绑定状态"**（`pages/login/index.tsx`）：`handleLogin` 在 `setAuth` 之后同步调 `userApi.getBindStatus()`（该接口仅 `@student_required`、未绑定返 `bound:false` 不 403）。已绑定 → toast「登录成功」+ `getCurrentPages().length>1 ? navigateBack : switchTab home`；未绑定 → toast「登录成功，请先完成身份认证」+ **`redirectTo('/pages/bind/index')` 替换登录页**（避免原生「< 返回」退回"已登录"的登录页造成死循环）。
+- **`useBindStatusWatcher` 重写：把"已登录未绑定"定义为无效登录态，整体回退游客**（`hooks/useBindStatusWatcher.ts`）：
+  - 新增 `revokeSession(message, noticeKey)`：同步执行 `useAuthStore.getState().logout()` + `useUserStore.getState().setProfile(null)` + `resetPrivateClickCount()` + 一次性 toast（节流，避免切 Tab/多页面重复提示）。只清本地令牌、不回调后端 logout：解绑场景服务端已 `delete_all_user_sessions` 吊销会话；未绑定场景残留会话无业务数据访问权、1h 自然过期，无风险。
+  - Tab 页 `useDidShow`（home/profile/schedule）触发：已登录且 `getBindStatus().bound=false` → 调 `revokeSession`；按成因给不同提示——本地曾缓存过学号（会话中被解绑）=「身份已被管理员解绑，请重新登录并认证」；从未绑定=「尚未完成身份认证，已退出登录」。
+  - 导出 `resetBindNotice()`：登录成功后清空提示节流，避免上一次未绑定提示被吞。
+- **放弃绑定场景兜底**：登录页未绑定走 `redirectTo` 绑定页（替换登录页），用户在绑定页点原生「< 返回」回到上一 Tab 页，`useDidShow` 的 watcher 立即感知未绑定并回退游客态——不会卡在半死状态。非 Tab 来源页进入绑定再返回时，也由下一次切换到 Tab 页的 watcher 兜底回收。
+- **合规**：全程只回退本地状态，**不强制跳转**任何页面；游客仍可浏览天气/公告等公开内容。
+- **验证**：`tsc --noEmit` 退出码 0、错误 0；`build:weapp` 成功（`Compiled successfully`）；产物 `dist` 中 `process.env` 残留计数 0；登录页 bundle 含 `redirectTo` 至 `pages/bind/index` 逻辑。
+
 ### 重构：个人资料详情页按用户示意图重排编辑布局
 - **初始全黑**：6 个只读行（学号/班级/学校/学院/专业/校园卡号）去掉 `detail-row-locked` 置灰类；`.detail-row-value` 由 `#666` 改 `#1a1a1a`。只读不可编辑的语义靠"无编辑入口"保证，不再用颜色暗示"禁用"。
 - （本条初版曾实现为「hero 变身编辑表单」，**已被下方「编辑表单由 hero 移入卡片」条目取代**，最终编辑交互收敛在「编辑信息」卡内。）

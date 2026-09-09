@@ -3,8 +3,10 @@ import { View, Text, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
 import { login as loginApi } from '@/api/auth';
+import * as userApi from '@/api/user';
 import { wxLogin } from '@/utils/auth';
 import { resetPrivateClickCount } from '@/hooks/useLoginGuard';
+import { resetBindNotice } from '@/hooks/useBindStatusWatcher';
 import { useAuthStore } from '@/stores/authStore';
 import loginIllustration from '@/assets/images/login-illustration.png';
 import './index.scss';
@@ -52,19 +54,40 @@ export default function LoginPage() {
         expiresIn: result.expires_in,
         user: result.user,
       });
-      // 登录成功：清零"私有模块点击累计"（游客期攒的次数不应再触发登录弹窗）
+      // 登录成功：清零"私有模块点击累计"、解除绑定提示节流
       resetPrivateClickCount();
-      Taro.showToast({ title: '登录成功', icon: 'success' });
-      setTimeout(() => {
-        // 从登录引导弹窗进入：返回上一页（此时已登录可正常使用）；
-        // 兜底（如会话过期被回收）：回首页
-        const pages = Taro.getCurrentPages();
-        if (pages.length > 1) {
-          Taro.navigateBack();
-        } else {
-          Taro.switchTab({ url: '/pages/home/index' });
-        }
-      }, 500);
+      resetBindNotice();
+
+      // 立即确认身份绑定状态（@student_required，未绑定返回 bound:false 而不 403）：
+      // - 已绑定 → 返回上一页正常使用；
+      // - 未绑定 → 用绑定页**替换**登录页（redirectTo），避免返回时退回"已登录"的登录页。
+      //   完成绑定即可正常使用；若放弃绑定直接返回，由 Tab 页 watcher 与绑定页
+      //   useUnload 兜底撤销登录态，不会卡在"已登录却啥也用不了"的死状态。
+      let bound = false;
+      try {
+        const st = await userApi.getBindStatus();
+        bound = !!st?.bound;
+      } catch {
+        // 查询失败按未绑定处理，交由绑定页 / 后续 watcher 兜底
+        bound = false;
+      }
+
+      if (bound) {
+        Taro.showToast({ title: '登录成功', icon: 'success' });
+        setTimeout(() => {
+          const pages = Taro.getCurrentPages();
+          if (pages.length > 1) {
+            Taro.navigateBack();
+          } else {
+            Taro.switchTab({ url: '/pages/home/index' });
+          }
+        }, 500);
+      } else {
+        Taro.showToast({ title: '登录成功，请先完成身份认证', icon: 'none' });
+        setTimeout(() => {
+          Taro.redirectTo({ url: '/pages/bind/index' });
+        }, 500);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : '登录失败，请重试';
       Taro.showToast({ title: msg, icon: 'none' });
