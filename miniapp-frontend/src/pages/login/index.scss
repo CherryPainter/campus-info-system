@@ -7,41 +7,6 @@
   background: $background;
 }
 
-/* 自绘导航栏（navigationStyle=custom）：承载「返回」入口 */
-.login-nav {
-  display: flex;
-  align-items: center;
-  height: 88rpx;
-  padding-left: $spacing-md;
-  box-sizing: border-box;
-}
-
-.login-nav-back {
-  display: flex;
-  align-items: center;
-  padding: 8rpx 20rpx 8rpx 8rpx;
-  border-radius: $radius-full;
-  background: rgba(0, 0, 0, 0.04);
-
-  .login-nav-back-icon {
-    font-size: 44rpx;
-    line-height: 1;
-    color: $text-primary;
-    margin-right: 4rpx;
-    margin-top: -4rpx;
-  }
-
-  .login-nav-back-text {
-    font-size: $font-size-sm;
-    color: $text-primary;
-    line-height: 1;
-  }
-}
-
-.login-nav-back-hover {
-  background: rgba(0, 0, 0, 0.08);
-}
-
 .login-hero {
   flex: 1;
   display: flex;
@@ -113,40 +78,6 @@
   // 未勾选协议时的禁用态：灰底 + 不可点击
   background: #c9cdd3 !important;
   opacity: 1;
-}
-
-// ===== 拒绝登录入口：与登录按钮并列，保证"可取消/拒绝"显著可见 =====
-.login-skip {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 88rpx;
-  margin-top: $spacing-md;
-  border-radius: $radius-full;
-  background: #ffffff;
-  border: 2rpx solid $border-color;
-  box-sizing: border-box;
-
-  .login-skip-text {
-    font-size: $font-size-md;
-    color: $text-secondary;
-    line-height: 1;
-  }
-}
-
-.login-skip-hover {
-  background: #f2f3f5;
-}
-
-.login-guest-tip {
-  display: block;
-  margin-top: $spacing-sm;
-  padding: 0 $spacing-sm;
-  font-size: $font-size-xs;
-  color: $text-tertiary;
-  line-height: 1.6;
-  text-align: center;
 }
 
 // ===== 协议勾选区 =====

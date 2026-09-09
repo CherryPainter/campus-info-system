@@ -2,26 +2,26 @@
  * 身份绑定页
  *
  * 登录后若未通过管理员预录名单完成身份绑定，所有业务请求会收到
- * 403（code=STUDENT_NOT_BOUND），由请求层统一 reLaunch 到本页。
+ * 403（code=STUDENT_NOT_BOUND），由请求层统一跳转到本页。
  *
  * 流程：选择学校 → 输入学号、绑定码 → 提交 → 命中预录名单（启用中，
  * 且绑定码匹配、未核销）即绑定成功 → 回到首页。
  * 班级/学院/专业由名单所在组织树继承写入资料，学生无需填写。
  * 绑定码由管理员生成后私下发放（一次性，绑定即失效）。
+ *
+ * 合规：使用 WeChat 原生标准顶栏（左侧自动 `< 返回`、居中标题），
+ * 不在页面内自绘任何拒绝/退出入口。
  */
 import { useEffect, useState } from 'react';
 import { View, Text, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
 import * as userApi from '@/api/user';
-import { logout as logoutApi } from '@/api/auth';
 import { useUserStore } from '@/stores/userStore';
-import { useAuthStore } from '@/stores/authStore';
 import './index.scss';
 
 export default function BindPage() {
   const { setProfile } = useUserStore();
-  const { refreshToken, logout: clearAuth } = useAuthStore();
 
   const [schools, setSchools] = useState<string[]>([]);
   const [school, setSchool] = useState('');
@@ -42,7 +42,7 @@ export default function BindPage() {
           setSchools(schoolsRes.schools || []);
         }
         if (statusRes.status === 'success' && statusRes.bound) {
-          Taro.reLaunch({ url: '/pages/home/index' });
+          Taro.switchTab({ url: '/pages/home/index' });
           return;
         }
       } catch {
@@ -52,22 +52,6 @@ export default function BindPage() {
       }
     })();
   }, []);
-
-  /** 暂不认证：保留登录态，以游客方式回首页浏览公开内容（认证环节必须可拒绝） */
-  const handleSkip = () => {
-    Taro.switchTab({ url: '/pages/home/index' });
-  };
-
-  /** 退出登录：清掉本地登录态后回首页（未拿到身份又不想认证时的出口） */
-  const handleLogout = async () => {
-    try {
-      await logoutApi(refreshToken || undefined);
-    } catch {
-      // 后端登出失败不阻塞本地退出
-    }
-    clearAuth();
-    Taro.switchTab({ url: '/pages/home/index' });
-  };
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -96,7 +80,7 @@ export default function BindPage() {
       if (res.status === 'success' && res.bound) {
         if (res.profile) setProfile(res.profile);
         Taro.showToast({ title: '绑定成功', icon: 'success' });
-        setTimeout(() => Taro.reLaunch({ url: '/pages/home/index' }), 600);
+        setTimeout(() => Taro.switchTab({ url: '/pages/home/index' }), 600);
       } else {
         Taro.showToast({ title: res.message || '绑定失败，请重试', icon: 'none' });
       }
@@ -171,16 +155,6 @@ export default function BindPage() {
         <Text className="bind-hint">
           绑定码为一次性凭证，请向管理员获取；如无法通过认证，请联系管理员
         </Text>
-
-        {/* 合规出口：认证环节同样要提供可拒绝/退出的入口 */}
-        <View className="bind-foot">
-          <View className="bind-skip" hoverClass="bind-skip-hover" onClick={handleSkip}>
-            <Text className="bind-skip-text">暂不认证，先去逛逛</Text>
-          </View>
-          <View className="bind-logout" onClick={handleLogout}>
-            <Text className="bind-logout-text">退出登录</Text>
-          </View>
-        </View>
       </View>
     </View>
   );

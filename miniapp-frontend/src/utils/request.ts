@@ -176,7 +176,7 @@ export function resetSessionExpiredNotice(): void {
 /** 身份未绑定防抖标记：多个业务请求同时 403 时只触发一次跳转 */
 let isRedirectingToBind = false;
 
-/** 403 code=STUDENT_NOT_BOUND 时统一跳身份绑定页（reLaunch 替换栈，无法返回跳过） */
+/** 403 code=STUDENT_NOT_BOUND 时统一跳身份绑定页（navigateTo 保留栈，原生顶栏「< 返回」可直接回原页面） */
 function redirectToBind(): void {
   if (isRedirectingToBind) return;
   isRedirectingToBind = true;
@@ -186,7 +186,7 @@ function redirectToBind(): void {
   } catch {
     /* 忽略 */
   }
-  Taro.reLaunch({ url: '/pages/bind/index' });
+  Taro.navigateTo({ url: '/pages/bind/index' });
   setTimeout(() => {
     isRedirectingToBind = false;
   }, 2000);

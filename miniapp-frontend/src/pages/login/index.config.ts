@@ -1,9 +1,10 @@
-// 登录页：去掉顶部导航栏（home 返回 + 标题），保留右上角胶囊按钮
-// 与时间轴/我的页保持一致风格：custom 导航栏 + 页面内做状态栏高度避让
+// 登录页：使用 WeChat 原生标准顶栏（左侧自动显示返回箭头，居中显示标题）
+// 与绑定页保持一致风格——避免自定义导航栏把「返回」入口藏起来导致审核被驳。
 
 const config = {
-  navigationStyle: 'custom',
-  backgroundColor: '#f6f7fb',
+  navigationBarTitleText: '登录',
+  navigationBarBackgroundColor: '#f6f7fb',
+  navigationBarTextStyle: 'black',
 };
 
 export default config;
