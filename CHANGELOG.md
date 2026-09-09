@@ -230,6 +230,13 @@
   - `schedule/index.tsx`：`useLoad`/`useEffect([isLoggedIn])` 加引导期守卫；`fetchDayCourses` 引导期直接 return（避免降级走 `getToday` 撞 403）。
 - **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 20.15s `Compiled successfully`；`dist` `process.env` 残留 0。
 
+### 修复：时间轴页游客态误发 schedule/today（2026-09-09 深夜）
+
+- **复现**：未登录（游客态）点开「时间轴」页，Network 即发 `GET /schedule/today?date=...` → 401。游客打需登录接口纯浪费 + 刷噪音。
+- **根因**：时间轴 `useLoad` 虽有 `if(!isLoggedIn) return`（不 `loadAll`），但页内 `useEffect([selectedDate])`（初次 selectedDate=今天）**无条件**调 `fetchDayCourses` → 游客态 `weekCourses` 为空 → 无本地过滤 → 降级走 `getToday` 网络请求 → 401。此前只给 `fetchDayCourses` 加了 `isBindGuideActive()` 守卫，游客态 `bindGuideActive=false` 故放行，**漏防游客态**。
+- **修复**：`fetchDayCourses` 开头 `!isLoggedIn || isBindGuideActive()` 任一为真直接 return（游客打需登录必 401、引导期打需绑定必 403，均不发）；`useCallback` 依赖补 `isLoggedIn`。时间轴游客态本只渲染引导卡，不发任何需登录接口。
+- **验证**：`tsc --noEmit` 0；`build:weapp` 19.75s `Compiled successfully`；`dist` `process.env` 残留 0。
+
 ## v6.17.1 (2026-09-08)
 
 > 类型：**缺陷修复（patch）**。针对线上暴露的三类问题修复：**宿舍电量三大数据错误**（趋势图按日求和成倍放大、不同页面"本月已用"数值不一致、总容量与剩余电量矛盾）、**小程序站内消息体验**（电量日报等长文改列表摘要 + 详情页）、**小程序网络通道修复**（反馈图片上传、公告附件下载在登录态过期或域名白名单未配时的失败）。
