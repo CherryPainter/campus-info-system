@@ -218,6 +218,11 @@ def create_app(config_class=None):
             response.headers["Expires"] = "0"
         return response
 
+    # ========== 公开接口匿名会话令牌签发 + 访问日志 ==========
+    from app.utils import anon_session as _anon
+
+    _anon.attach_anon_session(app)
+
     # 健康检查接口
     @app.route("/api/ping", methods=["GET"])
     def ping():

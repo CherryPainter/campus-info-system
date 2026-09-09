@@ -74,6 +74,22 @@ def get_identity_key():
         except Exception:
             # token 过期/无效/被撤销：不在限流层判定，交由认证层返回 401；限流退化为按 IP
             pass
+    # 匿名请求：优先用客户端回传的匿名会话令牌（X-Anon-Token）做限流身份，
+    # 实现"按会话限流 + 溯源"，避免同一出口 NAT/校园网 IP 下所有用户共享一个桶。
+    # 无有效令牌时退化为按 IP（与历史行为一致，不破坏既有逻辑）。
+    try:
+        from flask import request
+
+        from app.utils import anon_session as _anon
+
+        anon_uid = _anon.parse_anon_token(
+            request.headers.get(_anon.ANON_TOKEN_HEADER)
+        )
+        if anon_uid:
+            return f"anon:{anon_uid}"
+    except Exception:
+        # 匿名会话解析异常不影响主流程，退化为按 IP
+        pass
     return get_remote_address()
 
 

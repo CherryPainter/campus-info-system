@@ -17,6 +17,31 @@ import { clearTokens, getAccessToken, getRefreshToken, isAccessTokenExpiringSoon
 export const API_BASE_URL: string =
   process.env.TARO_APP_API_BASE || 'http://127.0.0.1:29528';
 
+// 匿名会话令牌（服务端在公开接口下发 X-Anon-Token，客户端存本地、后续带回，
+// 用于公开接口按会话溯源 + 限流）。此处仅做本地存取，不参与任何鉴权。
+const ANON_TOKEN_KEY = 'miniapp.anonToken';
+
+function getAnonToken(): string {
+  try {
+    return (Taro.getStorageSync(ANON_TOKEN_KEY) as string) || '';
+  } catch {
+    return '';
+  }
+}
+
+function captureAnonToken(header?: Record<string, string>): void {
+  if (!header) return;
+  // 微信会把响应头 key 转小写，两种都试
+  const t = header['X-Anon-Token'] || header['x-anon-token'];
+  if (t && typeof t === 'string' && t.length > 0) {
+    try {
+      Taro.setStorageSync(ANON_TOKEN_KEY, t);
+    } catch {
+      /* 存储失败忽略 */
+    }
+  }
+}
+
 export class ApiError extends Error {
   /** HTTP 状态码；网络层错误为 -1 */
   code: number;
@@ -136,6 +161,11 @@ export async function request<T = unknown>(options: RequestOptions): Promise<T> 
   const { url, method = 'GET', data, auth = true, _retried, timeout = 10000 } = options;
 
   const header: Record<string, string> = { 'Content-Type': 'application/json' };
+  // 回传匿名会话令牌（服务端公开接口据此按会话溯源 + 限流）
+  const anonToken = getAnonToken();
+  if (anonToken) {
+    header['X-Anon-Token'] = anonToken;
+  }
   if (auth) {
     // 预刷新：access token 即将过期且有 refresh token 时提前换新，
     // 避免过期后首次请求的 401——微信开发者工具控制台会把每次 401 打印成红字，
@@ -158,6 +188,8 @@ export async function request<T = unknown>(options: RequestOptions): Promise<T> 
       header,
       timeout,
     });
+    // 捕获服务端下发的匿名会话令牌（无论成败都回写，公开接口总会下发）
+    captureAnonToken(res.header as Record<string, string> | undefined);
   } catch (err) {
     // 网络错误 / 超时（Taro 在非 2xx 时也可能走 fail，统一按网络异常处理）
     const msg = (err as { errMsg?: string })?.errMsg || '';

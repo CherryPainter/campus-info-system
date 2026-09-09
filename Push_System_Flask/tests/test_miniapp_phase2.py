@@ -128,6 +128,10 @@ def app():
     from app.api.miniapp_routes import miniapp_bp
 
     flask_app.register_blueprint(miniapp_bp, url_prefix="/api/miniapp")
+    # 接入公开接口匿名会话令牌签发 + 访问日志（与生产 create_app 一致）
+    from app.utils import anon_session
+
+    anon_session.attach_anon_session(flask_app)
     return flask_app
 
 
@@ -207,6 +211,18 @@ def test_public_endpoints_anonymous_ok(client):
     ):
         resp = client.get(path)
         assert resp.status_code == 200, path
+
+
+def test_public_endpoint_issues_anon_token(client):
+    # 公开接口应下发 X-Anon-Token（匿名会话令牌），供客户端回传以按会话溯源 + 限流
+    resp = client.get("/api/miniapp/weather/current")
+    assert resp.status_code == 200
+    assert "X-Anon-Token" in resp.headers
+    token = resp.headers["X-Anon-Token"]
+    # 回传同一令牌后，响应应原样回显（会话稳定，不旋转）
+    resp2 = client.get("/api/miniapp/announcements", headers={"X-Anon-Token": token})
+    assert resp2.status_code == 200
+    assert resp2.headers.get("X-Anon-Token") == token
 
 
 def test_admin_token_403(client, admin_token):
