@@ -175,6 +175,18 @@
 - 改动文件：`miniapp-frontend/src/utils/request.ts`。
 - 验证：`tsc --noEmit` 退出码 0；`build:weapp` 20.30s `Compiled successfully`；`dist` 中 `process.env` 残留 0。
 
+### 重构：身份认证页去 AI 模板感，改白底细边 + 字段分组（2026-09-09）
+- **背景**：此前只删了页面内重复标题、调了文案，结构仍是「灰底上浮一张带重阴影的白卡 + 发光药丸按钮」——典型的 AI/模板生成观感，与用户「专业一点、少点 AI 味」的诉求差距大。
+- **改动**（`pages/bind/index.tsx` + `index.scss`，+94/-67）：
+  - 去掉浮卡重阴影：容器改为白底 + `1rpx` 细边的 `.bind-form`，radius-large，不再用 `$shadow-card`。
+  - 表单拆成字段组 `.bind-field`，相邻分组用 `border-top` 细分隔线分隔，形成清晰层级（学校 / 学号 / 绑定码）。
+  - 输入框由描边框改为**浅灰填充**（`background: $border-color`、无边框、定高 88rpx、radius-medium）——现代表单做法，弱模板感。
+  - 学校选择由自由换行 chips 改为**两列网格**（`grid-template-columns: repeat(2,1fr)`），更规整；选中态主色浅底。
+  - 提交按钮做**平实主色、无发光**、radius-medium、定高 92rpx，补 `hoverClass` 点击态（opacity 0.88），禁用态灰底。
+  - 头部 `.bind-head` 只保留一句上下文说明（`bind-intro`），不重复导航栏「身份认证」标题；文案延续去客套/废话。
+- 验证：`tsc --noEmit` 0；`build:weapp` 19.93s `Compiled successfully`；`dist` 新类名（bind-form/bind-field/bind-intro/bind-input-row 各 2 处）编译进去、旧类名（bind-card/bind-title/bind-desc 全 0）清除、`process.env` 残留 0。
+- 提交 `44044a4`（本地，未推送）。
+
 ## v6.17.1 (2026-09-08)
 
 > 类型：**缺陷修复（patch）**。针对线上暴露的三类问题修复：**宿舍电量三大数据错误**（趋势图按日求和成倍放大、不同页面"本月已用"数值不一致、总容量与剩余电量矛盾）、**小程序站内消息体验**（电量日报等长文改列表摘要 + 详情页）、**小程序网络通道修复**（反馈图片上传、公告附件下载在登录态过期或域名白名单未配时的失败）。
