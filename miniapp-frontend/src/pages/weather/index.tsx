@@ -1273,7 +1273,9 @@ export default function WeatherPage() {
         {indices.length > 0 ? (
           <View className="indices-grid">
             {indices.map((it) => {
-              const key = it.type || it.name;
+              // key 兼作 React key 与 handleIndexClick 入参（后者要求 string），
+              // type/name 均可能缺省，统一兜底为空串，避免 string | undefined 类型错误
+              const key = String(it.type || it.name || '');
               const isFlipped = pressedIndex === key;
               return (
               <View
