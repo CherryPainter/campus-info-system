@@ -26,6 +26,14 @@
   - 若后续确需"会话级配额"，正确做法是叠加一层**令牌签发节流**（限制单 IP 单位时间可领取的新令牌数），而不是把限流 key 换成会话——本版未实现。
 - **验证**：新增 `test_public_endpoint_issues_anon_token`（断言天气接口下发令牌、公告接口回显同一令牌）；`test_miniapp_phase2.py` **16 项全部通过**；`tsc --noEmit` 退出码 0；`build:weapp:clean` 成功、`process.env` 残留 0。
 
+### 增强：登录守卫 hook + 游客态完整 UI + 受限功能登录引导（2026-09-09）
+- **背景**：游客进入「我的」页只渲染极简占位（"未登录"卡片 + 登录按钮），与首页"先体验后授权"完整 UI 不一致；公告详情页点击「收藏/已阅」直接发请求再 401 报错，弹错乱弹窗。两类问题都需要"游客态保留 UI + 点击再引导登录"。
+- **新增 `useLoginGuard` hook**（`src/hooks/useLoginGuard.ts`）：封装"未登录 → 弹 LoginModal；已登录 → 执行 action"模式。点 LoginModal「确定」跳登录页，登录成功后由用户重新点击触发原动作（不自动重放，规避副作用重复）。
+- **「我的」页改造**（`src/pages/profile/index.tsx`）：去掉"游客态早返回"分支，**整页 UI 保留**——头像/昵称、校园卡、宿舍用电、功能列表、版本号都正常渲染；游客态用 `--` 占位数据、点击任何受限项（头像/消息/电量卡/功能列表 5 项）弹 LoginModal；游客态不再显示「退出登录」按钮、不显示未读角标、不调任何需登录的接口。
+- **公告详情页守卫**（`src/pages/announcement/detail/index.tsx`）：`handleFavorite` / `handleMarkRead` 包 `guard()`，游客点收藏/已阅先弹 LoginModal，**不再发请求 → 不再 401 报错**。重复的 `import { ScrollView }` 顺手合并到顶部。
+- **`useFeedbackBadge` 游客态保护**（`src/hooks/useFeedbackBadge.ts`）：`refresh()` 开头加 `if (!isLoggedIn) return;`，避免 tabBar 预加载/他处被动调用此 hook 时发请求再 401 噪音。
+- **验证**：`tsc --noEmit` 退出码 0、错误 0；`build:weapp:clean` 成功，`process.env` 残留 0，`dist/app.js` 生成。
+
 ### 重构：个人资料详情页按用户示意图重排编辑布局
 - **初始全黑**：6 个只读行（学号/班级/学校/学院/专业/校园卡号）去掉 `detail-row-locked` 置灰类；`.detail-row-value` 由 `#666` 改 `#1a1a1a`。只读不可编辑的语义靠"无编辑入口"保证，不再用颜色暗示"禁用"。
 - （本条初版曾实现为「hero 变身编辑表单」，**已被下方「编辑表单由 hero 移入卡片」条目取代**，最终编辑交互收敛在「编辑信息」卡内。）

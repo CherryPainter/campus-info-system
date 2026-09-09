@@ -15,6 +15,7 @@ import CampusCard from '@/components/CampusCard';
 import FeedbackBadge from '@/components/FeedbackBadge';
 import LoginModal from '@/components/LoginModal';
 import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
+import { useLoginGuard } from '@/hooks/useLoginGuard';
 import './index.scss';
 
 /**
@@ -28,8 +29,8 @@ import './index.scss';
 export default function ProfilePage() {
   const { user, refreshToken, logout: clearAuth, isLoggedIn } = useAuthStore();
   const { profile, setProfile } = useUserStore();
-  // 游客访问「我的」：弹出登录引导
-  const [showLogin, setShowLogin] = useState(false);
+  // 登录守卫：游客态点击受限功能时弹 LoginModal
+  const { guard, modalProps } = useLoginGuard();
   // 反馈未读红点（已受理未查看的反馈数）
   const { count: feedbackUnread, refresh: refreshFeedbackBadge } = useFeedbackBadge();
   // 消息未读（站内通知 + 新公告，消息图标角标）
@@ -110,11 +111,8 @@ export default function ProfilePage() {
     } catch {
       // 兜底 20
     }
-    // 游客：不拉取需登录的数据，直接弹登录引导
-    if (!isLoggedIn) {
-      setShowLogin(true);
-      return;
-    }
+    // 游客态：保留完整 UI（"先体验后授权"），仅数据用占位、点击用 LoginModal 引导登录
+    if (!isLoggedIn) return;
     loadAll();
     // 打开"我的"页即触发一次电量轻量刷新（后端 60s 冷却），完成后更新最新值
     refreshElectricity();
@@ -152,6 +150,8 @@ export default function ProfilePage() {
       firstShowRef.current = false;
       return; // 首次进入走 useLoad，不重复
     }
+    // 游客态不拉取需登录的数据
+    if (!isLoggedIn) return;
     loadAll();
     refreshElectricity();
     // 从反馈详情返回后刷新红点（查看一条即 -1）
@@ -190,42 +190,15 @@ export default function ProfilePage() {
     });
   };
 
-  // 展示名优先级：昵称 → 真实姓名 → 用户名 → 兜底
-  const name = profile?.nickname || profile?.real_name || user?.username || '同学';
-  const majorGrade = [profile?.major, profile?.grade ? `${profile.grade}级` : '']
-    .filter(Boolean)
-    .join(' · ');
-
-  // 游客态：展示登录引导，不渲染需登录的内容（资料/电量/消息）
-  if (!isLoggedIn) {
-    return (
-      <View className="page profile-page">
-        <View
-          className="profile-hero"
-          style={{ paddingTop: `calc(${statusBarHeight}px + 80rpx)` }}
-        >
-          <View className="profile-header">
-            <View className="profile-header-info" onClick={() => setShowLogin(true)}>
-              <View className="profile-avatar profile-avatar-placeholder">
-                <Text className="profile-avatar-text">游</Text>
-              </View>
-              <View className="profile-info">
-                <Text className="profile-name">未登录</Text>
-                <Text className="profile-sub">登录后查看个人资料与数据</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-        <View className="card profile-guard">
-          <Text className="profile-guard-text">登录后可查看宿舍用电、校园通知、个人资料等功能</Text>
-          <View className="profile-guard-btn" onClick={() => setShowLogin(true)}>
-            <Text className="profile-guard-btn-text">登录 / 注册</Text>
-          </View>
-        </View>
-        <LoginModal visible={showLogin} onCancel={() => setShowLogin(false)} />
-      </View>
-    );
-  }
+  // 展示名：已登录用「昵称/真名/用户名/同学」；游客态显示「未登录」
+  const name = isLoggedIn
+    ? profile?.nickname || profile?.real_name || user?.username || '同学'
+    : '未登录';
+  const majorGrade = isLoggedIn
+    ? [profile?.major, profile?.grade ? `${profile.grade}级` : '']
+        .filter(Boolean)
+        .join(' · ')
+    : '登录后查看个人资料与数据';
 
   return (
     <View className="page profile-page">
@@ -237,40 +210,48 @@ export default function ProfilePage() {
         style={{ paddingTop: `calc(${statusBarHeight}px + 80rpx)` }}
       >
         <View className="profile-header">
-          {/* 左侧：头像 + 昵称（可点跳详情页）；右侧：二维码 + 消息 */}
+          {/* 左侧：头像 + 昵称（游客态点击 → 登录引导；已登录跳详情页） */}
           <View
             className="profile-header-info"
-            onClick={() => Taro.navigateTo({ url: '/pages/profile-detail/index' })}
+            onClick={() =>
+              guard(() => Taro.navigateTo({ url: '/pages/profile-detail/index' }))
+            }
           >
-            {user?.avatar ? (
+            {isLoggedIn && user?.avatar ? (
               <Image src={user.avatar} className="profile-avatar" mode="aspectFill" />
             ) : (
               <View className="profile-avatar profile-avatar-placeholder">
-                <Text className="profile-avatar-text">{name.slice(0, 1)}</Text>
+                <Text className="profile-avatar-text">
+                  {isLoggedIn ? name.slice(0, 1) : '游'}
+                </Text>
               </View>
             )}
             <View className="profile-info">
               <Text className="profile-name">{name}</Text>
-              {majorGrade ? <Text className="profile-sub">{majorGrade}</Text> : null}
+              <Text className="profile-sub">{majorGrade}</Text>
             </View>
           </View>
           <View className="profile-header-actions">
-            {/* 二维码（保留在上方） */}
+            {/* 二维码（保留在上方）：占位功能，未登录不需特殊处理 */}
             <View
               className="profile-qr"
               onClick={() => Taro.showToast({ title: '等待学校开放接口', icon: 'none' })}
             >
               <Text className="iconfont icon-erweima profile-qr-icon" />
             </View>
-            {/* 消息入口（替换原「更多」图标位置）：点击进「我的消息」，右上角红点显示未读数 */}
+            {/* 消息入口：游客态点击 → 登录引导；已登录跳消息页 + 未读角标 */}
             <View
               className="profile-msg"
-              onClick={() => Taro.navigateTo({ url: '/pages/messages/index' })}
+              onClick={() =>
+                guard(() => Taro.navigateTo({ url: '/pages/messages/index' }))
+              }
             >
               <Text className="iconfont icon-tongzhi profile-msg-icon" />
-              {msgUnread > 0 && (
+              {isLoggedIn && msgUnread > 0 && (
                 <View className="profile-msg-badge">
-                  <Text className="profile-msg-badge-num">{msgUnread > 99 ? '99+' : msgUnread}</Text>
+                  <Text className="profile-msg-badge-num">
+                    {msgUnread > 99 ? '99+' : msgUnread}
+                  </Text>
                 </View>
               )}
             </View>
@@ -278,18 +259,23 @@ export default function ProfilePage() {
         </View>
 
         {/* 校园卡（蓝卡，展示校园卡号；占位：后端无校园卡数据接口，卡面不含余额金额/充值，规避审核金融观感），放在 hero 区让自定义背景渐变铺到卡下沿 */}
-        <CampusCard cardNumber={profile?.campus_card_number} />
+        <CampusCard cardNumber={isLoggedIn ? profile?.campus_card_number : undefined} />
       </View>
 
-      {/* 宿舍用电 */}
+      {/* 宿舍用电：游客态数值显示 --、底部按钮文案「去登录」 */}
       <View className="card dorm-card">
         <View className="dorm-header">
           <Text className="card-title">
-            宿舍用电{roomText || profile?.class_name ? `（${roomText || profile?.class_name}）` : ''}
+            宿舍用电
+            {isLoggedIn && (roomText || profile?.class_name)
+              ? `（${roomText || profile?.class_name}）`
+              : ''}
           </Text>
           <Text
             className="card-more"
-            onClick={() => Taro.navigateTo({ url: '/pages/electricity/index' })}
+            onClick={() =>
+              guard(() => Taro.navigateTo({ url: '/pages/electricity/index' }))
+            }
           >
             更多 ›
           </Text>
@@ -298,19 +284,33 @@ export default function ProfilePage() {
           <View className="dorm-stat">
             <Text className="dorm-stat-label">剩余电量（度）</Text>
             <Text className="dorm-stat-value dorm-stat-value-remaining">
-              {electricity?.remaining != null ? electricity.remaining.toFixed(2) : '--'}
+              {isLoggedIn && electricity?.remaining != null
+                ? electricity.remaining.toFixed(2)
+                : '--'}
             </Text>
           </View>
           <View className="dorm-stat-divider" />
           <View className="dorm-stat">
             <Text className="dorm-stat-label">本月已用（度）</Text>
             <Text className="dorm-stat-value dorm-stat-value-used">
-              {monthUsed != null ? monthUsed.toFixed(2) : '--'}
+              {isLoggedIn && monthUsed != null ? monthUsed.toFixed(2) : '--'}
             </Text>
           </View>
         </View>
         <View className="dorm-foot">
-          {cookieConfigured === false ? (
+          {!isLoggedIn ? (
+            <>
+              <Text className="dorm-foot-time">登录后查看宿舍用电</Text>
+              <View
+                className="dorm-foot-btn"
+                onClick={() =>
+                  guard(() => Taro.navigateTo({ url: '/pages/electricity/index' }))
+                }
+              >
+                <Text>去登录</Text>
+              </View>
+            </>
+          ) : cookieConfigured === false ? (
             <>
               <Text className="dorm-foot-time">未配置电表接入信息</Text>
               <View
@@ -336,22 +336,29 @@ export default function ProfilePage() {
         </View>
       </View>
 
-      {/* 功能列表 */}
+      {/* 功能列表：游客态全部点击 → 登录引导；已登录保持原行为 */}
       <View className="card profile-list">
         {/* 我的消息：消息图标 + 未读角标（与顶部图标双入口，避免找不到） */}
         <View
           className="profile-item"
-          onClick={() => Taro.navigateTo({ url: '/pages/messages/index' })}
+          onClick={() =>
+            guard(() => Taro.navigateTo({ url: '/pages/messages/index' }))
+          }
         >
           <View className="profile-item-icon-wrap">
             <Text className="iconfont icon-tongzhi profile-item-icon" />
           </View>
           <Text className="profile-label">我的消息</Text>
-          <FeedbackBadge count={msgUnread} />
+          {isLoggedIn ? <FeedbackBadge count={msgUnread} /> : null}
           <Text className="profile-arrow">›</Text>
         </View>
         {/* 我的课表：跳到课表详情页（周视图，含周次切换/课程卡片），而不是首页 tabBar 的「时间轴」 */}
-        <View className="profile-item" onClick={() => Taro.navigateTo({ url: '/pages/coursetable/index' })}>
+        <View
+          className="profile-item"
+          onClick={() =>
+            guard(() => Taro.navigateTo({ url: '/pages/coursetable/index' }))
+          }
+        >
           <View className="profile-item-icon-wrap">
             <Text className="iconfont icon-kechengbiao profile-item-icon" />
           </View>
@@ -360,7 +367,9 @@ export default function ProfilePage() {
         </View>
         <View
           className="profile-item"
-          onClick={() => Taro.navigateTo({ url: '/pages/favorites/index' })}
+          onClick={() =>
+            guard(() => Taro.navigateTo({ url: '/pages/favorites/index' }))
+          }
         >
           <View className="profile-item-icon-wrap">
             <Text className="profile-item-icon profile-star-icon">{'\u2606'}</Text>
@@ -370,18 +379,22 @@ export default function ProfilePage() {
         </View>
         <View
           className="profile-item"
-          onClick={() => Taro.navigateTo({ url: '/pages/feedback/submit/index' })}
+          onClick={() =>
+            guard(() => Taro.navigateTo({ url: '/pages/feedback/submit/index' }))
+          }
         >
           <View className="profile-item-icon-wrap">
             <Text className="iconfont icon-yijianyufankui profile-item-icon" />
           </View>
           <Text className="profile-label">意见反馈</Text>
-          <FeedbackBadge count={feedbackUnread} />
+          {isLoggedIn ? <FeedbackBadge count={feedbackUnread} /> : null}
           <Text className="profile-arrow">›</Text>
         </View>
         <View
           className="profile-item"
-          onClick={() => Taro.navigateTo({ url: '/pages/settings/index' })}
+          onClick={() =>
+            guard(() => Taro.navigateTo({ url: '/pages/settings/index' }))
+          }
         >
           <View className="profile-item-icon-wrap">
             <Text className="iconfont icon-shezhi profile-item-icon" />
@@ -391,11 +404,17 @@ export default function ProfilePage() {
         </View>
       </View>
 
-      <View className="logout-btn" onClick={handleLogout}>
-        <Text className="logout-text">退出登录</Text>
-      </View>
+      {/* 退出登录：仅已登录显示 */}
+      {isLoggedIn ? (
+        <View className="logout-btn" onClick={handleLogout}>
+          <Text className="logout-text">退出登录</Text>
+        </View>
+      ) : null}
 
       <Text className="profile-version">校园宜知行 v1.1.0</Text>
+
+      {/* 登录引导弹窗：游客态点击受限功能时弹出（useLoginGuard 管理显隐） */}
+      <LoginModal {...modalProps} />
     </View>
   );
 }
