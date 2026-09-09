@@ -3,47 +3,59 @@
 .bind-page {
   min-height: 100vh;
   background: $background;
-  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  padding: $spacing-lg $spacing-md calc(48rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
-.bind-card {
-  background: $card-background;
-  border-radius: $radius-large;
-  box-shadow: $shadow-card;
-  padding: $spacing-lg;
-  margin-top: $spacing-md;
+/* 头部说明：不重复导航栏标题，只给一句上下文 */
+.bind-head {
+  padding: $spacing-md 0 $spacing-lg;
 }
 
-.bind-desc {
+.bind-intro {
   display: block;
   font-size: $font-size-sm;
   line-height: 1.6;
   color: $text-secondary;
 }
 
+/* 表单容器：白底 + 细边，去掉「灰底上浮卡 + 重阴影」的模板感 */
+.bind-form {
+  background: $card-background;
+  border: 1rpx solid $border-color;
+  border-radius: $radius-large;
+  padding: $spacing-md;
+}
+
+/* 字段分组：相邻分组用细分隔线，形成清晰层级 */
+.bind-field + .bind-field {
+  margin-top: $spacing-lg;
+  padding-top: $spacing-lg;
+  border-top: 1rpx solid $border-color;
+}
+
 .bind-label {
   display: block;
-  margin-top: $spacing-lg;
   margin-bottom: $spacing-sm;
   font-size: $font-size-md;
   font-weight: 600;
   color: $text-primary;
 }
 
-/* 学校选项：网格 chips */
+/* 学校选项：两列网格，比自由换行更规整 */
 .bind-schools {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: $spacing-sm;
 }
 
 .bind-school-chip {
-  padding: $spacing-sm $spacing-md;
-  border-radius: $radius-full;
+  padding: $spacing-sm;
+  text-align: center;
+  border-radius: $radius-medium;
   border: 1rpx solid $border-color;
   background: $card-background;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .bind-school-chip-active {
@@ -63,18 +75,19 @@
 }
 
 .bind-school-empty {
+  grid-column: 1 / -1;
   font-size: $font-size-xs;
   color: $text-tertiary;
 }
 
-/* 输入行 */
+/* 输入行：浅灰填充（现代做法），非描边框 */
 .bind-input-row {
   display: flex;
   align-items: center;
-  padding: $spacing-sm $spacing-md;
-  border: 1rpx solid $border-color;
+  height: 88rpx;
+  padding: 0 $spacing-md;
   border-radius: $radius-medium;
-  background: $background;
+  background: $border-color;
 }
 
 .bind-input {
@@ -93,19 +106,24 @@
   color: $text-tertiary;
 }
 
-/* 提交 */
+/* 提交：平实主色按钮，去掉发光药丸的模板感 */
 .bind-submit {
   margin-top: $spacing-xl;
+  height: 92rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: $primary-color;
-  border-radius: $radius-full;
-  padding: $spacing-md 0;
-  text-align: center;
-  box-shadow: 0 4rpx 12rpx rgba(26, 115, 232, 0.25);
+  border-radius: $radius-medium;
+  transition: opacity 0.15s ease;
+}
+
+.bind-submit-hover {
+  opacity: 0.88;
 }
 
 .bind-submit-disabled {
-  background: $primary-light;
-  box-shadow: none;
+  background: #c9cdd3;
 }
 
 .bind-submit-text {

@@ -15,7 +15,7 @@
  * 绑定码由管理员生成后私下发放（一次性，绑定即失效）。
  *
  * 合规：使用 WeChat 原生标准顶栏（左侧自动 `< 返回`、居中标题），
- * 不在页面内自绘任何拒绝/退出入口。
+ * 不在页面内自绘任何拒绝/退出入口。页面内不再重复顶栏标题。
  */
 import { useEffect, useState } from 'react';
 import { View, Text, Input } from '@tarojs/components';
@@ -99,58 +99,67 @@ export default function BindPage() {
 
   return (
     <View className="bind-page">
-      <View className="bind-card">
-        <Text className="bind-desc">
+      <View className="bind-head">
+        <Text className="bind-intro">
           验证学生身份后可接入课程、电费等校园服务。绑定码由管理员发放。
         </Text>
+      </View>
 
-        {/* 学校选择（动态：管理端已建学校） */}
-        <Text className="bind-label">学校</Text>
-        <View className="bind-schools">
-          {schools.map((s) => (
-            <View
-              key={s}
-              className={`bind-school-chip${school === s ? ' bind-school-chip-active' : ''}`}
-              onClick={() => setSchool(s)}
-            >
-              <Text className={school === s ? 'bind-school-text-active' : 'bind-school-text'}>
-                {s}
-              </Text>
-            </View>
-          ))}
-          {!loading && schools.length === 0 && (
-            <Text className="bind-school-empty">暂无学校选项，请联系管理员</Text>
-          )}
+      <View className="bind-form">
+        {/* 学校选择 */}
+        <View className="bind-field">
+          <Text className="bind-label">学校</Text>
+          <View className="bind-schools">
+            {schools.map((s) => (
+              <View
+                key={s}
+                className={`bind-school-chip${school === s ? ' bind-school-chip-active' : ''}`}
+                onClick={() => setSchool(s)}
+              >
+                <Text className={school === s ? 'bind-school-text-active' : 'bind-school-text'}>
+                  {s}
+                </Text>
+              </View>
+            ))}
+            {!loading && schools.length === 0 && (
+              <Text className="bind-school-empty">暂无学校选项，请联系管理员</Text>
+            )}
+          </View>
         </View>
 
         {/* 学号 */}
-        <Text className="bind-label">学号</Text>
-        <View className="bind-input-row">
-          <Input
-            className="bind-input"
-            value={studentNumber}
-            placeholder="请输入学号"
-            placeholderClass="bind-placeholder"
-            maxlength={30}
-            onInput={(e) => setStudentNumber(e.detail.value)}
-          />
+        <View className="bind-field">
+          <Text className="bind-label">学号</Text>
+          <View className="bind-input-row">
+            <Input
+              className="bind-input"
+              value={studentNumber}
+              placeholder="请输入学号"
+              placeholderClass="bind-placeholder"
+              maxlength={30}
+              onInput={(e) => setStudentNumber(e.detail.value)}
+            />
+          </View>
         </View>
 
         {/* 绑定码 */}
-        <Text className="bind-label">绑定码</Text>
-        <View className="bind-input-row">
-          <Input
-            className="bind-input bind-code-input"
-            value={bindCode}
-            placeholder="请输入 8 位绑定码"
-            placeholderClass="bind-placeholder"
-            maxlength={8}
-            onInput={(e) => setBindCode(e.detail.value.toUpperCase())}
-          />
+        <View className="bind-field">
+          <Text className="bind-label">绑定码</Text>
+          <View className="bind-input-row">
+            <Input
+              className="bind-input bind-code-input"
+              value={bindCode}
+              placeholder="请输入 8 位绑定码"
+              placeholderClass="bind-placeholder"
+              maxlength={8}
+              onInput={(e) => setBindCode(e.detail.value.toUpperCase())}
+            />
+          </View>
         </View>
 
         <View
           className={`bind-submit${submitting ? ' bind-submit-disabled' : ''}`}
+          hoverClass="bind-submit-hover"
           onClick={handleSubmit}
         >
           <Text className="bind-submit-text">{submitting ? '提交中…' : '确认绑定'}</Text>
