@@ -237,6 +237,13 @@
 - **修复**：`fetchDayCourses` 开头 `!isLoggedIn || isBindGuideActive()` 任一为真直接 return（游客打需登录必 401、引导期打需绑定必 403，均不发）；`useCallback` 依赖补 `isLoggedIn`。时间轴游客态本只渲染引导卡，不发任何需登录接口。
 - **验证**：`tsc --noEmit` 0；`build:weapp` 19.75s `Compiled successfully`；`dist` `process.env` 残留 0。
 
+### 修复：公告附件下载游客态点附件改登录引导（2026-09-09 深夜）
+
+- **场景**：公告详情对游客公开浏览（合规"先体验后授权"），但附件走 `@student_bound_required` 鉴权下载接口。游客点附件 `downloadFile` 带空 token 直发 → 401。
+- **修复**：复用页面既有 `useLoginGuard` 的 `guard`——游客点附件先弹登录引导（与收藏/已阅一致），已登录才进入下载。
+- **核查结论**（Explore 全量只读排查）：其余子页面（feedback 列表/详情/电量/coursetable/favorites/messages 等）只能经登录守卫 `navigateTo` 进入、游客 UI 无法到达，非冷启动泄漏；三 Tab 页（home/profile/schedule）与 schedule `fetchDayCourses` 的冷启动泄漏已在前面修复。**不为不可达页面加冗余守卫**（避免过度防御/增耦合）。
+- **验证**：`tsc --noEmit` 0；`build:weapp` 20.13s `Compiled successfully`；`dist` `process.env` 残留 0。
+
 ## v6.17.1 (2026-09-08)
 
 > 类型：**缺陷修复（patch）**。针对线上暴露的三类问题修复：**宿舍电量三大数据错误**（趋势图按日求和成倍放大、不同页面"本月已用"数值不一致、总容量与剩余电量矛盾）、**小程序站内消息体验**（电量日报等长文改列表摘要 + 详情页）、**小程序网络通道修复**（反馈图片上传、公告附件下载在登录态过期或域名白名单未配时的失败）。
