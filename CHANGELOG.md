@@ -218,6 +218,18 @@
 - **产物单实例验证**：`bindGuard` 编译为 webpack 模块 2807（位于共享 common.js，`$m`=isBindGuideActive/`MB`=beginBindGuide/SV=finishBindGuide/vj=cancelBindGuide，单一 `var r`）；login 页 `p=s(2807)` 调 `MB`、request 的 `handleStudentNotBound` 读 `(0,m.$m)()` 均解析到**同一模块实例**，跨 chunk 单实例标志成立（无复制分裂）。
 - **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 21.33s `Compiled successfully`；`dist` `process.env` 残留 0。
 
+### 增强/修复：绑定页学校改原生下拉 + 引导期不再抢发私有接口（2026-09-09 夜间）
+
+- **一、学校选择改原生下拉（用户要求）**：`bind/index.tsx` 学校从「两列网格 chips」改为 `<Picker mode="selector">` 原生下拉（微信标准底部滚轮选择器，契合项目"登录/身份页原生化"路线）。复用 `.bind-input-row` 视觉（浅灰填充行 + 右侧箭头），选中值/占位/箭头与学号输入行统一；空态错误提示保留（登录失效 / 加载失败重试 / 真无数据）。
+- **二、根治「登录成功未绑定 → 后台 Tab 抢发私有接口 → 全 403」的浪费**：
+  - 症状：用户在登录/绑定过渡期看到 `student/profile`、`schedule/today`、`electricity/*`、`feedback`、`unread-count` 等一串 403——**未登录态打私有接口纯浪费 + 刷 403 噪音**（且此前 bindGuard 只抑制了 logout/toast，没抑制请求本身）。
+  - 根因：`setAuth` 使 `isLoggedIn=true` 后，后台已 mount 的 Tab 页 `useEffect([isLoggedIn])` 立即 `loadAll()`，但未绑定用户打 `@student_bound_required` 接口必然 403。
+  - `login/index.tsx`：`beginBindGuide()` **提前到 `setAuth` 后、`await getBindStatus` 前**，覆盖整个登录→查询绑定窗口（原置于 getBindStatus 之后，恰在 Tab useEffect 抢跑之后才置位，拦不住首次抢跑）；已绑定则 `finishBindGuide()`。
+  - `home/index.tsx`：`loadAll` 的 `getToday`/`getProfile` 分支加 `!isBindGuideActive()` 守卫。
+  - `profile/index.tsx`：抽 `refreshPrivate()`（`!isLoggedIn || 引导期` → return），`useLoad`/`useDidShow`/`useEffect([isLoggedIn])` 三入口统一走它——电费 current/monthly/refresh、资料、反馈角标、消息未读角标在引导期均不再抢发。
+  - `schedule/index.tsx`：`useLoad`/`useEffect([isLoggedIn])` 加引导期守卫；`fetchDayCourses` 引导期直接 return（避免降级走 `getToday` 撞 403）。
+- **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 20.15s `Compiled successfully`；`dist` `process.env` 残留 0。
+
 ## v6.17.1 (2026-09-08)
 
 > 类型：**缺陷修复（patch）**。针对线上暴露的三类问题修复：**宿舍电量三大数据错误**（趋势图按日求和成倍放大、不同页面"本月已用"数值不一致、总容量与剩余电量矛盾）、**小程序站内消息体验**（电量日报等长文改列表摘要 + 详情页）、**小程序网络通道修复**（反馈图片上传、公告附件下载在登录态过期或域名白名单未配时的失败）。
