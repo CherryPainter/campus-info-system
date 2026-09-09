@@ -436,6 +436,23 @@ export default function UserManagementRoster() {
     }
   };
 
+  // ---- 解绑/收回身份 ----
+  const handleUnbind = async (row: RosterStudent) => {
+    try {
+      const res = await rosterApi.unbind(row.id);
+      if (res.status === "success") {
+        message.success("已收回身份，学生可重新绑定");
+        // 复用绑定码弹窗展示新码，方便管理员立即私下发放
+        setCodeModal({ rosterId: row.id, code: res.data?.code || "", loading: false });
+        load(); // 刷新绑定状态（bound_user_id 置空、has_bind_code 置真）
+      } else {
+        message.error(res.message || "解绑失败");
+      }
+    } catch {
+      message.error("解绑失败");
+    }
+  };
+
   // ---- 绑定码 ----
   const handleGenerateCode = async (row: RosterStudent) => {
     setCodeModal({ rosterId: row.id, code: null, loading: true });
@@ -733,9 +750,20 @@ export default function UserManagementRoster() {
           >
             {record.is_active ? "停用" : "启用"}
           </Button>
+          {record.bound_user_id ? (
+            <Popconfirm
+              title="收回身份"
+              description="将清空该学生已绑定的身份并强制其重新登录，名单保留且自动重发绑定码。确定？"
+              onConfirm={() => handleUnbind(record)}
+              okText="确定"
+              cancelText="取消"
+            >
+              <Button size="small">解绑</Button>
+            </Popconfirm>
+          ) : null}
           <Popconfirm
             title="确认删除"
-            description="删除后该学号将无法再绑定身份，确定删除？"
+            description="删除名单后，已绑定该身份的学生仍将保留原身份且无法自行解绑；若要让学生重新绑定，请改用「解绑」。确定删除名单？"
             onConfirm={() => handleDelete(record)}
             okText="确定"
             cancelText="取消"

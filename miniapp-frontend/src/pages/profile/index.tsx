@@ -16,6 +16,7 @@ import FeedbackBadge from '@/components/FeedbackBadge';
 import LoginModal from '@/components/LoginModal';
 import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
 import { useLoginGuard } from '@/hooks/useLoginGuard';
+import { useBindStatusWatcher } from '@/hooks/useBindStatusWatcher';
 import './index.scss';
 
 /**
@@ -31,6 +32,8 @@ export default function ProfilePage() {
   const { profile, setProfile } = useUserStore();
   // 登录守卫：游客态点击受限功能时弹 LoginModal
   const { guard, modalProps } = useLoginGuard();
+  // 身份状态主动监察：管理员解绑后清空身份缓存并跳绑定页（承接「解绑/收回身份」）
+  useBindStatusWatcher();
   // 反馈未读红点（已受理未查看的反馈数）
   const { count: feedbackUnread, refresh: refreshFeedbackBadge } = useFeedbackBadge();
   // 消息未读（站内通知 + 新公告，消息图标角标）
@@ -71,12 +74,12 @@ export default function ProfilePage() {
         .getMonthlyUsage()
         .then((r) => ({ ok: true as const, d: { sum: r.data.month_used ?? 0 } }))
         .catch(() => ({ ok: false as const, d: { sum: 0 } })),
-      !profile
-        ? userApi
-            .getProfile()
-            .then((r) => ({ ok: true as const, d: r.profile }))
-            .catch(() => ({ ok: false as const, d: null }))
-        : Promise.resolve({ ok: true as const, d: profile }),
+      // 始终拉取最新资料（不再用 !profile 缓存短路）：既让昵称/真名等编辑即时生效，
+      // 也让管理员解绑后本接口返回 403 触发跳绑定页、本地缓存被清空
+      userApi
+        .getProfile()
+        .then((r) => ({ ok: true as const, d: r.profile }))
+        .catch(() => ({ ok: false as const, d: null })),
     ]);
 
     setElectricity(eRes.ok ? eRes.d : null);
@@ -190,10 +193,10 @@ export default function ProfilePage() {
     });
   };
 
-  // 展示名：已登录用「昵称/真名/用户名/同学」；游客态显示「未登录」
+  // 展示名：已登录用「昵称/真名/用户名/同学」；游客态显示「登录」（点击直达登录页）
   const name = isLoggedIn
     ? profile?.nickname || profile?.real_name || user?.username || '同学'
-    : '未登录';
+    : '登录';
   const majorGrade = isLoggedIn
     ? [profile?.major, profile?.grade ? `${profile.grade}级` : '']
         .filter(Boolean)
@@ -210,11 +213,15 @@ export default function ProfilePage() {
         style={{ paddingTop: `calc(${statusBarHeight}px + 80rpx)` }}
       >
         <View className="profile-header">
-          {/* 左侧：头像 + 昵称（游客态点击 → 登录引导；已登录跳详情页） */}
+          {/* 左侧：头像 + 昵称
+              合规与体验：游客点头像**直接进登录页**，不再经过"登录弹窗"这层中间层；
+              已登录跳个人资料详情页。 */}
           <View
             className="profile-header-info"
             onClick={() =>
-              guard(() => Taro.navigateTo({ url: '/pages/profile-detail/index' }))
+              isLoggedIn
+                ? Taro.navigateTo({ url: '/pages/profile-detail/index' })
+                : Taro.navigateTo({ url: '/pages/login/index' })
             }
           >
             {isLoggedIn && user?.avatar ? (
@@ -222,7 +229,7 @@ export default function ProfilePage() {
             ) : (
               <View className="profile-avatar profile-avatar-placeholder">
                 <Text className="profile-avatar-text">
-                  {isLoggedIn ? name.slice(0, 1) : '游'}
+                  {isLoggedIn ? name.slice(0, 1) : '登'}
                 </Text>
               </View>
             )}
@@ -301,11 +308,10 @@ export default function ProfilePage() {
           {!isLoggedIn ? (
             <>
               <Text className="dorm-foot-time">登录后查看宿舍用电</Text>
+              {/* 按钮文案即"去登录"：直接进登录页，不再套一层弹窗 */}
               <View
                 className="dorm-foot-btn"
-                onClick={() =>
-                  guard(() => Taro.navigateTo({ url: '/pages/electricity/index' }))
-                }
+                onClick={() => Taro.navigateTo({ url: '/pages/login/index' })}
               >
                 <Text>去登录</Text>
               </View>
@@ -410,8 +416,6 @@ export default function ProfilePage() {
           <Text className="logout-text">退出登录</Text>
         </View>
       ) : null}
-
-      <Text className="profile-version">校园宜知行 v1.1.0</Text>
 
       {/* 登录引导弹窗：游客态点击受限功能时弹出（useLoginGuard 管理显隐） */}
       <LoginModal {...modalProps} />

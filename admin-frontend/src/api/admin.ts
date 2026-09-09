@@ -737,6 +737,11 @@ export const rosterApi = {
     request.post<any, ApiResponse<{ code: string }>>(
       `/admin/roster/students/${id}/bind-code`
     ),
+  /** 管理端解绑/收回身份：清空该名单绑定用户的身份快照，保留名单并重发绑定码 */
+  unbind: (id: number) =>
+    request.post<any, ApiResponse<{ code: string }>>(
+      `/admin/roster/students/${id}/unbind`
+    ),
   /** 批量生成绑定码（返回明文列表，供导出 CSV 一次性发放） */
   generateBindCodes: (ids: number[]) =>
     request.post<any, ApiResponse<{ codes: BindCodeItem[]; count: number }>>(

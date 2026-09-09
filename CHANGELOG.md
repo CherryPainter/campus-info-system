@@ -4,9 +4,22 @@
 
 ---
 
-## Unreleased
+## v6.18.0 (2026-09-09)
 
-> 适用范围：小程序端（miniapp-frontend）。系统主版本号未升（v6.17.1 保持），按"正式发布才升版本号"惯例合入下版。
+> 本次发布含管理端「解绑/收回身份」新能力、小程序端身份状态主动监察，以及审核整改/匿名会话令牌/公开接口/登录守卫等增强（覆盖 2026-09-08 ~ 09-09 累积改动）。
+
+### 增强：学生身份「解绑/收回身份」（管理端，2026-09-09）
+- **背景**：此前「学生身份」列表删除一条已绑定名单，只会删白名单行（`StudentRosterService.delete` 仅 `session.delete(row)`）、不碰该学生 `student_profiles`，导致学生身份被"孤儿化"——保留旧身份卡死、且因 `bind_student` 的 `ALREADY_BOUND` 护栏无法重新绑定；管理员也无从收回学生身份。
+- **方案**：管理端「学生身份」列表对已绑定行新增「解绑」按钮，后端新增 `POST /api/admin/roster/students/<id>/unbind`（`@admin_required`）。`StudentRosterService.unbind` 按 `(school, student_number)` 定位绑定用户，清空身份字段（学号/学校/学院/专业/班级/年级/姓名/校园卡号，保留昵称/手机号/电表 cookie），吊销该用户全部活跃会话（强制重新登录走绑定流程），**名单保留**并重发一次性绑定码。
+- **前端**：`admin-frontend` 新增 `rosterApi.unbind` + 列表行「解绑」按钮（仅 `bound_user_id` 非空显示，Popconfirm 确认，成功后复用绑定码弹窗展示新码并刷新）；删除确认文案改为准确描述（删名单会孤儿化身份、建议改用解绑）。
+- **语义区分**：删除名单 = 移除白名单（已绑定身份孤儿化）；解绑 = 保留白名单、仅收回身份并立即重发绑定码，学生可一步重绑同一条名单。
+- **验证**：后端 `py_compile` 通过；前端 `tsc --noEmit` 0 错误；`vite build` 成功，`dist` 含「已收回身份」「解绑」字符串。
+
+### 增强：小程序端承接「解绑/收回身份」（2026-09-09）
+- **缺口**：原仅靠请求撞 403 `STUDENT_NOT_BOUND` 才跳绑定页；且 `profile` 页 `loadAll` 用 `!profile ? getProfile() : profile` 永不刷新，解绑后学号/班级永久显旧值（冷启动也从 persist 恢复旧值）；跳转时未清身份缓存。
+- **改动**：`utils/request.ts` 的 `redirectToBind()` 增加 `useUserStore.getState().setProfile(null)` 清本地身份缓存；新增 `hooks/useBindStatusWatcher.ts`，在 home/schedule/profile 三个 tab 页 `useDidShow` 主动调 `getBindStatus()`（仅 `@student_required`，未绑定返 `bound:false` 不 403），已绑定却被判未绑定→清缓存+跳绑定页，已绑定但无缓存→补拉资料；profile/home 资料改为始终 `getProfile()`（昵称编辑即时生效 + 解绑后 403 跳绑定页）。
+- **链路**：解绑→会话吊销→下次请求 401→刷新失败→跳登录→重新登录→首页 `useDidShow` 探 `bind-status` 未绑定→跳绑定页；或在前台切 tab 被 watcher 主动感知。绑定页本就支持重绑（名单保留 + 新码）。
+- **验证**：`build:weapp:clean` 成功（仅 webpack 既存 CSS 顺序/体积警告）；`dist` 无 `process.env` 残留（计数 0）；新逻辑入 `dist/common.js`。
 
 ### 修复：小程序审核整改——先体验后授权（2026-09-09）
 - **背景**：微信审核驳回"进入首页即强制授权登录"。按规范放开公开浏览，受限功能改登录引导弹窗。
@@ -39,6 +52,20 @@
 - **公告详情页守卫**（`src/pages/announcement/detail/index.tsx`）：`handleFavorite` / `handleMarkRead` 包 `guard()`，游客点收藏/已阅先弹 LoginModal，**不再发请求 → 不再 401 报错**。重复的 `import { ScrollView }` 顺手合并到顶部。
 - **`useFeedbackBadge` 游客态保护**（`src/hooks/useFeedbackBadge.ts`）：`refresh()` 开头加 `if (!isLoggedIn) return;`，避免 tabBar 预加载/他处被动调用此 hook 时发请求再 401 噪音。
 - **验证**：`tsc --noEmit` 退出码 0、错误 0；`build:weapp:clean` 成功，`process.env` 残留 0，`dist/app.js` 生成。
+
+### 修复：小程序审核整改（第二轮）——登录环节可取消、取消强制登录、弹窗改累计（2026-09-09）
+- **驳回原文**：「小程序【登录】登录环节，需为用户提供显著有效的可取消/拒绝或返回按钮，不得反复弹窗或强制用户进行登录才能体验，请整改后再提交审核」。
+- **登录页增加两个拒绝入口**（`pages/login/index.tsx` + `index.scss`）：本页 `navigationStyle: custom`，没有原生导航栏，此前进入后**无任何退出方式**（典型的"强制登录"）。
+  - 左上「返回」按钮：页面栈 >1 时 `navigateBack()`，栈底（被 reLaunch 直达）时 `switchTab` 首页；
+  - 底部「暂不登录，随便看看」次级按钮：直接以游客身份 `switchTab` 首页；
+  - 页内补充提示「不登录也可浏览天气、通知公告等公开内容」。
+  - 协议勾选区整行可点（链接 `stopPropagation`），点登录按钮未勾选时仍 toast 提示。
+- **取消自动弹窗**：`pages/schedule/index.tsx` 游客进入「时间轴」不再 `setShowLogin(true)` 自动弹窗（这是"反复弹窗"主因），只渲染引导卡；引导卡「登录 / 注册」按钮改为**直接 `navigateTo` 登录页**，去掉中间弹窗层。
+- **登录引导弹窗改为累计触发**（`hooks/useLoginGuard.ts`）：新增模块级 `privateClickCount` + `PRIVATE_CLICK_THRESHOLD = 3`。游客点私有模块前 2 次只出气泡 toast「该功能需登录后使用」，第 3 次才弹一次 LoginModal，弹完归零重新累计；登录成功调 `resetPrivateClickCount()` 清零。非 hook 场景（首页宫格/「全部课程」/今日课程占位）用导出的 `runPrivateClick(onThreshold)` 复用同一策略。
+- **点头像直达登录页**：「我的」页头像区游客态不再走 guard 弹窗，直接 `navigateTo` 登录页；游客头像占位字由「游」改为「登」，游客展示名由「未登录」改为「登录」。宿舍用电「去登录」按钮同样直达登录页。
+- **取消强制跳转登录页**：`utils/request.ts` 401 且 refresh 失败时，不再 `reLaunch('/pages/login/index')`，改为 `useAuthStore.getState().logout()` 降级为游客 + 只 toast 一次「登录状态已过期，可继续浏览公开内容」（并发 401 用 `sessionExpiredNotified` 节流，避免反复打扰）。删除未使用的 `redirectToLogin`。
+- **认证环节也给出口**：`pages/bind/index.tsx` 新增「暂不认证，先去逛逛」（保留登录态回首页）与「退出登录」；`useBindStatusWatcher` 检测到被管理员解绑后不再 `reLaunch` 绑定页，仅清缓存 + 提示一次（同一学号只提示一次）。`pages/profile-detail` 注销账号后由 `reLaunch` 登录页改为 `switchTab` 首页游客态。
+- **验证**：`tsc --noEmit` 0 错误；`rm -rf dist && npm run build:weapp` 成功（仅既存的 app-origin.wxss 体积与 NoAsyncChunks 警告）；产物 `process.env` 残留 0；新增文案均以 unicode 转义形式进入 `dist/pages/login/index.js`、`dist/pages/bind/index.js`、`dist/common.js`。
 
 ### 重构：个人资料详情页按用户示意图重排编辑布局
 - **初始全黑**：6 个只读行（学号/班级/学校/学院/专业/校园卡号）去掉 `detail-row-locked` 置灰类；`.detail-row-value` 由 `#666` 改 `#1a1a1a`。只读不可编辑的语义靠"无编辑入口"保证，不再用颜色暗示"禁用"。

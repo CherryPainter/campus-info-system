@@ -14,11 +14,14 @@ import { View, Text, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
 import * as userApi from '@/api/user';
+import { logout as logoutApi } from '@/api/auth';
 import { useUserStore } from '@/stores/userStore';
+import { useAuthStore } from '@/stores/authStore';
 import './index.scss';
 
 export default function BindPage() {
   const { setProfile } = useUserStore();
+  const { refreshToken, logout: clearAuth } = useAuthStore();
 
   const [schools, setSchools] = useState<string[]>([]);
   const [school, setSchool] = useState('');
@@ -49,6 +52,22 @@ export default function BindPage() {
       }
     })();
   }, []);
+
+  /** 暂不认证：保留登录态，以游客方式回首页浏览公开内容（认证环节必须可拒绝） */
+  const handleSkip = () => {
+    Taro.switchTab({ url: '/pages/home/index' });
+  };
+
+  /** 退出登录：清掉本地登录态后回首页（未拿到身份又不想认证时的出口） */
+  const handleLogout = async () => {
+    try {
+      await logoutApi(refreshToken || undefined);
+    } catch {
+      // 后端登出失败不阻塞本地退出
+    }
+    clearAuth();
+    Taro.switchTab({ url: '/pages/home/index' });
+  };
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -152,6 +171,16 @@ export default function BindPage() {
         <Text className="bind-hint">
           绑定码为一次性凭证，请向管理员获取；如无法通过认证，请联系管理员
         </Text>
+
+        {/* 合规出口：认证环节同样要提供可拒绝/退出的入口 */}
+        <View className="bind-foot">
+          <View className="bind-skip" hoverClass="bind-skip-hover" onClick={handleSkip}>
+            <Text className="bind-skip-text">暂不认证，先去逛逛</Text>
+          </View>
+          <View className="bind-logout" onClick={handleLogout}>
+            <Text className="bind-logout-text">退出登录</Text>
+          </View>
+        </View>
       </View>
     </View>
   );

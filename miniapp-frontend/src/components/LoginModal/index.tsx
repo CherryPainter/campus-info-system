@@ -35,8 +35,15 @@ export default function LoginModal({
 }: LoginModalProps) {
   if (!visible) return null;
 
+  // 关键修复：点"确定"跳登录页时必须同步关闭自身。
+  // 原因：跳走是异步的（Taro.navigateTo 异步），但导航成功后 source 页面组件实例常驻内存，
+  // useState(showLogin=true) 不会被重置；登录完返回后弹窗仍在屏幕上（典型场景：
+  // 首页/我的/时间轴任意 guard → 弹窗 → 确定 → 登录成功 → 弹窗还在）。
+  // 这里 onCancel = 各页面挂的关闭回调（home/profile/schedule 都接到 setXxxShowLogin(false)），
+  // 同步触发即可让返回后弹窗已消失。
   const handleConfirm = () => {
     onConfirm?.();
+    onCancel?.();
     Taro.navigateTo({ url: '/pages/login/index' });
   };
 

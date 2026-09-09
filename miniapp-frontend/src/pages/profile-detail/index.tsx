@@ -88,11 +88,12 @@ export default function ProfileDetail() {
         try {
           // 注销接口（DELETE /user/me），refresh_token 通过 query 传避免 body
           await deleteAccount(refreshToken || undefined);
-          // 后端已软删 is_active=False + 撤销 token；本地清空 + 跳登录页
+          // 后端已软删 is_active=False + 撤销 token；本地清空 + 回首页（游客态）
+          // 不 reLaunch 登录页：注销后应能继续以游客身份浏览公开内容
           clearAuth();
           Taro.showToast({ title: '账号已注销', icon: 'none' });
           setTimeout(() => {
-            Taro.reLaunch({ url: '/pages/login/index' });
+            Taro.switchTab({ url: '/pages/home/index' });
           }, 800);
         } catch (err) {
           const msg =

@@ -16,6 +16,8 @@ import CourseCard from '@/components/CourseCard';
 import NoticeCard from '@/components/NoticeCard';
 import QuickAccess from '@/components/QuickAccess';
 import LoginModal from '@/components/LoginModal';
+import { runPrivateClick } from '@/hooks/useLoginGuard';
+import { useBindStatusWatcher } from '@/hooks/useBindStatusWatcher';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
 import { splitCoursesToBigClasses } from '@/utils/scheduleBigClass';
@@ -40,6 +42,8 @@ export default function HomePage() {
   const { user, refreshToken, logout: clearAuth, isLoggedIn } = useAuthStore();
   const { profile, setProfile } = useUserStore();
   const [showLogin, setShowLogin] = useState(false);
+  // 身份状态主动监察：管理员解绑后清空身份缓存并跳绑定页（承接「解绑/收回身份」）
+  useBindStatusWatcher();
 
   const loadAll = async () => {
     setLoading(true);
@@ -66,13 +70,13 @@ export default function HomePage() {
             .then((r) => ({ ok: true as const, d: r.data.courses }))
             .catch(() => ({ ok: false as const, d: [] as ScheduleCourse[] }))
         : Promise.resolve({ ok: true as const, d: [] as ScheduleCourse[] }),
-      // 个人资料需登录：游客跳过，避免触发 401 跳登录
-      isLoggedIn && !profile
+      // 个人资料需登录：游客跳过；已登录始终拉最新（解绑后 403 触发跳绑定页、缓存清空）
+      isLoggedIn
         ? userApi
             .getProfile()
             .then((r) => ({ ok: true as const, d: r.profile }))
             .catch(() => ({ ok: false as const, d: null }))
-        : Promise.resolve({ ok: true as const, d: profile }),
+        : Promise.resolve({ ok: true as const, d: null }),
     ]);
     setWeather(wRes.ok ? wRes.d : null);
     setTempRange(hRes.ok ? hRes.d : null);
@@ -149,7 +153,8 @@ export default function HomePage() {
             <QuickAccess
               requireLogin={!isLoggedIn}
               publicKeys={PUBLIC_QUICK_KEYS}
-              onLogin={() => setShowLogin(true)}
+              // 累计策略：普通点击出气泡，累计够次数才弹登录弹窗（避免反复弹窗）
+              onLogin={() => runPrivateClick(() => setShowLogin(true))}
             />
 
             {/* 今日课程（需登录：游客展示登录引导占位） */}
@@ -158,7 +163,7 @@ export default function HomePage() {
                 <Text className="card-title">今日课程</Text>
                 <View
                   className="card-more card-more-btn"
-                  onClick={() => (isLoggedIn ? Taro.navigateTo({ url: '/pages/coursetable/index' }) : setShowLogin(true))}
+                  onClick={() => (isLoggedIn ? Taro.navigateTo({ url: '/pages/coursetable/index' }) : runPrivateClick(() => setShowLogin(true)))}
                 >
                   <Text className="card-more-text">全部课程</Text>
                   <Text className="card-more-arrow">›</Text>
@@ -181,7 +186,7 @@ export default function HomePage() {
                   ))
                 )
               ) : (
-                <View className="home-login-tip" onClick={() => setShowLogin(true)}>
+                <View className="home-login-tip" onClick={() => runPrivateClick(() => setShowLogin(true))}>
                   <Text className="home-login-tip-text">登录后查看今日课程</Text>
                   <Text className="home-login-tip-arrow">›</Text>
                 </View>

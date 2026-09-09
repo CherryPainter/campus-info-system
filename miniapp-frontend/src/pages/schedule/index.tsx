@@ -8,7 +8,7 @@ import { setTabIndex, setTabBarHidden } from '@/utils/tabBarState';
 import * as scheduleApi from '@/api/schedule';
 import * as notificationApi from '@/api/notification';
 import { useAuthStore } from '@/stores/authStore';
-import LoginModal from '@/components/LoginModal';
+import { useBindStatusWatcher } from '@/hooks/useBindStatusWatcher';
 import type { NotificationEvent, ScheduleCourse, ScheduleSemester } from '@/types/api';
 import { tsToHm } from '@/utils/date';
 import TimelineItem, { type CourseColorKey, type TimelineStatus } from '@/components/TimelineItem';
@@ -41,8 +41,8 @@ function formatSemesterLabel(name: string): string {
 
 export default function SchedulePage() {
   const { isLoggedIn } = useAuthStore();
-  // 游客访问「时间轴」：弹出登录引导
-  const [showLogin, setShowLogin] = useState(false);
+  // 身份状态主动监察：管理员解绑后清空身份缓存（承接「解绑/收回身份」）
+  useBindStatusWatcher();
   const [loading, setLoading] = useState(true);
   const [statusBarHeight, setStatusBarHeight] = useState(20);
   const [courses, setCourses] = useState<ScheduleCourse[]>([]);
@@ -216,11 +216,10 @@ export default function SchedulePage() {
     } catch {
       // 兜底 20
     }
-    // 游客：不拉取需登录的课表数据，直接弹登录引导
-    if (!isLoggedIn) {
-      setShowLogin(true);
-      return;
-    }
+    // 合规（微信审核「不得反复弹窗或强制用户登录才能体验」）：
+    // 游客进入时间轴**不再自动弹登录弹窗**，只渲染下方引导卡；
+    // 是否登录由用户主动点击「登录 / 注册」决定，取消后不再打扰。
+    if (!isLoggedIn) return;
     loadAll();
     loadReminders();
   });
@@ -398,11 +397,17 @@ export default function SchedulePage() {
         <Text className="schedule-nav-title">时间轴</Text>
         <View className="schedule-guard">
           <Text className="schedule-guard-text">登录后查看你的课表时间轴</Text>
-          <View className="schedule-guard-btn" onClick={() => setShowLogin(true)}>
+          {/* 明确的登录 CTA：直接进登录页，不套"登录弹窗"这层中间层 */}
+          <View
+            className="schedule-guard-btn"
+            onClick={() => navigateTo({ url: '/pages/login/index' })}
+          >
             <Text className="schedule-guard-btn-text">登录 / 注册</Text>
           </View>
+          <Text className="schedule-guard-tip">
+            也可以先不登录，回首页浏览天气、通知公告等公开内容
+          </Text>
         </View>
-        <LoginModal visible={showLogin} onCancel={() => setShowLogin(false)} />
       </View>
     );
   }

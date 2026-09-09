@@ -12,6 +12,7 @@ import {
   Form,
   Input,
   Select,
+  Switch,
   Popconfirm,
   Avatar,
   Tooltip,
@@ -157,8 +158,18 @@ export default function UserManagement() {
       username: user.username,
       role: user.role,
       is_primary: user.is_primary,
+      is_active: user.is_active,
     });
     setEditModalVisible(true);
+  };
+
+  // 能否切换账号启用状态：主管理员不可被禁用（避免锁死管理入口），
+  // 当前登录者不可禁用自己；其余用户（含微信端学生）均可禁用/启用。
+  const canToggleActive = (user: User | null) => {
+    if (!user) return false;
+    if (user.is_primary) return false;
+    if (String(user.id) === String(currentUser?.id)) return false;
+    return true;
   };
 
   // 打开重置密码弹窗
@@ -665,6 +676,19 @@ export default function UserManagement() {
                 <Option value={false}>否</Option>
                 <Option value={true}>是</Option>
               </Select>
+            </Form.Item>
+          )}
+
+          {/* 启用状态：禁用账号使其立即无法登录（含吊销全部会话），重新开启即可恢复。
+              放在编辑弹窗内，不占列表列宽。主管理员与当前登录者自身不可禁用，避免锁死管理入口。 */}
+          {selectedUser && canToggleActive(selectedUser) && (
+            <Form.Item
+              label="启用状态"
+              name="is_active"
+              valuePropName="checked"
+              tooltip="关闭后该账号立即被禁用（含吊销其全部活跃会话），无法再登录；重新开启即可恢复"
+            >
+              <Switch checkedChildren="启用" unCheckedChildren="停用" />
             </Form.Item>
           )}
 

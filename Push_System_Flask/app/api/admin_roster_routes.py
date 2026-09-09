@@ -295,6 +295,25 @@ def delete_student(roster_id):
     return api_success(message="已删除")
 
 
+@admin_roster_bp.route("/students/<int:roster_id>/unbind", methods=["POST"])
+@admin_required
+def unbind_student(roster_id):
+    """管理端解绑/收回身份：清空该名单绑定用户的身份快照，保留名单并重发绑定码。
+
+    与「删除名单」区分：删除会移除白名单记录（已绑定用户身份将被孤儿化、无法自行解绑）；
+    解绑则保留白名单、仅收回身份并立即重发绑定码，学生可一步重新绑定同一条名单。
+    """
+    code, err = StudentRosterService.unbind(roster_id)
+    if err:
+        status = 404 if ("不存在" in err or "未绑定" in err) else 400
+        return api_error(message=err, http_status=status)
+    # data 包裹：前端统一从 res.data 取值
+    return api_success(
+        data={"code": code},
+        message="已收回身份，名单保留并已重发绑定码，学生可重新绑定",
+    )
+
+
 # ==================== 一次性绑定码 ====================
 
 

@@ -1,13 +1,15 @@
 import Taro from '@tarojs/taro';
 
-import { clearTokens, getAccessToken, getRefreshToken, isAccessTokenExpiringSoon, setTokens } from './storage';
+import { getAccessToken, getRefreshToken, isAccessTokenExpiringSoon, setTokens } from './storage';
+import { useUserStore } from '@/stores/userStore';
+import { useAuthStore } from '@/stores/authStore';
 
 /**
  * 统一请求层（全项目唯一出口）
  *
  * - 自动注入 `Authorization: Bearer <accessToken>`
  * - 401 时自动用 refreshToken 换新（单飞锁防并发），成功后重放原请求
- * - refresh 失败 / 无 refreshToken → 清空本地 Token 并回到登录页
+ * - refresh 失败 → 降级为游客 + 只提示一次（**不强制跳转登录页**，合规要求）
  * - 所有错误归一为 ApiError（用户可读中文消息），页面无需感知底层 HTTP
  *
  * 使用：
@@ -139,11 +141,38 @@ export async function ensureFreshAccessToken(force = false): Promise<string | nu
   return getAccessToken();
 }
 
-function redirectToLogin(): void {
-  clearTokens();
-  Taro.reLaunch({ url: '/pages/login/index' });
+/** 会话过期提示节流标记：并发请求同时 401 时只提示一次，避免反复打扰 */
+let sessionExpiredNotified = false;
+
+/**
+ * 会话过期处理（合规改造）
+ *
+ * 旧行为：清空令牌 + reLaunch 到登录页 —— 属于「强制用户登录才能继续使用」，
+ * 且刷新失败时多个并发请求会连续触发跳转，违反微信审核
+ * 「不得反复弹窗或强制用户进行登录才能体验」。
+ *
+ * 新行为：仅把本地登录态降级为游客 + 提示一次（toast，非弹窗），
+ * 用户可继续浏览天气/通知公告等公开内容；需要登录的功能在用户**主动点击**时
+ * 由各页面 LoginModal 引导，登录后即可正常使用。
+ */
+function handleSessionExpired(): void {
+  try {
+    useAuthStore.getState().logout();
+  } catch {
+    /* store 不可用时忽略：令牌已失效，后续请求自然走游客分支 */
+  }
+  if (sessionExpiredNotified) return;
+  sessionExpiredNotified = true;
+  Taro.showToast({ title: '登录状态已过期，可继续浏览公开内容', icon: 'none', duration: 2000 });
+  setTimeout(() => {
+    sessionExpiredNotified = false;
+  }, 3000);
 }
 
+/** 登录成功后重置过期提示节流（登录页调用） */
+export function resetSessionExpiredNotice(): void {
+  sessionExpiredNotified = false;
+}
 /** 身份未绑定防抖标记：多个业务请求同时 403 时只触发一次跳转 */
 let isRedirectingToBind = false;
 
@@ -151,6 +180,12 @@ let isRedirectingToBind = false;
 function redirectToBind(): void {
   if (isRedirectingToBind) return;
   isRedirectingToBind = true;
+  // 清空本地身份缓存：解绑/未绑定后，"我的"/校园卡/UserInfoCard 不应再显旧学号班级
+  try {
+    useUserStore.getState().setProfile(null);
+  } catch {
+    /* 忽略 */
+  }
   Taro.reLaunch({ url: '/pages/bind/index' });
   setTimeout(() => {
     isRedirectingToBind = false;
@@ -211,14 +246,13 @@ export async function request<T = unknown>(options: RequestOptions): Promise<T> 
       return request<T>({ ...options, _retried: true });
     }
     // 区分「会话过期」与「游客 / 已登出」：
-    // - 本地曾持有令牌（登录态失效）→ 清令牌并跳登录页，属正常会话回收；
-    // - 本地无任何令牌（游客首次进入 / 已登出）→ 不强制跳转，交由调用方 .catch
-    //   展示游客态或弹登录引导，满足「先体验后授权」审核规范，避免一进首页就被弹登录。
+    // - 本地曾持有令牌（登录态失效）→ 降级为游客并只提示一次，**不强制跳登录页**；
+    // - 本地无任何令牌（游客首次进入 / 已登出）→ 不跳转，交由调用方 .catch
+    //   展示游客态或弹登录引导，满足「先体验后授权」审核规范，避免一进页面就被弹登录。
     if (!getAccessToken() && !getRefreshToken()) {
       throw new ApiError('请先登录后查看', 401);
     }
-    clearTokens();
-    Taro.reLaunch({ url: '/pages/login/index' });
+    handleSessionExpired();
     throw new ApiError('登录已过期，请重新登录', 401);
   }
 

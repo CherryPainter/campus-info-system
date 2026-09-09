@@ -500,3 +500,58 @@ class StudentRosterService:
             return False
         finally:
             session.close()
+
+    @staticmethod
+    def unbind(roster_id):
+        """
+        管理端「解绑/收回身份」：清空已绑定该名单条目的用户身份快照，保留名单条目本身
+        并重发一次性绑定码，使其可立即重新绑定（对应小程序「重新绑定身份」诉求）。
+
+        - 按 (school, student_number) 定位绑定用户（与 _merge_binding / 绑定门禁同键）；
+        - 清空 student_profiles 身份字段（学号/学校/学院/专业/班级/年级/姓名/校园卡号），
+          用户随即落到「未绑定」，被 student_bound_required 拦截并走绑定流程；
+        - 吊销该用户全部活跃会话（强制重新登录，确保小程序端立即反映未绑定状态）；
+        - 名单条目保留，bind_code_hash 重置为新码（明文随本次返回，供管理员私下发放）；
+        - 若名单未被绑定（无匹配 profile）返回 (None, "该名单未被任何用户绑定")，不报错。
+        """
+        session = get_db()
+        try:
+            row = session.query(StudentRoster).filter_by(id=roster_id).first()
+            if not row:
+                return None, "名单条目不存在"
+            profile = (
+                session.query(StudentProfile)
+                .filter_by(school=row.school, student_number=row.student_number)
+                .first()
+            )
+            if not profile or profile.user_id is None:
+                return None, "该名单未被任何用户绑定"
+            # 清空身份字段（保留昵称/手机号/电表cookie等个人数据，避免误删配置）
+            profile.student_number = None
+            profile.school = None
+            profile.campus_card_number = None
+            profile.real_name = None
+            profile.college = None
+            profile.major = None
+            profile.class_name = None
+            profile.grade = None
+            # 吊销该用户全部会话，强制重新登录以走绑定流程
+            try:
+                from app.services.session_service import session_service
+
+                session_service.delete_all_user_sessions(
+                    profile.user_id, reason="admin_unbind"
+                )
+            except Exception as exc:
+                logger.warning(f"[StudentRoster] 解绑吊销会话失败（忽略）: {exc}")
+            # 保留名单，重发一次性绑定码
+            code = generate_code()
+            row.bind_code_hash = _hash_code(code)
+            session.commit()
+            return code, None
+        except Exception as exc:
+            session.rollback()
+            logger.error(f"[StudentRoster] 解绑身份失败: {exc}")
+            return None, "解绑失败，请稍后重试"
+        finally:
+            session.close()
