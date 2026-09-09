@@ -183,8 +183,9 @@ export default function ProfilePage() {
         } catch {
           // 后端登出失败不阻塞本地退出
         }
+        // 仅清空本地登录态，留在「我的」页自动渲染游客态（引导卡 + 登录入口），
+        // 不要 reLaunch 到登录页 —— 那样等于"退出即强登录"，违反"先体验后授权"合规
         clearAuth();
-        Taro.reLaunch({ url: '/pages/login/index' });
       },
     });
   };
