@@ -92,6 +92,13 @@
 - **效果**：登录成功未绑定 → 登录页消失、仅余一个绑定页；放弃绑定点原生返回 → 回到上一 Tab 页、`useDidShow` 的 watcher 立即回退游客态，**不再弹出第二个绑定页**。
 - **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 成功（20.41s，`Compiled successfully`）；`dist` 中 `process.env` 残留 0。
 
+### 修复：会话解绑场景的"已登录未绑定"盲区回收（2026-09-09 第十五轮）
+- **背景**：第十四轮已让拦截器不再自动跳转绑定页，但 `useBindStatusWatcher` 仅在 Tab 页 `useDidShow` 触发回收。若用户停在**非 Tab 子页**（如 coursetable 等经 `navigateTo` 打开的页面）时被解绑 / 未绑定，watcher 永不触发，会卡在"已登录却啥都干不了"的半死状态。
+- **改动**：`utils/request.ts` 的 `handleStudentNotBound()`（命中 403 `STUDENT_NOT_BOUND` 时）在"清空本地身份缓存"之外，新增**把本地登录态降级为游客**（`useAuthStore.logout()`，**不跳转页面**），并节流提示一次「身份未绑定，已退出登录」。该降级对任意页面（含非 Tab 子页）均生效，与 watcher 形成双保险；因不跳转、不 `navigateTo`，绝不引入第十四轮修掉的绑定页叠加问题。
+- **注意**：`getBindStatus` 本身返回 200 `{bound:false}`，不会触发本分支；仅真正业务请求 403 时才降级，不会误伤已绑定用户。
+- **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 成功（21.06s，`Compiled successfully`）；`dist` 中 `process.env` 残留 0。
+- **同步**：`小程序审核说明_草稿.md` 第 5 点补充"绑定页以替换方式进入、返回不退回已登录登录页、不反复弹身份认证页"。
+
 ### 重构：个人资料详情页按用户示意图重排编辑布局
 - **初始全黑**：6 个只读行（学号/班级/学校/学院/专业/校园卡号）去掉 `detail-row-locked` 置灰类；`.detail-row-value` 由 `#666` 改 `#1a1a1a`。只读不可编辑的语义靠"无编辑入口"保证，不再用颜色暗示"禁用"。
 - （本条初版曾实现为「hero 变身编辑表单」，**已被下方「编辑表单由 hero 移入卡片」条目取代**，最终编辑交互收敛在「编辑信息」卡内。）

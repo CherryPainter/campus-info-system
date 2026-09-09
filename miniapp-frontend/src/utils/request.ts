@@ -173,6 +173,9 @@ function handleSessionExpired(): void {
 export function resetSessionExpiredNotice(): void {
   sessionExpiredNotified = false;
 }
+/** 身份未绑定提示节流标记：并发请求同时 403 时只提示一次 */
+let studentNotBoundNotified = false;
+
 /**
  * 403 code=STUDENT_NOT_BOUND 时的统一处理
  *
@@ -183,16 +186,35 @@ export function resetSessionExpiredNotice(): void {
  *   （替换登录页，登录页随之消失）统一负责；
  * - 会话中被解绑 / 其它场景下「已登录未绑定」的回收，由 `useBindStatusWatcher`
  *   （Tab 页 `useDidShow`）统一降级为游客态负责。
- * 因此拦截器只负责：清空本地身份缓存（避免「我的」页显旧学号班级）+ 抛出可读错误，
- * 由调用方按游客态 / 登录引导处理，不再参与任何页面跳转，从根上杜绝绑定页叠加。
+ *
+ * 因此拦截器只做两件事（**均不跳转页面**，从根上杜绝绑定页叠加）：
+ * 1) 清空本地身份缓存（避免「我的」页显旧学号班级）；
+ * 2) 把本地登录态**降级为游客**——服务端既返回 403，说明该 token 已无任何业务访问权，
+ *    本地与之保持一致，避免"已登录却啥都干不了"的半死状态。该降级对停在任意页面
+ *    （含非 Tab 子页）的用户都生效，弥补 `useBindStatusWatcher` 仅在 Tab 页 `useDidShow`
+ *    触发的盲区；降级后游客可继续浏览公开内容、需要时重新登录并认证。
  */
 function handleStudentNotBound(): void {
-  // 清空本地身份缓存：解绑 / 未绑定后，"我的"/校园卡不应再显旧学号班级
+  // 1) 清空本地身份缓存：解绑 / 未绑定后，"我的"/校园卡不应再显旧学号班级
   try {
     useUserStore.getState().setProfile(null);
   } catch {
     /* 忽略 */
   }
+  // 2) 已登录则降级为游客（不跳转、不弹窗）
+  try {
+    if (useAuthStore.getState().isLoggedIn) {
+      useAuthStore.getState().logout();
+    }
+  } catch {
+    /* 忽略 */
+  }
+  if (studentNotBoundNotified) return;
+  studentNotBoundNotified = true;
+  Taro.showToast({ title: '身份未绑定，已退出登录', icon: 'none', duration: 2000 });
+  setTimeout(() => {
+    studentNotBoundNotified = false;
+  }, 3000);
 }
 
 export async function request<T = unknown>(options: RequestOptions): Promise<T> {
