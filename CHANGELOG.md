@@ -18,11 +18,12 @@
 - **恢复方式**：`.env` 设置 `COURSE_SPIDER_SCHEDULE_ENABLED=true` 后重启服务。
 - **验证**：`py_compile` 四文件全部通过；`is_spider_schedule_enabled` 定义（`config.py:25`）与使用点（`crawl_task_service.py` / `scheduler.py`）齐备；当前 `.env` 未设置该变量 → 取默认 `false`，定时爬取处于停用态（未启动服务实测调度器行为，仅静态核查）。
 
-### 调整：反馈详情页移除「联系方式」展示（小程序端，2026-09-10）
-- **背景**：反馈详情页展示了 `detail.contact`（学生提交时填写的联系方式），按需求不再展示。
-- **方案**（`src/pages/feedback/detail/index.tsx`）：删除「联系方式」条件渲染行（`detail.contact ? <View className="fb-detail-row">…`）。提交页 `submit` 的「联系方式（选填）」输入框**保留不动**（仍可填写并提交，仅详情页不再回显）。
-- **说明**：`fb-detail-row`/`fb-detail-key`/`fb-detail-val` 样式被「提交时间」行复用，故 SCSS 未改动。
-- **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 成功（17.73s）；`dist` 无 `process.env` 残留（0）；`dist/pages/feedback/detail/index.js` 已无 `contact`/「联系方式」，提交页 `submit/index.js` 仍保留该字段。
+### 调整：反馈移除「联系方式」——提交页/管理端不再收集与展示（2026-09-10）
+- **背景**：按「涉及索要账号/联系方式的一律不要」的原则移除反馈模块的联系方式。用户澄清要删的是**提交页**的「联系方式（选填）」输入框（首轮按「反馈详情页」字面误删的是详情页展示行，本轮改正并把管理端同类展示一并移除）。
+- **小程序端**（`src/pages/feedback/submit/index.tsx` + `index.scss`）：删除「联系方式（选填）」输入框（`Input` + `contact` state + 提交参数）；`import` 去掉 `Input`；表单字段注释同步；删除仅该输入框使用的孤儿样式 `.fb-input`。（详情页展示行已于同日早些的提交移除；`fb-detail-row`/`fb-detail-key`/`fb-detail-val` 被「提交时间」行复用故保留。）
+- **管理端**（`admin-frontend/src/pages/Feedback.tsx`）：删除详情抽屉的「联系方式」`Descriptions.Item`（原 `current.contact` 条件渲染）；头部注释同步。
+- **保留说明**：API 层 `FeedbackCreateParams.contact`（可选）与后端 `feedbacks.contact` 字段**保留不动**（历史数据与接口契约不受影响），仅前端不再采集与展示。
+- **验证**：小程序 `tsc --noEmit` 0、`build:weapp` 成功、`dist` 无 `process.env` 残留（0）、`dist/pages/feedback` 下「联系方式」计数 0、`.fb-input` 产物计数 0；管理端 `tsc --noEmit` 0、`vite build` 成功、产物「联系方式」仅剩用户协议「十、联系方式」章节（法律文本，保留）。
 
 ### 调整：登录引导改纯气泡提示 + 绑定状态静默回收 + 首页绑定后补拉（小程序端，2026-09-10）
 - **背景**：审核整改后遗留三处体验粗糙——①游客点受限功能用「累计 3 次弹 LoginModal」，交互啰嗦且弹窗易被判「反复弹窗」；②上次放弃绑定后再次打开小程序，持久化登录态撞 403 会弹「已退出登录」，用户刚进 app 无「正在使用」体感却被打扰；③登录页面确认已绑定后返回首页，「今日课程」为空需手动下拉刷新。
