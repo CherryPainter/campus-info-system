@@ -18,6 +18,11 @@
 - **恢复方式**：`.env` 设置 `COURSE_SPIDER_SCHEDULE_ENABLED=true` 后重启服务。
 - **验证**：`py_compile` 四文件全部通过；`is_spider_schedule_enabled` 定义（`config.py:25`）与使用点（`crawl_task_service.py` / `scheduler.py`）齐备；当前 `.env` 未设置该变量 → 取默认 `false`，定时爬取处于停用态（未启动服务实测调度器行为，仅静态核查）。
 
+### 清理：删除废弃的 `profile-edit` 页（小程序端，2026-09-10）
+- **背景**：`miniapp-frontend/src/pages/profile-edit/` 自 2026-09-07 个人资料页改为「原地编辑」（`profile-detail`）后**已无入口且从未在 `app.config.ts` 注册**——小程序内不可达，属遗留死代码（排查「联系方式」文案时被它误导过一次）。
+- **改动**：删除该目录 3 个文件（`index.config.ts`/`index.scss`/`index.tsx`），同步更新 `settings/index.tsx` 注释中对该页的表述（「源码亦已删除，可在历史 git 中找回」）。
+- **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 成功；产物 `pages/` 22 项、不含 `profile-edit`（其本就不参与打包）；`dist` 无 `process.env` 残留（0）。
+
 ### 调整：反馈移除「联系方式」——提交页/管理端不再收集与展示（2026-09-10）
 - **背景**：按「涉及索要账号/联系方式的一律不要」的原则移除反馈模块的联系方式。用户澄清要删的是**提交页**的「联系方式（选填）」输入框（首轮按「反馈详情页」字面误删的是详情页展示行，本轮改正并把管理端同类展示一并移除）。
 - **小程序端**（`src/pages/feedback/submit/index.tsx` + `index.scss`）：删除「联系方式（选填）」输入框（`Input` + `contact` state + 提交参数）；`import` 去掉 `Input`；表单字段注释同步；删除仅该输入框使用的孤儿样式 `.fb-input`。（详情页展示行已于同日早些的提交移除；`fb-detail-row`/`fb-detail-key`/`fb-detail-val` 被「提交时间」行复用故保留。）
