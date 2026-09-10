@@ -101,13 +101,6 @@ export default function FeedbackDetailPage() {
             </View>
           ) : null}
 
-          {detail.contact ? (
-            <View className="fb-detail-row">
-              <Text className="fb-detail-key">联系方式</Text>
-              <Text className="fb-detail-val">{detail.contact}</Text>
-            </View>
-          ) : null}
-
           <View className="fb-detail-row">
             <Text className="fb-detail-key">提交时间</Text>
             <Text className="fb-detail-val">{detail.created_at}</Text>
