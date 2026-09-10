@@ -8,6 +8,12 @@
 
 > 本次发布含管理端「解绑/收回身份」新能力、小程序端身份状态主动监察，以及审核整改/匿名会话令牌/公开接口/登录守卫等增强（覆盖 2026-09-08 ~ 09-09 累积改动）。
 
+### 调整：反馈详情页移除「联系方式」展示（小程序端，2026-09-10）
+- **背景**：反馈详情页展示了 `detail.contact`（学生提交时填写的联系方式），按需求不再展示。
+- **方案**（`src/pages/feedback/detail/index.tsx`）：删除「联系方式」条件渲染行（`detail.contact ? <View className="fb-detail-row">…`）。提交页 `submit` 的「联系方式（选填）」输入框**保留不动**（仍可填写并提交，仅详情页不再回显）。
+- **说明**：`fb-detail-row`/`fb-detail-key`/`fb-detail-val` 样式被「提交时间」行复用，故 SCSS 未改动。
+- **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 成功（17.73s）；`dist` 无 `process.env` 残留（0）；`dist/pages/feedback/detail/index.js` 已无 `contact`/「联系方式」，提交页 `submit/index.js` 仍保留该字段。
+
 ### 调整：登录引导改纯气泡提示 + 绑定状态静默回收 + 首页绑定后补拉（小程序端，2026-09-10）
 - **背景**：审核整改后遗留三处体验粗糙——①游客点受限功能用「累计 3 次弹 LoginModal」，交互啰嗦且弹窗易被判「反复弹窗」；②上次放弃绑定后再次打开小程序，持久化登录态撞 403 会弹「已退出登录」，用户刚进 app 无「正在使用」体感却被打扰；③登录页面确认已绑定后返回首页，「今日课程」为空需手动下拉刷新。
 - **①登录引导简化**（`hooks/useLoginGuard.ts` + `home`/`profile`/`announcement/detail`/`login`）：游客点受限功能**只弹气泡提示**（`toastLoginRequired`），移除模块级 `privateClickCount`/`PRIVATE_CLICK_THRESHOLD`/`resetPrivateClickCount`/`runPrivateClick` 与 hook 返回的 `modalProps`；相应移除 profile 页、公告详情页的 `LoginModal` 用法（首页今日课程占位卡的弹窗入口保留）。登录入口由页面显式按钮/卡片（我的页头像区、宿舍用电「去登录」）承担。
