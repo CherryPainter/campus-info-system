@@ -774,9 +774,14 @@ export default function WeatherPage() {
       }
 
       // 时间文字（与图标共享同一 px 中心，严格对齐）
+      // 必须显式重置对齐状态：上一点的降水角标把 textAlign 改为 left、
+      // textBaseline 改为 bottom 且未恢复（ctx 状态会跨 clearRect 存活），
+      // 不重置的话本标签以左边缘对齐 px，视觉上"时间右移、图标偏左"
       const t = h.fxTime || h.fx_time || '';
       const hour = t.includes(' ') ? t.split(' ')[1].slice(0, 5) : t.slice(11, 16);
       const label = isNow ? '现在' : hour;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
       ctx.fillStyle = isNow ? '#fff' : isActive ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.5)';
       ctx.font = isEmphasized ? '600 12px sans-serif' : '400 11px sans-serif';
       ctx.fillText(label, px, textY);
