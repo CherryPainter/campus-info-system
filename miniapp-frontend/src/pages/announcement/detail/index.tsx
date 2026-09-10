@@ -6,7 +6,6 @@ import * as announcementsApi from '@/api/announcements';
 import type { AnnouncementAttachment, AnnouncementDetail } from '@/types/api';
 import { API_BASE_URL, ensureFreshAccessToken } from '@/utils/request';
 import { useAuthStore } from '@/stores/authStore';
-import LoginModal from '@/components/LoginModal';
 import { useLoginGuard } from '@/hooks/useLoginGuard';
 import dayjs from 'dayjs';
 
@@ -85,8 +84,8 @@ export default function AnnouncementDetail() {
   const router = useRouter();
   const id = Number(router.params.id);
   const { isLoggedIn } = useAuthStore();
-  // 登录守卫：收藏/已阅等需登录的操作前拦截游客态，避免发请求再 401 报错
-  const { guard, modalProps } = useLoginGuard();
+  // 登录守卫：收藏/已阅等需登录的操作前拦截游客态（气泡提示），避免发请求再 401 报错
+  const { guard } = useLoginGuard();
 
   const [detail, setDetail] = useState<AnnouncementDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -343,9 +342,6 @@ export default function AnnouncementDetail() {
           </View>
         </>
       )}
-
-      {/* 登录引导弹窗：游客态点收藏/已阅时弹出（useLoginGuard 管理显隐） */}
-      <LoginModal {...modalProps} />
     </View>
   );
 }

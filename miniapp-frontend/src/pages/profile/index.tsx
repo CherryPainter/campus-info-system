@@ -13,7 +13,6 @@ import { useUserStore } from '@/stores/userStore';
 import { setTabIndex } from '@/utils/tabBarState';
 import CampusCard from '@/components/CampusCard';
 import FeedbackBadge from '@/components/FeedbackBadge';
-import LoginModal from '@/components/LoginModal';
 import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
 import { useLoginGuard } from '@/hooks/useLoginGuard';
 import { useBindStatusWatcher } from '@/hooks/useBindStatusWatcher';
@@ -31,8 +30,8 @@ import './index.scss';
 export default function ProfilePage() {
   const { user, refreshToken, logout: clearAuth, isLoggedIn } = useAuthStore();
   const { profile, setProfile } = useUserStore();
-  // 登录守卫：游客态点击受限功能时弹 LoginModal
-  const { guard, modalProps } = useLoginGuard();
+  // 登录守卫：游客态点击受限功能时仅气泡提示
+  const { guard } = useLoginGuard();
   // 身份状态主动监察：管理员解绑后清空身份缓存并跳绑定页（承接「解绑/收回身份」）
   useBindStatusWatcher();
   // 反馈未读红点（已受理未查看的反馈数）
@@ -115,7 +114,8 @@ export default function ProfilePage() {
     } catch {
       // 兜底 20
     }
-    // 游客态：保留完整 UI（"先体验后授权"），仅数据用占位、点击用 LoginModal 引导登录
+    // 游客态：保留完整 UI（"先体验后授权"），数据用占位、受限功能点击气泡提示，
+    // 登录入口为头像区点击 / 宿舍用电卡片「去登录」按钮
     refreshPrivate();
   });
 
@@ -411,9 +411,6 @@ export default function ProfilePage() {
           <Text className="logout-text">退出登录</Text>
         </View>
       ) : null}
-
-      {/* 登录引导弹窗：游客态点击受限功能时弹出（useLoginGuard 管理显隐） */}
-      <LoginModal {...modalProps} />
     </View>
   );
 }

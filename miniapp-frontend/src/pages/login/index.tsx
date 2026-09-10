@@ -5,7 +5,6 @@ import Taro from '@tarojs/taro';
 import { login as loginApi } from '@/api/auth';
 import * as userApi from '@/api/user';
 import { wxLogin } from '@/utils/auth';
-import { resetPrivateClickCount } from '@/hooks/useLoginGuard';
 import { resetBindNotice } from '@/hooks/useBindStatusWatcher';
 import { beginBindGuide, finishBindGuide } from '@/utils/bindGuard';
 import { useAuthStore } from '@/stores/authStore';
@@ -55,8 +54,7 @@ export default function LoginPage() {
         expiresIn: result.expires_in,
         user: result.user,
       });
-      // 登录成功：清零"私有模块点击累计"、解除绑定提示节流
-      resetPrivateClickCount();
+      // 登录成功：解除绑定提示节流
       resetBindNotice();
 
       // 进入绑定引导期（先置位，覆盖下面的 await 窗口）：
