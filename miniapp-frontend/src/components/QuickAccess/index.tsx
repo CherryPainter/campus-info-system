@@ -20,7 +20,6 @@ export const DEFAULT_ITEMS: QuickItem[] = [
   { key: 'classroom', label: '空闲教室', icon: 'kongxianjiaoshi', action: 'page', pagePath: '/pages/classroom/index' },
   { key: 'weather', label: '天气预报', icon: 'tianqi', action: 'page', pagePath: '/pages/weather/index' },
   { key: 'calendar2', label: '校历查询', icon: 'rili', action: 'page', pagePath: '/pages/calendar/index' },
-  { key: 'more', label: '更多功能', icon: 'gengduogongneng_24' },
 ];
 
 interface QuickAccessProps {
@@ -57,10 +56,10 @@ function handleClick(item: QuickItem, ctx?: QuickAccessProps): void {
 }
 
 /**
- * 常用功能 8 宫格（原型图核心模块）
+ * 常用功能宫格（原型图核心模块）
  * - 点击有真实业务的（课表/电量/通知公告/天气）跳对应页面
  * - 学校侧尚未接入的（校园卡/空闲教室/校历查询）跳各自占位页，页面空态提示"暂无最新数据"
- * - 仅"更多功能"暂无独立页，点击 toast 提示
+ * - 原「更多功能」为无落地页的占位项（点击仅 toast 提示），已移除
  */
 export default function QuickAccess({ items = DEFAULT_ITEMS, title = '常用功能', requireLogin, publicKeys, onLogin }: QuickAccessProps) {
   const ctx: QuickAccessProps = { requireLogin, publicKeys, onLogin };
@@ -68,7 +67,6 @@ export default function QuickAccess({ items = DEFAULT_ITEMS, title = '常用功�
     <View className="card quick-access">
       <View className="card-header">
         <Text className="card-title">{title}</Text>
-        <Text className="card-more">自定义</Text>
       </View>
       <View className="quick-grid">
         {items.map((item) => (
