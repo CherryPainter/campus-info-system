@@ -8,6 +8,16 @@
 
 > 本次发布含管理端「解绑/收回身份」新能力、小程序端身份状态主动监察，以及审核整改/匿名会话令牌/公开接口/登录守卫等增强（覆盖 2026-09-08 ~ 09-09 累积改动）。
 
+### 调整：停用课表爬虫定时爬取（后端，2026-09-10）
+- **背景**：用户 2026-09-10 决定停用课表定时爬取（与教务系统账密登录失效的排查相关）。爬虫模块全部结构（`main.py` / `spider_runner` / `executors` / `crawl_task_service` 等）保留，仅关闭自动触发，可随时恢复。
+- **方案**：
+  - `core/config.py` 新增 `is_spider_schedule_enabled()`：读环境变量 `COURSE_SPIDER_SCHEDULE_ENABLED`（默认 `false`），优先级高于 `module_config` 表中可能遗留的 `spider_enabled=true`。
+  - `model/module_config.py`：`spider_enabled` 默认值 `true` → `false`。
+  - `services/crawl_task_service.py`：`dispatch_scheduled_crawls` 开头加总闸，未启用则记录日志并 `return`，不再拾取定时爬取任务。
+  - `tasks/scheduler.py`：`start_scheduler` / `reload_scheduler` 均以 `(spider_enabled and spider_schedule_enabled)` 决定是否注册爬虫定时任务，并区分跳过原因日志。
+- **恢复方式**：`.env` 设置 `COURSE_SPIDER_SCHEDULE_ENABLED=true` 后重启服务。
+- **验证**：`py_compile` 四文件全部通过；`is_spider_schedule_enabled` 定义（`config.py:25`）与使用点（`crawl_task_service.py` / `scheduler.py`）齐备；当前 `.env` 未设置该变量 → 取默认 `false`，定时爬取处于停用态（未启动服务实测调度器行为，仅静态核查）。
+
 ### 调整：反馈详情页移除「联系方式」展示（小程序端，2026-09-10）
 - **背景**：反馈详情页展示了 `detail.contact`（学生提交时填写的联系方式），按需求不再展示。
 - **方案**（`src/pages/feedback/detail/index.tsx`）：删除「联系方式」条件渲染行（`detail.contact ? <View className="fb-detail-row">…`）。提交页 `submit` 的「联系方式（选填）」输入框**保留不动**（仍可填写并提交，仅详情页不再回显）。
