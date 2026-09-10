@@ -11,6 +11,7 @@ import os
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from app.core.config import is_spider_schedule_enabled
 from app.core.logger import get_logger
 from app.services import crawl_task_service as crawl_svc
 from app.tasks import executors as _executors
@@ -54,12 +55,15 @@ def start_scheduler(app):
 
     config_svc = get_config_service()
     spider_enabled = config_svc.get("course", "spider_enabled", True)
+    # 课表爬虫定时功能总开关（用户 2026-09-10 停用）：直接读环境变量，
+    # 优先级高于 module_config 中可能遗留的 spider_enabled=true。
+    spider_schedule_enabled = is_spider_schedule_enabled()
     # 优先使用 cron 表达式（支持多时间点如 7:00 和 13:00）
     # 仅当显式设置 spider_schedule_mode=interval 且 spider_interval_hours>0 时才使用间隔模式
     spider_schedule_mode = config_svc.get("course", "spider_schedule_mode", "cron")
     spider_interval_hours = config_svc.get("course", "spider_interval_hours", None)
 
-    if spider_enabled:
+    if spider_enabled and spider_schedule_enabled:
         # cron 模式为默认且推荐模式，interval 模式需显式配置
         use_interval = (
             spider_schedule_mode == "interval"
@@ -120,7 +124,8 @@ def start_scheduler(app):
                 )
                 scheduler_state._spider_cron_hours = {7, 13}
     else:
-        logger.info("[课程] spider_enabled=false，跳过爬虫定时任务注册")
+        reason = "spider_enabled=false" if not spider_enabled else "爬虫定时功能已停用（COURSE_SPIDER_SCHEDULE_ENABLED 未启用）"
+        logger.info(f"[课程] {reason}，跳过爬虫定时任务注册")
 
     # 2. 每分钟检查推送规则
     scheduler_state._scheduler.add_job(
@@ -296,10 +301,13 @@ def reload_scheduler(app):
 
     config_svc = get_config_service()
     spider_enabled = config_svc.get("course", "spider_enabled", True)
+    # 课表爬虫定时功能总开关（用户 2026-09-10 停用）：直接读环境变量，
+    # 优先级高于 module_config 中可能遗留的 spider_enabled=true。
+    spider_schedule_enabled = is_spider_schedule_enabled()
     spider_schedule_mode = config_svc.get("course", "spider_schedule_mode", "cron")
     spider_interval_hours = config_svc.get("course", "spider_interval_hours", None)
 
-    if spider_enabled:
+    if spider_enabled and spider_schedule_enabled:
         use_interval = (
             spider_schedule_mode == "interval"
             and spider_interval_hours
@@ -357,7 +365,8 @@ def reload_scheduler(app):
                 )
                 scheduler_state._spider_cron_hours = {7, 13}
     else:
-        logger.info("[课程] spider_enabled=false，跳过爬虫定时任务注册")
+        reason = "spider_enabled=false" if not spider_enabled else "爬虫定时功能已停用（COURSE_SPIDER_SCHEDULE_ENABLED 未启用）"
+        logger.info(f"[课程] {reason}，跳过爬虫定时任务注册")
 
     # 2. 每分钟检查推送规则
     scheduler_state._scheduler.add_job(

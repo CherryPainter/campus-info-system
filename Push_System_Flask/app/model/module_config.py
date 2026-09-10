@@ -347,7 +347,7 @@ DEFAULT_CONFIGS = [
     {
         "module": "course",
         "key": "spider_enabled",
-        "value": "true",
+        "value": "false",
         "value_type": "boolean",
         "description": "是否启用自动爬取课表",
         "is_editable": True,

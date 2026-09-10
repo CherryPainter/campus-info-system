@@ -22,6 +22,20 @@ load_dotenv(
 )
 
 
+def is_spider_schedule_enabled() -> bool:
+    """
+    课表爬虫「定时」功能总开关（用户 2026-09-10 决定停用定时爬取）。
+
+    直接读取环境变量，优先级高于 module_config 表中可能遗留的
+    spider_enabled=true，确保自动爬取确实停止；爬虫模块的全部结构
+    （main.py / spider_runner / executors / crawl_task_service 等）均保留，
+    仅关闭自动触发。
+
+    恢复定时：在 .env 设置 COURSE_SPIDER_SCHEDULE_ENABLED=true 后重启服务即可。
+    """
+    return os.environ.get("COURSE_SPIDER_SCHEDULE_ENABLED", "false").lower() in ("1", "true", "yes")
+
+
 def _detect_tesseract_path() -> str:
     """
     自动检测 Tesseract OCR 路径（跨平台）
