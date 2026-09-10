@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, Textarea, Input, Image } from '@tarojs/components';
+import { View, Text, Textarea, Image } from '@tarojs/components';
 import Taro, { useLoad, useDidShow } from '@tarojs/taro';
 
 import * as feedbackApi from '@/api/feedback';
@@ -18,7 +18,6 @@ import './index.scss';
  * 表单字段：
  * - 类型（必选）：功能异常 / 功能建议 / 咨询求助 / 其他
  * - 内容（必填，≤2000 字）
- * - 联系方式（选填）
  * - 截图（选填，最多 9 张，先上传拿到 URL 再随表单提交）
  */
 
@@ -35,7 +34,6 @@ const MAX_IMAGES = 9;
 export default function FeedbackSubmitPage() {
   const [type, setType] = useState<FeedbackType>('bug');
   const [content, setContent] = useState('');
-  const [contact, setContact] = useState('');
   const [images, setImages] = useState<string[]>([]); // 后端返回的 URL
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -106,7 +104,6 @@ export default function FeedbackSubmitPage() {
       const res = await feedbackApi.create({
         type,
         content: content.trim(),
-        contact: contact.trim() || undefined,
         images,
       });
       const id = res?.data?.id;
@@ -168,18 +165,6 @@ export default function FeedbackSubmitPage() {
             />
             <Text className="fb-counter">{content.length}/{MAX_CONTENT}</Text>
           </View>
-        </View>
-
-        {/* 联系方式 */}
-        <View className="fb-field">
-          <Text className="fb-label">联系方式（选填）</Text>
-          <Input
-            className="fb-input"
-            placeholder="手机 / 微信号 / 邮箱"
-            placeholderClass="fb-placeholder"
-            value={contact}
-            onInput={(e) => setContact(e.detail.value)}
-          />
         </View>
 
         {/* 截图 */}

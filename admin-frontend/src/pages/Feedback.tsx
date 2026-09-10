@@ -3,7 +3,7 @@
  *
  * 管理员查看学生提交的反向反馈，支持：
  * - 按状态筛选（待处理 / 处理中 / 已解决）
- * - 查看反馈详情（类型 / 内容 / 截图 / 提交时间 / 联系方式）
+ * - 查看反馈详情（类型 / 内容 / 截图 / 提交时间）
  * - 标记处理状态（pending / processing / resolved）
  * - 回复学生（回复后自动置为已解决）
  *
@@ -313,9 +313,6 @@ export default function FeedbackPage() {
                 <Tag color={STATUS_COLOR[current.status]}>{STATUS_LABEL[current.status]}</Tag>
               </Descriptions.Item>
               <Descriptions.Item label="提交用户">用户 #{current.user_id}</Descriptions.Item>
-              {current.contact ? (
-                <Descriptions.Item label="联系方式">{current.contact}</Descriptions.Item>
-              ) : null}
               <Descriptions.Item label="提交时间">{current.created_at}</Descriptions.Item>
             </Descriptions>
 
