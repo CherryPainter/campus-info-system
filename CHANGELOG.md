@@ -8,6 +8,14 @@
 
 > 本次发布含管理端「解绑/收回身份」新能力、小程序端身份状态主动监察，以及审核整改/匿名会话令牌/公开接口/登录守卫等增强（覆盖 2026-09-08 ~ 09-09 累积改动）。
 
+### 调整：登录引导改纯气泡提示 + 绑定状态静默回收 + 首页绑定后补拉（小程序端，2026-09-10）
+- **背景**：审核整改后遗留三处体验粗糙——①游客点受限功能用「累计 3 次弹 LoginModal」，交互啰嗦且弹窗易被判「反复弹窗」；②上次放弃绑定后再次打开小程序，持久化登录态撞 403 会弹「已退出登录」，用户刚进 app 无「正在使用」体感却被打扰；③登录页面确认已绑定后返回首页，「今日课程」为空需手动下拉刷新。
+- **①登录引导简化**（`hooks/useLoginGuard.ts` + `home`/`profile`/`announcement/detail`/`login`）：游客点受限功能**只弹气泡提示**（`toastLoginRequired`），移除模块级 `privateClickCount`/`PRIVATE_CLICK_THRESHOLD`/`resetPrivateClickCount`/`runPrivateClick` 与 hook 返回的 `modalProps`；相应移除 profile 页、公告详情页的 `LoginModal` 用法（首页今日课程占位卡的弹窗入口保留）。登录入口由页面显式按钮/卡片（我的页头像区、宿舍用电「去登录」）承担。
+- **②绑定状态静默回收**（`utils/bindGuard.ts` + `hooks/useBindStatusWatcher.ts` + `utils/request.ts`）：新增模块级 `bindConfirmedThisRun` + `hasBindConfirmedThisRun()` / `markBindConfirmed()`。绑定确认回调（`finishBindGuide`）/ bind-status 返回 `bound` 时置位。`useBindStatusWatcher` 检出未绑定、且「本周期从未确认过绑定、本地也无学号缓存」时**静默**降级游客（清登录态 + 清身份，不弹提示）；`request.handleStudentNotBound` 同理（进入路径前先取 `hadIdentity`，无历史身份则直接 return 不 toast）。曾真正绑定过（如使用中被解绑）仍明确提示。
+- **③绑定后事件广播 + 首页补拉**（`bindGuard.ts` + `home/index.tsx` + `bind/index.tsx`）：`finishBindGuide()` 广播 `BIND_GUIDE_FINISHED_EVENT`（`bindGuide:finished`），首页新增 `privateLoadedRef` + 订阅该事件补拉今日课程/资料（本轮已拉过则跳过，防重复请求）；登出时重置标记并清空旧账号课程。绑定页检出「已绑定」误入时先 `finishBindGuide()` 再跳首页（清标记 + 触发补拉，避免标记残留吞掉后续真实 403 降级）。
+- **④顺带修复**（`pages/bind/index.tsx` + `index.scss`、`pages/weather/index.tsx`）：绑定页学校行的原生 `Picker` 外套 `bind-row-picker-wrap`（普通 View 承担 flex 布局，使 Picker 与学号/绑定码行右对齐一致——原生 picker 宿主内部自带包裹结构，直接对其设 flex 不可靠）；天气页 Canvas 绘制时间标签前显式重置 `textAlign`/`textBaseline`（修复前一处降水角标遗留的对齐状态导致「时间右移、图标偏左」）。
+- **验证**：`tsc --noEmit` 退出码 0；`build:weapp` 成功（18.09s）；`dist` 无 `process.env` 残留（0）；产物含 `bindGuide:finished` 事件与 `toastLoginRequired` 文案；已删符号（`runPrivateClick`/`modalProps`/`PRIVATE_CLICK_THRESHOLD` 等）全项目零残留引用。
+
 ### 调整：首页常用功能去掉「更多功能」与「自定义」（小程序端，2026-09-10）
 - **背景**：首页「常用功能」宫格里的「更多功能」是无落地页的占位项（`DEFAULT_ITEMS` 中无 `action`/`pagePath`，点击只弹「等待学校开放接口」toast），卡片头部还有一个纯展示、无点击行为的「自定义」文本。二者均无实际功能，按需求移除。
 - **方案**（`src/components/QuickAccess/index.tsx`）：删除 `DEFAULT_ITEMS` 的 `{ key: 'more', label: '更多功能', icon: 'gengduogongneng_24' }`（宫格由 8 项变 7 项）；删除 `card-header` 内的 `<Text className="card-more">自定义</Text>`；同步更新组件注释。
