@@ -3,7 +3,7 @@ import Taro from '@tarojs/taro';
 import { getAccessToken, getRefreshToken, isAccessTokenExpiringSoon, setTokens } from './storage';
 import { useUserStore } from '@/stores/userStore';
 import { useAuthStore } from '@/stores/authStore';
-import { isBindGuideActive } from '@/utils/bindGuard';
+import { isBindGuideActive, hasBindConfirmedThisRun } from '@/utils/bindGuard';
 
 /**
  * 统一请求层（全项目唯一出口）
@@ -154,7 +154,7 @@ let sessionExpiredNotified = false;
  *
  * 新行为：仅把本地登录态降级为游客 + 提示一次（toast，非弹窗），
  * 用户可继续浏览天气/通知公告等公开内容；需要登录的功能在用户**主动点击**时
- * 由各页面 LoginModal 引导，登录后即可正常使用。
+ * 气泡提示，由各页面显式登录入口（登录卡片/头像区）引导，登录后即可正常使用。
  */
 function handleSessionExpired(): void {
   try {
@@ -196,6 +196,12 @@ let studentNotBoundNotified = false;
  *    触发的盲区；降级后游客可继续浏览公开内容、需要时重新登录并认证。
  */
 function handleStudentNotBound(): void {
+  // 是否拥有过有效绑定身份（本周期确认过 / 本地缓存过学号）：需在清缓存前取值。
+  // 都没有 = 用户从未真正用上这个账号（典型：上次放弃绑定后再次打开小程序，
+  // 持久化登录态撞上业务接口 403）——静默降级为游客即可，弹「已退出登录」
+  // 只会让刚进 app 的用户困惑；曾绑定过（如正常使用中被解绑）才需要明确提示
+  const hadIdentity =
+    hasBindConfirmedThisRun() || !!useUserStore.getState().profile?.student_number;
   // 1) 清空本地身份缓存：解绑 / 未绑定后，"我的"/校园卡不应再显旧学号班级
   try {
     useUserStore.getState().setProfile(null);
@@ -216,6 +222,8 @@ function handleStudentNotBound(): void {
   } catch {
     /* 忽略 */
   }
+  // 从未真正绑定过：静默降级，无需提示
+  if (!hadIdentity) return;
   if (studentNotBoundNotified) return;
   studentNotBoundNotified = true;
   Taro.showToast({ title: '身份未绑定，已退出登录', icon: 'none', duration: 2000 });

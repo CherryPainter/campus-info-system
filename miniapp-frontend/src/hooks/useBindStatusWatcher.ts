@@ -3,7 +3,7 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import * as userApi from '@/api/user';
 import { useUserStore } from '@/stores/userStore';
 import { useAuthStore } from '@/stores/authStore';
-import { resetPrivateClickCount } from '@/hooks/useLoginGuard';
+import { hasBindConfirmedThisRun, markBindConfirmed } from '@/utils/bindGuard';
 
 /**
  * 身份状态主动监察 + 无效登录态回收
@@ -48,8 +48,6 @@ export function resetBindNotice(): void {
 export function revokeSession(message: string, noticeKey = 'revoke'): void {
   useAuthStore.getState().logout();
   useUserStore.getState().setProfile(null);
-  // 回退为游客：私有模块点击累计也应清零，否则游客期攒的次数会误触发登录弹窗
-  resetPrivateClickCount();
   notifyOnce(noticeKey, message);
 }
 
@@ -63,7 +61,9 @@ export function useBindStatusWatcher(): void {
         const store = useUserStore.getState();
 
         if (bound) {
-          // 已绑定：本地无缓存则补拉，保证「我的」页正常展示
+          // 已绑定：标记本周期确认过绑定（此后若检出未绑定 = 使用中被解绑，降级要提示），
+          // 本地无缓存则补拉 profile，保证「我的」页正常展示
+          markBindConfirmed();
           if (!store.profile) {
             userApi
               .getProfile()
@@ -78,6 +78,14 @@ export function useBindStatusWatcher(): void {
         }
 
         // 未绑定：无效登录态，回退为游客。
+        // 但「本运行周期从未确认过绑定、本地也无历史身份缓存」（典型：上次放弃绑定
+        // 后再次打开小程序）时**静默**回收即可——用户刚进 app 没有"正在使用"的体感，
+        // 弹「已退出登录」既困惑又打扰；曾真正绑定过才值得明确提示。
+        if (!hasBindConfirmedThisRun() && !store.profile?.student_number) {
+          useAuthStore.getState().logout();
+          useUserStore.getState().setProfile(null);
+          return;
+        }
         // 区分成因给不同提示（本地曾缓存过学号 = 会话中被解绑）
         const wasBound = !!store.profile?.student_number;
         revokeSession(

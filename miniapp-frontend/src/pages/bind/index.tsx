@@ -62,6 +62,10 @@ export default function BindPage() {
     try {
       const statusRes = await userApi.getBindStatus();
       if (statusRes.status === 'success' && statusRes.bound) {
+        // 已绑定用户误入绑定页（如登录页查绑定状态网络抖动失败被当作未绑定）：
+        // 先结束引导期再跳走，既清除标记、又广播事件让首页补拉需登录数据，
+        // 否则标记残留会持续吞掉后续真正的 403 降级，且今日课程无人补拉
+        finishBindGuide();
         Taro.switchTab({ url: '/pages/home/index' });
         return;
       }
@@ -133,19 +137,23 @@ export default function BindPage() {
         <View className="bind-row">
           <Text className="bind-row-label">学校</Text>
           {schools.length > 0 ? (
-            <Picker
-              mode="selector"
-              range={schools}
-              value={school ? Math.max(0, schools.indexOf(school)) : 0}
-              onChange={(e) => setSchool(schools[Number(e.detail.value)])}
-            >
-              <View className="bind-row-value-wrap">
-                <Text className={school ? 'bind-row-value' : 'bind-row-placeholder'}>
-                  {school || '请选择学校'}
-                </Text>
-                <Text className="iconfont icon-jinru bind-row-arrow" />
-              </View>
-            </Picker>
+            /* 外层 View 承担布局（撑满剩余宽度 + 内容靠右）：原生 picker 宿主节点
+               内部自带包裹结构，直接在 picker 上做 flex 布局不生效 */
+            <View className="bind-row-picker-wrap">
+              <Picker
+                mode="selector"
+                range={schools}
+                value={school ? Math.max(0, schools.indexOf(school)) : 0}
+                onChange={(e) => setSchool(schools[Number(e.detail.value)])}
+              >
+                <View className="bind-row-value-wrap">
+                  <Text className={school ? 'bind-row-value' : 'bind-row-placeholder'}>
+                    {school || '请选择学校'}
+                  </Text>
+                  <Text className="iconfont icon-jinru bind-row-arrow" />
+                </View>
+              </Picker>
+            </View>
           ) : !loading ? (
             schoolAuthError ? (
               <Text

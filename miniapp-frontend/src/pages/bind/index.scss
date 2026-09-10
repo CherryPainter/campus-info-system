@@ -48,6 +48,17 @@
   background: $border-color;
 }
 
+/* 学校行 Picker 外层容器：普通 View 承担布局职责——撑满行内剩余宽度并让
+   Picker 整体靠右。原生 picker 宿主节点内部有自带包裹结构（slot 内容收缩为
+   内容宽度），直接给 picker 宿主设 flex/对齐样式不可靠，故由外层 View 实现，
+   最终与学号/绑定码行的右对齐效果一致 */
+.bind-row-picker-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* 学校行：值右对齐 + 进入箭头 */
 .bind-row-value-wrap {
   flex: 1;
