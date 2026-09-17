@@ -347,9 +347,9 @@ DEFAULT_CONFIGS = [
     {
         "module": "course",
         "key": "spider_enabled",
-        "value": "false",
+        "value": "true",
         "value_type": "boolean",
-        "description": "是否启用自动爬取课表",
+        "description": "课表爬虫总开关：关闭后停止定时爬取与预约/立即任务的自动拾取（管理页手动触发不受影响）",
         "is_editable": True,
         "is_sensitive": False,
     },

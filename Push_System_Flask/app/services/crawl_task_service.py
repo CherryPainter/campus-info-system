@@ -440,13 +440,13 @@ def dispatch_scheduled_crawls():
     同时执行「僵尸任务自愈」：清理长时间卡死的 running/pending 任务，
     避免前端横幅永久停留在「任务运行中」。
     """
-    # 课表爬虫定时功能已停用（用户 2026-09-10 决定）：直接读环境变量总闸，
-    # 优先级高于 module_config 中可能遗留的 spider_enabled=true，确保不再自动触发爬取。
-    # 模块结构全部保留；恢复定时：.env 设置 COURSE_SPIDER_SCHEDULE_ENABLED=true 后重启。
-    from app.core.config import is_spider_schedule_enabled
+    # 爬虫总开关（设置页 course.spider_enabled）：关闭时一并停掉预约/立即任务的
+    # 自动拾取（与定时爬取同一开关、同一语义——关闭即一切自动触发停止，
+    # 管理页手动「触发爬虫」不受影响）。
+    from app.services.config_service import get_config_service
 
-    if not is_spider_schedule_enabled():
-        logger.info("[爬取任务] 爬虫定时功能已停用（COURSE_SPIDER_SCHEDULE_ENABLED 未启用），跳过调度器爬取任务拾取")
+    if not get_config_service().get("course", "spider_enabled", True):
+        logger.info("[爬取任务] spider_enabled=false（设置页已关闭爬虫），跳过调度器爬取任务拾取")
         return
 
     from app.core.database import get_db

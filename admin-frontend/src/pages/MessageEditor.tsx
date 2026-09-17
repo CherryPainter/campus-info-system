@@ -12,7 +12,7 @@
  *
  * 集成 WangEditor v5 富文本编辑器。
  */
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Card,
@@ -60,6 +60,7 @@ import "@wangeditor/editor/dist/css/style.css";
 // WangEditor v5（动态导入，避免未安装时构建失败）
 let Editor: any;
 let EditorToolbar: any;
+let createToolbarFromCore: any;
 let editorModulesLoaded = false;
 
 async function loadEditorModules() {
@@ -72,8 +73,9 @@ async function loadEditorModules() {
     // Toolbar 也在 editor-for-react 里（需要 editor 实例作为 prop）；@wangeditor/editor
     // 没有 React 版的 Toolbar 导出，所以从这里取
     EditorToolbar = reactMod.Toolbar;
-    // 保留 core 引用以备后续需要（如注册插件）
-    void core;
+    // 取底层 createToolbar，用于自定义 SafeToolbar（官方 Toolbar 不做清理，
+    // editor 实例变化或 StrictMode 双调 effect 时会触发 Repeated create toolbar）
+    createToolbarFromCore = core.createToolbar;
     editorModulesLoaded = true;
     return true;
   } catch (err) {
@@ -81,6 +83,54 @@ async function loadEditorModules() {
     return false;
   }
 }
+
+/**
+ * 自定义 WangEditor Toolbar 包装。
+ *
+ * 解决 @wangeditor/editor-for-react 的 Toolbar 组件：
+ * 1. 不清理已有 toolbar DOM，editor 实例变化或 StrictMode 双调 effect 时重复 createToolbar 报错。
+ * 2. 依赖数组只含 editor，config 变化时不重建。
+ *
+ * 每次 effect 执行前先清空容器，确保 createToolbar 拿到的 selector 没有 data-w-e-toolbar 标记。
+ */
+const SafeToolbar = ({
+  editor,
+  defaultConfig,
+  mode = "default",
+  className,
+  style,
+}: any) => {
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!boxRef.current || !editor || !createToolbarFromCore) return;
+    const box = boxRef.current;
+
+    // 关键：coreCreateToolbar 的检测标记 data-w-e-toolbar 是写在「容器 div 自身」上的，
+    // 且只有对应 editor 触发 destroyed 才会移除。仅 innerHTML="" 清不掉它，
+    // 会导致 StrictMode 双调 effect 或 editor 复用时再次创建命中标记而抛
+    // "Repeated create toolbar"。所以创建前与清理时都要显式 removeAttribute。
+    box.innerHTML = "";
+    box.removeAttribute("data-w-e-toolbar");
+
+    // 创建新 toolbar
+    createToolbarFromCore({
+      editor,
+      selector: box,
+      config: defaultConfig,
+      mode,
+    });
+
+    return () => {
+      if (boxRef.current) {
+        boxRef.current.innerHTML = "";
+        boxRef.current.removeAttribute("data-w-e-toolbar");
+      }
+    };
+  }, [editor, defaultConfig, mode]);
+
+  return <div ref={boxRef} className={className} style={style} />;
+};
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -131,6 +181,13 @@ export default function MessageEditor() {
   const [editorReady, setEditorReady] = useState(false);
   const [editorHtml, setEditorHtml] = useState("");
   const [editorInstance, setEditorInstance] = useState<any>(null);
+
+  // 路由 id 变化时（如新建保存后 replace 到 edit/:id，或切换不同公告编辑），
+  // 旧的 editor 实例已随旧 Editor 组件卸载而被 WangEditor 销毁，必须同步清空，
+  // 避免新 wrapper 刚挂载时 SafeToolbar 拿到已失效的 editor。
+  useLayoutEffect(() => {
+    setEditorInstance(null);
+  }, [id]);
 
   // 预览相关状态
   const [showPhonePreview, setShowPhonePreview] = useState(true);
@@ -444,11 +501,41 @@ export default function MessageEditor() {
   // WangEditor 配置（注意：初始内容走 <Editor defaultContent={...}> 顶层 prop，
   // editor-for-react 的 createEditor({content}) 只认顶层 defaultContent，
   // 放 config.defaultContent 里不会生效）
-  const editorConfig = {
+  // 用 useMemo 缓存，避免每次渲染都生成新对象引用触发 WangEditor 重建。
+  const editorConfig = useMemo(() => ({
     placeholder: isAnno ? "输入通知正文..." : "输入推送内容...",
     onChange: (editor: any) => {
       setEditorHtml(editor.getHtml());
       handleFieldChange();
+    },
+    // 增强选中文本时的浮动工具栏：默认只有 正文/链接/列表/加粗/删除线/颜色/背景色，
+    // 功能太少导致每次都要回顶部工具栏。这里加上斜体、下划线、对齐、字号等高频项。
+    hoverbarKeys: {
+      text: [
+        "headerSelect",
+        "|",
+        "bold",
+        "italic",
+        "underline",
+        "through",
+        "|",
+        "color",
+        "bgColor",
+        "|",
+        "fontSize",
+        "|",
+        "bulletedList",
+        "numberedList",
+        "|",
+        "justifyLeft",
+        "justifyCenter",
+        "justifyRight",
+        "|",
+        "insertLink",
+      ],
+      // 链接、图片保持默认行为即可，不缩水
+      link: ["editLink", "unLink", "viewLink"],
+      image: ["imageWidth30", "imageWidth50", "imageWidth100", "|", "deleteImage"],
     },
     MENU_CONF: {
       uploadImage: {
@@ -474,13 +561,13 @@ export default function MessageEditor() {
         },
       },
     },
-  };
+  }), [isAnno, antMessage, handleFieldChange]);
 
-  const toolbarConfig = {
+  const toolbarConfig = useMemo(() => ({
     excludeKeys: isMobile
       ? ["fullScreen", "group-video"]
       : [],
-  };
+  }), [isMobile]);
 
   // ==================== 手机模型预览组件 ====================
 
@@ -840,16 +927,22 @@ export default function MessageEditor() {
                       content 还在加载中（空），挂载后就再也不读 defaultContent。
                       用 key={id} 切换不同公告时强制重新挂载。 */}
                   {editorReady && Editor && initialDataLoaded ? (
-                    <div className="editor-wrapper">
-                      <div className="editor-toolbar-sticky">
-                        <EditorToolbar
-                          editor={editorInstance}
-                          defaultConfig={toolbarConfig}
-                          mode="default"
-                        />
-                      </div>
+                    <div className="editor-wrapper" key={`editor-wrapper-${id ?? "new"}`}>
+                      {/* Toolbar 必须在 editorInstance 创建后再挂载，且与 Editor 同 key 一起销毁/重建，
+                          否则 id 变化时 Editor 重挂而 Toolbar 被 React 复用，会在已有工具栏的 DOM
+                          节点上再次 createToolbar，触发 "Repeated create toolbar" 报错。 */}
+                      {editorInstance ? (
+                        <div className="editor-toolbar-sticky">
+                          <SafeToolbar
+                            key={`toolbar-${id ?? "new"}`}
+                            editor={editorInstance}
+                            defaultConfig={toolbarConfig}
+                            mode="default"
+                          />
+                        </div>
+                      ) : null}
                       <Editor
-                        key={String(id ?? "new")}
+                        key={`editor-${id ?? "new"}`}
                         defaultHtml={editorHtml}
                         defaultConfig={editorConfig}
                         mode="default"

@@ -31,7 +31,7 @@
 - **自动化数据采集**：基于 Playwright 无头浏览器自动登录重庆工程学院 CAS 统一认证系统，使用 Tesseract OCR 识别验证码，自动爬取教务系统课程表
 - **智能推送规则引擎**：内置 5 种推送规则（课前提醒、每日课表、下课提醒、周课表图片推送、课后确认），支持按节次自动匹配教学楼时间表（两套时间方案，覆盖 11 栋教学楼）
 - **企业微信推送**：支持 Markdown 格式消息和图片消息，6 套可配置消息模板（`{{占位符}}` 语法），模板支持热重载
-- **定时自动爬取**：可配置 Cron 表达式定时执行爬虫，支持重试机制（3 次、30 秒间隔）和超时保护（600 秒）
+- **定时自动爬取**：可配置 Cron 表达式定时执行爬虫，支持重试机制（3 次、30 秒间隔）和超时保护（600 秒）。**注意**：定时爬取受环境变量总闸 `COURSE_SPIDER_SCHEDULE_ENABLED` 控制，默认 `false`（关闭），仅手动触发的「立即爬取」不受影响；恢复定时需在 `.env` 设该变量为 `true` 后重启服务。
 - **数据入库管道**：爬取数据经 `pipeline.py` 处理后由 `CourseRepository.create_batch()` 批量写入 MySQL。按 `course_code + week_day + period_idx + week_number` 去重（仅匹配未删除行），命中即更新、未命中即插入，**从不做删除**。每条记录带 `data_source`（来源标记）与 `last_verified_at`（最后校验时间）；后台手动新增/编辑的课程打 `admin` 标记，爬虫来源（`full`/`daily`）**不会覆盖或挤占**手动课（详见「课表爬虫子系统」）。注意：软删除的课程在去重查询中被忽略，下次爬虫会重新插入该时间槽——即后台"删除"仅在爬虫源也已无此课时才持久生效。
 - **课程表图片生成**：自动生成课程表 PNG 图片（DPI 250），支持背景图和按星期着色，每周一生成周课表图片推送
 - **手动管理**：支持课程的手动创建、编辑、软删除、恢复、推送开关切换，以及从爬虫 JSON 文件导入
@@ -74,7 +74,7 @@
 
 - **JWT 双 Token 认证**：access_token（1h）+ refresh_token（7d），HS256 签名，Token 撤销黑名单（jti + SHA256 哈希）
 - **bcrypt 密码哈希**：密码安全存储，首次启动自动从 ADMIN_TOKEN 生成
-- **三级认证装饰器**：公开端点（无装饰器）、`@jwt_required`（登录即可）、`@admin_required`（管理员权限）
+- **多级认证装饰器**：公开端点（无装饰器）、`@jwt_required`（登录即可）、`@admin_required`（管理员权限）、`@student_required`（学生角色，额外校验账号存活）、`@student_bound_required`（学生角色 + 已完成身份绑定）、`@miniapp_optional`（可选鉴权：合法 token 写入 `g.current_user`，否则以游客态放行，用于天气/公告等公开浏览接口）
 - **MFA 多因素认证**：TOTP 算法（HMAC-SHA1 + 动态截断，RFC 6238），30 秒步长，前后各 1 窗口容错
 - **全面请求安全检查**：`@path_security_check` 装饰器，包含 HTTP 方法验证、请求大小限制（10MB）、40+ 敏感路径黑名单、路径遍历/空字节拦截、SQL 注入检测（30+ 规则）、XSS 攻击检测（30+ 规则）
 - **API 智能限流**：Flask-Limiter，4 种限流级别（strict/moderate/lenient/burst），身份感知限流（已认证用户基于用户 ID，未认证基于 IP）
@@ -126,7 +126,7 @@ flowchart TB
     end
 
     subgraph STORE[数据存储 MySQL 8]
-        DB[(课程 / 天气 / 电量 / 用户 / Webhook 等 19 张表)]
+        DB[(课程 / 天气 / 电量 / 用户 / 组织 / 学生身份 / 通知 / 反馈 等 30+ 张表)]
     end
 
     subgraph FE[管理后台 React + TypeScript]
@@ -136,11 +136,19 @@ flowchart TB
         F3[路由守卫]
     end
 
+    subgraph MP[学生端微信小程序「校园宜知行」]
+        direction LR
+        M1[Taro 3 + React + Zustand]
+        M2[微信登录 + 匿名会话 X-Anon-Token]
+        M3[课表 / 天气 / 电量 / 反馈]
+    end
+
     subgraph OUT[触达渠道]
         WECOM[企业微信机器人]
     end
 
     FE -->|JWT Bearer Token<br/>Authorization| BE
+    MP -->|JWT Bearer Token / X-Anon-Token<br/>/api/miniapp/*| BE
     BE -->|Playwright 爬虫| JW
     BE -->|REST API| WX
     BE -->|HTTP 采集| DZ
@@ -150,7 +158,7 @@ flowchart TB
     class JW,WX,DZ cExt;
     class A1,A2,A3,S1,S2,S3,T1,T2,T3 cBE;
     class DB cDB;
-    class F1,F2,F3 cFE;
+    class F1,F2,F3,M1,M2,M3 cFE;
     class WECOM cOUT;
 ```
 
@@ -224,12 +232,12 @@ Push_System_Flask/
 |   |-- __init__.py                       # 应用工厂 (create_app)
 |   |                                     #   - 加载配置、日志、CORS、限流
 |   |                                     #   - 初始化数据库、JWT 管理器
-|   |                                     #   - 注册 15 个蓝图
+|   |                                     #   - 注册 22 个蓝图（21 个路由文件 / 22 个 Blueprint 实例）
 |   |                                     #   - 启动服务层和调度器
 |   |                                     #   - 初始化默认配置和管理员账号
 |   |                                     #   - 清理僵尸进程
 |   |
-|   |-- api/                              # API 路由蓝图 (15 个)
+|   |-- api/                              # API 路由蓝图（22 个 Blueprint 实例，21 个路由文件）
 |   |   |-- routes.py                     # 核心课表推送 API (api_bp -> /api)
 |   |   |                                 #   13 个端点: 服务信息/健康检查/系统状态
 |   |   |                                 #   课表查询/推送规则/任务统计/模板/爬虫
@@ -264,6 +272,18 @@ Push_System_Flask/
 |   |   |                                 #   会话列表/强制下线/在线状态
 |   |   |-- task_routes.py                # 任务管理 API (task_bp -> /api/admin/tasks)
 |   |                                     #   任务 CRUD/触发/取消
+|   |   |-- announcement_routes.py         # 公告中心 API (announcement_bp -> /api/admin/announcements)
+|   |   |                                 #   公告 CRUD/附件/已读/收藏/置顶
+|   |   |-- notification_routes.py         # 学校日历提醒 API (notification_bp -> /api/admin/notifications)
+|   |   |                                 #   提醒事件 CRUD/触发
+|   |   |-- admin_roster_routes.py         # 学生名单管理 API (admin_roster_bp -> /api/admin/roster)
+|   |   |                                 #   预录白名单 CRUD/绑定码/解绑/收回身份
+|   |   |-- miniapp_auth_routes.py         # 小程序认证 API (miniapp_auth_bp -> /api/miniapp/auth)
+|   |   |                                 #   微信登录/刷新/登出/绑定
+|   |   |-- miniapp_routes.py              # 小程序业务 API (miniapp_bp -> /api/miniapp)
+|   |   |                                 #   课表/天气/电量/反馈/个人资料等学生端接口
+|   |   |-- feedback_routes.py             # 意见反馈 API (feedback_miniapp_bp / feedback_admin_bp)
+|   |   |                                 #   学生提交反馈 + 管理端审核/回复
 |   |
 |   |-- core/                             # 核心基础模块
 |   |   |-- config.py                     # 配置管理中心
@@ -295,7 +315,7 @@ Push_System_Flask/
 |   |   |-- fingerprint.py                 # 数据库指纹漂移检测
 |   |   |-- reset.py                       # 重置（开发用）
 |   |
-|   |-- model/                            # 数据模型层 (16 个模型文件 / 20+ 表)
+|   |-- model/                            # 数据模型层（24 个模型文件 / 30+ 表）
 |   |   |-- __init__.py                   # 统一导出所有模型
 |   |   |-- user.py                       # User - 用户表
 |   |   |-- user_mfa.py                   # UserMFA - MFA 配置表
@@ -314,6 +334,14 @@ Push_System_Flask/
 |   |   |-- push_task.py                  # PushTask - 推送任务表
 |   |   |-- scheduled_crawl_task.py       # ScheduledCrawlTask - 爬取预约任务表
 |   |   |-- server_session.py             # ServerSession - 服务端会话表
+|   |   |-- org_unit.py                    # OrgUnit - 组织单元树（学校/学院/专业/班级自引用）
+|   |   |-- student_roster.py              # StudentRoster - 预录学生白名单
+|   |   |-- student_profile.py             # StudentProfile - 学生身份档案（1:1 User）
+|   |   |-- wechat_account.py              # WechatAccount - 微信开放平台账号（openid/unionid）
+|   |   |-- announcement.py                # Announcement 系列 - 公告中心（公告/附件/已读/收藏）
+|   |   |-- notification.py                # Notification - 学校日历提醒事件
+|   |   |-- user_notification.py           # UserNotification - 个人站内消息
+|   |   |-- feedback.py                    # Feedback - 意见反馈（学生→管理员）
 |   |
 |   |-- repository/                       # 仓库层 (数据访问封装)
 |   |   |-- course_repository.py          # 课程数据 CRUD (批量创建/去重/软删除/恢复)
@@ -1130,7 +1158,7 @@ flowchart TD
 | `push_electricity_monthly` | 每月 1 日 00:30 | 电量 | 推送每月用电报告（含图表）           |
 | `check_cookie_validity`    | 每天 20:00      | 电量 | 检测 Cookie 有效性                   |
 | `check_low_power`          | 每 4 小时       | 电量 | 低电量检测告警                       |
-| 爬虫执行                   | 可配置 Cron     | 课表 | 自动爬取课表数据（并发锁+重试+超时） |
+| 爬虫执行                   | 可配置 Cron     | 课表 | 自动爬取课表数据（并发锁+重试+超时）**注意**：受环境变量总闸 `COURSE_SPIDER_SCHEDULE_ENABLED` 控制，默认 `false`（关闭），手动触发的「立即爬取」不受此限 |
 | 推送规则检查               | 每 60 秒        | 课表 | 检查并执行推送规则                   |
 | 周课表生成                 | 每周一 00:00    | 课表 | 生成周课表图片并推送                 |
 | 进程清理                   | 每天凌晨 2:00   | 系统 | 清理 1 个月前的进程记录              |
@@ -1266,7 +1294,7 @@ flowchart LR
 
 ## 数据库模型
 
-系统核心数据模型如下表（共 14 个，不含审计日志、会话等辅助表）：
+系统核心数据模型如下表（共 22 个，含学生身份、组织、通知、反馈；不含审计日志、会话等辅助表）：
 
 ### 用户与认证
 
@@ -1296,6 +1324,24 @@ flowchart LR
 | `TaskProcess`  | `task_processes` | 任务进程表     | name, task_type(spider/weather/electricity/custom), status(running/completed/failed/cancelled), pid, progress(0-100), total_items, processed_items, message, error_message, duration, extra_data(JSON) |
 | `ModuleConfig` | `module_configs` | 模块配置表     | module, key, value, value_type(string/integer/float/boolean/json), description, is_editable, is_sensitive                                                                                              |
 | `Webhook`      | `webhooks`       | Webhook 配置表 | name, url, modules(逗号分隔), is_enabled, description, last_test_status, last_test_time                                                                                                                |
+
+### 学生身份与组织
+
+| 模型             | 表名                | 说明             | 关键字段                                                                                                |
+| ---------------- | ------------------- | ---------------- | ------------------------------------------------------------------------------------------------------- |
+| `OrgUnit`        | `org_units`         | 组织单元树       | node_type(学校/学院/专业/班级), parent_id(自引用), name, school_id                                      |
+| `StudentRoster`  | `student_rosters`   | 预录学生白名单   | class_id, school, student_number, real_name, bind_code_hash, is_active（school+student_number 唯一）    |
+| `StudentProfile` | `student_profiles`  | 学生身份档案     | 1:1 User；student_number, school, campus_card_number, college, major, class_name, grade, phone, electricity_cookie |
+| `WechatAccount`  | `wechat_accounts`   | 微信开放平台账号 | openid, unionid, session_key, user_id(多对一)                                                           |
+
+### 通知与反馈
+
+| 模型                    | 表名                          | 说明             | 关键字段                                                                                  |
+| ----------------------- | ----------------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
+| `Announcement` 系列     | `announcements` 等 4 表       | 公告中心         | 公告 / 附件 / 已读 / 收藏（Announcement·AnnouncementAttachment·AnnouncementRead·AnnouncementFavorite） |
+| `Notification`          | `notifications`               | 学校日历提醒事件 | title, event_time, type, content, is_active                                              |
+| `UserNotification`      | `user_notifications`          | 个人站内消息     | user_id, title, content, is_read, link                                                   |
+| `Feedback`              | `feedbacks`                   | 意见反馈         | type, content, contact, images, status(待处理/已回复), reply（学生→管理员反向链路）       |
 
 ---
 

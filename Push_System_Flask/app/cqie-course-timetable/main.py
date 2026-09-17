@@ -266,7 +266,11 @@ class CourseTableTool:
         Returns:
             bool: 登录成功返回True，否则返回False
         """
-        login_url = "https://cas.cqie.cn/cas/WEB/index.html?service=http%3A%2F%2Fjwxt.cqie.cn%3A8081%2Feams%2FloginExt.action"
+        # service 参数必须用 https：CAS 应用注册表当前只认 https 入口，
+        # 用 http 会报「应用无权限」（2026-09-17 实测）。用户提供的完整 URL
+        # 中的 ;jsessionid=xxx 是其手动登录会话的临时产物，属会话级数据，
+        # 硬编码进爬虫会导致会话过期后失效，故不带入。
+        login_url = "https://cas.cqie.cn/cas/WEB/index.html?service=https%3A%2F%2Fjwxt.cqie.cn%3A8081%2Feams%2FloginExt.action"
 
         for retry in range(max_retries):
             if retry > 0:
@@ -380,7 +384,7 @@ class CourseTableTool:
         由 _ANTI_THROTTLE_JS 压制且严禁退避（退避会覆盖已渲染数据）；本方法只用于
         「进页面」阶段，且以“是否真正进入课表页”为判据，而非见到弹窗就退避。
         """
-        url = "http://jwxt.cqie.cn:8081/eams/courseTableForStd.action"
+        url = "https://jwxt.cqie.cn:8081/eams/courseTableForStd.action"
         for attempt in range(1, max_retries + 1):
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=60000)
@@ -802,7 +806,7 @@ class CourseTableTool:
             href = (await chosen.get_attribute("href") or "").strip()
             # 若入口是 URL 链接，用隔离的新标签页直接访问，避免导航走主课表页（仍保留「全部」视图）；
             # 否则（按钮/onclick）直接点击。
-            _BASE = "http://jwxt.cqie.cn:8081"
+            _BASE = "https://jwxt.cqie.cn:8081"
             if href and not href.lower().startswith("javascript"):
                 if href.startswith("http"):
                     full_url = href
@@ -1000,7 +1004,9 @@ class CourseTableTool:
                 # 去掉末尾的 "(1)"/"(2)" 学期序号后缀
                 name_clean = re.sub(r"\(\d+\)$", "", name).strip() or name
                 semesters.append({"id": val, "name": name_clean})
-                if await o.is_selected():
+                # ElementHandle 无 is_selected()（那是 Locator 的 API），
+                # 通过 evaluate 读取原生 <option selected> 属性判断当前学期
+                if await o.evaluate("el => el.selected"):
                     current_id, current_name = val, name_clean
             if not semesters:
                 self.logger.warning("学期下拉框无选项，按当前日期推断学期兜底")
@@ -1123,7 +1129,7 @@ class CourseTableTool:
             self.logger.info(f"学期切换接口返回（前200字符）: {str(result)[:200]}")
 
             # 2) 重新加载课表页，使服务端 session 的新学期生效
-            course_table_url = "http://jwxt.cqie.cn:8081/eams/courseTableForStd.action"
+            course_table_url = "https://jwxt.cqie.cn:8081/eams/courseTableForStd.action"
             await page.goto(course_table_url, wait_until="domcontentloaded", timeout=60000)
             await asyncio.sleep(5)
 

@@ -444,14 +444,55 @@ class ScheduleService:
             target_date: 目标日期（YYYY-MM-DD），缺省今天
 
         Returns:
-            List[Dict]: 该日期课表列表（按 extra_info.full_date 精确匹配）
+            List[Dict]: 该日期课表列表
+
+        判定口径（v6.18.x 修复）：
+            不再依赖 extra_info.full_date 的精确日期匹配。原因：full_date 由
+            _calculate_date 基于课程静态字段 week_number（爬虫写入当周、不会随真实
+            教学周推进）相对当前周偏移得到；一旦真实教学周超过爬虫写入的 week_number，
+            full_date 被整体偏移到过去/未来周，导致「今日课程」在跨周后恒为空
+            （用户反馈"过了一个周就一直显示今日无课"）。
+
+            改为与 /schedule/week 接口、前端周视图一致的口径：
+                「星期几 == 目标日星期」且「当前教学周 ∈ 课程 weeks 数组」
+            命中后把 full_date 与 _timeInfo 时间戳修正为目标日，保证 CourseCard
+            的"进行中/已结束"状态计算正确（start_ts/end_ts 必须落在目标日）。
         """
-        target = target_date or date.today().strftime("%Y-%m-%d")
-        return [
-            s
-            for s in self.get_schedules(force_reload)
-            if s["extra_info"]["full_date"] == target
-        ]
+        from app.utils.course_helpers import is_course_in_week
+
+        today = (
+            datetime.strptime(target_date, "%Y-%m-%d").date()
+            if target_date
+            else date.today()
+        )
+        target_str = today.strftime("%Y-%m-%d")
+        target_wd = today.isoweekday()
+
+        # 当前教学周（int；非教学周/假期为 None）。转成 0 交给 is_course_in_week，
+        # 后者对 <=0 直接返回 False（假期不显示课程，符合预期）。
+        current_week = self._get_current_week_number()
+        current_week = current_week if current_week else 0
+
+        result = []
+        for s in self.get_schedules(force_reload):
+            if s.get("day_of_week") != target_wd:
+                continue
+            weeks = (s.get("extra_info") or {}).get("weeks")
+            if not is_course_in_week(weeks, current_week):
+                continue
+            item = dict(s)
+            item["extra_info"] = dict(s.get("extra_info") or {})
+            item["extra_info"]["full_date"] = target_str
+            item["_timeInfo"] = dict(s.get("_timeInfo") or {})
+            item["_timeInfo"]["is_today"] = True
+            item["_timeInfo"]["start_ts"] = self._get_timestamp(
+                today, s.get("start_time") or "00:00"
+            )
+            item["_timeInfo"]["end_ts"] = self._get_timestamp(
+                today, s.get("end_time") or "00:00"
+            )
+            result.append(item)
+        return result
 
     def get_upcoming_courses(
         self, minutes: int = 30, force_reload: bool = False

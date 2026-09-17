@@ -5,7 +5,7 @@
 [![deploy](https://img.shields.io/badge/deploy-生产环境-success)](https://github.com/CherryPainter/campus-info-system)
 [![stack](https://img.shields.io/badge/stack-Flask%20%7C%20React%20%7C%20MySQL-blue)](https://github.com/CherryPainter/campus-info-system)
 
-> 一套「采集 → 聚合 → 主动推送」的校园信息中台：自动获取课表、天气、宿舍电量，并通过企业微信机器人主动推送到群，配套 React 管理后台统一展示与配置。
+> 一套「采集 → 聚合 → 主动推送」的校园信息中台：自动获取课表、天气、宿舍电量，并通过企业微信机器人主动推送到群，配套 React 管理后台统一展示与配置，并提供微信小程序学生端「校园宜知行」随身查看。
 >
 > 毕业设计项目 · 当前版本 `v6.18.0` · 已部署上线
 
@@ -36,6 +36,7 @@
 - 天气查询 —— 对接和风天气，实时 / 逐时天气 + 气象预警推送
 - 宿舍电量 —— 电量采集、余额查询、低电量提醒
 - 企业微信推送 —— 课程 / 天气 / 电量 / 自定义通知统一经群机器人推送
+- 学生端微信小程序 —— 独立的学生侧客户端「校园宜知行」（Taro 3 + React），首页 / 时间轴 / 我的 三 Tab，覆盖课表、天气、宿舍电量、校园通知与公告、意见反馈、身份绑定等；天气与公告等公开内容游客可直接浏览，绑定学生身份后解锁课表 / 电量 / 反馈等私有能力，并支持管理员「解绑 / 收回身份」
 - 信息聚合后台 —— React 管理台一站式查看与配置，内置 MFA、IP 黑名单、会话管理等安全能力
 - 登录爆破防护（v6.15.3）—— Redis 前置限流 + 五维度失败信号感知，单账号维度自动临时封禁；安全事件支持一键处置（封禁同 IP 全部事件）
 - 移动端适配（v6.15.3）—— 全站响应式布局治理：预警折叠列表、历史栈返回修复、移动端留白收敛、系统设置/进程管理等专项优化
@@ -46,7 +47,8 @@
 
 | 分层 | 技术 |
 |---|---|
-| 前端 | React 19 + TypeScript + Vite + Ant Design 5 |
+| 管理前台（admin-frontend） | React 19 + TypeScript + Vite + Ant Design 5 |
+| 小程序端（miniapp-frontend） | 微信小程序 · Taro 3 + React 18 + TypeScript + SCSS + Zustand（以微信小程序为主编译目标，亦可编译支付宝 / 抖音小程序） |
 | 后端 | Python + Flask 3.1 + SQLAlchemy 2.0 + 自研 JWT 双 Token 认证 |
 | 数据库 | MySQL 8（utf8mb4） |
 | 采集 | Playwright（Chromium 无头浏览器）+ 和风天气 API |
@@ -129,7 +131,8 @@ WECOM_WEBHOOK=<企业微信机器人 Webhook>
 
 ```
 push_system/
-├── admin-frontend/        前端（React 19 + Vite + Ant Design 5）
+├── admin-frontend/        管理前台（React 19 + Vite + Ant Design 5）
+├── miniapp-frontend/      学生端微信小程序「校园宜知行」（Taro 3 + React + TypeScript）
 ├── Push_System_Flask/     后端（Flask + 爬虫子系统）
 │   ├── app/api/           接口路由（15 个蓝图）
 │   ├── app/model/         数据模型（16 个模型文件 / 20+ 表）
@@ -156,6 +159,7 @@ push_system/
 - 后端详细技术文档 —— 后端分层架构、推送流水线、JWT 双 Token 认证、课表爬虫端到端、消息模板分发、登录安全信号感知（均含 mermaid 图）、数据入库管道与手动课保护等：[Push_System_Flask/README.md](Push_System_Flask/README.md)
 - 后端部署与安全文档 —— DEPLOY_LINUX / DEPLOY_CHECKLIST / 安全配置指南 / 安全配置审计 等：[Push_System_Flask/docs/](Push_System_Flask/docs/)
 - 参考文档（设计 / 验证，不纳入版本控制）—— 课表爬虫爬取与解析设计、课程表结构设计、爬取验证报告：[参考/](参考/)
+- 小程序端技术文档 —— Taro 工程结构、环境变量、开发 / 生产构建与发布：[miniapp-frontend/README.md](miniapp-frontend/README.md)
 - 变更记录 CHANGELOG —— 版本迭代与功能变更（单一真相源）：[CHANGELOG.md](CHANGELOG.md)
 
 ---

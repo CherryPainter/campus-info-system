@@ -4,6 +4,21 @@
 
 ---
 
+## Unreleased
+
+### 修复：小程序首页「今日课程」跨周后恒显示「今日无课」（后端，2026-09-17）
+- **根因**：`app/services/schedule_service.py` 的 `get_today_schedules()` 旧实现只按 `extra_info.full_date == 今天` 精确匹配；`full_date` 由 `_calculate_date` 基于课程静态字段 `week_number`（爬虫写死当周，不随真实教学周推进）相对当前周偏移得到，跨周后整体偏移到过去/未来周，命中 0 条。周视图走 `day_of_week + weeks` 口径故不受影响。
+- **修复**：改为与 `/schedule/week` 一致的口径——「`day_of_week == 目标日星期` 且 `当前教学周 ∈ 课程 weeks`」筛选，命中后把 `full_date` 与 `_timeInfo` 时间戳修正为目标日（保证 CourseCard 进行中/已结束状态计算正确）。
+- **验证**：连真实库跑真实代码路径，修复前 0 条 → 修复后正确返回当天课程；`py_compile` 通过。
+
+### 修复：管理端消息中心 WangEditor 点击保存报 Repeated create toolbar（前端，2026-09-17）
+- **根因**：`@wangeditor/editor-for-react` 的 `Toolbar` 组件 `useEffect` 仅依赖 `[editor]` 且无清理；在 React `StrictMode` 双调 effect 或路由 `id` 变化（新建保存后 replace 到 `/edit/:id`）时，会在同一 DOM 节点重复调用 `createToolbar`，命中 core 的 `data-w-e-toolbar` 重复检测抛错。
+- **修复**（`admin-frontend/src/pages/MessageEditor.tsx`）：
+  - 自定义 `SafeToolbar` 替换官方 `Toolbar`：创建前与 cleanup 均显式 `removeAttribute("data-w-e-toolbar")` 并清空容器，绕开重复检测；
+  - 新增 `useLayoutEffect(() => setEditorInstance(null), [id])`，路由 `id` 变化时同步清空失效的 editor 实例；
+  - 保留 `.editor-wrapper` 整体 key；`editorConfig` / `toolbarConfig` 用 `useMemo` 缓存。
+- **验证**：`tsc --noEmit` 通过（运行时点击保存的端到端验证待用户在 dev/build 环境确认）。
+
 ## v6.18.0 (2026-09-09)
 
 > 本次发布含管理端「解绑/收回身份」新能力、小程序端身份状态主动监察，以及审核整改/匿名会话令牌/公开接口/登录守卫等增强（覆盖 2026-09-08 ~ 09-09 累积改动）。
