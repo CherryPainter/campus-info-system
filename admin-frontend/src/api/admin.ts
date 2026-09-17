@@ -41,7 +41,11 @@ export interface DashboardData {
   service: string;
   version: string;
   system?: {
+    app_name?: string;
     version: string;
+    debug?: boolean;
+    auth_enabled?: boolean;
+    timestamp?: string;
     uptime: string;
   };
   modules: {
@@ -49,13 +53,27 @@ export interface DashboardData {
       status: string;
       enabled?: boolean;
       cache: { now: boolean; hourly: boolean; alert: boolean };
+      config?: { city_name?: string; daily_push_time?: string };
     };
     electricity: {
       status: string;
       enabled?: boolean;
-      cookie_configured: boolean;
+      cookie_configured?: boolean;
       configured_students?: number;
-      data?: { remaining_exists?: boolean };
+      data?: { records_exists?: boolean; remaining_exists?: boolean };
+      config?: { low_power_threshold?: number };
+    };
+    /** 课表模块（前端此前未展示） */
+    schedule?: {
+      data_ready?: boolean;
+      stats?: {
+        total?: number;
+        today?: number;
+        unique_courses?: number;
+        unique_teachers?: number;
+        data_ready?: boolean;
+        last_updated?: string | null;
+      };
     };
   };
   spider: SpiderStatus;
@@ -63,6 +81,43 @@ export interface DashboardData {
     spider_status?: {
       course?: { running: boolean };
       electricity?: { running: boolean };
+    };
+    /** 推送任务队列内存统计（前端此前未展示） */
+    task_stats?: {
+      pending: number;
+      processing: number;
+      success: number;
+      failed: number;
+      total: number;
+    };
+    process_stats?: {
+      total?: number;
+      status_counts?: Record<string, number>;
+      type_counts?: Record<string, number>;
+      type_trend?: { dates: string[]; series: { name: string; data: number[] }[] };
+      today?: { total: number; completed: number; failed: number };
+      week?: { total: number };
+      month?: { total: number };
+      period?: { total: number; completed: number; failed: number };
+      recent_tasks?: {
+        id: number;
+        name: string;
+        status: string;
+        started_at: string | null;
+        duration: number | null;
+      }[];
+    };
+    scheduled_jobs?: {
+      total: number;
+      /** 实际定时任务列表（前端此前只用了 total） */
+      jobs?: {
+        id: string;
+        name: string;
+        trigger_type: string;
+        trigger_desc: string;
+        next_run: string | null;
+        pending: boolean;
+      }[];
     };
   };
 }

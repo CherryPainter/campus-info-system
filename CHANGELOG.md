@@ -19,6 +19,19 @@
   - 保留 `.editor-wrapper` 整体 key；`editorConfig` / `toolbarConfig` 用 `useMemo` 缓存。
 - **验证**：`tsc --noEmit` 通过（运行时点击保存的端到端验证待用户在 dev/build 环境确认）。
 
+### 调整：管理端仪表盘补全隐藏数据 + 视觉升级（前端，2026-09-17）
+- **背景**：后端 `/api/admin/dashboard` 实际返回的数据多于前端 `DashboardData` 接口声明，存在一批「前端未展示」字段（系统 `app_name/debug/auth_enabled/timestamp`、模块 `schedule` 统计、任务 `task_stats` 队列、`process_stats.status_counts/period/recent_tasks`、定时任务 `scheduled_jobs.jobs` 列表等）。本次按用户「更专业更全面，仅前端」方向，补齐展示并做视觉升级。
+- **改动**：
+  - `admin-frontend/src/api/admin.ts`：扩展 `DashboardData` 接口，显式声明上述所有原本隐藏的字段（均 optional，向后兼容）。
+  - `admin-frontend/src/pages/Dashboard.tsx`：
+    - 加载态由裸 `<Spin>` 升级为 `<Skeleton active>`（4 状态卡 + 2 内容卡骨架屏布局）；
+    - 服务状态卡补充 `app_name` / 鉴权开关 / DEBUG 标签；
+    - 第 4 张状态卡由「定时任务」改为「课表数据」（就绪徽标 + 总条数/今日/课程数/教师数）；
+    - 统计卡片上方新增概览区：期间成功率 `<Progress>`（≥90 绿 / ≥70 黄 / 否则红）+ 任务状态分布堆叠条与图例；「调度与爬虫」块（定时任务数 + 课表/电量爬虫运行状态）+「推送队列」块（待处理/处理中/成功/失败）；
+    - 新增「定时任务」列表卡（`<Table>` 展示任务名 / 执行频率 / 下次执行 / 状态），排在快捷操作卡之前。
+  - 派生变量改用带类型的 `??` 回退替代 `|| {}`，消除 `period` / `scheduled_jobs` / `recent_tasks` 的类型收窄错误。
+- **验证**：`tsc --noEmit` 退出码 0；`vite build` 成功（11866 模块，15.37s，仅 chunk 体积告警非错误）。运行时视觉效果待用户在 dev/build 环境确认。
+
 ## v6.18.0 (2026-09-09)
 
 > 本次发布含管理端「解绑/收回身份」新能力、小程序端身份状态主动监察，以及审核整改/匿名会话令牌/公开接口/登录守卫等增强（覆盖 2026-09-08 ~ 09-09 累积改动）。

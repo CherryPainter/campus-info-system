@@ -20,6 +20,7 @@ import {
   Typography,
   Alert,
   Progress,
+  Skeleton,
   Table,
   Badge,
   Divider,
@@ -73,6 +74,17 @@ const STATUS_COLORS: Record<string, string> = {
 
 // 图表主色调
 const CHART_COLORS = ["#1890ff", "#52c41a", "#faad14", "#f5222d", "#722ed1", "#13c2c2", "#eb2f96"];
+
+// Ant Design 状态色名 → 十六进制（用于 Progress / 自绘堆叠条背景）
+const STATUS_HEX: Record<string, string> = {
+  success: "#52c41a",
+  error: "#ff4d4f",
+  processing: "#1890ff",
+  warning: "#faad14",
+  default: "#d9d9d9",
+};
+const colorForStatus = (s: string): string =>
+  STATUS_HEX[(TASK_STATUS_MAP[s]?.color as string) || "default"] || "#999";
 
 /** 时间范围选项 */
 const TIME_RANGE_OPTIONS = [
@@ -167,20 +179,87 @@ export default function Dashboard() {
 
   if (loading && !data) {
     return (
-      <div style={{ textAlign: "center", padding: 50 }}>
-        <Spin size="large" />
+      <div className="dashboard-container" style={{ padding: "0 4px" }}>
+        <div
+          style={{
+            margin: "24px 0",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Skeleton.Input active size="large" style={{ width: 160 }} />
+          <Skeleton.Input active style={{ width: 220 }} />
+        </div>
+        <Row gutter={[16, 16]}>
+          {[0, 1, 2, 3].map((i) => (
+            <Col xs={24} sm={12} lg={6} key={i}>
+              <Card>
+                <Skeleton active paragraph={{ rows: 2 }} />
+              </Card>
+            </Col>
+          ))}
+        </Row>
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          <Col xs={24} lg={16}>
+            <Card>
+              <Skeleton active paragraph={{ rows: 8 }} />
+            </Card>
+          </Col>
+          <Col xs={24} lg={8}>
+            <Card>
+              <Skeleton active paragraph={{ rows: 6 }} />
+            </Card>
+          </Col>
+        </Row>
       </div>
     );
   }
 
-  const processStats = (data as any)?.tasks?.process_stats || {};
-  const scheduledJobs = (data as any)?.tasks?.scheduled_jobs || {};
+  const processStats = data?.tasks?.process_stats ?? {
+    total: 0,
+    status_counts: {} as Record<string, number>,
+    type_counts: {} as Record<string, number>,
+    type_trend: { dates: [] as string[], series: [] as { name: string; data: number[] }[] },
+    today: { total: 0, completed: 0, failed: 0 },
+    week: { total: 0 },
+    month: { total: 0 },
+    period: { total: 0, completed: 0, failed: 0 },
+    recent_tasks: [] as {
+      id: number;
+      name: string;
+      status: string;
+      started_at: string | null;
+      duration: number | null;
+    }[],
+  };
+  const scheduledJobs = data?.tasks?.scheduled_jobs ?? {
+    total: 0,
+    jobs: [] as {
+      id: string;
+      name: string;
+      trigger_type: string;
+      trigger_desc: string;
+      next_run: string | null;
+      pending: boolean;
+    }[],
+  };
+  const taskStats = data?.tasks?.task_stats;
+  const scheduleModule = data?.modules?.schedule;
   const typeCounts: Record<string, number> = processStats.type_counts || {};
-  const typeTrend = processStats.type_trend || {
+  const typeTrend = processStats.type_trend ?? {
     dates: [] as string[],
     series: [] as { name: string; data: number[] }[],
   };
-  const period = processStats.period || {};
+  const period = processStats.period ?? { total: 0, completed: 0, failed: 0 };
+  const statusCounts: Record<string, number> = processStats.status_counts || {};
+  const statusEntries = Object.entries(statusCounts).filter(([, v]) => (v as number) > 0);
+  const statusTotal = statusEntries.reduce((s, [, v]) => s + (v as number), 0) || 1;
+  const periodTotal = period.total || 0;
+  const periodCompleted = period.completed || 0;
+  const successRate =
+    periodTotal > 0 ? Math.round((periodCompleted / periodTotal) * 100) : 0;
+  const recentTasks = processStats.recent_tasks || [];
 
   // ── 图表配置 ──
   const typeEntries = Object.entries(typeCounts);
@@ -326,14 +405,37 @@ export default function Dashboard() {
               )}
             </div>
             <Divider style={{ margin: "12px 0" }} />
-            <Space split={<Divider type="vertical" />}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                v{data?.system?.version || "-"}
-              </Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                运行 {data?.system?.uptime || "-"}
-              </Text>
+            <Space size={4} wrap>
+              <Tag color="blue" style={{ margin: 0 }}>
+                {data?.system?.app_name || "推送系统"}
+              </Tag>
             </Space>
+            <div style={{ marginTop: 8 }}>
+              <Space size={4} split={<Divider type="vertical" />} wrap>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  v{data?.system?.version || "-"}
+                </Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  运行 {data?.system?.uptime || "-"}
+                </Text>
+              </Space>
+            </div>
+            <div style={{ marginTop: 6 }}>
+              <Space size={4} wrap>
+                <Tag
+                  color={data?.system?.auth_enabled ? "green" : "default"}
+                  style={{ margin: 0, fontSize: 12 }}
+                >
+                  {data?.system?.auth_enabled ? "鉴权开" : "鉴权关"}
+                </Tag>
+                <Tag
+                  color={data?.system?.debug ? "orange" : "default"}
+                  style={{ margin: 0, fontSize: 12 }}
+                >
+                  {data?.system?.debug ? "DEBUG" : "生产"}
+                </Tag>
+              </Space>
+            </div>
           </Card>
         </Col>
 
@@ -411,33 +513,47 @@ export default function Dashboard() {
         </Col>
 
         <Col xs={24} sm={12} lg={6}>
-          <Card className="status-card" hoverable style={{ opacity: isOffline ? 0.5 : 1 }}>
+          <Card className="status-card" hoverable>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
-                <Text type="secondary">定时任务</Text>
+                <Text type="secondary">课表数据</Text>
                 <div style={{ marginTop: 8 }}>
-                  <Text strong style={{ fontSize: 20, color: isOffline ? "#999" : "inherit" }}>
-                    {isOffline ? "离线" : `${scheduledJobs.total || 0} 个`}
-                  </Text>
+                  <Badge
+                    status={scheduleModule?.data_ready ? "success" : "default"}
+                    text={
+                      <Text
+                        strong
+                        style={{ fontSize: 18, color: scheduleModule?.data_ready ? "#52c41a" : "#999" }}
+                      >
+                        {scheduleModule?.data_ready ? "就绪" : "未就绪"}
+                      </Text>
+                    }
+                  />
                 </div>
               </div>
-              <ScheduleOutlined style={{ fontSize: 40, color: isOffline ? "#999" : "#1890ff" }} />
+              <ScheduleOutlined
+                style={{ fontSize: 40, color: scheduleModule?.data_ready ? "#1890ff" : "#999" }}
+              />
             </div>
             <Divider style={{ margin: "12px 0" }} />
-            <Space size="small" style={{ fontSize: 12 }}>
-              <Text type="secondary">课表:</Text>
-              {data?.tasks?.spider_status?.course?.running ? (
-                <Tag color="processing">运行中</Tag>
-              ) : (
-                <Tag>空闲</Tag>
-              )}
-              <Text type="secondary">电量:</Text>
-              {data?.tasks?.spider_status?.electricity?.running ? (
-                <Tag color="processing">运行中</Tag>
-              ) : (
-                <Tag>空闲</Tag>
-              )}
+            <Space size={4} split={<Divider type="vertical" />} wrap>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                条目 {scheduleModule?.stats?.total ?? "-"}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                今日 {scheduleModule?.stats?.today ?? "-"}
+              </Text>
             </Space>
+            <div style={{ marginTop: 6 }}>
+              <Space size={4} split={<Divider type="vertical" />} wrap>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  课程 {scheduleModule?.stats?.unique_courses ?? "-"}
+                </Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  教师 {scheduleModule?.stats?.unique_teachers ?? "-"}
+                </Text>
+              </Space>
+            </div>
           </Card>
         </Col>
       </Row>
@@ -560,7 +676,140 @@ export default function Dashboard() {
               </Col>
             </Row>
 
-            <Divider style={{ margin: "0 0 16px 0" }} />
+            {/* ── 概览补充：成功率 / 状态分布 / 调度 ── */}
+            <Row gutter={[16, 16]} style={{ marginBottom: 8 }}>
+              <Col xs={24} lg={12}>
+                <div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <Text type="secondary" style={{ fontSize: 13 }}>
+                      {timeRange === "this_month" ? "今日成功率" : "期间成功率"}
+                    </Text>
+                    <Text
+                      strong
+                      style={{
+                        color:
+                          successRate >= 90 ? "#52c41a" : successRate >= 70 ? "#faad14" : "#ff4d4f",
+                      }}
+                    >
+                      {successRate}%
+                    </Text>
+                  </div>
+                  <Progress
+                    percent={successRate}
+                    showInfo={false}
+                    strokeColor={
+                      successRate >= 90 ? "#52c41a" : successRate >= 70 ? "#faad14" : "#ff4d4f"
+                    }
+                  />
+                  {statusEntries.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          height: 10,
+                          borderRadius: 5,
+                          overflow: "hidden",
+                          background: "#f0f0f0",
+                        }}
+                      >
+                        {statusEntries.map(([k, v]) => (
+                          <Tooltip title={`${TASK_STATUS_MAP[k]?.text || k}: ${v}`} key={k}>
+                            <div
+                              style={{
+                                width: `${((v as number) / statusTotal) * 100}%`,
+                                background: colorForStatus(k),
+                              }}
+                            />
+                          </Tooltip>
+                        ))}
+                      </div>
+                      <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 10 }}>
+                        {statusEntries.map(([k, v]) => (
+                          <Space size={4} key={k}>
+                            <span
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: "50%",
+                                background: colorForStatus(k),
+                                display: "inline-block",
+                              }}
+                            />
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              {TASK_STATUS_MAP[k]?.text || k}
+                            </Text>
+                            <Text style={{ fontSize: 12 }}>{v as number}</Text>
+                          </Space>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Col>
+              <Col xs={24} lg={12}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 13 }}>
+                      调度与爬虫
+                    </Text>
+                    <div style={{ marginTop: 6 }}>
+                      <Space size="small" wrap>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          定时任务:
+                        </Text>
+                        <Tag>{scheduledJobs.total || 0} 个</Tag>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          课表爬虫:
+                        </Text>
+                        {data?.tasks?.spider_status?.course?.running ? (
+                          <Tag color="processing">运行中</Tag>
+                        ) : (
+                          <Tag>空闲</Tag>
+                        )}
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          电量爬虫:
+                        </Text>
+                        {data?.tasks?.spider_status?.electricity?.running ? (
+                          <Tag color="processing">运行中</Tag>
+                        ) : (
+                          <Tag>空闲</Tag>
+                        )}
+                      </Space>
+                    </div>
+                  </div>
+                  {taskStats && (
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 13 }}>
+                        推送队列
+                      </Text>
+                      <div style={{ marginTop: 6 }}>
+                        <Space size="small" wrap>
+                          <Tag color={taskStats.pending > 0 ? "warning" : "default"}>
+                            待处理 {taskStats.pending}
+                          </Tag>
+                          <Tag color={taskStats.processing > 0 ? "processing" : "default"}>
+                            处理中 {taskStats.processing}
+                          </Tag>
+                          <Tag color="success">成功 {taskStats.success}</Tag>
+                          <Tag color={taskStats.failed > 0 ? "error" : "default"}>
+                            失败 {taskStats.failed}
+                          </Tag>
+                        </Space>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Col>
+            </Row>
+
+            <Divider style={{ margin: "8px 0 16px 0" }} />
 
             {/* ── 图表标题行 ── */}
             <div
@@ -608,9 +857,9 @@ export default function Dashboard() {
             styles={{ body: { padding: 12 } }}
             style={{ height: "100%" }}
           >
-            {processStats.recent_tasks?.length > 0 ? (
+            {recentTasks.length > 0 ? (
               <Timeline
-                items={processStats.recent_tasks.slice(0, 5).map((task: any) => ({
+                items={recentTasks.slice(0, 5).map((task: any) => ({
                   color:
                     task.status === "completed"
                       ? "green"
@@ -641,6 +890,44 @@ export default function Dashboard() {
           </Card>
         </Col>
       </Row>
+
+      {/* 定时任务列表 */}
+      <Card
+        title={
+          <span>
+            <ScheduleOutlined style={{ marginRight: 8 }} />
+            定时任务
+            <Tag style={{ marginLeft: 8 }}>{scheduledJobs.total || 0}</Tag>
+          </span>
+        }
+        style={{ marginTop: 16 }}
+      >
+        {scheduledJobs.jobs?.length ? (
+          <Table
+            rowKey="id"
+            size="small"
+            pagination={false}
+            dataSource={scheduledJobs.jobs}
+            columns={[
+              { title: "任务", dataIndex: "name" },
+              { title: "执行频率", dataIndex: "trigger_desc" },
+              {
+                title: "下次执行",
+                dataIndex: "next_run",
+                render: (v: string | null) => (v ? dayjs(v).format("MM-DD HH:mm") : "—"),
+              },
+              {
+                title: "状态",
+                dataIndex: "pending",
+                render: (p: boolean) =>
+                  p ? <Tag color="warning">待运行</Tag> : <Tag color="success">已排程</Tag>,
+              },
+            ]}
+          />
+        ) : (
+          <Empty description="暂无定时任务" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        )}
+      </Card>
 
       {/* 快捷操作 */}
       <Card
