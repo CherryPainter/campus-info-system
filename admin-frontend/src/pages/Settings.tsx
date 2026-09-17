@@ -46,6 +46,8 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   // 天气预警推送总开关（天气折叠面板顶部独立快捷开关，免去在通用表格里翻找 alert_enabled）
   const [alertToggleSaving, setAlertToggleSaving] = useState(false);
+  // 课表爬虫总开关（课程折叠面板顶部独立快捷开关，对应后端 course.spider_enabled）
+  const [spiderToggleSaving, setSpiderToggleSaving] = useState(false);
 
   // MFA 状态
   const [mfaEnabled, setMfaEnabled] = useState(false);
@@ -251,10 +253,66 @@ export default function Settings() {
     }
   };
 
+  // 课表爬虫总开关（course.spider_enabled）：关闭后停止定时爬取与预约/立即任务自动拾取，
+  // 管理页手动触发不受影响；后端保存后即时 reload_scheduler，无需重启
+  const handleSpiderToggle = async (checked: boolean) => {
+    setSpiderToggleSaving(true);
+    // 乐观更新，失败回滚
+    setConfigs((prev) => {
+      const course = prev['course'];
+      if (!course) return prev;
+      return {
+        ...prev,
+        course: {
+          ...course,
+          configs: course.configs.map((c) =>
+            c.key === 'spider_enabled' ? { ...c, value: checked } : c
+          ),
+        },
+      };
+    });
+    try {
+      const res = await configApi.update('course', 'spider_enabled', checked);
+      if (res.status === 'success') {
+        message.success(
+          checked ? '已开启课表爬虫（定时爬取已恢复）' : '已关闭课表爬虫（定时爬取已停止）'
+        );
+      } else {
+        throw new Error('保存失败');
+      }
+    } catch (error: any) {
+      // 回滚
+      setConfigs((prev) => {
+        const course = prev['course'];
+        if (!course) return prev;
+        return {
+          ...prev,
+          course: {
+            ...course,
+            configs: course.configs.map((c) =>
+              c.key === 'spider_enabled' ? { ...c, value: !checked } : c
+            ),
+          },
+        };
+      });
+      message.error(error?.response?.data?.message || '保存失败');
+    } finally {
+      setSpiderToggleSaving(false);
+    }
+  };
+
   // 天气面板顶部快捷开关的当前值（从 configs.weather 分组里找 alert_enabled）
   const alertEnabled = (() => {
     const w = configs['weather'];
     const item = w?.configs?.find((c) => c.key === 'alert_enabled');
+    if (!item) return true;
+    return String(item.value).toLowerCase() !== 'false';
+  })();
+
+  // 课程面板顶部快捷开关的当前值（从 configs.course 分组里找 spider_enabled）
+  const spiderEnabled = (() => {
+    const g = configs['course'];
+    const item = g?.configs?.find((c) => c.key === 'spider_enabled');
     if (!item) return true;
     return String(item.value).toLowerCase() !== 'false';
   })();
@@ -548,6 +606,39 @@ export default function Settings() {
                           checked={alertEnabled}
                           loading={alertToggleSaving}
                           onChange={handleAlertToggle}
+                          checkedChildren="开"
+                          unCheckedChildren="关"
+                        />
+                      </div>
+                    )}
+                    {module === 'course' && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          border: `1px solid ${spiderEnabled ? '#91d5ff' : '#ffccc7'}`,
+                          background: spiderEnabled ? '#e6f7ff' : '#fff1f0',
+                          borderRadius: 8,
+                          padding: '10px 14px',
+                          marginBottom: 12,
+                          flexWrap: 'wrap',
+                          gap: 8,
+                        }}
+                      >
+                        <Space>
+                          <span style={{ fontWeight: 600 }}>课表爬虫总开关</span>
+                          <Tag color={spiderEnabled ? 'blue' : 'error'} style={{ margin: 0 }}>
+                            {spiderEnabled ? '运行中' : '已停止'}
+                          </Tag>
+                          <Tooltip title="关闭后：停止课表定时爬取，并停掉预约/立即任务的自动拾取（管理页手动触发不受影响）。修改保存后即时生效，无需重启服务。">
+                            <QuestionCircleOutlined style={{ color: '#999', cursor: 'help' }} />
+                          </Tooltip>
+                        </Space>
+                        <Switch
+                          checked={spiderEnabled}
+                          loading={spiderToggleSaving}
+                          onChange={handleSpiderToggle}
                           checkedChildren="开"
                           unCheckedChildren="关"
                         />
