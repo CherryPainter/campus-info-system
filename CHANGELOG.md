@@ -19,18 +19,18 @@
   - 保留 `.editor-wrapper` 整体 key；`editorConfig` / `toolbarConfig` 用 `useMemo` 缓存。
 - **验证**：`tsc --noEmit` 通过（运行时点击保存的端到端验证待用户在 dev/build 环境确认）。
 
-### 调整：管理端仪表盘补全隐藏数据 + 视觉升级（前端，2026-09-17）
-- **背景**：后端 `/api/admin/dashboard` 实际返回的数据多于前端 `DashboardData` 接口声明，存在一批「前端未展示」字段（系统 `app_name/debug/auth_enabled/timestamp`、模块 `schedule` 统计、任务 `task_stats` 队列、`process_stats.status_counts/period/recent_tasks`、定时任务 `scheduled_jobs.jobs` 列表等）。本次按用户「更专业更全面，仅前端」方向，补齐展示并做视觉升级。
-- **改动**：
-  - `admin-frontend/src/api/admin.ts`：扩展 `DashboardData` 接口，显式声明上述所有原本隐藏的字段（均 optional，向后兼容）。
-  - `admin-frontend/src/pages/Dashboard.tsx`：
-    - 加载态由裸 `<Spin>` 升级为 `<Skeleton active>`（4 状态卡 + 2 内容卡骨架屏布局）；
-    - 服务状态卡补充 `app_name` / 鉴权开关 / DEBUG 标签；
-    - 第 4 张状态卡由「定时任务」改为「课表数据」（就绪徽标 + 总条数/今日/课程数/教师数）；
-    - 统计卡片上方新增概览区：期间成功率 `<Progress>`（≥90 绿 / ≥70 黄 / 否则红）+ 任务状态分布堆叠条与图例；「调度与爬虫」块（定时任务数 + 课表/电量爬虫运行状态）+「推送队列」块（待处理/处理中/成功/失败）；
-    - 新增「定时任务」列表卡（`<Table>` 展示任务名 / 执行频率 / 下次执行 / 状态），排在快捷操作卡之前。
-  - 派生变量改用带类型的 `??` 回退替代 `|| {}`，消除 `period` / `scheduled_jobs` / `recent_tasks` 的类型收窄错误。
-- **验证**：`tsc --noEmit` 退出码 0；`vite build` 成功（11866 模块，15.37s，仅 chunk 体积告警非错误）。运行时视觉效果待用户在 dev/build 环境确认。
+### 调整：管理端仪表盘重做（前端，2026-09-17）
+- **背景**：后端 `/api/admin/dashboard` 实际返回的数据多于前端 `DashboardData` 接口声明（系统 `app_name/debug/auth_enabled/uptime/timestamp`、模块 `schedule` 统计、任务 `task_stats` 队列、`process_stats.status_counts/period/recent_tasks`、`scheduled_jobs.jobs`，以及**按天×类型的任务趋势** `type_trend.dates+series`）。上一版仅把隐藏字段堆成 Tag 群与自绘色块，属低信息量填充物，已被否定重做。本次按「专业 + 全面、仅前端」方向重构信息架构。
+- **改动**（`admin-frontend/src/pages/Dashboard.tsx` + `admin-frontend/src/api/admin.ts` 接口声明）：
+  - 顶部系统环境条：在线状态 + 版本 + 环境(生产/DEBUG) + 鉴权 + 运行时长 + 数据时间。
+  - **核心 KPI 行**：期间执行（含今日/本月次轴）、任务成功率（≥90 绿/≥70 黄/否则红）、失败任务（含占比）、队列积压（待处理+处理中）。
+  - **模块健康三卡**：天气（实况/预报/预警缓存 + 城市/晨报时间）、电量（Cookie 已配 + 采集器运行态 + 已配人数/低电量阈值）、课表（数据就绪 + 条目/今日/课程/教师 + 更新时间 + 课表爬虫运行态）。
+  - **任务执行趋势**（视觉中心）：用 `type_trend` 真实时间序列渲染多类型面积/折线图（面积↔折线可切换），支持时间范围筛选；空数据降级 `Empty`。
+  - **两个 ECharts 环形图**：任务类型分布、任务状态分布（按业务状态配色，中心显示总数），替代原来自绘的堆叠色块。
+  - **最近任务时间线** + **定时任务表** + **快捷操作** 保留并归入统一栅格。
+  - 加载态 `<Skeleton>` 骨架屏按新栅格布局。
+  - 派生变量统一用带类型的 `??` 回退，消除 `period` / `scheduled_jobs` / `recent_tasks` 类型收窄错误。
+- **验证**：`tsc --noEmit` 退出码 0；`vite build` 成功（11866 模块，40.88s，仅 chunk 体积告警非错误）。运行时视觉效果待用户在 dev/build 环境确认。
 
 ## v6.18.0 (2026-09-09)
 

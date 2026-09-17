@@ -2,10 +2,10 @@
  * 仪表盘页面
  *
  * 功能：
- * - 系统状态概览
- * - 模块状态监控
- * - 任务执行统计（支持时间范围筛选 + 图表类型切换）
- * - 快捷操作
+ * - 系统状态与运行环境概览
+ * - 模块健康监控（天气 / 电量 / 课表）
+ * - 任务执行核心指标 + 趋势分析（支持时间范围筛选）
+ * - 最近任务 / 定时任务 / 快捷操作
  */
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -16,25 +16,19 @@ import {
   Button,
   Tag,
   Space,
-  Spin,
   Typography,
   Alert,
-  Progress,
   Skeleton,
   Table,
   Badge,
   Divider,
-  Tooltip,
   Timeline,
   Empty,
   App,
   DatePicker,
   Segmented,
-  Grid,
 } from "antd";
 import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
   CloudOutlined,
   ThunderboltOutlined,
   ScheduleOutlined,
@@ -43,18 +37,16 @@ import {
   ClockCircleOutlined,
   ToolOutlined,
   SendOutlined,
-  DatabaseOutlined,
   SyncOutlined,
-  WarningOutlined,
-  DisconnectOutlined,
   StopOutlined,
-  PieChartOutlined,
-  LineChartOutlined,
+  RiseOutlined,
+  FallOutlined,
+  ContainerOutlined,
 } from "@ant-design/icons";
 import { adminApi, type DashboardData } from "@/api/admin";
 import { holidayApi, type HolidayStatus } from "@/api/holiday";
 import dayjs from "dayjs";
-import { formatDate, formatTimeShort } from "@/utils/datetime";
+import { formatTimeShort } from "@/utils/datetime";
 import ReactECharts from "echarts-for-react";
 import { useServerStatus } from "@/components/ServerStatusProvider";
 import { useIntervalPolling } from "@/hooks/useIntervalPolling";
@@ -64,7 +56,7 @@ import { TASK_STATUS_MAP } from "@/constants/statusMaps";
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
-// 状态颜色映射
+// 状态颜色映射（模块卡片用）
 const STATUS_COLORS: Record<string, string> = {
   ok: "#52c41a",
   running: "#1890ff",
@@ -75,13 +67,15 @@ const STATUS_COLORS: Record<string, string> = {
 // 图表主色调
 const CHART_COLORS = ["#1890ff", "#52c41a", "#faad14", "#f5222d", "#722ed1", "#13c2c2", "#eb2f96"];
 
-// Ant Design 状态色名 → 十六进制（用于 Progress / 自绘堆叠条背景）
+// Ant Design 状态色名 → 十六进制（用于状态分布环形图配色）
 const STATUS_HEX: Record<string, string> = {
   success: "#52c41a",
   error: "#ff4d4f",
   processing: "#1890ff",
   warning: "#faad14",
   default: "#d9d9d9",
+  running: "#1890ff",
+  pending: "#faad14",
 };
 const colorForStatus = (s: string): string =>
   STATUS_HEX[(TASK_STATUS_MAP[s]?.color as string) || "default"] || "#999";
@@ -102,23 +96,20 @@ export default function Dashboard() {
   const { isOffline } = useServerStatus();
   const [holidayStatus, setHolidayStatus] = useState<HolidayStatus | null>(null);
   const { message } = App.useApp();
-  // 移动端断点：收缩外层 Card body padding，避免 PageContainer + Card + 内层小 Card 留白累加
-  const screens = Grid.useBreakpoint();
-  const isMobile = !screens.md;
 
   // 时间筛选
   const [timeRange, setTimeRange] = useState("this_month");
   const [customRange, setCustomRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
-  // 图表类型
-  const [chartType, setChartType] = useState<"pie" | "line">("pie");
+  // 趋势图类型
+  const [trendType, setTrendType] = useState<"area" | "line">("area");
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
       const params: any = { time_range: timeRange };
       if (timeRange === "custom" && customRange) {
-        params.start_date = formatDate(customRange[0]);
-        params.end_date = formatDate(customRange[1]);
+        params.start_date = customRange[0].format("YYYY-MM-DD");
+        params.end_date = customRange[1].format("YYYY-MM-DD");
       }
       const res = await adminApi.getDashboard(params);
       if (res.status === "success" && res.data) {
@@ -180,20 +171,19 @@ export default function Dashboard() {
   if (loading && !data) {
     return (
       <div className="dashboard-container" style={{ padding: "0 4px" }}>
-        <div
-          style={{
-            margin: "24px 0",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <Skeleton.Input active size="large" style={{ width: 160 }} />
-          <Skeleton.Input active style={{ width: 220 }} />
-        </div>
+        <Skeleton.Input active size="large" style={{ width: 220, marginBottom: 24 }} />
         <Row gutter={[16, 16]}>
           {[0, 1, 2, 3].map((i) => (
-            <Col xs={24} sm={12} lg={6} key={i}>
+            <Col xs={12} sm={6} lg={6} key={`k${i}`}>
+              <Card>
+                <Skeleton active paragraph={{ rows: 1 }} />
+              </Card>
+            </Col>
+          ))}
+        </Row>
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          {[0, 1, 2].map((i) => (
+            <Col xs={24} sm={8} lg={8} key={`m${i}`}>
               <Card>
                 <Skeleton active paragraph={{ rows: 2 }} />
               </Card>
@@ -208,7 +198,7 @@ export default function Dashboard() {
           </Col>
           <Col xs={24} lg={8}>
             <Card>
-              <Skeleton active paragraph={{ rows: 6 }} />
+              <Skeleton active paragraph={{ rows: 8 }} />
             </Card>
           </Col>
         </Row>
@@ -254,99 +244,121 @@ export default function Dashboard() {
   const period = processStats.period ?? { total: 0, completed: 0, failed: 0 };
   const statusCounts: Record<string, number> = processStats.status_counts || {};
   const statusEntries = Object.entries(statusCounts).filter(([, v]) => (v as number) > 0);
-  const statusTotal = statusEntries.reduce((s, [, v]) => s + (v as number), 0) || 1;
+  const statusTotal = Object.values(statusCounts).reduce((s, v) => s + ((v as number) || 0), 0) || 1;
   const periodTotal = period.total || 0;
   const periodCompleted = period.completed || 0;
+  const periodFailed = period.failed || 0;
   const successRate =
     periodTotal > 0 ? Math.round((periodCompleted / periodTotal) * 100) : 0;
   const recentTasks = processStats.recent_tasks || [];
+  const todayTotal = processStats.today?.total || 0;
+  const monthTotal = processStats.month?.total || 0;
+  const pending = taskStats?.pending ?? 0;
+  const processing = taskStats?.processing ?? 0;
+  const queueBacklog = pending + processing;
+  const courseCrawlerRunning = data?.tasks?.spider_status?.course?.running;
+  const elecCrawlerRunning = data?.tasks?.spider_status?.electricity?.running;
+
+  const successColor =
+    successRate >= 90 ? "#52c41a" : successRate >= 70 ? "#faad14" : "#ff4d4f";
+  const failRate = periodTotal > 0 ? Math.round((periodFailed / periodTotal) * 100) : 0;
 
   // ── 图表配置 ──
   const typeEntries = Object.entries(typeCounts);
   const hasData = typeEntries.length > 0;
   const hasTrend = typeTrend.dates.length > 0;
 
-  const pieOption = {
-    tooltip: {
-      trigger: "item",
-      formatter: "{b}: {c} ({d}%)",
-    },
-    legend: {
-      orient: "horizontal",
-      left: "center",
-      bottom: 0,
-    },
-    series: [
-      {
-        name: "任务类型",
-        type: "pie",
-        radius: ["40%", "70%"],
-        center: ["50%", "45%"],
-        avoidLabelOverlap: false,
-        itemStyle: {
-          borderRadius: 8,
-          borderColor: "#fff",
-          borderWidth: 2,
-        },
-        label: {
-          show: true,
-          formatter: "{b}\n{c}",
-        },
-        emphasis: {
-          label: {
-            show: true,
-            fontSize: 14,
-            fontWeight: "bold",
-          },
-        },
-        data: typeEntries.map(([type, count]) => ({
-          name: type,
-          value: count,
-        })),
-      },
-    ],
-    color: CHART_COLORS,
-  };
-
-  const lineOption = {
-    tooltip: {
-      trigger: "axis",
-    },
+  // 任务趋势（按类型多序列面积图）—— 仪表盘核心分析图
+  const trendOption = {
+    tooltip: { trigger: "axis" },
     legend: {
       data: typeTrend.series.map((s: { name: string; data: number[] }) => s.name),
       bottom: 0,
+      type: "scroll" as const,
     },
-    grid: {
-      left: "3%",
-      right: "4%",
-      bottom: "12%",
-      top: "6%",
-      containLabel: true,
-    },
+    grid: { left: "3%", right: "4%", bottom: "14%", top: "6%", containLabel: true },
     xAxis: {
       type: "category",
-      data: typeTrend.dates.map((d: string) => d.slice(5)), // MM-DD
       boundaryGap: false,
+      data: typeTrend.dates.map((d: string) => d.slice(5)), // MM-DD
+      axisLine: { lineStyle: { color: "#d9d9d9" } },
+      axisLabel: { color: "#8c8c8c" },
     },
     yAxis: {
       type: "value",
       name: "次",
       minInterval: 1,
+      splitLine: { lineStyle: { color: "#f0f0f0" } },
+      axisLabel: { color: "#8c8c8c" },
     },
     series: typeTrend.series.map((s: { name: string; data: number[] }) => ({
       name: s.name,
       type: "line",
       data: s.data,
       smooth: true,
-      symbol: "circle",
-      symbolSize: 6,
+      showSymbol: false,
       lineStyle: { width: 2 },
-      areaStyle: { opacity: 0.08 },
+      areaStyle: trendType === "area" ? { opacity: 0.12 } : undefined,
     })),
     color: CHART_COLORS,
   };
 
-  const chartOption = chartType === "pie" ? pieOption : lineOption;
+  // 任务类型分布（环形图）
+  const typeDistOption = {
+    tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
+    legend: { orient: "horizontal" as const, left: "center", bottom: 0, type: "scroll" as const },
+    title: {
+      text: String(typeEntries.reduce((s, [, v]) => s + (v as number), 0)),
+      subtext: "任务总数",
+      left: "center",
+      top: "42%",
+      textStyle: { fontSize: 22, fontWeight: 600 as const, color: "#262626" },
+      subtextStyle: { fontSize: 12, color: "#8c8c8c" },
+    },
+    series: [
+      {
+        name: "任务类型",
+        type: "pie",
+        radius: ["52%", "74%"],
+        center: ["50%", "46%"],
+        avoidLabelOverlap: true,
+        itemStyle: { borderColor: "#fff", borderWidth: 2 },
+        label: { show: false },
+        data: typeEntries.map(([type, count]) => ({ name: type, value: count as number })),
+      },
+    ],
+    color: CHART_COLORS,
+  };
+
+  // 任务状态分布（环形图，按业务状态配色）
+  const statusDistOption = {
+    tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
+    legend: { orient: "horizontal" as const, left: "center", bottom: 0, type: "scroll" as const },
+    title: {
+      text: String(statusTotal),
+      subtext: "执行总数",
+      left: "center",
+      top: "42%",
+      textStyle: { fontSize: 22, fontWeight: 600 as const, color: "#262626" },
+      subtextStyle: { fontSize: 12, color: "#8c8c8c" },
+    },
+    series: [
+      {
+        name: "任务状态",
+        type: "pie",
+        radius: ["52%", "74%"],
+        center: ["50%", "46%"],
+        avoidLabelOverlap: true,
+        itemStyle: { borderColor: "#fff", borderWidth: 2 },
+        label: { show: false },
+        data: statusEntries.map(([k, v]) => ({
+          name: TASK_STATUS_MAP[k]?.text || k,
+          value: v as number,
+          itemStyle: { color: colorForStatus(k) },
+        })),
+      },
+    ],
+  };
 
   return (
     <div className="dashboard-container">
@@ -360,86 +372,140 @@ export default function Dashboard() {
           description="当前处于假期区间内，全体面向用户的推送已自动静音；进程历史中的「已静音」记录即由此产生。系统/安全告警不受影响。"
         />
       )}
-      {/* 页面标题 */}
+
+      {/* 页面标题 + 系统环境条 */}
       <div
         style={{
-          marginBottom: 24,
+          marginBottom: 20,
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
+          alignItems: "flex-end",
           flexWrap: "wrap",
-          gap: 8,
+          gap: 12,
         }}
       >
-        <Title level={4} style={{ margin: 0 }}>
-          系统概览
-        </Title>
+        <div>
+          <Title level={4} style={{ margin: 0 }}>
+            系统概览
+          </Title>
+          <Space size={6} wrap style={{ marginTop: 6 }} split={<Divider type="vertical" />}>
+            <Space size={4}>
+              <Badge status={isOffline ? "error" : "success"} />
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                {isOffline ? "服务已停止" : "服务运行中"}
+              </Text>
+            </Space>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              v{data?.system?.version || "-"}
+            </Text>
+            <Tag
+              color={data?.system?.debug ? "orange" : "green"}
+              style={{ margin: 0, fontSize: 12 }}
+            >
+              {data?.system?.debug ? "DEBUG" : "生产环境"}
+            </Tag>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              鉴权{data?.system?.auth_enabled ? "已开启" : "已关闭"}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              运行 {data?.system?.uptime || "-"}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              数据时间{" "}
+              {data?.system?.timestamp
+                ? dayjs(data.system.timestamp).format("MM-DD HH:mm")
+                : "-"}
+            </Text>
+          </Space>
+        </div>
         <Space wrap>
-          <Text type="secondary">
-            <ClockCircleOutlined style={{ marginRight: 4 }} />
-            上次更新: {dayjs().format("HH:mm:ss")}
-          </Text>
+          <Segmented
+            options={TIME_RANGE_OPTIONS}
+            value={timeRange}
+            onChange={(v) => setTimeRange(v as string)}
+          />
+          {timeRange === "custom" && (
+            <RangePicker value={customRange as any} onChange={(v) => setCustomRange(v as any)} />
+          )}
           <Button icon={<ReloadOutlined />} onClick={fetchDashboard} loading={loading}>
             刷新
           </Button>
         </Space>
       </div>
 
-      {/* 系统状态卡片 */}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} lg={6}>
-          <Card className="status-card" hoverable style={{ opacity: isOffline ? 0.5 : 1 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div>
-                <Text type="secondary">服务状态</Text>
-                <div style={{ marginTop: 8 }}>
-                  <Text strong style={{ fontSize: 20, color: isOffline ? "#ff4d4f" : "#52c41a" }}>
-                    {isOffline ? "已停止" : "运行中"}
-                  </Text>
-                </div>
-              </div>
-              {isOffline ? (
-                <CloseCircleOutlined style={{ fontSize: 40, color: "#ff4d4f" }} />
-              ) : (
-                <CheckCircleOutlined style={{ fontSize: 40, color: "#52c41a" }} />
-              )}
-            </div>
-            <Divider style={{ margin: "12px 0" }} />
-            <Space size={4} wrap>
-              <Tag color="blue" style={{ margin: 0 }}>
-                {data?.system?.app_name || "推送系统"}
-              </Tag>
-            </Space>
+      {/* 核心指标 KPI */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={6} lg={6}>
+          <Card className="kpi-card" hoverable>
+            <Statistic
+              title="期间任务执行"
+              value={periodTotal}
+              suffix="次"
+              valueStyle={{ fontSize: 28, fontWeight: 600 }}
+            />
             <div style={{ marginTop: 8 }}>
-              <Space size={4} split={<Divider type="vertical" />} wrap>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  v{data?.system?.version || "-"}
-                </Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  运行 {data?.system?.uptime || "-"}
-                </Text>
-              </Space>
-            </div>
-            <div style={{ marginTop: 6 }}>
-              <Space size={4} wrap>
-                <Tag
-                  color={data?.system?.auth_enabled ? "green" : "default"}
-                  style={{ margin: 0, fontSize: 12 }}
-                >
-                  {data?.system?.auth_enabled ? "鉴权开" : "鉴权关"}
-                </Tag>
-                <Tag
-                  color={data?.system?.debug ? "orange" : "default"}
-                  style={{ margin: 0, fontSize: 12 }}
-                >
-                  {data?.system?.debug ? "DEBUG" : "生产"}
-                </Tag>
-              </Space>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                今日 {todayTotal} · 本月 {monthTotal}
+              </Text>
             </div>
           </Card>
         </Col>
+        <Col xs={12} sm={6} lg={6}>
+          <Card className="kpi-card" hoverable>
+            <Statistic
+              title="任务成功率"
+              value={successRate}
+              suffix="%"
+              valueStyle={{ fontSize: 28, fontWeight: 600, color: successColor }}
+            />
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                完成 {periodCompleted} / {periodTotal}
+              </Text>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={12} sm={6} lg={6}>
+          <Card className="kpi-card" hoverable>
+            <Statistic
+              title="失败任务"
+              value={periodFailed}
+              suffix="次"
+              valueStyle={{ fontSize: 28, fontWeight: 600, color: "#ff4d4f" }}
+            />
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                占比 {failRate}%
+              </Text>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={12} sm={6} lg={6}>
+          <Card className="kpi-card" hoverable>
+            <Statistic
+              title="队列积压"
+              value={queueBacklog}
+              suffix="条"
+              valueStyle={{ fontSize: 28, fontWeight: 600, color: queueBacklog > 0 ? "#faad14" : "#52c41a" }}
+            />
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                待处理 {pending} · 处理中 {processing}
+              </Text>
+            </div>
+          </Card>
+        </Col>
+      </Row>
 
-        <Col xs={24} sm={12} lg={6}>
+      {/* 模块健康 */}
+      <div style={{ marginBottom: 6 }}>
+        <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>
+          模块健康
+        </Text>
+      </div>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        {/* 天气 */}
+        <Col xs={24} sm={8} lg={8}>
           <Card className="status-card" hoverable>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
@@ -459,21 +525,28 @@ export default function Dashboard() {
               </div>
               <CloudOutlined
                 style={{
-                  fontSize: 40,
+                  fontSize: 38,
                   color: STATUS_COLORS[data?.modules?.weather?.status || "disabled"] || "#d9d9d9",
                 }}
               />
             </div>
             <Divider style={{ margin: "12px 0" }} />
-            <Space size={4}>
-              <Tag color={data?.modules?.weather?.cache?.now ? "green" : "default"}>实时</Tag>
+            <Space size={4} wrap>
+              <Tag color={data?.modules?.weather?.cache?.now ? "green" : "default"}>实况</Tag>
               <Tag color={data?.modules?.weather?.cache?.hourly ? "green" : "default"}>预报</Tag>
               <Tag color={data?.modules?.weather?.cache?.alert ? "green" : "default"}>预警</Tag>
             </Space>
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {data?.modules?.weather?.config?.city_name || "-"} · 晨报{" "}
+                {data?.modules?.weather?.config?.daily_push_time || "-"}
+              </Text>
+            </div>
           </Card>
         </Col>
 
-        <Col xs={24} sm={12} lg={6}>
+        {/* 电量 */}
+        <Col xs={24} sm={8} lg={8}>
           <Card className="status-card" hoverable>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
@@ -494,359 +567,150 @@ export default function Dashboard() {
               </div>
               <ThunderboltOutlined
                 style={{
-                  fontSize: 40,
+                  fontSize: 38,
                   color:
                     STATUS_COLORS[data?.modules?.electricity?.status || "disabled"] || "#d9d9d9",
                 }}
               />
             </div>
             <Divider style={{ margin: "12px 0" }} />
-            <Space split={<Divider type="vertical" />}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                已配置: {data?.modules?.electricity?.configured_students ?? 0} 人
-              </Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                数据: {data?.modules?.electricity?.data?.remaining_exists ? "有" : "无"}
-              </Text>
+            <Space size={4} wrap>
+              <Tag color={data?.modules?.electricity?.cookie_configured ? "green" : "default"}>
+                Cookie{data?.modules?.electricity?.cookie_configured ? "已配" : "未配"}
+              </Tag>
+              {elecCrawlerRunning ? (
+                <Tag color="processing">采集中</Tag>
+              ) : (
+                <Tag>空闲</Tag>
+              )}
             </Space>
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                已配 {data?.modules?.electricity?.configured_students ?? 0} 人 · 低电量阈值{" "}
+                {data?.modules?.electricity?.config?.low_power_threshold ?? "-"}%
+              </Text>
+            </div>
           </Card>
         </Col>
 
-        <Col xs={24} sm={12} lg={6}>
+        {/* 课表 */}
+        <Col xs={24} sm={8} lg={8}>
           <Card className="status-card" hoverable>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
-                <Text type="secondary">课表数据</Text>
+                <Text type="secondary">课表模块</Text>
                 <div style={{ marginTop: 8 }}>
                   <Badge
                     status={scheduleModule?.data_ready ? "success" : "default"}
                     text={
                       <Text
                         strong
-                        style={{ fontSize: 18, color: scheduleModule?.data_ready ? "#52c41a" : "#999" }}
+                        style={{
+                          fontSize: 18,
+                          color: scheduleModule?.data_ready ? "#52c41a" : "#999",
+                        }}
                       >
-                        {scheduleModule?.data_ready ? "就绪" : "未就绪"}
+                        {scheduleModule?.data_ready ? "数据就绪" : "未就绪"}
                       </Text>
                     }
                   />
                 </div>
               </div>
               <ScheduleOutlined
-                style={{ fontSize: 40, color: scheduleModule?.data_ready ? "#1890ff" : "#999" }}
+                style={{ fontSize: 38, color: scheduleModule?.data_ready ? "#1890ff" : "#999" }}
               />
             </div>
             <Divider style={{ margin: "12px 0" }} />
-            <Space size={4} split={<Divider type="vertical" />} wrap>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                条目 {scheduleModule?.stats?.total ?? "-"}
-              </Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                今日 {scheduleModule?.stats?.today ?? "-"}
-              </Text>
+            <Space size={4} wrap>
+              <Tag>条目 {scheduleModule?.stats?.total ?? "-"}</Tag>
+              <Tag>今日 {scheduleModule?.stats?.today ?? "-"}</Tag>
+              {courseCrawlerRunning ? (
+                <Tag color="processing">采集中</Tag>
+              ) : (
+                <Tag>空闲</Tag>
+              )}
             </Space>
-            <div style={{ marginTop: 6 }}>
-              <Space size={4} split={<Divider type="vertical" />} wrap>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  课程 {scheduleModule?.stats?.unique_courses ?? "-"}
-                </Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  教师 {scheduleModule?.stats?.unique_teachers ?? "-"}
-                </Text>
-              </Space>
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                课程 {scheduleModule?.stats?.unique_courses ?? "-"} · 教师{" "}
+                {scheduleModule?.stats?.unique_teachers ?? "-"} · 更新{" "}
+                {scheduleModule?.stats?.last_updated
+                  ? formatTimeShort(scheduleModule.stats.last_updated)
+                  : "-"}
+              </Text>
             </div>
           </Card>
         </Col>
       </Row>
 
-      {/* 任务统计 */}
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      {/* 任务趋势 + 分布 */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={16}>
-          <Card style={{ height: "100%" }} styles={{ body: { padding: isMobile ? 12 : 24 } }}>
-            {/* ── 卡片头部：标题 + 时间筛选 ── */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-                gap: 12,
-                marginBottom: 20,
-              }}
-            >
-              <Space align="center">
-                <DatabaseOutlined style={{ fontSize: 18, color: "#1677ff" }} />
-                <Text strong style={{ fontSize: 16 }}>
-                  任务执行统计
-                </Text>
+          <Card
+            title={
+              <span>
+                <RiseOutlined style={{ marginRight: 8 }} />
+                任务执行趋势
                 {timeLabel && (
-                  <Tag color="processing" style={{ marginLeft: 4 }}>
+                  <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
                     {timeLabel}
-                  </Tag>
+                  </Text>
                 )}
-              </Space>
-
-              <Space size="small" wrap>
-                <Segmented
-                  size="small"
-                  value={timeRange}
-                  onChange={(v) => setTimeRange(v as string)}
-                  options={TIME_RANGE_OPTIONS}
-                />
-                {timeRange === "custom" && (
-                  <RangePicker
-                    size="small"
-                    value={customRange}
-                    onChange={(dates) => setCustomRange(dates as any)}
-                    style={{ width: 230 }}
-                    placeholder={["开始", "结束"]}
-                  />
-                )}
-              </Space>
-            </div>
-
-            {/* ── 统计卡片 ── */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-              <Col xs={12} sm={6}>
-                <Card size="small" styles={{ body: { padding: "14px 16px" } }}>
-                  <Statistic
-                    title={
-                      <Text type="secondary" style={{ fontSize: 13 }}>
-                        {timeRange === "this_month" ? "今日执行" : "期间执行"}
-                      </Text>
-                    }
-                    value={
-                      timeRange === "this_month"
-                        ? processStats.today?.total || 0
-                        : period.total || 0
-                    }
-                    suffix="次"
-                    valueStyle={{ fontSize: 28, fontWeight: 600 }}
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Card size="small" styles={{ body: { padding: "14px 16px" } }}>
-                  <Statistic
-                    title={
-                      <Text type="secondary" style={{ fontSize: 13 }}>
-                        {timeRange === "this_month" ? "今日完成" : "期间完成"}
-                      </Text>
-                    }
-                    value={
-                      timeRange === "this_month"
-                        ? processStats.today?.completed || 0
-                        : period.completed || 0
-                    }
-                    suffix="次"
-                    valueStyle={{ fontSize: 28, fontWeight: 600, color: "#52c41a" }}
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Card size="small" styles={{ body: { padding: "14px 16px" } }}>
-                  <Statistic
-                    title={
-                      <Text type="secondary" style={{ fontSize: 13 }}>
-                        {timeRange === "this_month" ? "今日失败" : "期间失败"}
-                      </Text>
-                    }
-                    value={
-                      timeRange === "this_month"
-                        ? processStats.today?.failed || 0
-                        : period.failed || 0
-                    }
-                    suffix="次"
-                    valueStyle={{ fontSize: 28, fontWeight: 600, color: "#ff4d4f" }}
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Card size="small" styles={{ body: { padding: "14px 16px" } }}>
-                  <Statistic
-                    title={
-                      <Text type="secondary" style={{ fontSize: 13 }}>
-                        期间总数
-                      </Text>
-                    }
-                    value={period.total || processStats.total || 0}
-                    suffix="次"
-                    valueStyle={{ fontSize: 28, fontWeight: 600 }}
-                  />
-                </Card>
-              </Col>
-            </Row>
-
-            {/* ── 概览补充：成功率 / 状态分布 / 调度 ── */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 8 }}>
-              <Col xs={24} lg={12}>
-                <div>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 4,
-                    }}
-                  >
-                    <Text type="secondary" style={{ fontSize: 13 }}>
-                      {timeRange === "this_month" ? "今日成功率" : "期间成功率"}
-                    </Text>
-                    <Text
-                      strong
-                      style={{
-                        color:
-                          successRate >= 90 ? "#52c41a" : successRate >= 70 ? "#faad14" : "#ff4d4f",
-                      }}
-                    >
-                      {successRate}%
-                    </Text>
-                  </div>
-                  <Progress
-                    percent={successRate}
-                    showInfo={false}
-                    strokeColor={
-                      successRate >= 90 ? "#52c41a" : successRate >= 70 ? "#faad14" : "#ff4d4f"
-                    }
-                  />
-                  {statusEntries.length > 0 && (
-                    <div style={{ marginTop: 12 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          height: 10,
-                          borderRadius: 5,
-                          overflow: "hidden",
-                          background: "#f0f0f0",
-                        }}
-                      >
-                        {statusEntries.map(([k, v]) => (
-                          <Tooltip title={`${TASK_STATUS_MAP[k]?.text || k}: ${v}`} key={k}>
-                            <div
-                              style={{
-                                width: `${((v as number) / statusTotal) * 100}%`,
-                                background: colorForStatus(k),
-                              }}
-                            />
-                          </Tooltip>
-                        ))}
-                      </div>
-                      <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 10 }}>
-                        {statusEntries.map(([k, v]) => (
-                          <Space size={4} key={k}>
-                            <span
-                              style={{
-                                width: 8,
-                                height: 8,
-                                borderRadius: "50%",
-                                background: colorForStatus(k),
-                                display: "inline-block",
-                              }}
-                            />
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              {TASK_STATUS_MAP[k]?.text || k}
-                            </Text>
-                            <Text style={{ fontSize: 12 }}>{v as number}</Text>
-                          </Space>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </Col>
-              <Col xs={24} lg={12}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div>
-                    <Text type="secondary" style={{ fontSize: 13 }}>
-                      调度与爬虫
-                    </Text>
-                    <div style={{ marginTop: 6 }}>
-                      <Space size="small" wrap>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          定时任务:
-                        </Text>
-                        <Tag>{scheduledJobs.total || 0} 个</Tag>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          课表爬虫:
-                        </Text>
-                        {data?.tasks?.spider_status?.course?.running ? (
-                          <Tag color="processing">运行中</Tag>
-                        ) : (
-                          <Tag>空闲</Tag>
-                        )}
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          电量爬虫:
-                        </Text>
-                        {data?.tasks?.spider_status?.electricity?.running ? (
-                          <Tag color="processing">运行中</Tag>
-                        ) : (
-                          <Tag>空闲</Tag>
-                        )}
-                      </Space>
-                    </div>
-                  </div>
-                  {taskStats && (
-                    <div>
-                      <Text type="secondary" style={{ fontSize: 13 }}>
-                        推送队列
-                      </Text>
-                      <div style={{ marginTop: 6 }}>
-                        <Space size="small" wrap>
-                          <Tag color={taskStats.pending > 0 ? "warning" : "default"}>
-                            待处理 {taskStats.pending}
-                          </Tag>
-                          <Tag color={taskStats.processing > 0 ? "processing" : "default"}>
-                            处理中 {taskStats.processing}
-                          </Tag>
-                          <Tag color="success">成功 {taskStats.success}</Tag>
-                          <Tag color={taskStats.failed > 0 ? "error" : "default"}>
-                            失败 {taskStats.failed}
-                          </Tag>
-                        </Space>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </Col>
-            </Row>
-
-            <Divider style={{ margin: "8px 0 16px 0" }} />
-
-            {/* ── 图表标题行 ── */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 8,
-              }}
-            >
-              <Text strong style={{ fontSize: 14 }}>
-                任务类型分布
-              </Text>
+              </span>
+            }
+            extra={
               <Segmented
                 size="small"
-                value={chartType}
-                onChange={(v) => setChartType(v as "pie" | "line")}
                 options={[
-                  { value: "pie", icon: <PieChartOutlined />, label: "饼图" },
-                  { value: "line", icon: <LineChartOutlined />, label: "折线图" },
+                  { label: "面积", value: "area" },
+                  { label: "折线", value: "line" },
                 ]}
+                value={trendType}
+                onChange={(v) => setTrendType(v as "area" | "line")}
               />
-            </div>
-
-            {(chartType === "pie" ? hasData : hasTrend) ? (
-              <div style={{ marginTop: 4 }}>
-                <ReactECharts option={chartOption} style={{ height: 280 }} notMerge />
-              </div>
+            }
+          >
+            {hasTrend ? (
+              <ReactECharts option={trendOption} style={{ height: 320 }} notMerge />
             ) : (
-              <div style={{ padding: 40, textAlign: "center" }}>
-                <Text type="secondary">暂无数据</Text>
-              </div>
+              <Empty
+                description="当前范围暂无任务记录"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                style={{ padding: "80px 0" }}
+              />
             )}
           </Card>
         </Col>
-
         <Col xs={24} lg={8}>
+          <Card title={<span><ContainerOutlined style={{ marginRight: 8 }} />任务类型分布</span>} style={{ height: "100%" }}>
+            {hasData ? (
+              <ReactECharts option={typeDistOption} style={{ height: 320 }} notMerge />
+            ) : (
+              <Empty
+                description="暂无数据"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                style={{ padding: "80px 0" }}
+              />
+            )}
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} lg={8}>
+          <Card title={<span><FallOutlined style={{ marginRight: 8 }} />任务状态分布</span>} style={{ height: "100%" }}>
+            {statusEntries.length > 0 ? (
+              <ReactECharts option={statusDistOption} style={{ height: 300 }} notMerge />
+            ) : (
+              <Empty
+                description="暂无数据"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                style={{ padding: "80px 0" }}
+              />
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} lg={16}>
           <Card
             title={
               <span>
@@ -859,7 +723,7 @@ export default function Dashboard() {
           >
             {recentTasks.length > 0 ? (
               <Timeline
-                items={recentTasks.slice(0, 5).map((task: any) => ({
+                items={recentTasks.slice(0, 6).map((task: any) => ({
                   color:
                     task.status === "completed"
                       ? "green"
@@ -900,7 +764,7 @@ export default function Dashboard() {
             <Tag style={{ marginLeft: 8 }}>{scheduledJobs.total || 0}</Tag>
           </span>
         }
-        style={{ marginTop: 16 }}
+        style={{ marginTop: 0, marginBottom: 16 }}
       >
         {scheduledJobs.jobs?.length ? (
           <Table
@@ -937,7 +801,6 @@ export default function Dashboard() {
             快捷操作
           </span>
         }
-        style={{ marginTop: 16 }}
       >
         <Row gutter={[16, 16]}>
           <Col xs={12} sm={8} md={6}>
@@ -1007,7 +870,8 @@ export default function Dashboard() {
       </Card>
 
       <style>{`
-        .dashboard-container .status-card {
+        .dashboard-container .status-card,
+        .dashboard-container .kpi-card {
           height: 100%;
         }
         .dashboard-container .ant-card-head-title {
