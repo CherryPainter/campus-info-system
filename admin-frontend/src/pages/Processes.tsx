@@ -49,7 +49,11 @@ import {
 } from "@ant-design/icons";
 import { processApi, type TaskProcess, type ScheduledJob, type DynamicRule } from "@/api/admin";
 import { holidayApi, type HolidayStatus } from "@/api/holiday";
-import { PROCESS_STATUS_MAP, CRAWL_TASK_STATUS_MAP } from "@/constants/statusMaps";
+import {
+  PROCESS_STATUS_MAP,
+  CRAWL_TASK_STATUS_MAP,
+  TASK_TYPE_MAP,
+} from "@/constants/statusMaps";
 import { courseApi, type CrawlTask } from "@/api/course";
 import CrawlScheduler from "./CrawlScheduler";
 import dayjs from "dayjs";
@@ -416,16 +420,7 @@ export default function Processes() {
 
   const statusMap = PROCESS_STATUS_MAP;
 
-  const typeMap: Record<string, { color: string; text: string }> = {
-    spider: { color: "blue", text: "课表爬虫" },
-    course_spider: { color: "blue", text: "课表爬虫" },
-    course_full_crawl: { color: "purple", text: "全量爬取" },
-    course: { color: "green", text: "课表" },
-    weather: { color: "cyan", text: "天气" },
-    electricity: { color: "orange", text: "电量" },
-    system: { color: "red", text: "系统" },
-    custom: { color: "purple", text: "自定义" },
-  };
+  const typeMap = TASK_TYPE_MAP;
 
   const formatDuration = (seconds: number) => {
     if (seconds < 60) return `${Math.floor(seconds)}秒`;

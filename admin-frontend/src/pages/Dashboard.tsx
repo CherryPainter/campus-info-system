@@ -51,10 +51,14 @@ import ReactECharts from "echarts-for-react";
 import { useServerStatus } from "@/components/ServerStatusProvider";
 import { useIntervalPolling } from "@/hooks/useIntervalPolling";
 import { POLL_SLOW } from "@/hooks/pollIntervals";
-import { TASK_STATUS_MAP } from "@/constants/statusMaps";
+import { TASK_STATUS_MAP, TASK_TYPE_MAP } from "@/constants/statusMaps";
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
+
+/** 任务类型 → 中文名 / 固定配色（与进程页共用同一份映射） */
+const typeText = (k: string): string => TASK_TYPE_MAP[k]?.text || k;
+const typeColor = (k: string): string => TASK_TYPE_MAP[k]?.color || "#8c8c8c";
 
 // 状态颜色映射（模块卡片用）
 const STATUS_COLORS: Record<string, string> = {
@@ -272,7 +276,7 @@ export default function Dashboard() {
   const trendOption = {
     tooltip: { trigger: "axis" },
     legend: {
-      data: typeTrend.series.map((s: { name: string; data: number[] }) => s.name),
+      data: typeTrend.series.map((s: { name: string; data: number[] }) => typeText(s.name)),
       bottom: 0,
       type: "scroll" as const,
     },
@@ -292,7 +296,7 @@ export default function Dashboard() {
       axisLabel: { color: "#8c8c8c" },
     },
     series: typeTrend.series.map((s: { name: string; data: number[] }) => ({
-      name: s.name,
+      name: typeText(s.name),
       type: "line",
       data: s.data,
       smooth: true,
@@ -300,7 +304,7 @@ export default function Dashboard() {
       lineStyle: { width: 2 },
       areaStyle: trendType === "area" ? { opacity: 0.12 } : undefined,
     })),
-    color: CHART_COLORS,
+    color: typeTrend.series.map((s: { name: string; data: number[] }) => typeColor(s.name)),
   };
 
   // 任务类型分布（环形图）
@@ -319,12 +323,23 @@ export default function Dashboard() {
       {
         name: "任务类型",
         type: "pie",
-        radius: ["52%", "74%"],
-        center: ["50%", "46%"],
+        radius: ["48%", "68%"],
+        center: ["50%", "45%"],
         avoidLabelOverlap: true,
         itemStyle: { borderColor: "#fff", borderWidth: 2 },
-        label: { show: false },
-        data: typeEntries.map(([type, count]) => ({ name: type, value: count as number })),
+        label: {
+          show: true,
+          formatter: "{b}\n{c} ({d}%)",
+          color: "#595959",
+          fontSize: 12,
+        },
+        labelLine: { show: true, length: 8, length2: 8 },
+        labelLayout: { hideOverlap: true },
+        data: typeEntries.map(([type, count]) => ({
+          name: typeText(type),
+          value: count as number,
+          itemStyle: { color: typeColor(type) },
+        })),
       },
     ],
     color: CHART_COLORS,
@@ -346,11 +361,18 @@ export default function Dashboard() {
       {
         name: "任务状态",
         type: "pie",
-        radius: ["52%", "74%"],
-        center: ["50%", "46%"],
+        radius: ["48%", "68%"],
+        center: ["50%", "45%"],
         avoidLabelOverlap: true,
         itemStyle: { borderColor: "#fff", borderWidth: 2 },
-        label: { show: false },
+        label: {
+          show: true,
+          formatter: "{b}\n{c} ({d}%)",
+          color: "#595959",
+          fontSize: 12,
+        },
+        labelLine: { show: true, length: 8, length2: 8 },
+        labelLayout: { hideOverlap: true },
         data: statusEntries.map(([k, v]) => ({
           name: TASK_STATUS_MAP[k]?.text || k,
           value: v as number,

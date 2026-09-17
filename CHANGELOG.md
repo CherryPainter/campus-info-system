@@ -32,6 +32,16 @@
   - 派生变量统一用带类型的 `??` 回退，消除 `period` / `scheduled_jobs` / `recent_tasks` 类型收窄错误。
 - **验证**：`tsc --noEmit` 退出码 0；`vite build` 成功（11866 模块，40.88s，仅 chunk 体积告警非错误）。运行时视觉效果待用户在 dev/build 环境确认。
 
+### 优化：仪表盘图表补充扇区标注 + 任务类型中文名与固定配色（前端，2026-09-17）
+- **背景**：任务类型分布 / 状态分布环形图此前 `label: { show: false }`，扇区无标注、只能看底部图例；且图例直接显示后端原始键名（`course_full_crawl` / `weather` 等），不专业。
+- **改动**：
+  - `admin-frontend/src/constants/statusMaps.ts`：新增共享 `TASK_TYPE_MAP`（任务类型 → 中文名 + 十六进制固定色），来源为 `Processes.tsx` 原本地 `typeMap`。
+  - `admin-frontend/src/pages/Processes.tsx`：删除本地 `typeMap`，改引共享 `TASK_TYPE_MAP`（消除重复定义，行为不变）。
+  - `admin-frontend/src/pages/Dashboard.tsx`：
+    - 两个环形图开启扇区标注（名称 + 数量 + 占比，`labelLine` + `labelLayout.hideOverlap`），并给每个扇区按任务类型固定配色；图例与趋势图序列名统一改用中文名。
+    - 趋势图各序列按任务类型取色（`color` 数组与序列一一对应），与环形图配色语义一致。
+- **验证**：`tsc --noEmit` 退出码 0；`vite build` 成功。运行时视觉效果待用户确认。
+
 ## v6.18.0 (2026-09-09)
 
 > 本次发布含管理端「解绑/收回身份」新能力、小程序端身份状态主动监察，以及审核整改/匿名会话令牌/公开接口/登录守卫等增强（覆盖 2026-09-08 ~ 09-09 累积改动）。

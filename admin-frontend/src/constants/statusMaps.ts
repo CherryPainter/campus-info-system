@@ -75,6 +75,18 @@ export const TASK_STATUS_MAP: Record<string, StatusMetaWithIcon> = {
   skipped: { color: "default", icon: createElement(StopOutlined), text: "已静音" },
 };
 
+/** 任务类型（来源 Processes.tsx typeMap；color 为十六进制，Tag 与 ECharts 图表共用） */
+export const TASK_TYPE_MAP: Record<string, { color: string; text: string }> = {
+  spider: { color: "#1890ff", text: "课表爬虫" },
+  course_spider: { color: "#1890ff", text: "课表爬虫" },
+  course_full_crawl: { color: "#722ed1", text: "全量爬取" },
+  course: { color: "#52c41a", text: "课表" },
+  weather: { color: "#13c2c2", text: "天气" },
+  electricity: { color: "#fa8c16", text: "电量" },
+  system: { color: "#f5222d", text: "系统" },
+  custom: { color: "#722ed1", text: "自定义" },
+};
+
 /** Webhook 测试状态（来源 Webhooks.tsx TEST_STATUS_MAP） */
 export const WEBHOOK_TEST_STATUS_MAP: Record<string, StatusMetaWithIcon> = {
   success: { icon: createElement(CheckCircleOutlined), color: "success", text: "成功" },
