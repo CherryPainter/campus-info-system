@@ -72,13 +72,17 @@ class WeatherFormatter:
         """
         rain_hours = analysis.get("rain_hours", [])
         has_heavy_rain = analysis.get("has_heavy_rain", False)
+        # 分时段提醒：用具体时段（如「上午（06:00-10:00）」）替代模糊的「未来几小时」
+        seg_label = analysis.get("segment_label", "")
+        seg_range = analysis.get("segment_range", "")
+        when = f"{seg_label}（{seg_range}）" if seg_label and seg_range else "今日"
 
         if has_heavy_rain:
             level = "[紧急]"
-            desc = "未来几小时有大雨，请注意防涝，减少外出"
+            desc = f"{when}有大雨，请注意防涝，减少外出"
         else:
             level = "[提醒]"
-            desc = "未来几小时可能有降雨"
+            desc = f"{when}可能有降雨，记得带伞"
 
         lines = [
             f"{level} **降雨提醒**",

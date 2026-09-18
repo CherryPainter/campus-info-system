@@ -14,14 +14,22 @@ from app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
-# 冷却时间常量（秒）
+# 冷却时间常量（秒）——用于高温/降温/预警等「按时间冷却」的事件
+# 降雨提醒已改为「分时段 + 每天每段仅一次」，不再使用时间冷却
 _COOLDOWN_SECONDS = {
-    "rain": 3 * 3600,  # 普通降雨提醒 3 小时
-    "rain_heavy": 4 * 3600,  # 大雨提醒 4 小时（优先级更高，冷却稍长）
     "heat": 6 * 3600,  # 高温提醒 6 小时
     "cold": 6 * 3600,  # 降温提醒 6 小时
     "alert": 1 * 3600,  # 预警提醒 1 小时
 }
+
+# ── 降雨提醒分时段配置 ──
+# 排除夜间后把白天等分为若干时段；每个时段仅在高概率时提醒，且当天每段只播报一次。
+RAIN_DAY_START_HOUR = 6  # 白天起始（含），早于此视为夜间
+RAIN_DAY_END_HOUR = 22  # 白天结束（不含），22:00 起视为夜间
+RAIN_SEGMENT_COUNT = 4  # 白天等分块数（(22-6)/4 = 每段 4 小时）
+RAIN_SEGMENT_LABELS = ["上午", "中午", "下午", "傍晚"]  # 与块数一一对应
+RAIN_POP_THRESHOLD = 70  # 高概率阈值：达到才提醒
+RAIN_HEAVY_POP_THRESHOLD = 80  # 大雨阈值（连续 ≥2 小时达标视为大雨）
 
 
 class WeatherAnalyzer:
@@ -72,53 +80,101 @@ class WeatherAnalyzer:
 
         logger.info(f"[天气分析器] 开始分析: 逐小时预报={len(hourly)}条, 预警={len(alerts)}条")
 
-        # 降雨检测
-        # 只关注当前时间之后、当日之内的降雨时段
-        rain_hours = []
-        has_rain = False
-        has_heavy_rain = False
-        consecutive_heavy = 0
+        # ── 降雨检测（分时段）──
+        # 规则：排除夜间，白天等分为若干时段；仅当「当前所处时段」降雨概率达到高概率阈值时提醒，
+        # 且每个时段当天只播报一次。不再把全天/次日的高概率小时一次性罗列（此前提醒范围过广）。
         now = datetime.now()
-        today_end = now.replace(hour=23, minute=59, second=59)
+        today_str = now.strftime("%Y-%m-%d")
+        seg_len = (RAIN_DAY_END_HOUR - RAIN_DAY_START_HOUR) / RAIN_SEGMENT_COUNT
+        rain_events: list[dict[str, Any]] = []
+        rain_hours: list[dict] = []
 
+        # 1) 仅归档「当前时刻之后、当天白天」的逐小时预报（夜间与次日一律排除）
+        segment_hours: dict[int, list[dict]] = {i: [] for i in range(RAIN_SEGMENT_COUNT)}
         for item in hourly:
-            # 过滤已过去或非今日的时段
             item_time_str = item.get("time", "")
-            if item_time_str:
-                try:
-                    item_dt = datetime.fromisoformat(item_time_str)
-                    # 去除时区信息，统一用本地时间比较
-                    if item_dt.tzinfo is not None:
-                        item_dt = item_dt.replace(tzinfo=None)
-                    if item_dt <= now or item_dt > today_end:
-                        continue
-                except (ValueError, TypeError):
-                    pass  # 时间解析失败不跳过，保守处理
-
-            pop_val = self._safe_int(item.get("pop", "0"))
-            if pop_val is not None and pop_val >= 70:
-                has_rain = True
-                rain_hours.append(
+            # 时间无法解析的条目直接跳过：此前「保守保留」会把次日/异常时段混入提醒范围
+            item_dt = self._parse_item_dt(item_time_str)
+            if item_dt is None:
+                continue
+            # 只统计「当天、且在当前时刻之后」的时段
+            if item_dt.date() != now.date() or item_dt <= now:
+                continue
+            hour = item_dt.hour
+            # 排除夜间
+            if hour < RAIN_DAY_START_HOUR or hour >= RAIN_DAY_END_HOUR:
+                continue
+            seg_idx = int((hour - RAIN_DAY_START_HOUR) // seg_len)
+            if 0 <= seg_idx < RAIN_SEGMENT_COUNT:
+                segment_hours[seg_idx].append(
                     {
-                        "time": item.get("time", ""),
-                        "pop": pop_val,
+                        "time": item_time_str,
+                        "pop": self._safe_int(item.get("pop", "0")),
                         "text": item.get("text", ""),
                     }
                 )
-                if pop_val >= 80:
-                    consecutive_heavy += 1
-                    if consecutive_heavy >= 2:
-                        has_heavy_rain = True
-                else:
-                    consecutive_heavy = 0
-            else:
-                consecutive_heavy = 0
 
-        # 按时间排序，确保降雨时段按时间顺序显示
-        rain_hours.sort(key=lambda x: x["time"])
+        # 2) 只处理「当前所处时段」：高概率且当天未播报过 → 播报一次
+        if RAIN_DAY_START_HOUR <= now.hour < RAIN_DAY_END_HOUR:
+            cur_seg = int((now.hour - RAIN_DAY_START_HOUR) // seg_len)
+            cur_seg = min(max(cur_seg, 0), RAIN_SEGMENT_COUNT - 1)
+            seg_items = [
+                x
+                for x in segment_hours.get(cur_seg, [])
+                if x["pop"] is not None and x["pop"] >= RAIN_POP_THRESHOLD
+            ]
+            seg_key = f"rain_seg:{today_str}:{cur_seg}"
+            if seg_items and not self._segment_pushed(seg_key):
+                # 段内连续 ≥2 小时概率 ≥ 大雨阈值 → 视为大雨
+                has_heavy = False
+                run = 0
+                for x in sorted(seg_items, key=lambda y: y["time"]):
+                    if (x["pop"] or 0) >= RAIN_HEAVY_POP_THRESHOLD:
+                        run += 1
+                        if run >= 2:
+                            has_heavy = True
+                    else:
+                        run = 0
+
+                seg_label = (
+                    RAIN_SEGMENT_LABELS[cur_seg]
+                    if cur_seg < len(RAIN_SEGMENT_LABELS)
+                    else f"第{cur_seg + 1}时段"
+                )
+                seg_start = RAIN_DAY_START_HOUR + int(cur_seg * seg_len)
+                seg_end = seg_start + int(seg_len)
+                seg_range = f"{seg_start:02d}:00-{seg_end:02d}:00"
+                rain_hours = sorted(seg_items, key=lambda y: y["time"])
+                max_pop = max((x["pop"] or 0) for x in seg_items)
+                rain_events.append(
+                    {
+                        "type": "rain",
+                        "title": "大雨提醒" if has_heavy else "降雨提醒",
+                        "description": (
+                            f"{seg_label}（{seg_range}）有大雨，请注意防涝，减少外出"
+                            if has_heavy
+                            else f"{seg_label}（{seg_range}）可能有雨，记得带伞"
+                        ),
+                        "rain_hours": rain_hours,
+                        "severity": "high" if has_heavy else "normal",
+                        "has_heavy_rain": has_heavy,
+                        "segment_label": seg_label,
+                        "segment_range": seg_range,
+                        "max_pop": max_pop,
+                    }
+                )
+                self._mark_segment_pushed(seg_key)
+                logger.info(
+                    f"[天气分析器] 降雨提醒: {seg_label}({seg_range}) 最高概率={max_pop}% "
+                    f"小时数={len(rain_hours)} 大雨={has_heavy}"
+                )
+            elif seg_items:
+                logger.info(f"[天气分析器] 当前时段({seg_key})已提醒过，跳过")
+        else:
+            logger.info("[天气分析器] 非白天时段，跳过降雨提醒")
 
         logger.info(
-            f"[天气分析器] 降雨检测: has_rain={has_rain}, has_heavy_rain={has_heavy_rain}, 降雨小时数={len(rain_hours)}"
+            f"[天气分析器] 降雨检测: 事件数={len(rain_events)}, 当前时段高概率小时数={len(rain_hours)}"
         )
 
         # 温度分析
@@ -154,38 +210,8 @@ class WeatherAnalyzer:
         )
 
         # 生成事件列表
-        # 1. 降雨事件（大雨使用独立的冷却键，优先级更高）
-        if has_heavy_rain and not self._check_cooldown("rain_heavy"):
-            logger.info("[天气分析器] 添加大雨提醒事件")
-            events.append(
-                {
-                    "type": "rain",
-                    "title": "大雨提醒",
-                    "description": "未来几小时有大雨，请注意防涝，减少外出",
-                    "rain_hours": rain_hours,
-                    "severity": "high",
-                }
-            )
-            # 更新大雨和普通降雨的冷却，避免短时间内重复提醒
-            self._update_cooldown("rain_heavy")
-            self._update_cooldown("rain")
-        elif has_rain and not self._check_cooldown("rain"):
-            logger.info("[天气分析器] 添加普通降雨提醒事件")
-            events.append(
-                {
-                    "type": "rain",
-                    "title": "降雨提醒",
-                    "description": "下午可能下雨，记得带伞",
-                    "rain_hours": rain_hours,
-                    "severity": "normal",
-                }
-            )
-            self._update_cooldown("rain")
-        else:
-            if has_rain:
-                cd_rain = self._check_cooldown("rain")
-                cd_heavy = self._check_cooldown("rain_heavy")
-                logger.info(f"[天气分析器] 有降雨但处于冷却期: rain={cd_rain}, heavy={cd_heavy}")
+        # 1. 降雨事件（分时段，已在检测阶段完成阈值判定与「当天每段仅一次」去重）
+        events.extend(rain_events)
 
         # 2. 高温事件
         if has_heat and not self._check_cooldown("heat"):
@@ -314,6 +340,30 @@ class WeatherAnalyzer:
         self._cooldown_state[alert_type] = time.time()
         self._save_cooldown_state()
 
+    # ------------------------------------------------------------------
+    # 降雨分时段去重（当天每段仅播报一次，状态持久化到冷却状态文件）
+    # ------------------------------------------------------------------
+
+    _RAIN_SEG_PREFIX = "rain_seg:"
+
+    def _segment_pushed(self, seg_key: str) -> bool:
+        """该时段当天是否已播报过降雨提醒"""
+        return seg_key in self._cooldown_state
+
+    def _mark_segment_pushed(self, seg_key: str) -> None:
+        """标记该时段当天已播报，并清理历史日期的时段键避免状态文件无限增长"""
+        self._cooldown_state[seg_key] = time.time()
+        today = datetime.now().strftime("%Y-%m-%d")
+        keep_prefix = f"{self._RAIN_SEG_PREFIX}{today}:"
+        stale = [
+            k
+            for k in self._cooldown_state
+            if k.startswith(self._RAIN_SEG_PREFIX) and not k.startswith(keep_prefix)
+        ]
+        for k in stale:
+            self._cooldown_state.pop(k, None)
+        self._save_cooldown_state()
+
     def get_daily_summary(
         self,
         now_data: dict | None,
@@ -342,27 +392,34 @@ class WeatherAnalyzer:
             "tips": [],
         }
 
-        # 从逐小时预报中提取最高/最低温和降雨概率
+        # 从逐小时预报中提取最高/最低温；降雨概率仅统计「当天白天」。
+        # 与降雨提醒时段口径保持一致（排除夜间与次日），避免晨报用次日/夜间高概率误报「今日有雨」。
         if hourly_data:
             temps = []
-            max_pop = 0
+            day_pop = 0
+            today = datetime.now().date()
             for item in hourly_data:
                 temp = self._safe_int(item.get("temp", ""))
                 if temp is not None:
                     temps.append(temp)
+                item_dt = self._parse_item_dt(item.get("time", ""))
+                if item_dt is None or item_dt.date() != today:
+                    continue
+                if item_dt.hour < RAIN_DAY_START_HOUR or item_dt.hour >= RAIN_DAY_END_HOUR:
+                    continue
                 pop = self._safe_int(item.get("pop", "0"))
-                if pop is not None and pop > max_pop:
-                    max_pop = pop
+                if pop is not None and pop > day_pop:
+                    day_pop = pop
 
             if temps:
                 summary["max_temp"] = max(temps)
                 summary["min_temp"] = min(temps)
-            summary["rain_probability"] = max_pop
+            summary["rain_probability"] = day_pop
 
             # 生成提示
             tips = []
-            if max_pop >= 70:
-                tips.append("今日有降雨可能，记得带伞")
+            if day_pop >= RAIN_POP_THRESHOLD:
+                tips.append(f"今日白天有降雨可能（最高概率 {day_pop}%），记得带伞")
             if summary["max_temp"] is not None and summary["max_temp"] >= 35:
                 tips.append("今日高温，注意防暑")
             if summary["min_temp"] is not None and summary["min_temp"] <= 5:
@@ -376,6 +433,24 @@ class WeatherAnalyzer:
     # ------------------------------------------------------------------
     # 内部方法
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_item_dt(value: Any) -> datetime | None:
+        """解析逐小时预报的 time 字段为本地 naive datetime，失败返回 None。
+
+        预报表项时间可能带时区（如 +08:00），统一去除时区信息以便与本地
+        `datetime.now()` 做同口径比较；无法解析时返回 None，由调用方决定跳过
+        （避免把次日/异常时段混入当天范围）。
+        """
+        if not value:
+            return None
+        try:
+            dt = datetime.fromisoformat(str(value))
+            if dt.tzinfo is not None:
+                dt = dt.replace(tzinfo=None)
+            return dt
+        except (ValueError, TypeError):
+            return None
 
     @staticmethod
     def _safe_int(value: Any) -> int | None:
