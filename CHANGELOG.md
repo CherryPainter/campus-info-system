@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+### 仓库整理：未跟踪的临时脚本与草稿移出仓库树（2026-09-22）
+- `Push_System_Flask/` 下 6 个未跟踪脚本（`_dup_analysis.py` / `_dup_analysis2.py` / `_inspect_db.py` / `dedupe_electricity.py` / `diagnose_electricity.py` / `diagnose_weeks.py`）与根目录 2 个未跟踪草稿（`小程序审核说明_草稿.md` / `校园信息聚合与智能推送系统.md`）移入 `技术总结/dev-scripts/` 与 `技术总结/`。`技术总结/` 被 `.gitignore` 忽略 → 不入库、不随部署、可随时移回，**未删除任何文件**。
+- 反向处理：`tests/test_electricity_dedup.py` 是真正的回归测试（非临时件），已纳入版本管理（见下方「测试」条目）。
+- 说明：`dedupe_electricity.py` / `diagnose_weeks.py` 是生产运维脚本（runbook 曾引用），因此仅归档不删除；如希望随代码部署，可再挪进 `Push_System_Flask/scripts/`。
+
 ### 测试：更新课程相关过期测试到 v6.19.x 新契约（后端，2026-09-22）
 - **背景**：跑全量 `pytest` 发现 5 个失败，均为**早前会话改行为后未同步更新测试**（那两次只跑了 `py_compile`，未跑全量测试），并非功能回归。
 - `tests/test_course_admin_protection.py`（4 项）：旧契约（去重键含 `course_code`；手动课按「`course_code` 相同」或「同时间槽 `(week_day, period_idx, week_number)` 被占」保护）已随 v6.19.x 改为「身份 = `course_key = md5(课名|星期|排序节次|教室|教师)`，按 `(semester_id, course_key)` 去重，手动课保护仅在 course_key 命中时跳过」。据此重写：
@@ -45,6 +50,7 @@
   - `pages/feedback/list/index.tsx`：列表缩略图加 `onClick`（`stopPropagation` 防误进详情）预览全部图片；悬浮按钮「+」改空 `<View className="fb-fab-plus" />`。
   - `pages/feedback/detail/index.tsx`：详情大图加 `onClick` 预览。
   - 三个 `.scss`：`.fb-img-add-plus` / `.fb-fab-plus` / `.fb-img-del-x` 由文本字号样式改为 `::before`+`::after` 两条线段**CSS 绘制矢量图标**（彻底不依赖任何字体，用户换字体也不会变形）。
+  - 两页的 `›` 箭头（提交页「我的反馈 ›」入口、列表项右侧箭头）同步由文本字符改为同一套 CSS 矢量（`fb-topbar-arrow` / `fb-item-arrow`），避免同类字体依赖问题。
 - **说明**：项目 iconfont（项目 5227727）内无语义干净的「加号」字形（名为「加」的 `RectangleCopy` 实为矩形，且被 `CampusCard` 占用），故加号/关闭号采用 CSS 绘制而非字体图标。
 - **验证**：`tsc --noEmit` 退出码 0；微信端运行态视觉与预览行为待用户在开发者工具确认。
 

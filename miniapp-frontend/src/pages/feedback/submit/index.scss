@@ -25,10 +25,25 @@
   color: $primary-color;
 }
 
+/* 右向箭头（CSS 矢量，不受用户自定义字体影响） */
 .fb-topbar-arrow {
-  font-size: $font-size-md;
-  color: $primary-color;
-  margin-left: 4rpx;
+  position: relative;
+  width: 16rpx;
+  height: 16rpx;
+  margin-left: 8rpx;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 11rpx;
+    height: 11rpx;
+    box-sizing: border-box;
+    border-top: 3rpx solid $primary-color;
+    border-right: 3rpx solid $primary-color;
+    transform: translateY(-50%) rotate(45deg);
+  }
 }
 
 /* 表单卡片 */

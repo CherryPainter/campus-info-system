@@ -124,7 +124,7 @@ export default function FeedbackListPage() {
 
               <View className="fb-item-foot">
                 <Text className="fb-item-time">{item.created_at}</Text>
-                <Text className="fb-item-arrow">›</Text>
+                <View className="fb-item-arrow" />
               </View>
             </View>
           ))}

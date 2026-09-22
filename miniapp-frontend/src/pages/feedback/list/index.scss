@@ -128,9 +128,24 @@
   color: $text-tertiary;
 }
 
+/* 右向箭头（CSS 矢量，不受用户自定义字体影响） */
 .fb-item-arrow {
-  font-size: $font-size-lg;
-  color: $text-tertiary;
+  position: relative;
+  width: 18rpx;
+  height: 18rpx;
+
+  &::before {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    width: 12rpx;
+    height: 12rpx;
+    box-sizing: border-box;
+    border-top: 3rpx solid $text-tertiary;
+    border-right: 3rpx solid $text-tertiary;
+    transform: translateY(-50%) rotate(45deg);
+  }
 }
 
 .fb-loading-more,

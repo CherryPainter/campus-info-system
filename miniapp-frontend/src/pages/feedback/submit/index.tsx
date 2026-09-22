@@ -128,7 +128,7 @@ export default function FeedbackSubmitPage() {
           <Text className="fb-topbar-text">我的反馈</Text>
           <FeedbackBadge count={feedbackUnread} />
         </View>
-        <Text className="fb-topbar-arrow">›</Text>
+        <View className="fb-topbar-arrow" />
       </View>
 
       <View className="fb-form">
