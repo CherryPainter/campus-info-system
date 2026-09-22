@@ -297,6 +297,70 @@ def upload_editor_image():
     return jsonify({"errno": 0, "data": {"url": url, "alt": original_name, "href": ""}})
 
 
+# 公告封面（独立于正文图，存 output/announcement-covers/，走公开路由 /api/announcement-covers/<name>）
+COVER_SUBDIR = "announcement-covers"
+
+
+def _cover_root():
+    """封面存储根目录（不存在则创建）"""
+    root = os.path.join(Config.OUTPUT_DIR, COVER_SUBDIR)
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+@announcement_bp.route("/upload-cover", methods=["POST"])
+@admin_required
+def upload_cover():
+    """公告封面上传（管理端）
+
+    存 output/announcement-covers/，复用正文图的安全校验（扩展名白名单 + 大小上限
+    + sha256 重命名）与 EXIF 校正。返回 {url} 供表单提交时写入 announcement.cover_url。
+    封面经公开路由 GET /api/announcement-covers/<name> 加载（学生端无鉴权）。
+    """
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return api_error(message="未选择文件", http_status=400)
+
+    try:
+        original_name = validate_filename(file.filename)
+        ext = os.path.splitext(original_name)[1].lower()
+        if ext not in IMAGE_EXTS:
+            return api_error(message=f"不支持的图片类型: {ext}", http_status=400)
+        validate_file_size(file, IMAGE_MAX_SIZE)
+        stored_name = generate_secure_filename(file, original_name)
+    except FileUploadError as e:
+        return api_error(message=str(e), http_status=400)
+
+    root = _cover_root()
+    abs_path = os.path.join(root, stored_name)
+    try:
+        file.seek(0)
+        file.save(abs_path)
+    except Exception as e:
+        logger.error(f"公告封面落盘失败: {e}")
+        return api_error(message="图片保存失败", http_status=500)
+
+    # EXIF orientation 校正：与正文图一致，保证多端显示方向一致
+    try:
+        from PIL import Image, ImageOps
+
+        with Image.open(abs_path) as img:
+            transposed = ImageOps.exif_transpose(img)
+            if transposed is not None and transposed is not img:
+                save_kwargs = {}
+                fmt = (img.format or "").upper()
+                if fmt == "JPEG":
+                    save_kwargs["quality"] = 95
+                transposed.save(abs_path, format=fmt or None, **save_kwargs)
+                logger.info(f"公告封面已 EXIF 校正: {stored_name}")
+    except Exception as e:
+        logger.warning(f"封面 EXIF 校正失败（保留原图）: {stored_name} - {e}")
+
+    url = f"/api/announcement-covers/{stored_name}"
+    logger.info(f"公告封面已上传: {stored_name}")
+    return api_success(data={"url": url}, message="上传成功")
+
+
 @announcement_bp.route("/<int:announcement_id>/attachments", methods=["POST"])
 @admin_required
 def upload_attachment(announcement_id):

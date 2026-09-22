@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react';
-import { View, Text } from '@tarojs/components';
+import { View, Text, Image } from '@tarojs/components';
 import Taro, { useLoad, useDidShow, usePullDownRefresh, useReachBottom, stopPullDownRefresh } from '@tarojs/taro';
 import dayjs from 'dayjs';
 
 import * as notificationsApi from '@/api/notifications';
 import type { AnnouncementItem, UserNotificationItem } from '@/types/api';
+import { API_BASE_URL } from '@/utils/request';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
 import './index.scss';
@@ -29,6 +30,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   low_power: '低电量提醒',
   cookie_invalid: '配置失效',
   fetch_error: '采集异常',
+  announcement: '新公告',
 };
 
 /** 公告标签：置顶显示「置顶」，否则显示分类名 */
@@ -160,6 +162,19 @@ export default function MessagesPage() {
     Taro.navigateTo({ url: `/pages/announcement/detail/index?id=${id}` });
   };
 
+  /** 点击公告类站内信：先标记该条已读（与公告未读角标一致），再跳公告详情 */
+  const openAnnouncementNotification = async (item: UserNotificationItem) => {
+    try {
+      const res = await notificationsApi.markRead(item.id);
+      // 乐观更新：清掉该条未读态与未读计数
+      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, is_read: true } : i)));
+      setUnreadCount(res?.data?.unread_count ?? 0);
+    } catch {
+      /* 标记失败不阻断跳转 */
+    }
+    goAnnouncement(item.ref_id as number);
+  };
+
   useLoad(() => {
     Taro.setNavigationBarTitle({ title: '我的消息' });
     loadFirst();
@@ -256,8 +271,19 @@ export default function MessagesPage() {
               )}
               <View
                 className={`msg-item${item.is_read ? ' is-read' : ' unread'}`}
-                onClick={() => goDetail(item.id)}
+                onClick={() =>
+                  item.ref_type === 'announcement' && item.ref_id
+                    ? openAnnouncementNotification(item)
+                    : goDetail(item.id)
+                }
               >
+                {item.cover_url ? (
+                  <Image
+                    className="msg-item-cover"
+                    src={`${API_BASE_URL}${item.cover_url}`}
+                    mode="aspectFill"
+                  />
+                ) : null}
                 <View className="msg-item-main">
                   <View className="msg-item-head">
                     <Text className="msg-item-cat">{categoryText(item.category)}</Text>

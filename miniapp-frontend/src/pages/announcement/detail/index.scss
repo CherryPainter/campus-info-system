@@ -89,6 +89,15 @@
 }
 
 /* ---------- 正文 ---------- */
+/* ---------- 封面图（标题与正文之间，无图不占位） ---------- */
+.detail-cover {
+  display: block;
+  width: calc(100% - #{$spacing-md * 2});
+  margin: $spacing-md $spacing-md 0;
+  border-radius: $radius-medium;
+  background: #f2f3f5;
+}
+
 .detail-body {
   padding: $spacing-lg $spacing-md;
   font-size: $font-size-sm;

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { View, Text, ScrollView } from '@tarojs/components';
+import { View, Text, ScrollView, Image } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
 import * as notificationsApi from '@/api/notifications';
 import type { UserNotificationItem } from '@/types/api';
+import { API_BASE_URL } from '@/utils/request';
 import './index.scss';
 
 /**
@@ -79,6 +80,10 @@ export default function MessageDetailPage() {
         <Text className="msgd-time">{fullTime(detail.created_at)}</Text>
       </View>
       <Text className="msgd-title">{detail.title}</Text>
+      {/* 封面图：标题之下、正文之上，有图才渲染（无图不占位） */}
+      {detail.cover_url ? (
+        <Image className="msgd-cover" src={`${API_BASE_URL}${detail.cover_url}`} mode="widthFix" />
+      ) : null}
       <View className="msgd-divider" />
       {/* 正文为纯文本、\n 换行，用 pre-wrap 保留原始排版 */}
       <Text className="msgd-content">{detail.content || '（无正文）'}</Text>

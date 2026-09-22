@@ -6,6 +6,36 @@
 
 ## Unreleased
 
+### 新增：公告封面 + 发布/新注册时「我的消息」留站内信（后端 + 管理端 + 小程序，2026-09-22）
+- **背景**：公告此前只走企业微信群机器人，学生端「我的消息」无感知；且注册晚于公告的学生看不到近期通知。本次让公告在「我的消息」留痕，并新增封面展示。
+- **后端（模型）**：
+  - `Announcement` 新增 `cover_url`（String(500)，可空，随 `to_dict` 输出）。
+  - `UserNotification` 新增 `cover_url` / `ref_type`（索引）/ `ref_id`（索引），并加 `UniqueConstraint(user_id, ref_type, ref_id)`（`uq_user_notif_ref`）。
+  - `UserNotificationRepository.create` / `UserNotificationService` 透传上述三字段。
+- **后端（推送，新增 `app/services/announcement_push_service.py`）**——双路径覆盖「注册时间 ≤ 7 天」：
+  1. `push_announcement_to_new_users`：公告创建即发布 / 状态改为发布时，给 `role='student' AND is_active AND created_at >= now-7d` 的学生写站内信（`category=announcement`、`ref_type=announcement`、`ref_id=公告ID`、带 `cover_url`）。
+  2. `push_recent_announcements_to_new_user`：学生微信首次登录（`wechat_auth_service.login` 的 `is_new_user` 分支）时，补写近 7 天已发布且未过期（`expired_at IS NULL OR > now`）的公告。
+  - 幂等：写前查 `(user_id, ref_type, ref_id)` 已存在则跳过 + 模型层唯一约束兜底；失败仅告警，不影响发布/登录主流程。触发点见 `announcement_service.py` 的 `create(publish_now)` 与 `update_status`。
+- **后端（封面接口）**：管理端 `POST /api/admin/announcements/upload-cover`（复用正文图安全校验 IMAGE_EXTS / IMAGE_MAX_SIZE / sha256 重命名 + EXIF 校正，落盘 `output/announcement-covers/`，返回 `{url}`）；公开 `GET /api/announcement-covers/<name>`（扩展名白名单 + `send_from_directory` 防穿越，学生端无鉴权加载）。
+- **管理端**：`Announcements.tsx` 表单新增「封面图（可选）」picture-card 上传（上传即写入 `cover_url`、可移除）+ 顶部 Alert 补充「发布时会给近 7 天新注册学生推送站内通知（带封面，点击跳转详情）」；`api/announcement.ts` 增 `uploadCover` 与 `cover_url` 字段。
+- **小程序（全部条件渲染，无图不占位）**：
+  - 布局：公告详情 → 标题区下方横幅；消息详情 → 标题下方横幅（标题在上、图片在下）；公告列表卡片 → 卡片顶部横幅；我的消息列表 → 公告类站内信左侧 132rpx 缩略图。**原实现漏配封面样式，本次补齐四页 `.scss`。**
+  - 消息页点击公告类站内信改走 `openAnnouncementNotification`：先 `notificationsApi.markRead(id)` 乐观清未读与计数，再跳公告详情（与公告未读角标一致）；`CATEGORY_LABEL` 增「新公告」。
+  - 类型：`AnnouncementItem` / `UserNotificationItem` 增 `cover_url`（后者另加 `ref_type` / `ref_id`）。
+- **部署注意**：`init_db.py migrate` 只按 `Table.indexes` 补索引，**不会**从 `__table_args__` 建唯一约束 → 生产需手动补建 `uq_user_notif_ref`（`ALTER TABLE user_notifications ADD UNIQUE KEY uq_user_notif_ref (user_id, ref_type, ref_id)`）；`cover_url` / `ref_type` / `ref_id` 列由 migrate 补。
+- **验证**：后端 9 文件 `py_compile` 通过；小程序 `tsc --noEmit` 退出码 0、`taro build --type weapp` 编译成功、`process.env` 残留 0，四页封面样式已进产物。端到端（真实发布 → 新用户收到站内信 → 点开展示封面）待用户在服务环境确认。
+
+### 修复：小程序反馈模块图标字与图片预览（前端，2026-09-22）
+- **问题**：①提交页「添加」块与列表页悬浮按钮的「+」、提交页删除角标的「×」均为**文本字符**，会被用户自定义字体（font-family）改变字形与基线，有失美观；②意见反馈页 / 我的反馈页 / 反馈详情页的图片仅渲染，点击无法放大预览。
+- **改动**：
+  - `src/utils/imagePreview.ts`（新增）：收口 `previewImages(current, urls)`，统一把后端相对 URL 拼 `API_BASE_URL` 后调 `Taro.previewImage`（单点处理，三页复用）。
+  - `pages/feedback/submit/index.tsx`：截图加 `onClick` 预览；「+」由 `<Text>+</Text>` 改空 `<View className="fb-img-add-plus" />`；「×」由 `<Text>×</Text>` 改空 `<View className="fb-img-del-x" />`。
+  - `pages/feedback/list/index.tsx`：列表缩略图加 `onClick`（`stopPropagation` 防误进详情）预览全部图片；悬浮按钮「+」改空 `<View className="fb-fab-plus" />`。
+  - `pages/feedback/detail/index.tsx`：详情大图加 `onClick` 预览。
+  - 三个 `.scss`：`.fb-img-add-plus` / `.fb-fab-plus` / `.fb-img-del-x` 由文本字号样式改为 `::before`+`::after` 两条线段**CSS 绘制矢量图标**（彻底不依赖任何字体，用户换字体也不会变形）。
+- **说明**：项目 iconfont（项目 5227727）内无语义干净的「加号」字形（名为「加」的 `RectangleCopy` 实为矩形，且被 `CampusCard` 占用），故加号/关闭号采用 CSS 绘制而非字体图标。
+- **验证**：`tsc --noEmit` 退出码 0；微信端运行态视觉与预览行为待用户在开发者工具确认。
+
 ### 修复：课程爬虫入库根治——(semester_id, course_key) 稳定去重 + 强制全周次 + 对账软删（后端，2026-09-22）
 - **根因**：`executors.run_spider` 调爬虫未带 `--all-weeks`，定时/手动只爬「当前周」视图，导致 `weeks` 落库成单周（`=[爬取周]`）；旧去重键 `course_code+week_day+period_idx+week_number` 中的 `week_number`（=爬取周）随每次爬取漂移，每爬一周新增一批重复行，库只增不减。本地库曾出现 124 行、同课被拆成「单节×周段×房间」多行、weeks 散落单周。
 - **改动**：

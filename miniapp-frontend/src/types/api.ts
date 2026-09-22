@@ -336,10 +336,13 @@ export interface ElectricityCookieTestResult extends ApiSuccess {
 export interface UserNotificationItem {
   id: number;
   user_id: number;
-  category: string; // electricity_daily / electricity_weekly / electricity_monthly / low_power / cookie_invalid / fetch_error
+  category: string; // electricity_daily / electricity_weekly / electricity_monthly / low_power / cookie_invalid / fetch_error / announcement
   title: string;
   content: string | null; // 纯文本，\n 换行
   is_read: boolean;
+  cover_url?: string | null; // 封面图 URL（关联公告时展示）
+  ref_type?: string | null; // 关联业务类型：announcement / null
+  ref_id?: number | null; // 关联业务 ID（如公告 ID），点击跳转用
   created_at: string | null;
 }
 
@@ -416,6 +419,7 @@ export interface AnnouncementItem {
   published_label: string | null; // 已格式化，如「2026-08-31 14:30」
   expired_at: string | null;
   view_count: number;
+  cover_url?: string | null;     // 封面图 URL（消息推送卡片 / 详情页展示，无图则不显示）
 }
 
 export interface AnnouncementListResult extends ApiSuccess {

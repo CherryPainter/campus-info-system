@@ -23,6 +23,9 @@ class UserNotificationService:
         category: str,
         title: str,
         content: str | None = None,
+        cover_url: str | None = None,
+        ref_type: str | None = None,
+        ref_id: int | None = None,
     ) -> bool:
         """
         给指定用户写入一条站内通知（纯文本，换行分隔）
@@ -30,9 +33,12 @@ class UserNotificationService:
         Args:
             user_id: 接收用户ID
             category: 通知类型（electricity_daily / electricity_weekly /
-                      electricity_monthly / low_power / cookie_invalid / fetch_error）
+                      electricity_monthly / low_power / cookie_invalid / fetch_error / announcement）
             title: 通知标题
             content: 通知内容
+            cover_url: 封面图 URL（关联公告时展示）
+            ref_type: 关联业务类型（announcement 等，NULL=系统通知）
+            ref_id: 关联业务 ID（如公告 ID）
 
         Returns:
             bool: 是否写入成功
@@ -46,6 +52,9 @@ class UserNotificationService:
                     category=category,
                     title=title,
                     content=content,
+                    cover_url=cover_url,
+                    ref_type=ref_type,
+                    ref_id=ref_id,
                 )
                 session.commit()
                 logger.info(f"[UserNotification] 已写入站内通知 user_id={user_id} category={category}")

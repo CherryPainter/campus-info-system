@@ -88,6 +88,7 @@ export default function Announcements() {
   const [saving, setSaving] = useState(false);
   const [acting, setActing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [coverUrl, setCoverUrl] = useState<string>("");
   const [form] = Form.useForm();
 
   const isEdit = editingId !== null;
@@ -147,6 +148,7 @@ export default function Announcements() {
       content: values.content || "",
       summary: (values.summary || "").trim(),
       expired_at: values.expired_at ? dayjs(values.expired_at).format("YYYY-MM-DD HH:mm:ss") : null,
+      cover_url: coverUrl || null,
     };
   };
 
@@ -154,6 +156,7 @@ export default function Announcements() {
     setEditingId(null);
     setCurrentStatus("draft");
     setAttachments([]);
+    setCoverUrl("");
     form.resetFields();
     form.setFieldsValue({ category: "notice", is_top: false });
     setModalOpen(true);
@@ -182,6 +185,7 @@ export default function Announcements() {
           expired_at: d.expired_at ? dayjs(d.expired_at) : null,
         });
         setAttachments(d.attachments || []);
+        setCoverUrl(d.cover_url || "");
       } else {
         message.error(res.message || "加载详情失败");
       }
@@ -194,6 +198,7 @@ export default function Announcements() {
     setModalOpen(false);
     setEditingId(null);
     setAttachments([]);
+    setCoverUrl("");
     form.resetFields();
   };
 
@@ -311,6 +316,34 @@ export default function Announcements() {
     } finally {
       setUploading(false);
     }
+  };
+
+  // ==================== 封面 ====================
+  const customUploadCover = async (options: any) => {
+    const { file, onSuccess, onError } = options;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await announcementApi.uploadCover(formData);
+      if (res.status === "success" && res.data?.url) {
+        setCoverUrl(res.data.url);
+        message.success("封面上传成功");
+        onSuccess?.(res.data);
+      } else {
+        message.error(res.message || "封面上传失败");
+        onError?.(new Error(res.message || "封面上传失败"));
+      }
+    } catch {
+      message.error("封面上传失败");
+      onError?.(new Error("封面上传失败"));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeCover = () => {
+    setCoverUrl("");
   };
 
   const handleDeleteAttachment = async (attId: number) => {
@@ -503,7 +536,7 @@ export default function Announcements() {
 
         <Alert
           message="校园通知说明"
-          description="通知采用纯拉取模式：学生端（微信小程序）在进入通知页或下拉刷新时主动获取已发布的通知，本系统不主动推送。发布后学生端立即可见，撤回后立即不可见。"
+          description="通知采用纯拉取模式：学生端（微信小程序）在进入通知页或下拉刷新时主动获取已发布的通知，本系统不主动推送。发布后学生端立即可见，撤回后立即不可见。此外，发布时会给近 7 天新注册的学生在「我的消息」推送一条站内通知（带封面，点击跳转详情）。"
           type="info"
           showIcon
           icon={<InfoCircleOutlined />}
@@ -618,6 +651,44 @@ export default function Announcements() {
 
           <Form.Item name="summary" label="摘要（可选，留空则自动截取正文）">
             <Input placeholder="列表页展示的简短摘要" maxLength={300} />
+          </Form.Item>
+
+          <Form.Item
+            label="封面图（可选）"
+            extra="展示在「我的消息」推送卡片与公告详情页顶部（无图则不显示）"
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <Upload
+                listType="picture-card"
+                showUploadList={false}
+                customRequest={customUploadCover}
+                accept=".jpg,.jpeg,.png,.gif,.webp"
+                disabled={uploading}
+              >
+                {coverUrl ? (
+                  <img
+                    src={coverUrl}
+                    alt="封面"
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      borderRadius: 6,
+                    }}
+                  />
+                ) : (
+                  <div>
+                    <PlusOutlined />
+                    <div style={{ marginTop: 4 }}>上传封面</div>
+                  </div>
+                )}
+              </Upload>
+              {coverUrl && (
+                <Button size="small" danger onClick={removeCover}>
+                  移除
+                </Button>
+              )}
+            </div>
           </Form.Item>
 
           <Form.Item name="content" label="正文">

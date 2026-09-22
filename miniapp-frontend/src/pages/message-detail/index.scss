@@ -44,6 +44,15 @@
   line-height: 1.5;
 }
 
+/* 封面图：标题与正文之间，有图才渲染（无图不占位） */
+.msgd-cover {
+  display: block;
+  width: 100%;
+  margin-top: $spacing-md;
+  border-radius: $radius-medium;
+  background: #f2f3f5;
+}
+
 .msgd-divider {
   height: 1rpx;
   background: $border-color;

@@ -4,6 +4,7 @@ import Taro, { useLoad, useDidShow } from '@tarojs/taro';
 
 import * as feedbackApi from '@/api/feedback';
 import { API_BASE_URL } from '@/utils/request';
+import { previewImages } from '@/utils/imagePreview';
 import type { FeedbackType } from '@/types/api';
 import FeedbackBadge from '@/components/FeedbackBadge';
 import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
@@ -173,9 +174,14 @@ export default function FeedbackSubmitPage() {
           <View className="fb-images">
             {images.map((url, idx) => (
               <View className="fb-img-item" key={url + idx}>
-                <Image className="fb-img" src={`${API_BASE_URL}${url}`} mode="aspectFill" />
+                <Image
+                  className="fb-img"
+                  src={`${API_BASE_URL}${url}`}
+                  mode="aspectFill"
+                  onClick={() => previewImages(url, images)}
+                />
                 <View className="fb-img-del" onClick={() => removeImage(idx)}>
-                  <Text className="fb-img-del-x">×</Text>
+                  <View className="fb-img-del-x" />
                 </View>
               </View>
             ))}
@@ -184,7 +190,7 @@ export default function FeedbackSubmitPage() {
                 {uploading ? (
                   <Text className="fb-img-add-loading">…</Text>
                 ) : (
-                  <Text className="fb-img-add-plus">+</Text>
+                  <View className="fb-img-add-plus" />
                 )}
                 <Text className="fb-img-add-text">添加</Text>
               </View>

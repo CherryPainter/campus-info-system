@@ -167,6 +167,17 @@ class WechatAuthService:
         finally:
             db.close()
 
+        # 新用户公告补推：首次注册（用户创建）时，把近 7 天已发布公告补写进站内信
+        if is_new_user:
+            try:
+                from app.services.announcement_push_service import (
+                    announcement_push_service,
+                )
+
+                announcement_push_service.push_recent_announcements_to_new_user(user.id)
+            except Exception as e:
+                logger.warning(f"新用户公告补推失败(忽略): user_id={user.id}: {e}")
+
         # 记录登录日志（与管理员登录共用 login_logs 表，便于统一审计）
         login_log_id = self._record_login_log(
             user.id, user.username, client_ip, user_agent, "success"

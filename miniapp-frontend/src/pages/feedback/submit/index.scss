@@ -158,9 +158,29 @@
 }
 
 .fb-img-del-x {
-  color: #fff;
-  font-size: 28rpx;
-  line-height: 1;
+  position: relative;
+  width: 28rpx;
+  height: 28rpx;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 22rpx;
+    height: 3rpx;
+    background: #fff;
+    border-radius: 2rpx;
+  }
+
+  &::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+  }
+
+  &::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+  }
 }
 
 .fb-img-add {
@@ -176,9 +196,35 @@
 }
 
 .fb-img-add-plus {
-  font-size: 48rpx;
-  color: $text-tertiary;
-  line-height: 1;
+  position: relative;
+  width: 40rpx;
+  height: 40rpx;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    background: $text-tertiary;
+    border-radius: 2rpx;
+  }
+
+  /* 横线 */
+  &::before {
+    left: 4rpx;
+    right: 4rpx;
+    top: 50%;
+    height: 4rpx;
+    transform: translateY(-50%);
+  }
+
+  /* 竖线 */
+  &::after {
+    top: 4rpx;
+    bottom: 4rpx;
+    left: 50%;
+    width: 4rpx;
+    transform: translateX(-50%);
+  }
 }
 
 .fb-img-add-loading {

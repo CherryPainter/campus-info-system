@@ -77,6 +77,11 @@ class Announcement(Base):
     )
     published_at = Column(DateTime, nullable=True, comment="发布时间")
     expired_at = Column(DateTime, nullable=True, comment="过期时间（为空表示长期有效）")
+    cover_url = Column(
+        String(500),
+        nullable=True,
+        comment="封面图 URL（消息推送卡片 / 详情页展示，无图则不显示）",
+    )
     view_count = Column(Integer, nullable=False, default=0, comment="阅读次数（累计）")
     created_by = Column(Integer, nullable=True, comment="创建人 user_id（管理员）")
     is_deleted = Column(Boolean, nullable=False, default=False, comment="软删除标记")
@@ -135,6 +140,7 @@ class Announcement(Base):
             ),
             "expired_at": self.expired_at.isoformat() if self.expired_at else None,
             "view_count": self.view_count or 0,
+            "cover_url": self.cover_url,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

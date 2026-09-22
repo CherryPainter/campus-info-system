@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { View, Text } from '@tarojs/components';
+import { View, Text, Image } from '@tarojs/components';
 import Taro, { useLoad, usePullDownRefresh, useReachBottom, stopPullDownRefresh } from '@tarojs/taro';
 
 import * as announcementsApi from '@/api/announcements';
 import type { AnnouncementItem } from '@/types/api';
+import { API_BASE_URL } from '@/utils/request';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
 import './index.scss';
@@ -133,6 +134,9 @@ export default function AnnouncementListPage() {
                 className="alist-item alist-item-top"
                 onClick={() => goDetail(item.id)}
               >
+                {item.cover_url ? (
+                  <Image className="alist-item-cover" src={`${API_BASE_URL}${item.cover_url}`} mode="widthFix" />
+                ) : null}
                 <View className="alist-item-main">
                   <Text className={`alist-tag tag-top`}>{getTagInfo(item).text}</Text>
                   <Text className="alist-item-title">{item.title || '无标题'}</Text>
@@ -169,6 +173,9 @@ export default function AnnouncementListPage() {
                 className={`alist-item ${tag.isTop ? 'alist-item-top' : ''}`}
                 onClick={() => goDetail(item.id)}
               >
+                {item.cover_url ? (
+                  <Image className="alist-item-cover" src={`${API_BASE_URL}${item.cover_url}`} mode="widthFix" />
+                ) : null}
                 <View className="alist-item-main">
                   <Text className={`alist-tag ${tag.isTop ? 'tag-top' : 'tag-cat'}`}>
                     {tag.text}

@@ -186,6 +186,20 @@ def feedback_image(name):
     return send_from_directory(root, name)
 
 
+# ==================== 公告封面（公开访问）====================
+@api_bp.route("/announcement-covers/<path:name>")
+def announcement_cover(name):
+    """公告封面图（公开，学生端消息卡片 / 详情页加载）
+
+    安全：扩展名白名单 + send_from_directory 自带路径穿越防护。
+    """
+    ext = os.path.splitext(name)[1].lower()
+    if ext not in _IMAGE_EXTS:
+        return api_error(message="非法图片路径", http_status=400)
+    root = os.path.abspath(os.path.join(Config.OUTPUT_DIR, "announcement-covers"))
+    return send_from_directory(root, name)
+
+
 @api_bp.route("/tasks")
 @jwt_required
 def get_tasks():

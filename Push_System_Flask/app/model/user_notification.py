@@ -9,7 +9,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 
 from app.core.database import Base
 
@@ -38,9 +38,21 @@ class UserNotification(Base):
     is_read = Column(Boolean, default=False, nullable=False, comment="是否已读")
     created_at = Column(DateTime, default=datetime.now, index=True, comment="创建时间")
 
-    # 复合索引：按用户+未读状态+时间倒序查列表/计数
+    # 封面图与业务关联（公告类推送带封面，点击跳转公告详情）
+    cover_url = Column(String(500), nullable=True, comment="封面图 URL（关联公告时展示）")
+    ref_type = Column(
+        String(30),
+        nullable=True,
+        index=True,
+        comment="关联业务类型：announcement/...（NULL=系统通知）",
+    )
+    ref_id = Column(Integer, nullable=True, index=True, comment="关联业务 ID（如公告 ID）")
+
+    # 复合索引：按用户+未读状态+时间倒序查列表/计数；
+    # 唯一约束：同一用户同一业务关联（如某公告）只推送一次，防重复（ref 为 NULL 时不限）
     __table_args__ = (
         Index("idx_user_read_time", "user_id", "is_read", "created_at"),
+        UniqueConstraint("user_id", "ref_type", "ref_id", name="uq_user_notif_ref"),
     )
 
     def __repr__(self) -> str:
@@ -55,6 +67,9 @@ class UserNotification(Base):
             "title": self.title,
             "content": self.content,
             "is_read": bool(self.is_read),
+            "cover_url": self.cover_url,
+            "ref_type": self.ref_type,
+            "ref_id": self.ref_id,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S")
             if self.created_at
             else None,

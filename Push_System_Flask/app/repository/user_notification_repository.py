@@ -24,6 +24,9 @@ class UserNotificationRepository:
         category: str,
         title: str,
         content: str | None = None,
+        cover_url: str | None = None,
+        ref_type: str | None = None,
+        ref_id: int | None = None,
     ) -> UserNotification:
         """
         创建一条站内通知
@@ -31,9 +34,12 @@ class UserNotificationRepository:
         Args:
             session: 数据库会话
             user_id: 接收用户ID
-            category: 通知类型（如 electricity_daily / low_power / cookie_invalid）
+            category: 通知类型（如 electricity_daily / low_power / cookie_invalid / announcement）
             title: 通知标题
             content: 通知内容（纯文本，换行分隔）
+            cover_url: 封面图 URL（关联公告时展示）
+            ref_type: 关联业务类型（announcement 等，NULL=系统通知）
+            ref_id: 关联业务 ID（如公告 ID）
 
         Returns:
             UserNotification: 创建的通知对象
@@ -43,6 +49,9 @@ class UserNotificationRepository:
             category=category,
             title=title,
             content=content,
+            cover_url=cover_url,
+            ref_type=ref_type,
+            ref_id=ref_id,
             is_read=False,
             created_at=datetime.now(),
         )

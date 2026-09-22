@@ -9,6 +9,7 @@ import Taro, {
 
 import * as feedbackApi from '@/api/feedback';
 import { API_BASE_URL } from '@/utils/request';
+import { previewImages } from '@/utils/imagePreview';
 import type { FeedbackItem } from '@/types/api';
 import './index.scss';
 
@@ -111,6 +112,11 @@ export default function FeedbackListPage() {
                       className="fb-item-img"
                       src={`${API_BASE_URL}${url}`}
                       mode="aspectFill"
+                      onClick={(e) => {
+                        // 阻止冒泡，避免点图误进详情页
+                        e.stopPropagation();
+                        previewImages(url, item.images);
+                      }}
                     />
                   ))}
                 </View>
@@ -140,7 +146,7 @@ export default function FeedbackListPage() {
         className="fb-fab"
         onClick={() => Taro.navigateTo({ url: '/pages/feedback/submit/index' })}
       >
-        <Text className="fb-fab-plus">+</Text>
+        <View className="fb-fab-plus" />
       </View>
     </View>
   );

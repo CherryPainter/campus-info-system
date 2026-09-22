@@ -198,6 +198,7 @@ _EDITABLE_FIELDS = {
     "audience_ids",
     "is_top",
     "expired_at",
+    "cover_url",
 }
 
 _VALID_CATEGORIES = {"notice", "activity", "urgent", "system"}
@@ -362,6 +363,16 @@ class AnnouncementService:
             db.commit()
             db.refresh(item)
             logger.info(f"公告已创建: id={item.id}, title={item.title}, status={item.status}")
+            # 新用户公告补推：创建即发布时给近 7 天新注册学生写站内信（失败不影响主流程）
+            if publish_now and item.status == STATUS_PUBLISHED:
+                try:
+                    from app.services.announcement_push_service import (
+                        announcement_push_service,
+                    )
+
+                    announcement_push_service.push_announcement_to_new_users(item)
+                except Exception as e:
+                    logger.warning(f"公告创建即发布补推失败(忽略): id={item.id}: {e}")
             return item.to_dict(with_content=True)
         finally:
             db.close()
@@ -413,6 +424,16 @@ class AnnouncementService:
             db.commit()
             db.refresh(item)
             logger.info(f"公告状态变更: id={announcement_id} -> {status}")
+            # 新用户公告补推：发布公告时给近 7 天新注册学生写站内信（失败不影响主流程）
+            if status == STATUS_PUBLISHED:
+                try:
+                    from app.services.announcement_push_service import (
+                        announcement_push_service,
+                    )
+
+                    announcement_push_service.push_announcement_to_new_users(item)
+                except Exception as e:
+                    logger.warning(f"公告发布补推失败(忽略): id={announcement_id}: {e}")
             return item.to_dict(with_content=True)
         finally:
             db.close()

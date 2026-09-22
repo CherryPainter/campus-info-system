@@ -4,6 +4,7 @@ import Taro, { useLoad } from '@tarojs/taro';
 
 import * as feedbackApi from '@/api/feedback';
 import { API_BASE_URL } from '@/utils/request';
+import { previewImages } from '@/utils/imagePreview';
 import { markViewed } from '@/utils/feedbackBadge';
 import type { FeedbackDetail } from '@/types/api';
 import './index.scss';
@@ -96,6 +97,7 @@ export default function FeedbackDetailPage() {
                   className="fb-detail-img"
                   src={`${API_BASE_URL}${url}`}
                   mode="widthFix"
+                  onClick={() => previewImages(url, detail.images || [])}
                 />
               ))}
             </View>

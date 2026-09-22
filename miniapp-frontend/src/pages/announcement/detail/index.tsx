@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, RichText, ScrollView } from '@tarojs/components';
+import { View, Text, RichText, ScrollView, Image } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { Icon } from '@nutui/nutui-react-taro';
 import * as announcementsApi from '@/api/announcements';
@@ -245,6 +245,15 @@ export default function AnnouncementDetail() {
                 </View>
               )}
             </View>
+
+            {/* 封面图：标题与正文之间，有图才显示（无图不占位） */}
+            {detail.cover_url ? (
+              <Image
+                className="detail-cover"
+                src={`${API_BASE_URL}${detail.cover_url}`}
+                mode="widthFix"
+              />
+            ) : null}
 
             {/* 正文（相对路径图片已补全为绝对 URL） */}
             <View className="detail-body">

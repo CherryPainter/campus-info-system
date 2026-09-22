@@ -40,6 +40,8 @@ export interface AnnouncementListItem {
   view_count: number;
   created_at: string | null;
   updated_at: string | null;
+  /** 封面图 URL（消息推送卡片 / 详情页展示，无图则不显示） */
+  cover_url?: string | null;
   /** 管理端列表额外附加 */
   attachment_count: number;
   read_count: number;
@@ -61,6 +63,8 @@ export interface AnnouncementPayload {
   is_top?: boolean;
   /** 过期时间，字符串或 null（长期有效） */
   expired_at?: string | null;
+  /** 封面图 URL（消息推送卡片 / 详情页展示，无图则不显示） */
+  cover_url?: string | null;
   /** 仅创建时有效：true 则直接发布 */
   publish?: boolean;
 }
@@ -128,4 +132,11 @@ export const announcementApi = {
   /** 删除附件 */
   deleteAttachment: (attachmentId: number) =>
     request.delete<any, ApiResponse>(`/admin/announcements/attachment/${attachmentId}`),
+
+  /** 上传封面图（multipart，字段名 file；独立上传，不依赖公告 id，返回 { url }） */
+  uploadCover: (formData: FormData) =>
+    request.post<any, ApiResponse<{ url: string }>>(
+      `/admin/announcements/upload-cover`,
+      formData
+    ),
 };
