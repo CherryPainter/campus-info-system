@@ -88,7 +88,7 @@ export default function FavoritesPage() {
     <View className="favorites-page">
       {!loading && loaded && list.length === 0 ? (
         <View className="favorites-empty">
-          <Text className="favorites-empty-icon">{'★'}</Text>
+          <Text className="iconfont icon-a-rongqi2231x favorites-empty-icon" />
           <Text className="favorites-empty-title">还没有收藏任何通知</Text>
           <Text className="favorites-empty-tip">
             在通知详情页点击五角星即可收藏，这里会显示你收藏的内容

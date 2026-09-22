@@ -17,12 +17,12 @@ export default function UserAgreement() {
           「校园宜知行」（以下简称"本小程序"）是一款面向校内学生的校园信息聚合工具，目前已实现以下功能：
         </Text>
         <View className="section-list">
-          <Text className="section-li">· 课表查询：展示本人所在班级的周课表与单日课程</Text>
-          <Text className="section-li">· 天气查询：展示当前所在地天气与生活指数</Text>
-          <Text className="section-li">· 电量查询：展示本人宿舍电表剩余电量（需用户自配接入信息）</Text>
-          <Text className="section-li">· 通知公告：查看校内发布的通知与公告</Text>
-          <Text className="section-li">· 意见反馈：提交问题与建议，接收站内回复</Text>
-          <Text className="section-li">· 个人资料：维护昵称、学院、专业、校园卡号等信息</Text>
+          <Text className="section-li">课表查询：展示本人所在班级的周课表与单日课程</Text>
+          <Text className="section-li">天气查询：展示当前所在地天气与生活指数</Text>
+          <Text className="section-li">电量查询：展示本人宿舍电表剩余电量（需用户自配接入信息）</Text>
+          <Text className="section-li">通知公告：查看校内发布的通知与公告</Text>
+          <Text className="section-li">意见反馈：提交问题与建议，接收站内回复</Text>
+          <Text className="section-li">个人资料：维护昵称、学院、专业、校园卡号等信息</Text>
         </View>
       </View>
 
@@ -38,10 +38,10 @@ export default function UserAgreement() {
         <Text className="section-h">三、使用规范</Text>
         <Text className="section-p">使用本小程序时请您：</Text>
         <View className="section-list">
-          <Text className="section-li">· 使用本人真实的身份信息进行绑定，不冒用他人身份</Text>
-          <Text className="section-li">· 妥善保管您的绑定码与本人宿舍电表的接入信息，不向他人泄露</Text>
-          <Text className="section-li">· 不通过技术手段批量获取、传播本小程序展示的内容</Text>
-          <Text className="section-li">· 不上传违法违规、色情、暴力、虚假或骚扰性内容</Text>
+          <Text className="section-li">使用本人真实的身份信息进行绑定，不冒用他人身份</Text>
+          <Text className="section-li">妥善保管您的绑定码与本人宿舍电表的接入信息，不向他人泄露</Text>
+          <Text className="section-li">不通过技术手段批量获取、传播本小程序展示的内容</Text>
+          <Text className="section-li">不上传违法违规、色情、暴力、虚假或骚扰性内容</Text>
         </View>
       </View>
 

@@ -13,20 +13,33 @@
   - `index.scss`：`.login-agree-check-tick` 由 `font-size: 24rpx` + 文本改为 CSS 绘制——`::before` 一个 8×14rpx 矩形只留 `border-right` + `border-bottom` 后 `rotate(45deg)` 得到勾形，描边用 `currentColor` 继承 `color: $text-inverse`（白勾）。
 - **验证**：`tsc --noEmit` 退出码 0；`taro build --type weapp` 编译成功；源码 `✓` 残留 0（仅注释中提及原字符）；产物 `pages/login/index.wxss` 已输出 `.login-agree-check-tick` 与 `::before` 规则；产物 js 确认渲染为空 `View` 且不含 U+2713；`process.env` 残留 0。
 
-### 审计发现（未改动，待用户决定）：小程序内仍有 6 处"文本字符 / emoji 当图标"
-统一箭头图标时顺带做了全量扫描，发现以下**会被渲染**的字符图标，本次**未擅自改动**（涉及设计取舍，且真机观感本地无法验证）：
+### 修复：剩余 6 处"文本字符 / emoji 当图标"改用 iconfont 或 CSS 绘制（前端，2026-09-22）
+上一轮审计出 6 处会被渲染的字符图标，本轮按「优先 iconfont，无合适字形再 CSS 画」全部处理完。**字形选型不靠字形名猜，而是用仓库内 `font_5227727_2cehpso97e2/iconfont.ttf` 把全部 59 个字形渲染成对照图后逐个确认**（脚本 `技术总结/dev-scripts/render_iconfont_preview.py`，输出 `技术总结/iconfont-preview.png`）。
 
-| 位置 | 当前字符 | 用途 | 说明 |
+| 位置 | 原字符 | 改为 | 依据 |
 |---|---|---|---|
-| `pages/announcement/detail:291` | `📎`（U+1F4CE） | 附件行左侧图标 | **emoji，违反项目「禁 emoji」铁律**；且各系统 emoji 风格差异大 |
-| `pages/weather:368-370` | `💧` ×3 | 分钟级降水卡片的雨滴动效 | **emoji，同上违规** |
-| `pages/announcement/detail:340` | `★` / `☆` | 底部操作栏「收藏」的已收藏/未收藏两态 | 星形字形随字体变；**同一栏的「分享」「已阅」已用 iconfont**，此处是同类中的例外 |
-| `pages/profile:378` | `☆`（U+2606） | 「我的收藏」入口图标 | 同一列表其余 4 项全用 `iconfont`，此处是遗漏 |
-| `pages/favorites:91` | `★` 96rpx 金色 | 空状态图标 | 同上 |
-| `pages/privacy-policy:61` | `·`（U+00B7） | 列表项前缀 | 风险最低（`·` 在正文字体中渲染稳定），但规范做法是 CSS 圆点 |
+| `pages/announcement/detail:291` | 回形针 emoji | iconfont `icon-RectangleCopy1`（`\ue6a7`，文档轮廓） | 渲染确认；容器 `.attach-icon` 为 64rpx 方块 + 橙色浅底，深色文档图标可读 |
+| `pages/announcement/detail:340` | `★` / `☆` | iconfont `icon-a-rongqi2231x`（`\ue67c`，五角星轮廓） | 渲染确认；原以为可用的 `icon-xz` 实际是**实心爱心**、`icon-guanbi` 是**实心方块**，均不可用 |
+| `pages/profile:378` | `☆` | 同上 | 同一列表其余 4 项本就用 iconfont，此处是遗漏 |
+| `pages/favorites:91` | `★`（96rpx 金色） | 同上 | 同上 |
+| `pages/weather:368-370` | 水滴 emoji ×3 | **CSS 绘制水滴** | iconfont 里雨相关字形语义全不对：`雨伞`是遮阳伞、`雾霾`是云加雨滴、`湿度`是水滴，故改画 |
+| `pages/privacy-policy` / `pages/user-agreement` | `·` 共 **20 处** | **CSS 绘制圆点** | 见下条 |
 
-- 项目 iconfont（5227727）内有 `icon-shoucang`（收藏，`\ue613`）、`icon-xz`（`\ue600`，疑似"选择/勾选"）、`icon-fenxiang`、`icon-yiyuedu`、`icon-xiazai` 等字形可用，但**字形实际长相无法在本地确认**（需真机/开发者工具看），故未直接替换。
-- 另注：`★`/`☆` 两态目前承担"已收藏 / 未收藏"的区分，若改用单色 iconfont 字形，则只能靠颜色区分，属**视觉降级**，需用户拍板。
+- **星标两态并非视觉降级**：先前担心改单色字形后「已收藏 / 未收藏」无从区分，复查发现本页**早已存在** `.action-btn.action-active .action-icon { color: #faad14 }`——激活态本来就是靠颜色区分的，与同栏「分享」「已阅」一致，故换字形不损失任何状态表达。
+- **雨滴的绘制与自检**：`border-radius: 0 50% 50% 50%`（左上角留尖）+ `rotate(45deg)`。
+  - **踩坑并修正**：初版写成 `rotate(-45deg)`。按 CSS 旋转语义（屏幕坐标 y 轴向下、正角顺时针）代入矩阵可知左上角会转到 **9 点方向（朝左）**；用已知为真的案例自检同一算式——「只留 `border-top`/`border-right` 的方块 `rotate(45deg)`」算得指右，与项目里 `IconArrow` 的实际表现一致，算式可信，故改为 `+45deg`。另渲染成图复核（脚本 `技术总结/dev-scripts/render_raindrop_direction.py`，输出 `技术总结/raindrop-direction.png`），确认 `+45deg` 尖朝上、`-45deg` 尖朝左。
+  - 盒尺寸取原字号的约 0.71 倍（26/20/16rpx，原字号 36/28/22rpx）：旋转后的对角长度≈原字号，列的占位高度不变。
+- **验证**：`tsc --noEmit` 退出码 0；`taro build --type weapp` 编译成功（仅保留原有 285KB 体积告警）；产物核对——`pages/weather/index.wxss` 输出 `.raindrop{background:#3887de;border-radius:0 50% 50% 50%;opacity:.85;transform:rotate(45deg)}` 与三档尺寸，`pages/profile|favorites|announcement/detail` 的 js 渲染为 `iconfont icon-a-rongqi2231x ...` / `iconfont icon-RectangleCopy1 attach-file-icon`，`app-origin.wxss` 含 `@font-face font-family:iconfont` 且字形 `\ue67c` / `\ue6a7` 已定义；全量 dist 中回形针 / 水滴 / 星号 / 勾 / 文本箭头残留 **0**，`process.env` 残留 **0**。
+- **待真机确认**：星标为轮廓形（旧实心星在列表里更"跳"），雨滴与水珠的观感需在开发者工具里定夺。
+
+### 修复：法务页列表点由「· 」文本改为 CSS 圆点（前端，2026-09-22）
+- **范围修正**：上一轮记录为「1 处（`privacy-policy:61`）」，实际是全项目 **20 处**——`pages/privacy-policy` 10 处、`pages/user-agreement` 10 处；`section-list` / `section-li` 两页之外无任何使用，改动面可控。
+- **为什么值得改（实测数据，非推测）**：按 24rpx 字号把 `·`（U+00B7）实际渲染后测量（脚本 `技术总结/dev-scripts/measure_middle_dot.py`）——墨迹直径 **2.4~5.7rpx**、「· 」前进宽度 **12.9~36rpx**（宋体的 `·` 是全角，接近雅黑的 3 倍）。同一份法务文案在不同机型上缩进能差近 3 倍，正是"文本字符当图标"的典型症状。
+- **改动**：
+  - 两个 `index.tsx`：20 行 `className="section-li">· ` 去掉字面 `· `（渲染结果不变，且复制文本不再带出多余点号）。
+  - 两个 `index.scss`：`.section-li::before` 画 6rpx 圆点 `border-radius:50%` + `background:currentColor`（自动继承 `$text-secondary`），`display:inline-block` + `margin-right:8rpx`（合计前进 14rpx，取各字体实测中位）+ `vertical-align:middle`。
+  - **刻意不用绝对定位**：改用内联 `inline-block` 是因为（1）换行后仍回到左边缘，与原来的文本流行为一致，不引入悬挂缩进；（2）不依赖 `<text>` 元素对 `position` 的支持——该点本地无法验证。
+- **验证**：产物 `pages/privacy-policy/index.wxss` 与 `pages/user-agreement/index.wxss` 输出 `.section-list .section-li::before{background:currentColor;border-radius:50%;content:"";display:inline-block;height:6rpx;margin-right:8rpx;vertical-align:middle;width:6rpx}`，`position:absolute` 与 `translateY` 残留均为 **0**；两页 js 中 `·` 计数 **0**，首条文案为 `section-li",children:"微信身份信息：...`（点号已不在文本里）。
 
 ### 重构：小程序箭头图标统一抽成共享组件 `IconArrow`（前端，2026-09-22）
 - **背景**：上一轮把反馈页/公告页的 `›` 换成 CSS 矢量时，是在各页 `.scss` 里**手写同一套 `::before` 配方**（正方形 + `border-top`/`border-right` + `rotate(45deg)`）；同时全项目仍有约 25 处箭头用**文本字符**（`›` / `‹` / `∧`）——用户自定义字体会改写其字形与基线。故收敛为单一组件，避免配方抄多份、以及"一半组件一半文本字符"的混乱。

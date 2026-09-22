@@ -375,7 +375,7 @@ export default function ProfilePage() {
           }
         >
           <View className="profile-item-icon-wrap">
-            <Text className="profile-item-icon profile-star-icon">{'\u2606'}</Text>
+            <Text className="iconfont icon-a-rongqi2231x profile-item-icon profile-star-icon" />
           </View>
           <Text className="profile-label">我的收藏</Text>
           <IconArrow className="profile-arrow" size="md" />

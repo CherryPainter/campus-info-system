@@ -363,11 +363,11 @@ function MinutelyRainCard({ data }: { data: { summary?: string; minutely: Weathe
 
         {/* 图表区域：左侧雨滴 + 右侧折线 */}
         <View className="minutely-chart-area">
-          {/* 雨滴图标列 */}
+          {/* 雨滴图标列（CSS 绘制，原为 emoji 💧） */}
           <View className="minutely-raindrops">
-            <Text className="raindrop raindrop-lg">💧</Text>
-            <Text className="raindrop raindrop-md">💧</Text>
-            <Text className="raindrop raindrop-sm">💧</Text>
+            <View className="raindrop raindrop-lg" />
+            <View className="raindrop raindrop-md" />
+            <View className="raindrop raindrop-sm" />
           </View>
 
           {/* 降水强度折线图 */}

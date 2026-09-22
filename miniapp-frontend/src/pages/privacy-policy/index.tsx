@@ -15,12 +15,12 @@ export default function PrivacyPolicy() {
         <Text className="section-h">一、我们收集哪些信息</Text>
         <Text className="section-p">为提供校园信息查询服务，本小程序会在您使用相应功能时收集以下必要信息：</Text>
         <View className="section-list">
-          <Text className="section-li">· 微信身份信息：通过 wx.login 取得 openid 用于识别您的微信身份，不获取您的微信昵称、头像</Text>
-          <Text className="section-li">· 身份绑定信息：您在身份绑定时填写的学校、学号、绑定码</Text>
-          <Text className="section-li">· 学校预录信息：绑定时按学校预录名单同步的学校、学院、专业、班级、姓名</Text>
-          <Text className="section-li">· 个人资料：您主动维护的昵称、校园卡号等可选信息</Text>
-          <Text className="section-li">· 宿舍电表接入信息：您本人宿舍电表的鉴权字符串，仅用于为您单独查询本人宿舍电量</Text>
-          <Text className="section-li">· 反馈内容：您主动提交的意见反馈文字与图片</Text>
+          <Text className="section-li">微信身份信息：通过 wx.login 取得 openid 用于识别您的微信身份，不获取您的微信昵称、头像</Text>
+          <Text className="section-li">身份绑定信息：您在身份绑定时填写的学校、学号、绑定码</Text>
+          <Text className="section-li">学校预录信息：绑定时按学校预录名单同步的学校、学院、专业、班级、姓名</Text>
+          <Text className="section-li">个人资料：您主动维护的昵称、校园卡号等可选信息</Text>
+          <Text className="section-li">宿舍电表接入信息：您本人宿舍电表的鉴权字符串，仅用于为您单独查询本人宿舍电量</Text>
+          <Text className="section-li">反馈内容：您主动提交的意见反馈文字与图片</Text>
         </View>
       </View>
 
@@ -56,10 +56,10 @@ export default function PrivacyPolicy() {
         <Text className="section-h">五、您的权利</Text>
         <Text className="section-p">您对自己的个人信息享有以下权利：</Text>
         <View className="section-list">
-          <Text className="section-li">· 查看与修改：通过"个人资料"页面查看并修改昵称、校园卡号等信息</Text>
-          <Text className="section-li">· 删除接入信息：通过"电表配置"页面清除宿舍电表接入信息</Text>
-          <Text className="section-li">· 注销账号：通过"个人资料 → 注销账号"申请账号注销，注销后相关信息将被删除</Text>
-          <Text className="section-li">· 投诉与反馈：通过"意见反馈"入口与我们沟通</Text>
+          <Text className="section-li">查看与修改：通过"个人资料"页面查看并修改昵称、校园卡号等信息</Text>
+          <Text className="section-li">删除接入信息：通过"电表配置"页面清除宿舍电表接入信息</Text>
+          <Text className="section-li">注销账号：通过"个人资料 → 注销账号"申请账号注销，注销后相关信息将被删除</Text>
+          <Text className="section-li">投诉与反馈：通过"意见反馈"入口与我们沟通</Text>
         </View>
       </View>
 

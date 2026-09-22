@@ -667,13 +667,21 @@
     padding-bottom: 6rpx;
     gap: 2rpx;
 
+    /* 水滴：CSS 绘制（正方形三圆角 + 一角留尖，再把尖角转到正上方）。
+       原实现用 emoji 💧 —— 各系统 emoji 风格差异大，且项目铁律禁 emoji。
+       盒尺寸取原来的约 0.71 倍：旋转后的对角长度≈原字号，列的占位高度不变。
+       角度说明：border-radius 第一值是「左上角」，故锐角在左上；
+       rotate(45deg) 顺时针 45° 才把左上角转到 12 点方向（写成 -45deg 会指向左侧）。
+       同一算式可用于自检：只留 border-top/right 的方块 rotate(45deg) 恰好指右，与箭头组件一致。 */
     .raindrop {
-      line-height: 1;
+      background: #3887de;
+      border-radius: 0 50% 50% 50%;
+      transform: rotate(45deg);
       opacity: 0.85;
     }
-    .raindrop-lg { font-size: 36rpx; }
-    .raindrop-md { font-size: 28rpx; opacity: 0.72; }
-    .raindrop-sm { font-size: 22rpx; opacity: 0.55; }
+    .raindrop-lg { width: 26rpx; height: 26rpx; }
+    .raindrop-md { width: 20rpx; height: 20rpx; opacity: 0.72; }
+    .raindrop-sm { width: 16rpx; height: 16rpx; opacity: 0.55; }
   }
 
   // 右侧折线图容器

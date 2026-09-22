@@ -288,7 +288,7 @@ export default function AnnouncementDetail() {
                       onClick={() => guard(() => downloadAttachment(att))}
                     >
                       <View className="attach-icon">
-                        <Text className="attach-file-icon">&#x1F4CE;</Text>
+                        <Text className="iconfont icon-RectangleCopy1 attach-file-icon" />
                       </View>
                       <View className="attach-info">
                         <Text className="attach-name">{att.file_name}</Text>
@@ -337,7 +337,7 @@ export default function AnnouncementDetail() {
           {/* 底部操作栏 */}
           <View className="detail-actions">
             <View className={`action-btn ${isFav ? 'action-active' : ''}`} onClick={handleFavorite}>
-              <Text className="action-icon action-star">{isFav ? '\u2605' : '\u2606'}</Text>
+              <Text className="iconfont icon-a-rongqi2231x action-icon action-star" />
               <Text className="action-text">收藏</Text>
             </View>
             <View className="action-btn" onClick={handleShare}>

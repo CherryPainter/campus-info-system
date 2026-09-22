@@ -309,7 +309,10 @@
   color: #faad14;
 }
 
-/* 五角星收藏图标 */
+/* 五角星收藏图标：字形来自 iconfont（icon-a-rongqi2231x，五角星轮廓）。
+ * 已收藏 / 未收藏不再靠「★ / ☆」实心空心区分，改为沿用本页既有的
+ * `.action-btn.action-active .action-icon` 颜色机制（未收藏=弱化灰，已收藏=#faad14 金）——
+ * 与同栏「分享」「已阅」两项的状态表现完全一致。 */
 .action-star {
   font-size: 40rpx;
   line-height: 1;

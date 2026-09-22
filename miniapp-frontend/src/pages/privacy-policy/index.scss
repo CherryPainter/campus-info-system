@@ -46,12 +46,29 @@
   .section-list {
     padding-left: $spacing-md;
 
+    /* 列表点改由 CSS 绘制，正文里不再写「· 」文本。
+       原因：`·` 的形状与占位宽度随用户自定义字体浮动很大——同字号实测
+       墨迹直径 2.4~5.7rpx、「· 」前进宽度 12.9~36rpx（宋体为全角，接近 3 倍）。
+       改用固定 6rpx 圆点 + 8rpx 间距（合计 14rpx，取各字体实测中位），观感与原来一致。
+       用内联 inline-block 而非绝对定位：换行后仍回到左边缘，与原来的文本流行为相同，
+       也不依赖 `<text>` 对 position 的支持。 */
     .section-li {
       display: block;
       font-size: $font-size-sm;
       color: $text-secondary;
       line-height: 1.8;
       margin-bottom: $spacing-xs;
+
+      &::before {
+        content: '';
+        display: inline-block;
+        width: 6rpx;
+        height: 6rpx;
+        margin-right: 8rpx;
+        border-radius: 50%;
+        background: currentColor; /* 自动继承本项 color，无需重复写色值 */
+        vertical-align: middle;
+      }
     }
   }
 }
