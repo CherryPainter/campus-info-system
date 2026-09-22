@@ -40,7 +40,8 @@
   - 消息页点击公告类站内信改走 `openAnnouncementNotification`：先 `notificationsApi.markRead(id)` 乐观清未读与计数，再跳公告详情（与公告未读角标一致）；`CATEGORY_LABEL` 增「新公告」。
   - 类型：`AnnouncementItem` / `UserNotificationItem` 增 `cover_url`（后者另加 `ref_type` / `ref_id`）。
 - **部署注意**：`init_db.py migrate` 只按 `Table.indexes` 补索引，**不会**从 `__table_args__` 建唯一约束 → 生产需手动补建 `uq_user_notif_ref`（`ALTER TABLE user_notifications ADD UNIQUE KEY uq_user_notif_ref (user_id, ref_type, ref_id)`）；`cover_url` / `ref_type` / `ref_id` 列由 migrate 补。
-- **验证**：后端 9 文件 `py_compile` 通过；小程序 `tsc --noEmit` 退出码 0、`taro build --type weapp` 编译成功、`process.env` 残留 0，四页封面样式已进产物。端到端（真实发布 → 新用户收到站内信 → 点开展示封面）待用户在服务环境确认。
+- **验证**：后端 9 文件 `py_compile` 通过；小程序 `tsc --noEmit` 退出码 0、`taro build --type weapp` 编译成功、`process.env` 残留 0，四页封面样式已进产物。
+- **本地端到端验证（通过）**：在真实本地库跑通两条补推路径（脚本自造数据、结束自动清理，库行数回到起始值）——①发布时广播写入 2 条，`category` / `ref_type` / `ref_id` / `cover_url` / `title` / `content`（auto_summary）全部正确，重复发布幂等（0 新增）；②注册时补推写入 1 条，幂等（0 新增）；③`uq_user_notif_ref` 唯一约束确实拒绝重复 `(user_id, ref_type, ref_id)`；④非近 7 天注册用户不被补推。**仍属服务环境才能验的**：小程序真机点开看封面实际渲染、以及生产需手动补建该唯一约束（见上「部署注意」）。
 
 ### 修复：小程序反馈模块图标字与图片预览（前端，2026-09-22）
 - **问题**：①提交页「添加」块与列表页悬浮按钮的「+」、提交页删除角标的「×」均为**文本字符**，会被用户自定义字体（font-family）改变字形与基线，有失美观；②意见反馈页 / 我的反馈页 / 反馈详情页的图片仅渲染，点击无法放大预览。
