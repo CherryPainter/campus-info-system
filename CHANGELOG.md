@@ -6,6 +6,17 @@
 
 ## Unreleased
 
+### 测试：更新课程相关过期测试到 v6.19.x 新契约（后端，2026-09-22）
+- **背景**：跑全量 `pytest` 发现 5 个失败，均为**早前会话改行为后未同步更新测试**（那两次只跑了 `py_compile`，未跑全量测试），并非功能回归。
+- `tests/test_course_admin_protection.py`（4 项）：旧契约（去重键含 `course_code`；手动课按「`course_code` 相同」或「同时间槽 `(week_day, period_idx, week_number)` 被占」保护）已随 v6.19.x 改为「身份 = `course_key = md5(课名|星期|排序节次|教室|教师)`，按 `(semester_id, course_key)` 去重，手动课保护仅在 course_key 命中时跳过」。据此重写：
+  - 覆盖保护用例改为「爬虫行与手动课同 course_key」→ 断言 `created==0 且 updated==0`，手动课字段与 `weeks` 未被改写；
+  - 原「同槽位不挤占」用例改名为 `test_crawler_inserts_when_key_differs_in_admin_slot`，固化新行为（身份不同即新建，手动课不被触碰）；
+  - 「正常 upsert」用例改为只变更**非身份字段**（`course_code` / `building` / `weeks`）→ 断言更新不新建；admin 来源用例同理；
+  - 批次数据统一补 `semester_id`——保护集与匹配均按学期作用域，缺失会回落到「当前学期」而与夹具的 `20251` 不一致导致误判。
+- `tests/test_miniapp_phase2.py::test_schedule_today_filters_by_date`：旧断言按 `extra_info.full_date` 过滤（v6.19.0 已改「`day_of_week == 今天` 且 `当前教学周 ∈ weeks`」）。夹具原固定 `day_of_week=1`（周一），**对星期几敏感**；改为按 `date.today().isoweekday()` 构造并 `mock` `get_current_week_number`，任意星期稳定通过。
+- **说明**：本次仅改测试，未改任何业务代码；新契约的既有副作用（改名/改教师/改教室会改变 `course_key` 视作另一门课、同槽位不再拦截）已写入测试 docstring 备案。
+- **验证**：`pytest -q` → **217 passed, 0 failed**。
+
 ### 新增：公告封面 + 发布/新注册时「我的消息」留站内信（后端 + 管理端 + 小程序，2026-09-22）
 - **背景**：公告此前只走企业微信群机器人，学生端「我的消息」无感知；且注册晚于公告的学生看不到近期通知。本次让公告在「我的消息」留痕，并新增封面展示。
 - **后端（模型）**：

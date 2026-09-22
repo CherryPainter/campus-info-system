@@ -294,25 +294,38 @@ def test_deleted_user_returns_401_user_gone(client, student_token):
 
 
 def test_schedule_today_filters_by_date(client, student_token):
+    """今日课程口径（v6.19.0）：day_of_week == 今天星期几 且 当前教学周 ∈ weeks。
+
+    不再依赖 extra_info.full_date（旧口径）：full_date 由随每次爬取漂移的 week_number
+    推导，跨周后会整体偏移，导致「今日课程」恒为空。原测试固定 day_of_week=1（周一），
+    对星期几敏感——这里改为按今天真实星期构造，保证任何一天都稳定通过。
+    """
     today_str = date.today().strftime("%Y-%m-%d")
+    today_wd = date.today().isoweekday()  # 1..7
+    other_wd = 1 if today_wd != 1 else 2
+
     schedule_service._schedules = [
-        _course(schedule_id="1", course_name="今天有课"),
+        # 星期匹配 + 当前教学周(2) ∈ weeks([1,2,3]) → 命中，full_date 被修正为今天
+        _course(schedule_id="1", course_name="今天有课", day_of_week=today_wd),
+        # 星期不匹配 → 不返回；其 full_date 刻意设成非今天，证明不再依赖该字段
         _course(
             schedule_id="2",
-            course_name="明天才上",
+            course_name="不是今天",
+            day_of_week=other_wd,
             extra_info={
                 "teacher": "李老师",
                 "building": "启智楼",
                 "classroom": "B202",
                 "weeks": [1, 2, 3],
                 "credits": "",
-                "full_date": "2099-01-01",  # 非今天
+                "full_date": "2099-01-01",
             },
         ),
     ]
-    resp = client.get(
-        "/api/miniapp/schedule/today", headers={"Authorization": f"Bearer {student_token}"}
-    )
+    with mock.patch("app.utils.course_helpers.get_current_week_number", return_value=2):
+        resp = client.get(
+            "/api/miniapp/schedule/today", headers={"Authorization": f"Bearer {student_token}"}
+        )
     assert resp.status_code == 200
     courses = resp.get_json()["data"]["courses"]
     assert [c["course_name"] for c in courses] == ["今天有课"]

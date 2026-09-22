@@ -1,10 +1,19 @@
 """
-课程手动课保护单元测试（v6.11.2）
+课程手动课保护单元测试
 
-验证：data_source='admin' 的手动课在爬虫来源（full/daily）的 create_batch 下
-1) 不被覆盖（命中同去重键时跳过、保留人工修正）
-2) 不被挤占（同时间槽已被手动课占据时，爬虫不插入第二条造成重复展示）
-同时验证正常 upsert（爬虫更新爬虫课、手动来源管理手动课）不受影响。
+契约（v6.19.x，与 app/repository/course_repository.create_batch 保持一致）：
+课程稳定身份 = course_key = md5(课程名|星期|排序节次|教室|教师)，**与周次无关**；
+批次去重只按 (semester_id, course_key)（course_key 为 NULL 的老行按同一身份兜底补 key）。
+
+手动课保护：爬虫来源（full/daily）下，爬虫行的 course_key 命中 data_source='admin'
+行 → 整条跳过（既不覆盖也不新建）。
+
+注意（相对 v6.11.2 旧契约的变化）：
+- 去重键不再含 course_code（爬虫侧常缺失/由 generate_course_code 生成，不稳定）；
+- 旧「同时间槽 (week_day, period_idx, week_number) 被手动课占据则不插入」保护已废弃
+  —— week_number 是爬取周、随每次爬取漂移，该判据不可靠。因此 course_key 不同的课
+  即便落在手动课同槽位，也会正常新建；漂移产生的旧行由全量重爬 reconcile 对账软删收敛。
+- 改名/改教师/改教室会改变 course_key，视作另一门课（预期行为）。
 """
 
 import os
@@ -52,6 +61,7 @@ def session():
 
 
 def _admin_course(s, **kwargs):
+    """构造一门手动课。默认身份 = 手动课|周一|第1节|A101|老师"""
     defaults = {
         "course_code": "ADMIN-1",
         "course_name": "手动课",
@@ -79,37 +89,46 @@ def _admin_course(s, **kwargs):
 
 
 def test_crawler_does_not_overwrite_admin_course(session):
-    # 已存在一门手动课（爬虫也会产出相同的去重键）
-    _admin_course(session, course_code="CRAWL-11111", course_name="手动英语")
-    # 全量爬虫爬到同去重键的课程，应跳过、不覆盖
+    # 手动课身份：手动英语 / 周一 / 第1节 / A101 / 老师
+    _admin_course(session, course_code="ADMIN-11111", course_name="手动英语")
+    # 爬虫爬到同一 course_key（课名/星期/节次/教室/教师全同）→ 整条跳过
     created, updated = CourseRepository.create_batch(
         session,
         [
             {
-                "course_code": "CRAWL-11111",
-                "course_name": "英语(爬虫)",
+                "course_code": "CRAWL-11111",  # course_code 不参与身份，不同也无妨
+                "semester_id": 20251,  # 必须与手动课同学期，保护/匹配才按该学期生效
+                "course_name": "手动英语",
                 "week_day": 1,
                 "period_idx": 1,
                 "periods": [1],
-                "teacher": "爬虫老师",
+                "teacher": "老师",
                 "classroom": "A101",
                 "building": "教一",
                 "start_time": "08:00",
                 "end_time": "08:45",
-                "weeks": [1, 2, 3],
-                "week_number": 1,
+                "weeks": [1, 2, 3, 4, 5],  # 周次不同也不得覆盖手动课
+                "week_number": 2,
             }
         ],
         data_source="full",
     )
     assert created == 0  # 没新建
-    kept = session.query(Course).filter(Course.course_code == "CRAWL-11111").one()
+    assert updated == 0  # 被保护整条跳过，连更新也没有
+    assert session.query(Course).count() == 1
+    kept = session.query(Course).one()
     assert kept.data_source == "admin"
     assert kept.course_name == "手动英语"  # 人工修正未被覆盖
+    assert kept.weeks == [1, 2, 3]  # 周次未被爬虫改写
 
 
-def test_crawler_does_not_dup_into_admin_slot(session):
-    # 手动课占据 (wd=2, pidx=1, wn=1)，但爬虫给的 course_code 不同
+def test_crawler_inserts_when_key_differs_in_admin_slot(session):
+    """v6.19.x 契约：同槽位不再拦截——course_key 不同的爬虫课正常新建。
+
+    旧契约「同 (week_day, period_idx, week_number) 槽位被手动课占据则不插入」已废弃
+    （判据含随爬取漂移的 week_number，不可靠）。这里明确固化新行为：身份不同即新建，
+    手动课本身不被触碰。
+    """
     _admin_course(
         session, course_code="ADMIN-X", course_name="手动课2", week_day=2, period_idx=1, periods=[1]
     )
@@ -118,7 +137,8 @@ def test_crawler_does_not_dup_into_admin_slot(session):
         [
             {
                 "course_code": "CRAWL-99999",
-                "course_name": "爬虫撞槽课",
+                "semester_id": 20251,
+                "course_name": "爬虫课A",  # course_key 与手动课不同
                 "week_day": 2,
                 "period_idx": 1,
                 "periods": [1],
@@ -133,63 +153,53 @@ def test_crawler_does_not_dup_into_admin_slot(session):
         ],
         data_source="daily",
     )
-    assert created == 0
-    # 库里只有那门手动课，没有爬虫插入的第二条
-    assert session.query(Course).count() == 1
-    assert session.query(Course).one().data_source == "admin"
+    assert created == 1  # 身份不同 → 新建（不再因同槽位被拦截）
+    assert session.query(Course).count() == 2
+    # 手动课原样保留、未被覆盖
+    admin_row = session.query(Course).filter(Course.data_source == "admin").one()
+    assert admin_row.course_name == "手动课2"
 
 
 def test_crawler_updates_non_admin_course(session):
-    # 全量爬虫写入的课，后续爬虫可正常更新（回归：保护不影响正常 upsert）
-    created1, updated1 = CourseRepository.create_batch(
-        session,
-        [
-            {
-                "course_code": "CRAWL-55555",
-                "course_name": "数学",
-                "week_day": 3,
-                "period_idx": 2,
-                "periods": [2],
-                "teacher": "甲",
-                "classroom": "C303",
-                "building": "教三",
-                "start_time": "14:00",
-                "end_time": "14:45",
-                "weeks": [1, 2],
-                "week_number": 1,
-            }
-        ],
-        data_source="full",
-    )
+    # 同一 course_key（课名/星期/节次/教室/教师都不变）再次爬取 → 更新既有行（回归：保护不影响正常 upsert）
+    first = {
+        "course_code": "CRAWL-55555",
+        "semester_id": 20251,
+        "course_name": "数学",
+        "week_day": 3,
+        "period_idx": 2,
+        "periods": [2],
+        "teacher": "甲",
+        "classroom": "C303",
+        "building": "教三",
+        "start_time": "14:00",
+        "end_time": "14:45",
+        "weeks": [1, 2],
+        "week_number": 1,
+    }
+    created1, updated1 = CourseRepository.create_batch(session, [dict(first)], data_source="full")
     assert created1 == 1
-    created2, updated2 = CourseRepository.create_batch(
-        session,
-        [
-            {
-                "course_code": "CRAWL-55555",
-                "course_name": "数学",
-                "week_day": 3,
-                "period_idx": 2,
-                "periods": [2],
-                "teacher": "乙(更正)",
-                "classroom": "C303",
-                "building": "教三",
-                "start_time": "14:00",
-                "end_time": "14:45",
-                "weeks": [1, 2],
-                "week_number": 1,
-            }
-        ],
-        data_source="daily",
-    )
-    assert created2 == 0  # 命中已存在，更新不新建
+    assert updated1 == 0
+
+    # 只改「非身份字段」：course_code / building / weeks 均不参与 course_key
+    second = {
+        **first,
+        "course_code": "CRAWL-55555B",
+        "building": "教三-新",
+        "weeks": [1, 2, 3, 4],
+        "week_number": 2,
+    }
+    created2, updated2 = CourseRepository.create_batch(session, [second], data_source="daily")
+    assert created2 == 0  # 命中既有 course_key，不新建
+    assert updated2 == 1
     upd = session.query(Course).one()
-    assert upd.teacher == "乙(更正)"
+    assert upd.weeks == [1, 2, 3, 4]
+    assert upd.building == "教三-新"
     assert upd.data_source == "daily"
 
 
 def test_admin_source_can_manage_admin(session):
-    # 手动来源（admin）调用 create_batch 时不受保护限制，可正常 upsert 手动课
+    # 手动来源（admin）不受爬虫保护限制，按 course_key 正常 upsert 自己的手动课
     _admin_course(
         session, course_code="ADMIN-Y", course_name="课A", week_day=4, period_idx=1, periods=[1]
     )
@@ -198,20 +208,24 @@ def test_admin_source_can_manage_admin(session):
         [
             {
                 "course_code": "ADMIN-Y",
-                "course_name": "课A(改)",
+                "semester_id": 20251,
+                "course_name": "课A",  # 身份字段（名/星期/节次/教室/教师）保持不变
                 "week_day": 4,
                 "period_idx": 1,
                 "periods": [1],
-                "teacher": "t",
-                "classroom": "D404",
-                "building": "教四",
+                "teacher": "老师",
+                "classroom": "A101",
+                "building": "教四",  # 非身份字段 → 会被更新
                 "start_time": "08:00",
                 "end_time": "08:45",
-                "weeks": [1],
+                "weeks": [1, 2],
                 "week_number": 1,
             }
         ],
         data_source="admin",
     )
     assert created == 0  # 命中已存在，更新不新建
-    assert session.query(Course).one().course_name == "课A(改)"
+    assert updated == 1
+    row = session.query(Course).one()
+    assert row.building == "教四"
+    assert row.weeks == [1, 2]
