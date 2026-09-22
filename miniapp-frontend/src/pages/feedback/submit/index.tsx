@@ -7,6 +7,7 @@ import { API_BASE_URL } from '@/utils/request';
 import { previewImages } from '@/utils/imagePreview';
 import type { FeedbackType } from '@/types/api';
 import FeedbackBadge from '@/components/FeedbackBadge';
+import IconArrow from '@/components/IconArrow';
 import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
 import './index.scss';
 
@@ -14,7 +15,7 @@ import './index.scss';
  * 意见与反馈 - 提交页
  *
  * 与「消息中心」（管理员 → 学生推送）完全独立，是学生 → 管理员的反向通道。
- * 顶部「我的反馈 ›」可跳转到历史列表。
+ * 顶部「我的反馈」入口可跳转到历史列表。
  *
  * 表单字段：
  * - 类型（必选）：功能异常 / 功能建议 / 咨询求助 / 其他
@@ -128,7 +129,7 @@ export default function FeedbackSubmitPage() {
           <Text className="fb-topbar-text">我的反馈</Text>
           <FeedbackBadge count={feedbackUnread} />
         </View>
-        <View className="fb-topbar-arrow" />
+        <IconArrow className="fb-topbar-arrow" size="md" />
       </View>
 
       <View className="fb-form">

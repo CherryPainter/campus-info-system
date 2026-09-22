@@ -17,6 +17,9 @@
   }
 
   .reminder-more {
+    display: flex;
+    align-items: center;
+    gap: 4rpx;
     font-size: $font-size-sm;
     color: $text-tertiary;
   }

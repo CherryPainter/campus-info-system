@@ -6,6 +6,29 @@
 
 ## Unreleased
 
+### 重构：小程序箭头图标统一抽成共享组件 `IconArrow`（前端，2026-09-22）
+- **背景**：上一轮把反馈页/公告页的 `›` 换成 CSS 矢量时，是在各页 `.scss` 里**手写同一套 `::before` 配方**（正方形 + `border-top`/`border-right` + `rotate(45deg)`）；同时全项目仍有约 25 处箭头用**文本字符**（`›` / `‹` / `∧`）——用户自定义字体会改写其字形与基线。故收敛为单一组件，避免配方抄多份、以及"一半组件一半文本字符"的混乱。
+- **新增 `src/components/IconArrow`**：
+  - `index.tsx`：`<IconArrow direction="right|left|up|down" size="sm|md|lg" className="..." />`，只渲染一个空 `View`（无文本、无字体依赖）。
+  - `index.scss`：`.icon-arrow` 基类 + `.is-left/up/down` 方向修饰 + `.icon-arrow--sm/md/lg` 尺寸档（容器 14/18/24rpx，内框 9/12/16rpx，描边 2/3/4rpx）。描边颜色刻意用 **`currentColor`** → 箭头自动跟随所在元素的 `color`，页面样式里只需写 `color`，无需为箭头单独配色。
+  - 尺寸档选择基准：`sm` 配 22-24rpx 文字（内联「更多」）、`md` 配 28-36rpx、`lg` 配 40rpx 以上。
+- **接入范围（10 个文件 / 25 处）**：
+  - `components/NoticeCard`、`components/ReminderCard`：首页两张卡的「更多 ›」由 `Text` 改 `View` 包一层并加 `<IconArrow size="sm" />`，样式补 `display:flex; align-items:center; gap:4rpx`。
+  - `pages/home`：`card-more-arrow`、`home-login-tip-arrow`（`md`）。
+  - `pages/messages`：`msg-item-arrow`（`lg`）、底部「查看更多 ›」（`sm`）。
+  - `pages/profile`：5 处 `profile-arrow`（`md`）+ 宿舍用电卡的「更多 ›」（`sm`）。
+  - `pages/settings`：5 处 `set-arrow`（`md`）。
+  - `pages/profile-detail`：`detail-card-title-arrow` ×2、`detail-edit-entry-arrow`（均 `md`）。
+  - `pages/electricity`：4 处自绘返回键 `elec-navbar-back` 的 `‹`（`direction="left" size="lg"`）、「查看更多记录（N） ›」（`sm`）、「收起 ∧」→ `direction="up"`（`sm`）。
+  - `pages/feedback/list`、`pages/feedback/submit`、`pages/announcement/index`：把上一轮**手写的** `.fb-item-arrow` / `.fb-topbar-arrow` / `.alist-more-arrow` 三段配方删除，改为调用组件，页面样式只留 `color` / `margin`。`styles/theme.scss` 的 `.card-more-arrow` 同样由 `font-size`/`line-height` 简化为只留 `color` + `margin-left`。
+- **一处有意的配色修正**：电费页「查看更多记录」的箭头原来在 `.elec-more-text` 内部（继承主色），拆成独立节点后会掉成正文默认色 → 在容器 `.elec-more-btn` 上补 `color: $primary-color`，保持原观感。
+- **技术前提（已核实，非新引入风险）**：`::before` + `content` 在本项目**生产已在用**——整套 iconfont 走的就是 `.iconfont.icon-xxx::before`（自 v6.16.0 / 2026-08-31 起），`styles/common.scss` 的 `button::after` 同理。
+- **验证**：
+  - `tsc --noEmit` 退出码 0；`taro build --type weapp` 编译成功（仅保留原有 285KB 体积告警）。
+  - 全项目 `src/**/*.tsx` 与 `src/**/*.scss` 中**渲染用的** `›` / `‹` / `∧` 残留 **0**（仅注释里的 ASCII 布局示意图保留 `›` 表示"此处有箭头"）。
+  - 产物核对：组件被抽为公共块 `common.js` / `common.wxss`，`app.wxss` 已 `@import "./common.wxss"`（全局可用）；`.icon-arrow` 及三档尺寸、四个方向规则均已输出（`solid` 后省略颜色是 cssnano 的正确优化，`border-color` 初始值本就是 `currentColor`）；电费页 js 中确认渲染为 `{className:"elec-navbar-back",direction:"left",size:...}`、`<IconArrow size="sm">`、「收起」+ `{direction:"up",size:"sm"}`；全量 dist `process.env` 残留 **0**。
+- **待真机确认**：三档尺寸与各处文字的实际比例（14/18/24rpx），需在开发者工具里看；若某处偏大偏小，只改调用处的 `size` 即可，不必再动 CSS。
+
 ### 修复：小程序「通知公告」列表「查看更多」箭头改为 CSS 矢量（前端，2026-09-22）
 - **问题**：底部「查看更多 ›」的 `›`（U+203A）是**文本字符**，与之前反馈模块同类问题——用户自定义字体（font-family）会改变其字形与基线，有失美观。
 - **改动**：

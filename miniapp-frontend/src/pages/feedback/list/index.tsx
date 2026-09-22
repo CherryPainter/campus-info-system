@@ -11,6 +11,7 @@ import * as feedbackApi from '@/api/feedback';
 import { API_BASE_URL } from '@/utils/request';
 import { previewImages } from '@/utils/imagePreview';
 import type { FeedbackItem } from '@/types/api';
+import IconArrow from '@/components/IconArrow';
 import './index.scss';
 
 /**
@@ -124,7 +125,7 @@ export default function FeedbackListPage() {
 
               <View className="fb-item-foot">
                 <Text className="fb-item-time">{item.created_at}</Text>
-                <View className="fb-item-arrow" />
+                <IconArrow className="fb-item-arrow" size="md" />
               </View>
             </View>
           ))}

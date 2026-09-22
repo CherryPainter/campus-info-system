@@ -160,11 +160,14 @@
     }
 
     .card-more {
+      display: flex;
+      align-items: center;
+      gap: 4rpx;
       font-size: $font-size-sm;
       color: $text-tertiary;
     }
 
-    // 标题右侧：楼栋信息 + 更多› 横向排列
+    // 标题右侧：楼栋信息 + 更多入口 横向排列
     .dorm-header-right {
       display: flex;
       align-items: center;
@@ -292,7 +295,6 @@
     }
 
     .profile-arrow {
-      font-size: 32rpx;
       color: $text-tertiary;
     }
 

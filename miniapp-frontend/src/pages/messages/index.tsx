@@ -8,6 +8,7 @@ import type { AnnouncementItem, UserNotificationItem } from '@/types/api';
 import { API_BASE_URL } from '@/utils/request';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
+import IconArrow from '@/components/IconArrow';
 import './index.scss';
 
 /**
@@ -295,7 +296,7 @@ export default function MessagesPage() {
                     <Text className="msg-item-content">{item.content}</Text>
                   ) : null}
                 </View>
-                <Text className="msg-item-arrow">›</Text>
+                <IconArrow className="msg-item-arrow" size="lg" />
               </View>
             </View>
           ))}
@@ -305,7 +306,8 @@ export default function MessagesPage() {
             </View>
           ) : hasMore ? (
             <View className="msg-more" onClick={loadMore}>
-              <Text className="msg-more-text">查看更多 ›</Text>
+              <Text className="msg-more-text">查看更多</Text>
+              <IconArrow size="sm" />
             </View>
           ) : (
             <View className="msg-more">

@@ -17,6 +17,7 @@ import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
 import { useLoginGuard } from '@/hooks/useLoginGuard';
 import { useBindStatusWatcher } from '@/hooks/useBindStatusWatcher';
 import { isBindGuideActive } from '@/utils/bindGuard';
+import IconArrow from '@/components/IconArrow';
 import './index.scss';
 
 /**
@@ -273,14 +274,15 @@ export default function ProfilePage() {
               ? `（${roomText || profile?.class_name}）`
               : ''}
           </Text>
-          <Text
+          <View
             className="card-more"
             onClick={() =>
               guard(() => Taro.navigateTo({ url: '/pages/electricity/index' }))
             }
           >
-            更多 ›
-          </Text>
+            <Text>更多</Text>
+            <IconArrow size="sm" />
+          </View>
         </View>
         <View className="dorm-stats">
           <View className="dorm-stat">
@@ -351,7 +353,7 @@ export default function ProfilePage() {
           </View>
           <Text className="profile-label">我的消息</Text>
           {isLoggedIn ? <FeedbackBadge count={msgUnread} /> : null}
-          <Text className="profile-arrow">›</Text>
+          <IconArrow className="profile-arrow" size="md" />
         </View>
         {/* 我的课表：跳到课表详情页（周视图，含周次切换/课程卡片），而不是首页 tabBar 的「时间轴」 */}
         <View
@@ -364,7 +366,7 @@ export default function ProfilePage() {
             <Text className="iconfont icon-kechengbiao profile-item-icon" />
           </View>
           <Text className="profile-label">我的课表</Text>
-          <Text className="profile-arrow">›</Text>
+          <IconArrow className="profile-arrow" size="md" />
         </View>
         <View
           className="profile-item"
@@ -376,7 +378,7 @@ export default function ProfilePage() {
             <Text className="profile-item-icon profile-star-icon">{'\u2606'}</Text>
           </View>
           <Text className="profile-label">我的收藏</Text>
-          <Text className="profile-arrow">›</Text>
+          <IconArrow className="profile-arrow" size="md" />
         </View>
         <View
           className="profile-item"
@@ -389,7 +391,7 @@ export default function ProfilePage() {
           </View>
           <Text className="profile-label">意见反馈</Text>
           {isLoggedIn ? <FeedbackBadge count={feedbackUnread} /> : null}
-          <Text className="profile-arrow">›</Text>
+          <IconArrow className="profile-arrow" size="md" />
         </View>
         <View
           className="profile-item"
@@ -401,7 +403,7 @@ export default function ProfilePage() {
             <Text className="iconfont icon-shezhi profile-item-icon" />
           </View>
           <Text className="profile-label">设置</Text>
-          <Text className="profile-arrow">›</Text>
+          <IconArrow className="profile-arrow" size="md" />
         </View>
       </View>
 

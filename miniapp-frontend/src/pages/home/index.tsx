@@ -21,6 +21,7 @@ import { useBindStatusWatcher } from '@/hooks/useBindStatusWatcher';
 import { isBindGuideActive, BIND_GUIDE_FINISHED_EVENT } from '@/utils/bindGuard';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
+import IconArrow from '@/components/IconArrow';
 import { splitCoursesToBigClasses } from '@/utils/scheduleBigClass';
 import './index.scss';
 
@@ -203,7 +204,7 @@ export default function HomePage() {
                   onClick={() => (isLoggedIn ? Taro.navigateTo({ url: '/pages/coursetable/index' }) : toastLoginRequired())}
                 >
                   <Text className="card-more-text">全部课程</Text>
-                  <Text className="card-more-arrow">›</Text>
+                  <IconArrow className="card-more-arrow" size="md" />
                 </View>
               </View>
               {isLoggedIn ? (
@@ -225,7 +226,7 @@ export default function HomePage() {
               ) : (
                 <View className="home-login-tip" onClick={() => setShowLogin(true)}>
                   <Text className="home-login-tip-text">登录后查看今日课程</Text>
-                  <Text className="home-login-tip-arrow">›</Text>
+                  <IconArrow className="home-login-tip-arrow" size="md" />
                 </View>
               )}
             </View>

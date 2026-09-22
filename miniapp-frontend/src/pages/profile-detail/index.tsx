@@ -8,7 +8,7 @@
  *     [hero：大头像 + 已保存昵称 + 班级]
  *     [身份信息卡：学号/班级/学校]
  *     [学籍信息卡：学院/专业/校园卡号]
- *     [「编辑资料 ›」按钮]
+ *     [「编辑资料」按钮]
  *     [注销账号]
  * - 编辑态布局（自上而下）：
  *     [编辑信息卡：头像行 + 昵称行]   ← 替代 hero 位置（hero 在编辑态隐藏）
@@ -30,6 +30,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useUserStore } from '@/stores/userStore';
 import { getProfile, updateProfile, updateAvatar, deleteAccount } from '@/api/user';
 import type { StudentProfile } from '@/types/api';
+import IconArrow from '@/components/IconArrow';
 import './index.scss';
 
 export default function ProfileDetail() {
@@ -191,7 +192,7 @@ export default function ProfileDetail() {
         <View className="detail-card">
           <Text className="detail-card-title">编辑信息</Text>
 
-          {/* 头像行：整行可点 → 触发选图；右侧 [小圆头像 + 箭头 ›] */}
+          {/* 头像行：整行可点 → 触发选图；右侧 [小圆头像 + 箭头图标] */}
           <View className="detail-row detail-row-link" onClick={chooseAvatar} hoverClass="detail-row-hover" hoverStayTime={50}>
             <Text className="detail-row-label">头像</Text>
             <View className="detail-row-right">
@@ -204,7 +205,7 @@ export default function ProfileDetail() {
                   <Text className="detail-avatar-text-sm">{name.slice(0, 1)}</Text>
                 </View>
               )}
-              <Text className="detail-card-title-arrow">›</Text>
+              <IconArrow className="detail-card-title-arrow" size="md" />
             </View>
           </View>
 
@@ -220,7 +221,7 @@ export default function ProfileDetail() {
                 maxlength={50}
                 onInput={(e) => setNickname(e.detail.value)}
               />
-              <Text className="detail-card-title-arrow">›</Text>
+              <IconArrow className="detail-card-title-arrow" size="md" />
             </View>
           </View>
         </View>
@@ -262,12 +263,12 @@ export default function ProfileDetail() {
         </View>
       </View>
 
-      {/* 底部操作：非编辑态=「编辑资料 ›」入口；编辑态=保存 + 取消 */}
+      {/* 底部操作：非编辑态=「编辑资料」入口；编辑态=保存 + 取消 */}
       {!editing ? (
         <View className="detail-edit-actions">
           <View className="detail-edit-entry" onClick={enterEdit} hoverClass="detail-edit-entry-hover" hoverStayTime={50}>
             <Text className="detail-edit-entry-text">编辑资料</Text>
-            <Text className="detail-edit-entry-arrow">›</Text>
+            <IconArrow className="detail-edit-entry-arrow" size="md" />
           </View>
         </View>
       ) : (

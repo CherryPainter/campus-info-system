@@ -5,6 +5,7 @@ import { logout as logoutApi } from '@/api/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { setSharedBadgeCount } from '@/utils/feedbackBadge';
 import { useUserStore } from '@/stores/userStore';
+import IconArrow from '@/components/IconArrow';
 import './index.scss';
 
 /**
@@ -91,7 +92,7 @@ export default function SettingsPage() {
       <View className="set-card" style={{ marginTop: '8rpx' }}>
         <View className="set-cell" onClick={goProfileDetail}>
           <Text className="set-cell-label">个人资料</Text>
-          <Text className="set-arrow">›</Text>
+          <IconArrow className="set-arrow" size="md" />
         </View>
       </View>
 
@@ -100,11 +101,11 @@ export default function SettingsPage() {
       <View className="set-card" style={{ marginTop: '8rpx' }}>
         <View className="set-cell" onClick={goElectricityConfig}>
           <Text className="set-cell-label">电表配置</Text>
-          <Text className="set-arrow">›</Text>
+          <IconArrow className="set-arrow" size="md" />
         </View>
         <View className="set-cell" onClick={goMessages}>
           <Text className="set-cell-label">我的消息</Text>
-          <Text className="set-arrow">›</Text>
+          <IconArrow className="set-arrow" size="md" />
         </View>
       </View>
 
@@ -113,11 +114,11 @@ export default function SettingsPage() {
       <View className="set-card" style={{ marginTop: '8rpx' }}>
         <View className="set-cell" onClick={handleClearCache}>
           <Text className="set-cell-label">清除缓存</Text>
-          <Text className="set-arrow">›</Text>
+          <IconArrow className="set-arrow" size="md" />
         </View>
         <View className="set-cell" onClick={handleAbout}>
           <Text className="set-cell-label">关于</Text>
-          <Text className="set-arrow">›</Text>
+          <IconArrow className="set-arrow" size="md" />
         </View>
       </View>
 

@@ -83,9 +83,7 @@
 }
 
 .detail-card-title-arrow {
-  font-size: 36rpx;
   color: #ccc;
-  line-height: 1;
 }
 
 .detail-row {
@@ -150,8 +148,8 @@
 }
 
 /* ==================== 编辑信息卡（编辑态替代 hero，2026-09-08 按示意图重构） ====================
-   「头像」行整行可点选图；右侧 [小圆头像 + 箭头 ›]
-   「昵称」行右侧 [Input + 箭头 ›]
+   「头像」行整行可点选图；右侧 [小圆头像 + 箭头图标]
+   「昵称」行右侧 [Input + 箭头图标]
    A/B 卡（身份/学籍）在编辑态值变灰，提示"不可编辑"。 */
 
 .detail-row-link {
@@ -203,7 +201,7 @@
   font-size: 28rpx;
 }
 
-/* 非编辑态底部"编辑资料 ›"入口：白底描边按钮 */
+/* 非编辑态底部"编辑资料"入口：白底描边按钮 */
 .detail-edit-entry {
   flex: 1;
   height: 92rpx;
@@ -225,17 +223,15 @@
   opacity: 0.7;
 }
 
-/* "编辑资料" 文字与"›"箭头都是内联，避免 Taro Text 默认 block 行为导致竖排 */
-.detail-edit-entry-text,
-.detail-edit-entry-arrow {
+/* "编辑资料" 文字保持内联，避免 Taro Text 默认 block 行为导致竖排
+   （右侧箭头已改用 <IconArrow> 组件，无字体依赖，尺寸由组件 size 决定） */
+.detail-edit-entry-text {
   display: inline-block;
   white-space: nowrap;
 }
 
 .detail-edit-entry-arrow {
-  font-size: 36rpx;
   color: #ccc;
-  line-height: 1;
 }
 
 /* 编辑态操作条：保存（主色实心）+ 取消（浅色描边）并排 */

@@ -7,6 +7,7 @@ import type { AnnouncementItem } from '@/types/api';
 import { API_BASE_URL } from '@/utils/request';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
+import IconArrow from '@/components/IconArrow';
 import './index.scss';
 
 /**
@@ -205,7 +206,7 @@ export default function AnnouncementListPage() {
         ) : hasMore ? (
           <View className="alist-more" onClick={loadMore}>
             <Text className="alist-more-text">查看更多</Text>
-            <View className="alist-more-arrow" />
+            <IconArrow size="sm" />
           </View>
         ) : (
           <View className="alist-more">

@@ -2,6 +2,7 @@ import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
 import type { NotificationEvent } from '@/types/api';
+import IconArrow from '@/components/IconArrow';
 
 import './index.scss';
 
@@ -78,12 +79,13 @@ export default function ReminderCard({
     <View className="card reminder-card">
       <View className="reminder-header">
         <Text className="reminder-title">近期提醒</Text>
-        <Text
+        <View
           className="reminder-more"
           onClick={() => Taro.showToast({ title: '等待学校开放接口', icon: 'none' })}
         >
-          更多 ›
-        </Text>
+          <Text>更多</Text>
+          <IconArrow size="sm" />
+        </View>
       </View>
 
       <View className="reminder-list">

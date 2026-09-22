@@ -157,11 +157,8 @@
 
 /* 右侧「查看详情」箭头 */
 .msg-item-arrow {
-  flex-shrink: 0;
   margin-left: $spacing-sm;
-  font-size: 40rpx;
   color: $text-tertiary;
-  line-height: 1;
 }
 
 .msg-item-head {
@@ -235,8 +232,11 @@
 }
 
 .msg-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4rpx;
   padding: $spacing-md 0;
-  text-align: center;
 }
 
 .msg-more-text {

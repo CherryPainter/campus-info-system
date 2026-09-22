@@ -1,0 +1,80 @@
+@import '../../styles/variables.scss';
+
+/* ========== 箭头图标（纯 CSS 矢量，不依赖字体）==========
+ * 用法：<IconArrow direction="right" size="md" className="xxx-arrow" />
+ * - 颜色：`::before` 描边用 currentColor → 继承父级 color，
+ *   页面样式里只需写 `color: $text-tertiary;`，不必再给箭头单独配色。
+ * - 尺寸：sm / md / lg 三档，按旁边文字字号挑。
+ * - 方向：right（默认，无需类）/ left / up / down。
+ *
+ * 绘制原理：一个正方形只留 border-top + border-right，再 rotate 45°，
+ * 就得到指向右上的尖角；换 rotate 角度即改指向。
+ */
+
+.icon-arrow {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    box-sizing: border-box;
+    border-top: 3rpx solid currentColor;
+    border-right: 3rpx solid currentColor;
+    transform: translate(-50%, -50%) rotate(45deg);
+  }
+
+  /* ---------- 方向 ---------- */
+  &.is-left::before {
+    transform: translate(-50%, -50%) rotate(-135deg);
+  }
+
+  &.is-up::before {
+    transform: translate(-50%, -50%) rotate(-45deg);
+  }
+
+  &.is-down::before {
+    transform: translate(-50%, -50%) rotate(135deg);
+  }
+
+  /* ---------- 尺寸档 ---------- */
+  /* sm：配 22-24rpx 文字（列表项内联「更多 ›」等） */
+  &--sm {
+    width: 14rpx;
+    height: 14rpx;
+
+    &::before {
+      width: 9rpx;
+      height: 9rpx;
+      border-top-width: 2rpx;
+      border-right-width: 2rpx;
+    }
+  }
+
+  /* md：默认，配 28-32rpx 文字 */
+  &--md {
+    width: 18rpx;
+    height: 18rpx;
+
+    &::before {
+      width: 12rpx;
+      height: 12rpx;
+    }
+  }
+
+  /* lg：配 36-40rpx 文字（设置项、消息条目等大箭头） */
+  &--lg {
+    width: 24rpx;
+    height: 24rpx;
+
+    &::before {
+      width: 16rpx;
+      height: 16rpx;
+      border-top-width: 4rpx;
+      border-right-width: 4rpx;
+    }
+  }
+}

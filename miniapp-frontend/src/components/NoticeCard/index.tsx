@@ -3,6 +3,7 @@ import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { Icon } from '@nutui/nutui-react-taro';
 import * as announcementsApi from '@/api/announcements';
+import IconArrow from '@/components/IconArrow';
 
 import './index.scss';
 
@@ -65,7 +66,10 @@ export default function NoticeCard() {
     <View className="card notice-card">
       <View className="notice-header">
         <Text className="notice-title">校园通知</Text>
-        <Text className="notice-more" onClick={goToList}>更多 ›</Text>
+        <View className="notice-more" onClick={goToList}>
+          <Text>更多</Text>
+          <IconArrow size="sm" />
+        </View>
       </View>
 
       {loading ? (

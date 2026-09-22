@@ -17,6 +17,9 @@
     }
 
     .notice-more {
+      display: flex;
+      align-items: center;
+      gap: 4rpx;
       font-size: $font-size-xs;
       color: $primary-color;
       cursor: pointer;

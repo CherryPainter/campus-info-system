@@ -8,6 +8,7 @@ import * as electricityApi from '@/api/electricity';
 import type { ElectricityCurrent, ElectricityRecord, ElectricityTrendPoint } from '@/types/api';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
+import IconArrow from '@/components/IconArrow';
 import './index.scss';
 
 /**
@@ -362,7 +363,7 @@ export default function ElectricityPage() {
       <View className="elec-navbar" style={{ paddingTop: `${statusBarHeight}px` }}>
         <View className="elec-navbar-inner">
           <View className="elec-navbar-left" onClick={() => Taro.navigateBack()}>
-            <Text className="elec-navbar-back">‹</Text>
+            <IconArrow className="elec-navbar-back" direction="left" size="lg" />
           </View>
           <Text className="elec-navbar-title">电量详情</Text>
           <View className="elec-navbar-right" />
@@ -379,7 +380,7 @@ export default function ElectricityPage() {
         <View className="elec-navbar" style={{ paddingTop: `${statusBarHeight}px` }}>
           <View className="elec-navbar-inner">
             <View className="elec-navbar-left" onClick={() => Taro.navigateBack()}>
-              <Text className="elec-navbar-back">‹</Text>
+              <IconArrow className="elec-navbar-back" direction="left" size="lg" />
             </View>
             <Text className="elec-navbar-title">电量详情</Text>
             <View className="elec-navbar-right" />
@@ -405,7 +406,7 @@ export default function ElectricityPage() {
       <View className="elec-navbar" style={{ paddingTop: `${statusBarHeight}px` }}>
         <View className="elec-navbar-inner">
           <View className="elec-navbar-left" onClick={() => Taro.navigateBack()}>
-            <Text className="elec-navbar-back">‹</Text>
+            <IconArrow className="elec-navbar-back" direction="left" size="lg" />
           </View>
           <Text className="elec-navbar-title">电量详情</Text>
           <View className="elec-navbar-right" />
@@ -428,7 +429,7 @@ export default function ElectricityPage() {
       <View className="elec-navbar" style={{ paddingTop: `${statusBarHeight}px` }}>
         <View className="elec-navbar-inner">
           <View className="elec-navbar-left" onClick={() => Taro.navigateBack()}>
-            <Text className="elec-navbar-back">‹</Text>
+            <IconArrow className="elec-navbar-back" direction="left" size="lg" />
           </View>
           <Text className="elec-navbar-title">电量详情</Text>
           <View className="elec-navbar-right" />
@@ -571,12 +572,14 @@ export default function ElectricityPage() {
                     <Text className="elec-more-text">
                       {loadingMore
                         ? '加载中…'
-                        : `查看更多记录（${total - records.length}） ›`}
+                        : `查看更多记录（${total - records.length}）`}
                     </Text>
+                    {loadingMore ? null : <IconArrow size="sm" />}
                   </View>
                 ) : (
                   <View className="elec-more-btn" onClick={loadAll}>
-                    <Text className="elec-more-text">收起 ∧</Text>
+                    <Text className="elec-more-text">收起</Text>
+                    <IconArrow direction="up" size="sm" />
                   </View>
                 )}
               </>

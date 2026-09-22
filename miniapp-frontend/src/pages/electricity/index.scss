@@ -39,12 +39,10 @@
   height: 100%;
 }
 
+/* 返回箭头：已改用 <IconArrow> 组件（CSS 矢量，无字体依赖），
+   这里只保留配色；尺寸由组件 size="lg" 决定 */
 .elec-navbar-back {
-  font-size: 48rpx;
-  font-weight: 300;
   color: $text-primary;
-  line-height: 1;
-  margin-top: -4rpx; // 视觉微调居中
 }
 
 .elec-navbar-title {
@@ -374,8 +372,12 @@
 
   .elec-more-btn {
     display: flex;
+    align-items: center;
     justify-content: center;
+    gap: 4rpx;
     padding-top: $spacing-md;
+    /* 同时作为内部 <IconArrow> 的 currentColor 来源，让箭头跟随文字主色 */
+    color: $primary-color;
   }
 
   .elec-more-text {
