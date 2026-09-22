@@ -15,6 +15,7 @@
   - 批次数据统一补 `semester_id`——保护集与匹配均按学期作用域，缺失会回落到「当前学期」而与夹具的 `20251` 不一致导致误判。
 - `tests/test_miniapp_phase2.py::test_schedule_today_filters_by_date`：旧断言按 `extra_info.full_date` 过滤（v6.19.0 已改「`day_of_week == 今天` 且 `当前教学周 ∈ weeks`」）。夹具原固定 `day_of_week=1`（周一），**对星期几敏感**；改为按 `date.today().isoweekday()` 构造并 `mock` `get_current_week_number`，任意星期稳定通过。
 - **说明**：本次仅改测试，未改任何业务代码；新契约的既有副作用（改名/改教师/改教室会改变 `course_key` 视作另一门课、同槽位不再拦截）已写入测试 docstring 备案。
+- **另**：将一直未跟踪的 `tests/test_electricity_dedup.py`（电量用电记录去重回归测试，覆盖 2026-09-08 的两条语义，用例用假 user_id + flush/rollback 不落库）纳入版本管理，避免丢失。
 - **验证**：`pytest -q` → **217 passed, 0 failed**。
 
 ### 新增：公告封面 + 发布/新注册时「我的消息」留站内信（后端 + 管理端 + 小程序，2026-09-22）
