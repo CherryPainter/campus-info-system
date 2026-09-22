@@ -179,15 +179,18 @@ def candidate_semester_pairs(years_back: int = 3, years_forward: int = 0) -> lis
 def generate_course_code(data: dict[str, Any]) -> str:
     """
     在没有真实课程代码时，生成稳定的兜底课程代码。
-    同一门课（课程名 + 星期 + 节次列表 + 教室 + 周次）在不同爬取中应得到相同代码，
+    同一门课（课程名 + 星期 + 节次列表 + 教室）在不同爬取中应得到相同代码，
     以便去重逻辑稳定工作。
 
     关键：必须使用 hashlib（稳定哈希）。严禁使用内置 hash()——
     内置 hash() 受 PYTHONHASHSEED 影响，每次进程启动都会变化，
     会导致同一门课的兜底代码每次爬取都不同，去重失效、重复数据累积。
 
+    v6.19.x：移除 week_number 输入，使 course_code 与周次无关（稳定）。
+    真正承担“去重键”职责的是 compute_course_key，本函数仅作为展示用代码。
+
     Args:
-        data: 课程数据字典（建议含 course_name / week_day / periods 或 period_idx / classroom / week_number）
+        data: 课程数据字典（建议含 course_name / week_day / periods 或 period_idx / classroom）
 
     Returns:
         str: 形如 "CRAWL-01234" 的代码
@@ -202,14 +205,102 @@ def generate_course_code(data: dict[str, Any]) -> str:
         except Exception:
             periods = None
     if isinstance(periods, list) and periods:
-        per = ",".join(str(p) for p in periods)
+        per = ",".join(str(p) for p in sorted(int(x) for x in periods if str(x).isdigit()))
     else:
         per = str(data.get("period_idx", 0))
     room = data.get("classroom") or ""
-    wn = data.get("week_number") or ""
-    raw = f"{name}|{wd}|{per}|{room}|{wn}"
+    raw = f"{name}|{wd}|{per}|{room}"
     h = int(hashlib.md5(raw.encode("utf-8")).hexdigest(), 16) % 100000
     return f"CRAWL-{h:05d}"
+
+
+def compute_course_key(data: dict[str, Any]) -> str:
+    """
+    计算与周次无关的「稳定课程身份」哈希（v6.19.x 新增，根治重复行）。
+
+    作为 (semester_id, course_key) 去重/对账键的一部分。同一门课不论在哪一周
+    爬取、不论 weeks 取值如何，都得到同一个 key —— 这是根除去重键含 week_number
+    导致“每次爬取新增重复行”的根本手段。
+
+    输入（均不含 week_number / weeks）：
+        - course_name  课程名
+        - week_day     星期（1-7）
+        - periods      节次列表（排序后，如 [5,6,7,8]）
+        - classroom    教室
+        - teacher      教师
+
+    注：不引入真实 course_code 作前缀，因为爬虫兜底码 CRAWL-xxxxx 历史上由
+    generate_course_code(含 week_number) 生成，前缀反而会把周次 instability 带进来。
+    纯规范字段哈希保证跨爬取绝对稳定。
+
+    Returns:
+        str: 32 位 md5 十六进制串
+    """
+    name = (data.get("course_name") or "UNKNOWN").strip()
+    wd = data.get("week_day", 0)
+    periods = data.get("periods")
+    if isinstance(periods, str):
+        try:
+            periods = json.loads(periods)
+        except Exception:
+            periods = None
+    if isinstance(periods, list) and periods:
+        per = ",".join(str(p) for p in sorted(int(x) for x in periods if str(x).isdigit()))
+    else:
+        per = str(data.get("period_idx", 0))
+    room = (data.get("classroom") or "").strip()
+    teacher = (data.get("teacher") or "").strip()
+    raw = f"{name}|{wd}|{per}|{room}|{teacher}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def _find_existing_course(
+    session: Session,
+    sid: int,
+    key: str,
+    data: dict[str, Any],
+    week_day: int,
+    periods: list,
+    classroom: str | None,
+    teacher: str | None,
+):
+    """
+    在 (semester_id, course_key) 维度查找未删除的既有课程行（v6.19.x 新增）。
+
+    主匹配：直接用稳定 course_key。
+    迁移兜底：老行 course_key 为 NULL（迁移期未跑回填脚本），按规范身份
+    (课程名/星期/教室/教师 + 节次一致) 兜底匹配，命中后顺手补齐 course_key，
+    防止漏跑回填脚本时又产生重复行。
+    """
+    existing = (
+        session.query(Course)
+        .filter(
+            Course.semester_id == sid,
+            Course.course_key == key,
+            Course.is_deleted.is_(False),
+        )
+        .first()
+    )
+    if existing:
+        return existing
+    cand = (
+        session.query(Course)
+        .filter(
+            Course.semester_id == sid,
+            Course.course_key.is_(None),
+            Course.is_deleted.is_(False),
+            Course.course_name == (data.get("course_name") or ""),
+            Course.week_day == week_day,
+            Course.classroom == (classroom or ""),
+            Course.teacher == (teacher or ""),
+        )
+        .all()
+    )
+    for c in cand:
+        if normalize_periods(c.periods) == periods:
+            c.course_key = key
+            return c
+    return None
 
 
 def normalize_weeks(weeks) -> list[int]:
@@ -461,55 +552,84 @@ class CourseRepository:
 
     @staticmethod
     def create_batch(
-        session: Session, courses_data: list[dict[str, Any]], data_source: str = "full"
+        session: Session,
+        courses_data: list[dict[str, Any]],
+        data_source: str = "full",
+        reconcile: bool = False,
+        logger: Any = None,
     ) -> tuple[int, int]:
         """
-        批量创建课程（按课程代码去重，智能合并）
+        批量创建课程（按 (semester_id, course_key) 稳定身份去重，智能合并）
 
-        去重策略：course_code + week_day + period_idx + week_number
-        - 已存在 → 更新有变化的字段（教师/教室/楼栋/时间/周次/学期），并刷新来源/校验时间
-        - 不存在 → 创建新记录，并补全所有 NOT NULL 字段
-          （course_code / semester_id / semester_name / academic_year / term）
+        v6.19.x 去重策略改写（根治重复行）：
+        去重键 = (semester_id, course_key)，其中
+        course_key = md5(课程名|星期|排序节次|教室|教师)，**与周次无关**。
+        旧策略 course_code + week_day + period_idx + week_number 因 week_number(=爬取周)
+        随每次爬取漂移，导致每爬一周都新增重复行——已废弃。
 
-        爬虫通常不返回教务系统内部的课程代码与学期ID，因此：
-          - 无 course_code 时调用 generate_course_code 生成稳定兜底代码
-          - 无学期信息时调用 derive_current_semester 按当前日期推导
+        - 已存在 → 更新有变化的字段，刷新来源/校验时间
+        - 不存在 → 创建新记录，补全所有 NOT NULL 字段
+
+        手动课保护：爬虫来源（full/daily）下，course_key 命中 data_source='admin'
+        行则整条跳过，不覆盖、不插入第二条挤占人工课。
+
+        对账软删（reconcile=True 且 full 来源）：全量重爬后，本学期内
+        data_source='full' 且本次未被命中的行视为已消失课程，软删
+        （deleted_reason='stale_reconcile'）。reimport_with_teacher / 后台 admin 路由
+        不传 reconcile，避免按"部分批次"误删整学期其他课程。
 
         Args:
             session: 数据库会话
             courses_data: 课程数据列表
             data_source: 数据来源标记（'full'=全量/指定学期爬虫, 'daily'=每日爬虫, 'admin'=手动）
+            reconcile: 是否启用对账软删（仅全量爬虫应置 True）
+            logger: 可选日志器，用于输出对账软删条数
 
         Returns:
             Tuple[int, int]: (实际新建数量, 已更新数量)
-                新建 = 本次新插入的行；更新 = 命中既有记录并刷新来源/校验时间的行
-                （含字段无变化的刷新，因 data_source/last_verified_at 等会被强制刷新）。
                 注意：不要把返回值当作"库内课程总数"，重爬时新建可能为 0 而更新 > 0。
         """
         created_count = 0
         updated_count = 0
         sem = derive_current_semester()
 
-        # 手动课保护（v6.11.2）：爬虫来源（full/daily）不得覆盖或挤占
-        # data_source='admin' 的记录。先按批次涉及周次预载手动课所占槽位，
-        # 用一个集合快速判断"该时间槽是否已被手动课占据"。
+        # 批次起始时间：对账软删(stale_reconcile)以"本次批次之前未被命中的 full 行"为脏数据。
+        _batch_start = datetime.utcnow()
+        _touched_ids: set = set()
+        _affected_semesters: set = set()
+
+        # v6.19.x：手动课保护改为基于稳定 course_key，而非 (week_day, period_idx, week_number)
+        # 槽位。week_number 是爬取周、随每次爬取漂移，用其做槽位判据会使保护失效；
+        # 改为预载受影响学期内 data_source='admin' 行的 course_key 集合，爬虫行 key 命中即跳过。
         _crawler_source = data_source in ("full", "daily")
-        _admin_slots = set()
+        _admin_keys = set()
         if _crawler_source:
-            _wk_numbers = {
-                d.get("week_number") for d in courses_data if d.get("week_number") is not None
+            _sems = {
+                (d.get("semester_id") or sem["semester_id"])
+                for d in courses_data
             }
-            if _wk_numbers:
+            if _sems:
                 _admins = (
                     session.query(Course)
                     .filter(
                         Course.data_source == "admin",
                         Course.is_deleted.is_(False),
-                        Course.week_number.in_(_wk_numbers),
+                        Course.semester_id.in_(_sems),
                     )
                     .all()
                 )
-                _admin_slots = {(c.week_day, c.period_idx, c.week_number) for c in _admins}
+                for _a in _admins:
+                    _admin_keys.add(
+                        compute_course_key(
+                            {
+                                "course_name": _a.course_name,
+                                "week_day": _a.week_day,
+                                "periods": normalize_periods(_a.periods),
+                                "classroom": _a.classroom,
+                                "teacher": _a.teacher,
+                            }
+                        )
+                    )
 
         for data in courses_data:
             # 规范化学期、周次、节次
@@ -526,37 +646,31 @@ class CourseRepository:
                     "week_day": data.get("week_day"),
                     "periods": periods,
                     "classroom": data.get("classroom"),
-                    "week_number": data.get("week_number"),
+                }
+            )
+            # v6.19.x：稳定课程身份 key（与周次无关），作为去重/对账主键
+            sid = data.get("semester_id") or sem["semester_id"]
+            course_key = compute_course_key(
+                {
+                    "course_name": data.get("course_name"),
+                    "week_day": data.get("week_day"),
+                    "periods": periods,
+                    "classroom": data.get("classroom"),
+                    "teacher": data.get("teacher"),
                 }
             )
 
-            # 按课程代码 + 星期 + 节次 + 周次标记去重
-            existing = (
-                session.query(Course)
-                .filter(
-                    and_(
-                        Course.course_code == course_code,
-                        Course.week_day == data.get("week_day", 1),
-                        Course.period_idx == period_idx,
-                        Course.week_number == data.get("week_number"),
-                        Course.is_deleted.is_(False),
-                    )
-                )
-                .first()
+            # v6.19.x：手动课保护——爬虫来源且 key 命中 admin 行则整条跳过，保留人工修正
+            if _crawler_source and course_key in _admin_keys:
+                continue
+
+            # 按 (semester_id, course_key) 去重（course_key 与周次无关，根治重复行）
+            existing = _find_existing_course(
+                session, sid, course_key, data, data.get("week_day", 1), periods,
+                data.get("classroom"), data.get("teacher"),
             )
 
             if existing:
-                # v6.11.2：爬虫来源不得覆盖手动课（admin），保留人工修正；
-                # 手动来源（admin）调用时仍可正常 upsert 自身。
-                if _crawler_source and existing.data_source == "admin":
-                    continue
-                # v6.11.2：同槽已被手动课占据则不再更新/新增第二条，避免重复
-                if (
-                    _crawler_source
-                    and (data.get("week_day", 1), period_idx, data.get("week_number"))
-                    in _admin_slots
-                ):
-                    continue
                 # 计入"已更新"：命中既有记录即刷新来源/校验时间（无论字段是否变化）
                 updated_count += 1
                 # 已存在：比对更新（只更新有变化的字段）
@@ -582,21 +696,20 @@ class CourseRepository:
                 existing.semester_name = data.get("semester_name") or sem["semester_name"]
                 existing.academic_year = data.get("academic_year") or sem["academic_year"]
                 existing.term = data.get("term") or sem["term"]
+                # 补齐/刷新稳定身份 key（迁移期老行可能为 NULL）
+                existing.course_key = course_key
+                # 记录被本次批次命中的行，用于对账软删（stale_reconcile）
+                _touched_ids.add(existing.id)
+                _affected_semesters.add(sid)
                 # 刷新来源与校验时间（v6.11.1）
                 existing.data_source = data_source
                 existing.last_verified_at = datetime.utcnow()
                 existing.updated_at = datetime.utcnow()
             else:
-                # v6.11.2：同槽已被手动课占据则爬虫不插入第二条，避免重复展示
-                if (
-                    _crawler_source
-                    and (data.get("week_day", 1), period_idx, data.get("week_number"))
-                    in _admin_slots
-                ):
-                    continue
                 # 不存在：创建新记录（补全所有 NOT NULL 字段）
                 course = Course(
                     course_code=course_code,
+                    course_key=course_key,
                     course_name=data.get("course_name", ""),
                     semester_id=data.get("semester_id") or sem["semester_id"],
                     semester_name=data.get("semester_name") or sem["semester_name"],
@@ -621,6 +734,40 @@ class CourseRepository:
                 )
                 session.add(course)
                 created_count += 1
+                _touched_ids.add(course.id)
+                _affected_semesters.add(sid)
+
+        # v6.19.x：对账软删（仅 reconcile=True 且 full 来源，由爬虫全量重爬触发）。
+        # 全量重爬后，库中属于本批次学期、data_source='full' 且本次未被命中的行，
+        # 视为"本学期已消失的课程"软删（deleted_reason='stale_reconcile'），
+        # 既清理旧爬取遗留的脏重复行，也保证课表随培养方案更新而收敛。
+        # 手动课(admin)与每日课(daily)均不被本逻辑触碰。
+        # 注意：reimport_with_teacher / 后台 admin 路由不传 reconcile，避免按"部分批次"
+        # 误删整学期其他课程。
+        _stale_count = 0
+        if reconcile and data_source == "full" and _touched_ids:
+            for _sid in _affected_semesters:
+                _stale = (
+                    session.query(Course)
+                    .filter(
+                        Course.semester_id == _sid,
+                        Course.data_source == "full",
+                        Course.is_deleted.is_(False),
+                        Course.id.notin_(_touched_ids),
+                        (Course.last_verified_at < _batch_start)
+                        | (Course.last_verified_at.is_(None)),
+                    )
+                    .all()
+                )
+                for _c in _stale:
+                    _c.is_deleted = True
+                    _c.deleted_at = datetime.utcnow()
+                    _c.deleted_reason = "stale_reconcile"
+                    _stale_count += 1
+            if _stale_count and logger is not None:
+                logger.info(
+                    f"[课程对账] 软删本学期已消失课程 {_stale_count} 条 (stale_reconcile)"
+                )
 
         session.flush()
         return created_count, updated_count

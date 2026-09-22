@@ -91,7 +91,7 @@ def save_to_database(
         sem_info = semester_info_from_id(semester_id)
 
     from app.core.database import get_db
-    from app.repository.course_repository import CourseRepository
+    from app.repository.course_repository import CourseRepository, normalize_weeks
 
     # 读取处理后的数据
     processed_file = os.path.join(processed_dir, "processed_course_table.json")
@@ -161,10 +161,24 @@ def save_to_database(
             }
         )
 
+    # ---- 单周护栏（v6.19.x，仅 full 来源）----
+    # 全量爬虫必须带 --all-weeks 产出整学期周次位图；若解析出的周次集合仅 1 周，
+    # 说明"选全部"未生效/解析退化，此时若入库会把 courses.weeks 整体覆盖成单周，
+    # 导致"整学期课表变单周"。拒绝可疑入库并发告警，保留现有整学期数据。
+    # 每日爬虫(data_source='daily')本就只爬当前周，不受此护栏限制。
+    if data_source == "full":
+        _all_weeks: set = set()
+        for _t in transformed_data:
+            _all_weeks.update(normalize_weeks(_t.get("weeks")))
+        if len(_all_weeks) <= 1:
+            _alert_single_week(logger, _all_weeks)
+            return 0, 0
+
     session = get_db()
     try:
         created_count, updated_count = CourseRepository.create_batch(
-            session, transformed_data, data_source=data_source
+            session, transformed_data, data_source=data_source,
+            reconcile=(data_source == "full"), logger=logger,
         )
         session.commit()
         logger.info(
@@ -218,6 +232,28 @@ def _alert_empty_result(logger, data_source: str, week_number: int):
         send_status_alert(_alert)
     except Exception as _ne:
         logger.warning(f"[空结果护栏] 告警发送失败（已忽略）: {_ne}")
+
+
+def _alert_single_week(logger, all_weeks: set):
+    """单周护栏：full 来源解析出周次集合仅 1 周时拒绝入库并发企微告警（不覆盖现有整学期数据）。"""
+    from datetime import datetime as _dt
+
+    _wk = sorted(all_weeks) if all_weeks else []
+    _alert = (
+        f"**课程数据单周护栏**\n\n"
+        f"时间：{_dt.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+        f"说明：full 来源爬虫解析出的周次集合仅 {len(_wk)} 周（{_wk}），"
+        f"疑似 --all-weeks「选全部」未生效或解析退化。已拒绝入库，未覆盖现有整学期数据。"
+    )
+    logger.error(
+        f"[单周护栏] full 来源周次集合仅 {len(_wk)} 周（{_wk}），疑似退化，已拒绝入库。"
+    )
+    try:
+        from app.services.notification_service import send_status_alert
+
+        send_status_alert(_alert)
+    except Exception as _ne:
+        logger.warning(f"[单周护栏] 告警发送失败（已忽略）: {_ne}")
 
 
 def parse_period_name(period_name: str, default_period: int) -> list:

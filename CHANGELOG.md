@@ -4,6 +4,20 @@
 
 ---
 
+## Unreleased
+
+### 修复：课程爬虫入库根治——(semester_id, course_key) 稳定去重 + 强制全周次 + 对账软删（后端，2026-09-22）
+- **根因**：`executors.run_spider` 调爬虫未带 `--all-weeks`，定时/手动只爬「当前周」视图，导致 `weeks` 落库成单周（`=[爬取周]`）；旧去重键 `course_code+week_day+period_idx+week_number` 中的 `week_number`（=爬取周）随每次爬取漂移，每爬一周新增一批重复行，库只增不减。本地库曾出现 124 行、同课被拆成「单节×周段×房间」多行、weeks 散落单周。
+- **改动**：
+  - `app/tasks/executors.py`：定时/手动爬取强制 `run_spider_process(["--all-weeks"])`，整学期周次位图由爬虫「选全部」解析得到。
+  - `app/model/course.py`：新增 `course_key`（与周次无关的稳定身份，`md5(课名|星期|排序节次|教室|教师)`），普通索引 `idx_course_key`（历史软删行可能重复，故先非唯一，重复由 `create_batch` 逻辑去重）。
+  - `app/repository/course_repository.py`：新增 `compute_course_key`；`create_batch` 去重键改为 `(semester_id, course_key)`；新增 `_find_existing_course`（主匹配 `course_key`，兜底匹配 `course_key IS NULL` 行按身份补 key，防漏跑回填又重复）；手动课保护改为基于 `course_key`（爬虫行 key 命中 `admin` 行则整条跳过）；新增 `reconcile=True` 全量爬取对账软删（本学期 `full` 源本次未被命中行软删，`deleted_reason='stale_reconcile'`）。
+  - `app/cqie-course-timetable/pipeline.py`：单周护栏——`full` 源解析出周次集合仅 1 周时**拒绝入库**并发企微告警，避免「整学期变单周」覆盖现有整学期数据。
+  - 数据校正（本地）：`技术总结/backfill_course_key.py`（**复用模型 `compute_course_key`，含 `period_idx` 回退，幂等可重跑**）回填 `course_key`；`技术总结/cleanup_courses.py`（备份优先软删）合并单节碎片、去重、学期名归一。本地执行后 124→63 行、0 重复、key 与模型算法 100% 一致。
+- **验证**：4 文件 `py_compile` 通过；本地 DB 直连核查：`course_key` 列存在、回填后 0 不一致、清洗后 63 行 / 0 空 key / 0 重复 / 学期名规范（`2025-2026-2` 等）。
+- **遗留**：真实整学期 `weeks` 需带 `--all-weeks` 的真实全量爬取覆盖（依赖学校认证，无法无人值守跑）；该爬取会触发 `create_batch` 按正确 key 更新 + `reconcile` 软删残留，本地与生产均可自愈。
+- **生产**（用户部署后）：①`python init_db.py migrate` 补 `course_key` 列；②可选跑 `backfill_course_key.py` + `cleanup_courses.py`；③触发一次全量/指定学期 `--all-weeks` 爬取（旧行 `course_key` 为 NULL 时兜底按身份匹配更新并写正确 key，即便不跑脚本也能自愈）。
+
 ## v6.19.0 (2026-09-18)
 
 ### 调整：降雨提醒改为「分时段 + 每段每天仅一次」播报（后端，2026-09-18）

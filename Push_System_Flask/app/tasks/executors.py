@@ -101,7 +101,11 @@ def run_spider(trigger_source="cron"):
 
         try:
             logger.info(f"开始执行爬虫 (尝试 {attempt}/{max_retries})...")
-            result = run_spider_process(timeout=600)
+            # 关键修复（v6.19.x）：定时/手动爬取必须带 --all-weeks，
+            # 否则只爬“当前周”视图，导致每门课的 weeks 落库成单周（=[爬取周]），
+            # 进而 week_number(=爬取周) 混入去重键使每次爬取都新增重复行。
+            # 全周次位图由爬虫“选全部”后解析 TaskActivity 的整学期周次得到。
+            result = run_spider_process(["--all-weeks"], timeout=600)
 
             logger.info(f"爬虫执行完成，返回码: {result.returncode}")
 

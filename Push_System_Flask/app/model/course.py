@@ -101,6 +101,12 @@ class Course(Base):
     )
     week_number = Column(Integer, nullable=True, comment="当前周次")
 
+    # 稳定课程身份（v6.19.x 新增）：与周次无关，根除去重键含 week_number 导致
+    # 每次爬取新增重复行的问题。取值 = md5(课程名|星期|排序节次|教室|教师)，
+    # 配合 semester_id 构成 (semester_id, course_key) 去重/对账键。
+    # 历史软删行可能重复，故暂用普通索引（非唯一约束），重复由 create_batch 逻辑去重。
+    course_key = Column(String(64), nullable=True, comment="稳定课程身份(与周次无关)")
+
     # 教师和教室信息
     teacher = Column(String(100), nullable=True, comment="教师姓名")
     classroom = Column(String(100), nullable=True, comment="教室")
@@ -141,6 +147,8 @@ class Course(Base):
         Index("idx_course_week_number", "week_number"),
         Index("idx_course_code", "course_code"),
         Index("idx_course_is_deleted", "is_deleted"),
+        # (semester_id, course_key) 为去重/对账主键组合（v6.19.x）
+        Index("idx_course_key", "semester_id", "course_key"),
     )
 
     def to_dict(self) -> dict:
@@ -164,6 +172,7 @@ class Course(Base):
             "weeks": self.weeks,
             "weeks_bitmap": self.weeks_bitmap,
             "week_number": self.week_number,
+            "course_key": self.course_key,
             "course_type": self.course_type,
             "credit": float(self.credit) if self.credit else None,
             "is_deleted": self.is_deleted,
