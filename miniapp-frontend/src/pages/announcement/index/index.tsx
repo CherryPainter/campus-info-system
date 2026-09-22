@@ -204,7 +204,8 @@ export default function AnnouncementListPage() {
           </View>
         ) : hasMore ? (
           <View className="alist-more" onClick={loadMore}>
-            <Text className="alist-more-text">查看更多 ›</Text>
+            <Text className="alist-more-text">查看更多</Text>
+            <View className="alist-more-arrow" />
           </View>
         ) : (
           <View className="alist-more">

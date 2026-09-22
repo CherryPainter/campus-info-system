@@ -145,6 +145,7 @@
 /* 触底加载 / 加载中 / 没有更多 */
 .alist-more {
   display: flex;
+  align-items: center;
   justify-content: center;
   padding: $spacing-md 0;
 }
@@ -152,4 +153,25 @@
 .alist-more-text {
   font-size: $font-size-xs;
   color: $text-tertiary;
+}
+
+/* 「查看更多」右向箭头（CSS 矢量，不受用户自定义字体影响） */
+.alist-more-arrow {
+  position: relative;
+  width: 18rpx;
+  height: 18rpx;
+  margin-left: 4rpx;
+
+  &::before {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    width: 12rpx;
+    height: 12rpx;
+    box-sizing: border-box;
+    border-top: 3rpx solid $text-tertiary;
+    border-right: 3rpx solid $text-tertiary;
+    transform: translateY(-50%) rotate(45deg);
+  }
 }

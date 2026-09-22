@@ -6,6 +6,14 @@
 
 ## Unreleased
 
+### 修复：小程序「通知公告」列表「查看更多」箭头改为 CSS 矢量（前端，2026-09-22）
+- **问题**：底部「查看更多 ›」的 `›`（U+203A）是**文本字符**，与之前反馈模块同类问题——用户自定义字体（font-family）会改变其字形与基线，有失美观。
+- **改动**：
+  - `pages/announcement/index/index.tsx`：`<Text>查看更多 ›</Text>` 拆为 `<Text>查看更多</Text>` + `<View className="alist-more-arrow" />`。
+  - `pages/announcement/index/index.scss`：新增 `.alist-more-arrow`（CSS 绘制：`::before` 12rpx 正方形 + `border-top`/`border-right` 3rpx + `rotate(45deg)`，参数与反馈列表页 `.fb-item-arrow` 完全一致）；`.alist-more` 增加 `align-items:center` 以对齐箭头与文字。
+- **验证**：`tsc --noEmit` 退出码 0；`taro build --type weapp` 编译成功；源码 `›` 残留计数 **0**；产物 `index.js` 已确认渲染为 `children:"\u67e5\u770b\u66f4\u591a"`（查看更多）+ 同级 `className:"alist-more-arrow"`，`.alist-more-arrow::before` 规则已进 `index.wxss`；全量 dist 中 `process.env` 残留 **0**。
+- **待确认（用户侧）**：小程序其余 8 处文件仍有同类文本字符箭头（`card-more-arrow` / `profile-arrow` / `set-arrow` / `msg-item-arrow` / `elec-navbar-back` 的 `‹` 等，共约 18 处），本次未擅自扩大范围改动，见会话说明。
+
 ### 修复：小程序「通知公告」列表卡片上下粘连（前端，2026-09-22）
 - **问题**：`pages/announcement/index` 的多条公告共用一个白卡容器（`.alist-card`），条目之间仅靠一条 `1rpx` 细分割线分隔、无任何留白，视觉上「上下粘连」，用户反馈「非常有违和感」。
 - **改动**（`pages/announcement/index/index.scss`，**仅样式**，DOM/逻辑未动）：
