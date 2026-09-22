@@ -109,10 +109,25 @@
       border-color: $primary-color;
     }
 
+    /* 勾选图标：CSS 矢量（原本用文本字符「✓」，会被用户自带字体改字形） */
     .login-agree-check-tick {
+      position: relative;
+      width: 20rpx;
+      height: 20rpx;
       color: $text-inverse;
-      font-size: 24rpx;
-      line-height: 1;
+
+      &::before {
+        content: '';
+        position: absolute;
+        left: 6rpx;
+        top: 3rpx;
+        width: 8rpx;
+        height: 14rpx;
+        box-sizing: border-box;
+        border-right: 3rpx solid currentColor;
+        border-bottom: 3rpx solid currentColor;
+        transform: rotate(45deg);
+      }
     }
   }
 

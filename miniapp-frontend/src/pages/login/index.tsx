@@ -133,7 +133,7 @@ export default function LoginPage() {
               setAgreed(!agreed);
             }}
           >
-            {agreed ? <Text className="login-agree-check-tick">✓</Text> : null}
+            {agreed ? <View className="login-agree-check-tick" /> : null}
           </View>
           <Text className="login-agree-text">
             我已阅读并同意

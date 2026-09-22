@@ -6,6 +6,28 @@
 
 ## Unreleased
 
+### 修复：登录页「同意」勾选图标改为 CSS 矢量（前端，2026-09-22）
+- **问题**：勾选态用文本字符 `✓`（U+2713），属 dingbat 类字符，字形与粗细随用户自定义字体变化（Apple / Android / 各中文字体对 `✓` 的渲染差异很明显），与已修的 `+` / `×` / 箭头属同一类问题。
+- **改动**（仅 `pages/login/`）：
+  - `index.tsx`：`<Text className="login-agree-check-tick">✓</Text>` → `<View className="login-agree-check-tick" />`。
+  - `index.scss`：`.login-agree-check-tick` 由 `font-size: 24rpx` + 文本改为 CSS 绘制——`::before` 一个 8×14rpx 矩形只留 `border-right` + `border-bottom` 后 `rotate(45deg)` 得到勾形，描边用 `currentColor` 继承 `color: $text-inverse`（白勾）。
+- **验证**：`tsc --noEmit` 退出码 0；`taro build --type weapp` 编译成功；源码 `✓` 残留 0（仅注释中提及原字符）；产物 `pages/login/index.wxss` 已输出 `.login-agree-check-tick` 与 `::before` 规则；产物 js 确认渲染为空 `View` 且不含 U+2713；`process.env` 残留 0。
+
+### 审计发现（未改动，待用户决定）：小程序内仍有 6 处"文本字符 / emoji 当图标"
+统一箭头图标时顺带做了全量扫描，发现以下**会被渲染**的字符图标，本次**未擅自改动**（涉及设计取舍，且真机观感本地无法验证）：
+
+| 位置 | 当前字符 | 用途 | 说明 |
+|---|---|---|---|
+| `pages/announcement/detail:291` | `📎`（U+1F4CE） | 附件行左侧图标 | **emoji，违反项目「禁 emoji」铁律**；且各系统 emoji 风格差异大 |
+| `pages/weather:368-370` | `💧` ×3 | 分钟级降水卡片的雨滴动效 | **emoji，同上违规** |
+| `pages/announcement/detail:340` | `★` / `☆` | 底部操作栏「收藏」的已收藏/未收藏两态 | 星形字形随字体变；**同一栏的「分享」「已阅」已用 iconfont**，此处是同类中的例外 |
+| `pages/profile:378` | `☆`（U+2606） | 「我的收藏」入口图标 | 同一列表其余 4 项全用 `iconfont`，此处是遗漏 |
+| `pages/favorites:91` | `★` 96rpx 金色 | 空状态图标 | 同上 |
+| `pages/privacy-policy:61` | `·`（U+00B7） | 列表项前缀 | 风险最低（`·` 在正文字体中渲染稳定），但规范做法是 CSS 圆点 |
+
+- 项目 iconfont（5227727）内有 `icon-shoucang`（收藏，`\ue613`）、`icon-xz`（`\ue600`，疑似"选择/勾选"）、`icon-fenxiang`、`icon-yiyuedu`、`icon-xiazai` 等字形可用，但**字形实际长相无法在本地确认**（需真机/开发者工具看），故未直接替换。
+- 另注：`★`/`☆` 两态目前承担"已收藏 / 未收藏"的区分，若改用单色 iconfont 字形，则只能靠颜色区分，属**视觉降级**，需用户拍板。
+
 ### 重构：小程序箭头图标统一抽成共享组件 `IconArrow`（前端，2026-09-22）
 - **背景**：上一轮把反馈页/公告页的 `›` 换成 CSS 矢量时，是在各页 `.scss` 里**手写同一套 `::before` 配方**（正方形 + `border-top`/`border-right` + `rotate(45deg)`）；同时全项目仍有约 25 处箭头用**文本字符**（`›` / `‹` / `∧`）——用户自定义字体会改写其字形与基线。故收敛为单一组件，避免配方抄多份、以及"一半组件一半文本字符"的混乱。
 - **新增 `src/components/IconArrow`**：
