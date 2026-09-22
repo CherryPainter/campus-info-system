@@ -1,10 +1,12 @@
 @import '../../../styles/variables.scss';
 
 /* 通知公告总览页（先看板后列表）
- * - 整体白底列表，不靠大圆角卡片堆叠
+ * - 每条公告独立成卡（白底 + 圆角 + 轻阴影），卡片之间留足上下间距
+ *   （修复 2026-09-20：原先多条共用一个白卡容器、仅靠 1rpx 细线分隔，
+ *    视觉上「上下粘连」；现与「我的消息」页 .msg-item 卡片规格保持一致）
  * - 上：「置顶公告」专区（独立标题 + 卡片）
  * - 下：「全部公告」列表（含全部条目）
- * - 单条之间用细分割线，置顶条目用左侧色条强化
+ * - 置顶条目用左侧色条强化
  * - 标签颜色与首页 NoticeCard / 详情页统一
  */
 
@@ -21,7 +23,7 @@
 
 /* 分区（置顶专区 / 全部公告） */
 .alist-section {
-  margin-bottom: $spacing-md;
+  margin-bottom: $spacing-lg;
 }
 
 .alist-section-head {
@@ -42,24 +44,22 @@
   color: $text-tertiary;
 }
 
-/* 列表卡片容器 */
+/* 列表容器：透明，仅负责条目之间的间距（每条公告独立成卡） */
 .alist-card {
-  background: $card-background;
-  border-radius: $radius-small;
-  overflow: hidden;
-  border: 1rpx solid $border-color;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
 }
 
+/* 单条公告 = 一张独立卡片 */
 .alist-item {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
   padding: $spacing-md $spacing-md;
-  border-bottom: 1rpx solid $border-color;
   display: flex;
   flex-direction: column;
   gap: 8rpx;
-
-  &:last-child {
-    border-bottom: none;
-  }
 
   // 置顶条目：左侧色条
   &-top {
@@ -68,11 +68,12 @@
   }
 }
 
-/* 列表卡片封面（卡片顶部横幅，有图才渲染；无图不占位） */
+/* 列表卡片封面（卡片内嵌横幅，有图才渲染；无图不占位） */
 .alist-item-cover {
   display: block;
   width: 100%;
-  border-radius: $radius-small;
+  margin-bottom: $spacing-xs;
+  border-radius: $radius-medium;
   background: #f2f3f5;
 }
 

@@ -6,6 +6,17 @@
 
 ## Unreleased
 
+### 修复：小程序「通知公告」列表卡片上下粘连（前端，2026-09-22）
+- **问题**：`pages/announcement/index` 的多条公告共用一个白卡容器（`.alist-card`），条目之间仅靠一条 `1rpx` 细分割线分隔、无任何留白，视觉上「上下粘连」，用户反馈「非常有违和感」。
+- **改动**（`pages/announcement/index/index.scss`，**仅样式**，DOM/逻辑未动）：
+  - `.alist-card`：由「白底 + 圆角 + 描边 + `overflow:hidden` 的卡片容器」改为**透明间距容器**（`display:flex; flex-direction:column; gap:$spacing-md`）。
+  - `.alist-item`：由「纯条目 + `border-bottom` 分割线（含 `&:last-child{border-bottom:none}`）」改为**独立卡片**（`background:$card-background` + `border-radius:$radius-large` + `box-shadow:$shadow-card`），规格与「我的消息」页 `.msg-item` 对齐（同一份圆角/阴影令牌）。
+  - `.alist-item-top`：保留左侧 `6rpx` 色条（`border-left` + `padding-left` 补偿），现色条沿卡片圆角走边。
+  - `.alist-item-cover`：圆角由 `$radius-small` 提到 `$radius-medium`，并加 `margin-bottom:$spacing-xs`，贴合新卡片的内嵌横幅观感。
+  - `.alist-section`：段间距由 `$spacing-md` 放宽到 `$spacing-lg`。
+- **兼容性说明**：flex `gap` 在本页原实现中已在使用（`.alist-item` / `.alist-item-main` 均有 `gap`），本次未引入新的 CSS 能力依赖。
+- **验证**：`taro build --type weapp` 编译成功；产物 `dist/pages/announcement/index/index.wxss` 已逐条核对——`.alist-card{display:flex;flex-direction:column;gap:24rpx}`、`.alist-item{background:#fff;border-radius:24rpx;box-shadow:0 4rpx 16rpx rgba(0,0,0,.04);...}`、`.alist-item-top{padding-left:18rpx}`、`.alist-item-cover{border-radius:16rpx;...}` 均按预期输出，残留 `border-bottom` 分割线计数为 **0**。真机/开发者工具最终视觉待用户确认。
+
 ### 仓库整理：未跟踪的临时脚本与草稿移出仓库树（2026-09-22）
 - `Push_System_Flask/` 下 6 个未跟踪脚本（`_dup_analysis.py` / `_dup_analysis2.py` / `_inspect_db.py` / `dedupe_electricity.py` / `diagnose_electricity.py` / `diagnose_weeks.py`）与根目录 2 个未跟踪草稿（`小程序审核说明_草稿.md` / `校园信息聚合与智能推送系统.md`）移入 `技术总结/dev-scripts/` 与 `技术总结/`。`技术总结/` 被 `.gitignore` 忽略 → 不入库、不随部署、可随时移回，**未删除任何文件**。
 - 反向处理：`tests/test_electricity_dedup.py` 是真正的回归测试（非临时件），已纳入版本管理（见下方「测试」条目）。
