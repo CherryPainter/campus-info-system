@@ -6,6 +6,18 @@
 
 ## Unreleased
 
+### 修复：「我的」页底部「退出登录」与底部 TabBar 粘连（前端，2026-09-23）
+- **用户反馈**：「我的页面 往下拉到这就拉不动了，这个退出登录和这个导航栏连起来很难看」。
+- **根因**（`pages/profile/index.scss`）：
+  - 自定义 TabBar（`custom-tab-bar/index.scss`）实际高度为 `calc(112rpx + env(safe-area-inset-bottom))`，而 `.profile-page` 只预留 `padding-bottom: calc(108rpx + env(safe-area-inset-bottom))`——**比 TabBar 少 4rpx**，页面滚到底时内容底边必然落进 TabBar 的覆盖区（原注释写「98rpx」同样是错的）；
+  - `.logout-btn` 的 `margin-bottom` 又是 `0`，「退出登录」卡与 TabBar 两块白色底直接贴合，看起来像长在 TabBar 上；
+  - 「我的」页内容高度本就接近一屏，可滚动量极小，配合上述贴合，观感即「拉不动 + 连成一片」。
+- **改动**（仅 `pages/profile/index.scss`）：
+  - `.profile-page` 底部预留 108rpx → **112rpx**（与 TabBar 真实高度对齐），注释同步更正；
+  - `.logout-btn` 的 `margin` 第三值 `0` → `$spacing-lg`，与顶部间距对称，滚到底时与 TabBar 之间保留 32rpx 间距。
+- **验证**：`taro build --type weapp` 编译成功（仅原有 285KB 体积告警）；产物 `dist/pages/profile/index.wxss` 已输出 `.profile-page{...padding-bottom:calc(112rpx + env(safe-area-inset-bottom))}` 与 `.logout-btn{...margin:32rpx 24rpx...}`；`process.env` 残留 0。
+- **待真机确认**：「退出登录」与底部 TabBar 的间距观感。
+
 ### 变更：小程序用电记录改为「按用电日一天一条」并新增用电详情页（前后端，2026-09-22）
 - **用户反馈**：「宿舍电量的用电有些不合理了，为什么？…不够直观…应该一天显示一条总的用电，并且如果想看详细的点击那条数据就要跳到详细页面」。排查后确认「不合理」有**三重根因**，且都能在库里实证：
   1. **一天两条**：一个宿舍有**两块分表**（`31栋512` 与 `310512`），同一次爬取各写一条、`record_time` 完全相同，列表直接铺原始明细就是"同一天两行"，每行只有一半的量（截图中 `2026-09-18 00:09` 出现 0.75 与 1.71 两条，合计才是当天真实用量 2.46）。

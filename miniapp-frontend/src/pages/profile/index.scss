@@ -7,8 +7,9 @@
   background: $background;
   box-sizing: border-box;
 
-  /* 自定义 TabBar 高度（98rpx + safe-area） */
-  padding-bottom: calc(108rpx + env(safe-area-inset-bottom));
+  /* 自定义 TabBar 实际高度为 112rpx（见 custom-tab-bar/index.scss）+ 安全区。
+     预留必须 ≥ TabBar 高度，否则末尾元素底边会被 TabBar 压住 */
+  padding-bottom: calc(112rpx + env(safe-area-inset-bottom));
 }
 
 // 顶部 hero 区：资料头部 + 校园卡
@@ -306,7 +307,9 @@
 }
 
 .logout-btn {
-  margin: $spacing-lg $spacing-md 0;
+  // 底部留白与顶部间距对称：让「退出登录」卡与底部自定义 TabBar 拉开距离，
+  // 避免两者粘连成一片（原 margin-bottom 为 0 时会被 TabBar 压住 4rpx）
+  margin: $spacing-lg $spacing-md $spacing-lg;
   padding: $spacing-md;
   border-radius: $radius-large;
   background: $card-background;
