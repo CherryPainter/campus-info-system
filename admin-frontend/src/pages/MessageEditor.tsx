@@ -85,6 +85,20 @@ async function loadEditorModules() {
 }
 
 /**
+ * 管理端页头（ProLayout header / antd Layout header）的实际高度。
+ *
+ * 页头是固定定位、不随页面滚动，其高度由 ProLayout 与 antd Layout 决定，
+ * 会随断点与主题变化，因此不写死数值。工具栏吸顶偏移、右侧预览卡片的钉住
+ * 阈值都要用到它，统一在此实测，避免同一个数值散落在多处。
+ */
+function getAdminHeaderHeight(): number {
+  const header =
+    document.querySelector<HTMLElement>(".ant-pro-layout-header") ||
+    document.querySelector<HTMLElement>(".ant-layout-header");
+  return header ? Math.round(header.getBoundingClientRect().height) : 56;
+}
+
+/**
  * 自定义 WangEditor Toolbar 包装。
  *
  * 解决 @wangeditor/editor-for-react 的 Toolbar 组件：
@@ -197,8 +211,10 @@ export default function MessageEditor() {
   }, []);
 
   // 右侧手机预览「京东式」固定定位：scroll 时测量 Col 的位置与宽度，
-  // 当 Col 顶部越过视口 top:72 时钉住（position:fixed），否则复位让出顶部面包屑。
-  // （sticky 依赖父容器高度，在 antd Row/Col 下不可靠，故用 JS fixed）
+  // 当 Col 顶部越过页头下沿时钉住（position:fixed），否则复位让出顶部内容。
+  // 用 JS 测量而非纯 sticky 的原因：① position:fixed 需要精确的 left/width，
+  // 而 Col 宽度随断点变化，sticky 拿不到；② 该 Col 是 antd Row/Col 里的 flex 项，
+  // 默认被拉伸到整行高度，sticky 的包含块与元素等高、不会触发吸顶。
   const previewColRef = useRef<HTMLDivElement | null>(null);
   const [previewState, setPreviewState] = useState<
     { left: number; width: number; pinned: boolean } | null
@@ -210,8 +226,8 @@ export default function MessageEditor() {
       const el = previewColRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      // 滚到 Col 顶部到达/越过 72px 时钉住；往上回到顶部时复位让面包屑可见
-      const pinned = rect.top <= 72;
+      // 滚到 Col 顶部到达/越过页头下沿时钉住；往上回到顶部时复位让出顶部内容
+      const pinned = rect.top <= getAdminHeaderHeight();
       setPreviewState({ left: rect.left, width: rect.width, pinned });
     };
     update();
@@ -256,6 +272,26 @@ export default function MessageEditor() {
 
   useEffect(() => {
     loadEditorModules().then((ok) => setEditorReady(ok));
+  }, []);
+
+  // ==================== 富文本工具栏吸顶偏移 ====================
+  // 管理端页头是固定定位（不随页面滚动），工具栏吸顶时必须停在它下方：
+  // 偏移取 0 会被页头遮住第一行，取比页头更高的写死值则在页头下方露出一条
+  // 间隙（露出正在滚动的正文）。页头高度由 ProLayout / antd Layout 决定、
+  // 可能随断点与主题变化，故实测后写入 CSS 变量，不写死数值。
+  useEffect(() => {
+    const applyToolbarStickyTop = () => {
+      document.documentElement.style.setProperty(
+        "--editor-toolbar-sticky-top",
+        `${getAdminHeaderHeight()}px`,
+      );
+    };
+    applyToolbarStickyTop();
+    window.addEventListener("resize", applyToolbarStickyTop);
+    return () => {
+      window.removeEventListener("resize", applyToolbarStickyTop);
+      document.documentElement.style.removeProperty("--editor-toolbar-sticky-top");
+    };
   }, []);
 
   // ==================== 加载初始数据（编辑模式）====================
@@ -1111,7 +1147,9 @@ export default function MessageEditor() {
                     ? previewState.pinned
                       ? {
                           position: "fixed",
-                          top: 72,
+                          /* 与富文本工具栏共用同一偏移（页头实测高度），
+                             两者同屏并列时顶边对齐；写死 72px 会多出 16px。 */
+                          top: "var(--editor-toolbar-sticky-top, 56px)",
                           left: previewState.left,
                           width: previewState.width,
                           zIndex: 10,
@@ -1178,12 +1216,12 @@ export default function MessageEditor() {
         .editor-card.ant-card { overflow: visible !important; }
         .editor-toolbar-sticky {
           position: sticky;
-          /* 贴视口顶端。原先写死 72px 是给"固定页头"让位，但本套 ProLayout
-             的页头会随页面一起滚走 —— 滚到正文中段时视口顶部已没有页头，
-             空出的 72px 反而露出正在滚动的正文（表现为工具栏上方一条间隙）。
-             注：若将来开启固定页头（或移动端抽屉布局的固定导航），
-             此值应改为对应高度。 */
-          top: 0;
+          /* 吸顶偏移 = 管理端页头的实际高度：
+             页头是固定定位、不随页面滚动，偏移取 0 会让工具栏被页头盖住第一行；
+             取写死的偏大值（原先 72px）又会在页头下方露出一条间隙、透出正文。
+             高度随断点/主题变化，故由 MessageEditor 的 useEffect 实测页头高度
+             写入 --editor-toolbar-sticky-top（兜底 56px），此处不写死数值。 */
+          top: var(--editor-toolbar-sticky-top, 56px);
           z-index: 20;
           background: #fff;
           border-top-left-radius: 5px;
@@ -1206,7 +1244,7 @@ export default function MessageEditor() {
            此处 CSS 仅作测量完成前的 fallback（sticky），避免首帧闪跳。 */
         .preview-sticky-wrap {
           position: sticky;
-          top: 72px;
+          top: var(--editor-toolbar-sticky-top, 56px);
           align-self: flex-start;
           width: 100%;
           z-index: 10;
@@ -1215,7 +1253,8 @@ export default function MessageEditor() {
         .preview-card {
           display: flex;
           flex-direction: column;
-          max-height: calc(100vh - 88px);
+          /* 视口高 - 吸顶偏移 - 底部留白（16px），避免钉住时卡片超出视口 */
+          max-height: calc(100vh - var(--editor-toolbar-sticky-top, 56px) - 16px);
 
           .ant-card-head {
             flex-shrink: 0;

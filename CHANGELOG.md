@@ -6,16 +6,23 @@
 
 ## Unreleased
 
-### 修复：富文本工具栏吸顶后上方仍留一条间隙（前端，2026-09-23）
-- **现象**：承接前一条（工具栏吸顶恢复）之后，滚到正文中段时工具栏**上方**空出一条带，透出正在滚动的正文。
-- **根因**：`MessageEditor.tsx` 里 `.editor-toolbar-sticky` 的吸顶偏移写死为 `top: 72px`（当初按"顶部有固定页头"给页头让位）。但本套 ProLayout 的页头会随页面一起滚走 —— 滚到正文中段时视口顶部已无页头，空出的 72px 便露出正文。前一条修复之前 sticky 一直是**失效**状态，这个偏移值从未真正生效、也就一直没暴露；sticky 恢复后它才开始起作用。
-- **改动**：`top: 72px` → `top: 0`（贴视口顶端），并注明「若将来开启固定页头（或移动端抽屉布局的固定导航），此值应改为对应高度」；同时**订正该段过期注释**——原先写「真凶是 antd Card 的 overflow: hidden」，本次排查证明实为 `.ant-pro-layout-content` 等三条全局规则的 `overflow-x`（见 `src/style.css`）。
-- **验证**：`npm run build`（tsc + vite build）通过，产物确认含 `.editor-toolbar-sticky` 规则与本次新增注释；`top: 0` 的吸顶行为已由 `技术总结/dev-scripts/sticky_overflow_test.html` 对照实验实测（clip 版滚动后工具栏视口 top = 0）。
-- **备注**：页面观感待刷新确认。
+### 修复：富文本工具栏吸顶位置（被固定页头遮挡 / 上方留间隙）（前端，2026-09-23）
+- **现象**：接前一条（sticky 恢复正常）之后，工具栏虽吸住了，但位置始终不对 —— 先是在**上方**空出一条带透出滚动正文，改成贴视口顶端后又**被固定页头遮住第一行**。
+- **根因**：`.editor-toolbar-sticky` 的吸顶偏移写死为 `top: 72px`（当初按"顶部有固定页头"给页头让位）。前一条修复之前 sticky 一直是**失效**状态，这个偏移从未真正生效、也就一直没暴露；sticky 恢复后才开始起作用。**管理端页头是固定定位、不随页面滚动**，因此：偏移取 `0` → 被页头盖住；偏移取写死的偏大值（`72px`）→ 在页头下方露出一条间隙。真实页头高度由 ProLayout / antd Layout 决定，随断点与主题变化。
+  - 附订正：上一轮曾判断「本套 ProLayout 的页头会随页面一起滚走」并据此把偏移改成 `0`，该判断**错误**（依据是裁剪过的截图，看不到真正的视口顶部）——教训是**不要用裁剪截图判断布局**。
+- **改动**（`MessageEditor.tsx`）：
+  - 新增模块函数 `getAdminHeaderHeight()` 实测页头高度（`.ant-pro-layout-header` → 回退 `.ant-layout-header` → 兜底 56px），**单点**供各处使用，不再把页头高度散落成多个魔数；
+  - 新增 `useEffect` 把实测高度写入 `document.documentElement` 的 CSS 变量 `--editor-toolbar-sticky-top`（监听 `resize`、卸载时清理）；
+  - `.editor-toolbar-sticky` 的 `top: 0` → `top: var(--editor-toolbar-sticky-top, 56px)`；
+  - 顺带订正右侧预览卡片同一根因的写死值：钉住判据 `rect.top <= 72` → `<= getAdminHeaderHeight()`，钉住时 `top: 72` → 同一 CSS 变量，fallback `.preview-sticky-wrap { top: 72px }` → 同一变量、`.preview-card` 的 `max-height: calc(100vh - 88px)` → `calc(100vh - 该变量 - 16px)`（该 88 = 旧偏移 72 + 底部留白 16，随之自洽）。原先「sticky 依赖父容器高度、在 antd Row/Col 下不可靠」的注释描述**不准确**，已改为真实原因：`position: fixed` 需要精确的 `left` / `width`（Col 宽度随断点变化，sticky 拿不到），且该 Col 是被拉伸到整行高度的 flex 项、sticky 包含块与元素等高不会触发吸顶。
+- **验证**：
+  - 无头 Chrome 对照实验（`技术总结/dev-scripts/sticky_header_offset_test.html`）：同一 DOM，固定页头 56px，滚动到 `scrollY=2000`，三种偏移取值下工具栏视口 top 分别是 —— **`var(--editor-toolbar-sticky-top, 56px)` → 56px（与页头下沿差 0，正好贴合）**、`0` → 0px（被页头遮住 56px）、`72px` → 72px（页头下留 16px 间隙）。三种落点与用户三次反馈（先间隙、后遮挡）逐一对应，`STATUS[PASS]`。
+  - `npm run build`（tsc + vite build，18.45s）通过；产物（`dist/assets/index-b-GOB_cK.js`）已确认含 `getAdminHeaderHeight` 实现、`setProperty("--editor-toolbar-sticky-top", ...)`、`.editor-toolbar-sticky { position: sticky; top: var(--editor-toolbar-sticky-top, 56px) }`、`.preview-sticky-wrap` 同变量、`max-height: calc(100vh - var(...) - 16px)` 与钉住时的 inline `top: "var(...)"`；全文件已无遗留的写死 `72px` / `88px` 偏移。
+- **备注**：偏移为运行时实测，断点变化（`resize`）会自动跟随，无需再手改数值；页面实际观感待刷新确认。
 
 ### 修复：管理端富文本编辑器工具栏「往下滚就消失」（sticky 被祖先 overflow-x 破坏）（前端，2026-09-23）
 - **现象**：编辑通知/推送时，正文下拉到中段后顶部的 WangEditor 工具栏不见了，滚回顶部又出现；控制台无任何报错。
-- **根因**：`admin-frontend/src/style.css` 的全局水平溢出防护，给 `.ant-pro-layout-content`、`.ant-pro-page-container-children-content`、`.ant-pro-grid-content` 设了 `overflow-x: hidden !important`，而这三个容器**都在 MessageEditor 工具栏的祖先链上**。按 CSS 规范，只要有一个方向的 `overflow` 不是 `visible`，另一轴的 `visible` 就会被计算成 `auto` —— 三个容器因此都成了「滚动容器」；但它们的高度由内容撑开、自身永不滚动（滚动实际发生在更外层），于是工具栏的 `position: sticky; top: 72px` 找不到真正滚动的祖先，退化成普通定位、随内容一起滚走。（同页右侧预览卡片早已因「sticky 在这套布局下不可靠」改用 JS fixed，本次是同一类问题的另一处。）
+- **根因**：`admin-frontend/src/style.css` 的全局水平溢出防护，给 `.ant-pro-layout-content`、`.ant-pro-page-container-children-content`、`.ant-pro-grid-content` 设了 `overflow-x: hidden !important`，而这三个容器**都在 MessageEditor 工具栏的祖先链上**。按 CSS 规范，只要有一个方向的 `overflow` 不是 `visible`，另一轴的 `visible` 就会被计算成 `auto` —— 三个容器因此都成了「滚动容器」；但它们的高度由内容撑开、自身永不滚动（滚动实际发生在更外层），于是工具栏的 `position: sticky` 找不到真正滚动的祖先，退化成普通定位、随内容一起滚走。（同页右侧预览卡片早已因「这套布局下 sticky 不够用」改用 JS fixed，本次是同一类问题的另一处。）
 - **改动**：把上述三条规则由 `overflow-x: hidden` 改为 `overflow-x: clip`。`clip` 同样裁剪横向溢出（原意图不变，横向滚动条依然不出现），但**不创建滚动容器**，sticky 恢复正常；附注释说明取舍，避免后人改回 `hidden`。
 - **验证**：无头 Chrome 对照实验（DOM 结构完全相同，只差祖先 `overflow-x` 取值）—— `hidden` 版滚动后工具栏视口 top = **-499px**（已滚出可视区），`clip` 版 top = **0px**（稳稳粘住）；实验脚本 `技术总结/dev-scripts/sticky_overflow_test.html`。`npm run build`（tsc + vite build，19.8s）通过，产物已确认输出 `overflow-x:clip!important`。
 - **备注**：改动为纯 CSS，dev server 热更新即生效；页面实际观感待刷新确认。
