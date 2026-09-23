@@ -138,6 +138,7 @@ function buildCellMap(
   courses: ScheduleCourse[],
   currentWeekNumber: number,
   displayWeekNumber: number,
+  isCurrentSemester: boolean,
 ): { map: Record<number, Record<number, Cell>>; maxPeriod: number } {
   const map: Record<number, Record<number, Cell>> = {};
   for (let d = 1; d <= 7; d++) map[d] = {};
@@ -198,8 +199,11 @@ function buildCellMap(
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
   const todayDow = now.getDay() || 7; // 日=7
 
-  // 是否为「真实当前周」（避免非当前周的课程被误标"进行中"）
-  const isRealCurrentWeek = currentWeekNumber > 0 && displayWeekNumber === currentWeekNumber;
+  // 是否为「真实当前周」：
+  // 必须同时满足「展示周次 == 真实教学周」且「展示的学期就是当前学期」，
+  // 否则历史学期（上学期）即使选了与本周相同的周次，也不应出现"进行中/已结束"实时态。
+  const isRealCurrentWeek =
+    isCurrentSemester && currentWeekNumber > 0 && displayWeekNumber === currentWeekNumber;
 
   for (let day = 1; day <= 7; day++) {
     const merged = merge(byDay[day] || []);
@@ -481,8 +485,8 @@ export default function CourseTablePage() {
 
   // ====== 课程表版式数据 ======
   const { map, maxPeriod } = useMemo(
-    () => buildCellMap(weekCourses, weekNumber, displayWeekNumber),
-    [weekCourses, weekNumber, displayWeekNumber],
+    () => buildCellMap(weekCourses, weekNumber, displayWeekNumber, isCurrentSemester(selectedSemesterId)),
+    [weekCourses, weekNumber, displayWeekNumber, selectedSemesterId, semesters],
   );
   // 表格行数：按实际数据最大节次动态截断，避免无课空行把页面拉长；
   // 至少保留 8 行，保证常见课表（1-8节）视觉完整。
@@ -573,8 +577,10 @@ export default function CourseTablePage() {
           borderLeftColor: isFinished ? '#d9d9d9' : activeBorderColor,
         }}
         onClick={() => {
-          // 带上当前查看的周次，详情页按该周拉数据，避免"有课显示没课"
-          navigateTo({ url: `/pages/coursedetail/index?id=${c.schedule_id}&week_number=${displayWeekNumber || 1}` });
+          // 带上当前查看的周次与学期，详情页按该学期该周拉数据，
+          // 避免上学期课程在详情页被当成当前学期课程而查不到（"课程信息不存在"）
+          const semParam = selectedSemesterId ? `&semester_id=${selectedSemesterId}` : '';
+          navigateTo({ url: `/pages/coursedetail/index?id=${c.schedule_id}&week_number=${displayWeekNumber || 1}${semParam}` });
         }}
       >
         {/* 进行中徽章（对齐网页端移动端 "正在上课" 标签） */}

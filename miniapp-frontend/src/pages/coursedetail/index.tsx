@@ -75,19 +75,21 @@ export default function CourseDetailPage() {
 
   useLoad(() => {
     const id = (router.params?.id || '') as string;
-    // 课表页跳转时携带当前查看的周次；缺省时后端按当前教学周
+    // 课表页跳转时携带当前查看的周次与学期；缺省时后端按当前教学周/当前学期
     const wkParam = Number(router.params?.week_number);
     const wkNum = Number.isInteger(wkParam) && wkParam >= 1 ? wkParam : undefined;
+    const semParam = Number(router.params?.semester_id);
+    const semId = Number.isInteger(semParam) && semParam >= 1 ? semParam : undefined;
     setCurrentCourseId(id);
-    if (id) loadDetail(id, wkNum);
+    if (id) loadDetail(id, wkNum, semId);
   });
 
-  async function loadDetail(scheduleId: string, weekNumber?: number) {
+  async function loadDetail(scheduleId: string, weekNumber?: number, semesterId?: number) {
     setLoading(true);
     try {
-      // 获取指定周课程（用于"本周课程安排" + 定位当前课程），
-      // 与课表页当前查看的周次保持一致，避免"有课显示没课"
-      const res = await scheduleApi.getWeek(weekNumber);
+      // 获取指定学期指定周课程（用于"本周课程安排" + 定位当前课程），
+      // 与课表页当前查看的学期/周次保持一致，避免上学期课程被当成当前学期而查不到
+      const res = await scheduleApi.getWeek(weekNumber, semesterId);
       setWeekCourses(res.data.courses || []);
     } catch {
       // 静默失败，显示空态

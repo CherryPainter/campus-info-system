@@ -579,8 +579,10 @@ export default function SchedulePage() {
                 onClick={() => {
                   // 拆分的合成 id 形如 "X#p5-6"，详情页需要原始 id
                   const originalId = c.schedule_id.split('#p')[0];
+                  // 带上当前查看的学期，避免历史学期课程在详情页被当成当前学期而查不到
+                  const semParam = selectedSemesterId ? `&semester_id=${selectedSemesterId}` : '';
                   navigateTo({
-                    url: `/pages/coursedetail/index?id=${originalId}&week_number=${displayWeekNumber || 1}`,
+                    url: `/pages/coursedetail/index?id=${originalId}&week_number=${displayWeekNumber || 1}${semParam}`,
                   });
                 }}
               />

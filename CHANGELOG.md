@@ -6,6 +6,20 @@
 
 ## Unreleased
 
+### 修复：上学期课表课程误标"已结束/进行中" + 点击上学期课程详情页"课程信息不存在"（前端，2026-09-23）
+- **用户反馈**：打开上学期课表 → 选「与本周相同的周次」→ 上学期（及对应本周）课程变灰；点上学期任一课程 → 课程详情页显示「课程信息不存在」。
+- **根因一（变灰）**（`pages/coursetable/index.tsx` 的 `buildCellMap`）：
+  - "进行中/已结束"实时态的判定 `isRealCurrentWeek` 仅比较「展示周次 == 真实教学周」，未判断"展示的学期是否就是当前学期"；
+  - 打开上学期并选了与本周相同的周次时 `displayWeekNumber === currentWeekNumber` 成立，今天的课程被误判 `isPast`（灰底灰字）甚至 `isOngoing`（"正在上课"徽章），但上学期是历史数据，本不该出现实时态。
+- **根因二（详情不存在）**（`pages/coursetable/index.tsx` + `pages/coursedetail/index.tsx`）：
+  - 课表页跳转详情页只带 `id` 与 `week_number`，**缺 `semester_id`**；详情页 `getWeek(weekNumber)` 默认查当前学期，上学期课程的 `schedule_id` 在当前学期里查不到 → 空态"课程信息不存在"。
+  - `schedule`（时间轴）页跳转详情页同样缺 `semester_id`，存在同类问题，一并修复。
+- **改动**：
+  - `buildCellMap` 新增第 4 参 `isCurrentSemester`：`isRealCurrentWeek` 须同时满足「展示学期 == 当前学期」才标实时态——历史学期不再灰化/误标进行中；
+  - 课表页与时间轴页跳转详情页时追加 `&semester_id=<选中学期>`（当前学期/未选时省略，不影响既有逻辑）；
+  - 详情页 `useLoad` 读取 `semester_id` 参数并透传给 `getWeek(weekNumber, semesterId)`，与课表页当前查看的学期/周次一致。
+- **验证**：`tsc --noEmit` 通过；`taro build --type weapp` 成功；产物 `dist/pages/coursedetail/index.js`、`dist/pages/coursetable/index.js`、`dist/pages/schedule/index.js` 均含 `semester_id` 透传逻辑，`process.env` 残留为 0。
+
 ### 修复：「我的」页底部「退出登录」与底部 TabBar 粘连（前端，2026-09-23）
 - **用户反馈**：「我的页面 往下拉到这就拉不动了，这个退出登录和这个导航栏连起来很难看」。
 - **根因**（`pages/profile/index.scss`）：
