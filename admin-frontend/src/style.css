@@ -220,9 +220,17 @@
 /* ========== 全局水平溢出防护 ==========
  * 防止任何页面在大屏下出现不必要的水平滚动条
  * Table 内部滚动不受影响（scroll.x 由 Table 容器自身处理）
+ *
+ * 注意：这里必须用 clip，不能用 hidden。
+ * 按 CSS 规范，只要有一个方向的 overflow 不是 visible，另一轴的 visible 就会被
+ * 计算成 auto —— 用 hidden 时这三个容器（都在 MessageEditor 工具栏的祖先链上）
+ * 会变成「滚动容器」，但它们的高度由内容撑开、自身永不滚动，于是内部的
+ * position: sticky（富文本工具栏）找不到真正滚动的祖先，退化成普通定位、
+ * 随内容一起滚走（现象：滚到顶部能看到工具栏，往下滚就没了）。
+ * clip 同样裁剪横向溢出，但不创建滚动容器，sticky 得以正常工作。
  */
 .ant-pro-layout-content,
 .ant-pro-page-container-children-content,
 .ant-pro-grid-content {
-  overflow-x: hidden !important;
+  overflow-x: clip !important;
 }

@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+### 修复：管理端富文本编辑器工具栏「往下滚就消失」（sticky 被祖先 overflow-x 破坏）（前端，2026-09-23）
+- **现象**：编辑通知/推送时，正文下拉到中段后顶部的 WangEditor 工具栏不见了，滚回顶部又出现；控制台无任何报错。
+- **根因**：`admin-frontend/src/style.css` 的全局水平溢出防护，给 `.ant-pro-layout-content`、`.ant-pro-page-container-children-content`、`.ant-pro-grid-content` 设了 `overflow-x: hidden !important`，而这三个容器**都在 MessageEditor 工具栏的祖先链上**。按 CSS 规范，只要有一个方向的 `overflow` 不是 `visible`，另一轴的 `visible` 就会被计算成 `auto` —— 三个容器因此都成了「滚动容器」；但它们的高度由内容撑开、自身永不滚动（滚动实际发生在更外层），于是工具栏的 `position: sticky; top: 72px` 找不到真正滚动的祖先，退化成普通定位、随内容一起滚走。（同页右侧预览卡片早已因「sticky 在这套布局下不可靠」改用 JS fixed，本次是同一类问题的另一处。）
+- **改动**：把上述三条规则由 `overflow-x: hidden` 改为 `overflow-x: clip`。`clip` 同样裁剪横向溢出（原意图不变，横向滚动条依然不出现），但**不创建滚动容器**，sticky 恢复正常；附注释说明取舍，避免后人改回 `hidden`。
+- **验证**：无头 Chrome 对照实验（DOM 结构完全相同，只差祖先 `overflow-x` 取值）—— `hidden` 版滚动后工具栏视口 top = **-499px**（已滚出可视区），`clip` 版 top = **0px**（稳稳粘住）；实验脚本 `技术总结/dev-scripts/sticky_overflow_test.html`。`npm run build`（tsc + vite build，19.8s）通过，产物已确认输出 `overflow-x:clip!important`。
+- **备注**：改动为纯 CSS，dev server 热更新即生效；页面实际观感待刷新确认。
+
 ### 优化：消息详情页「电量日报」整页改用「用电详情」的渲染（前端，2026-09-23）
 - **背景**：站内信的「电量日报」与用电记录点进去的「用电详情」讲的是同一天的事，却各写了一套渲染 —— 前者是"平铺 + 小节标题"（无卡片、电表无占比条、概况无对比项），后者是"分组卡 + 占比条 + 较前一日/较近期均值 + 结算信息"，同一份数据长出两副面孔。
 - **改动**（抽公共组件，不是复制一份代码）：
