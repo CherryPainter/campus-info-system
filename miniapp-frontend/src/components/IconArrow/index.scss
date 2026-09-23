@@ -15,6 +15,12 @@
   position: relative;
   display: inline-block;
   flex-shrink: 0;
+  /* 居中兜底：即使所在行容器忘了写 align-items:center，箭头也按自身居中，
+     避免定高箭头被推到交叉轴起点（顶部）而整体偏高、与文字中线错开。
+     已是 flex 居中行的场景：align-self 与父级 align-items 一致，零副作用。 */
+  align-self: center;
+  /* inline / 被文本行包裹场景的基线对齐兜底（flex 场景下被忽略，无副作用） */
+  vertical-align: middle;
 
   &::before {
     content: '';

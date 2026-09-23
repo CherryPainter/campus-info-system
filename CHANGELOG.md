@@ -20,6 +20,19 @@
   - 详情页 `useLoad` 读取 `semester_id` 参数并透传给 `getWeek(weekNumber, semesterId)`，与课表页当前查看的学期/周次一致。
 - **验证**：`tsc --noEmit` 通过；`taro build --type weapp` 成功；产物 `dist/pages/coursedetail/index.js`、`dist/pages/coursetable/index.js`、`dist/pages/schedule/index.js` 均含 `semester_id` 透传逻辑，`process.env` 残留为 0。
 
+### 修复：IconArrow 箭头与同行文字中线不对齐（前端，2026-09-23）
+- **用户反馈**：「我发现好多 `>` 符号都不是和文字的中线对齐的」——指定项目用纯 CSS 矢量 `<IconArrow>` 组件替换的 `>` 箭头。
+- **排查手段**：用无头 Chrome（`--headless=new --dump-dom` + 内联 JS 实测 `getBoundingClientRect()` 中心差值）复刻 `.icon-arrow` 与多组 flex 行容器（含 line-height 1/1.4、拉丁文、inline 包裹、漏设 `align-items:center` 的行）。
+- **实测结论**：
+  - 箭头作为 **flex 直接子元素且父行已 `align-items:center`** 时，与文字中心差值 = **0**（本就完美居中）——项目绝大多数列表行容器已满足此条件；
+  - 偏移只出现在两类边界：①箭头被 **inline 包裹**（无文字同行）→ 偏低约 2.4~3.8px；②父行 **漏设 `align-items:center`**，定高箭头被推到交叉轴起点（顶部）→ 整体偏高、与文字中线错开。
+- **根因**：`.icon-arrow` 自身无"强制自身居中"的兜底，一旦所在行容器忘了写 `align-items:center`，定高箭头就被 flex 默认 `stretch` 推到顶部。
+- **改动**（仅 `components/IconArrow/index.scss` 的 `.icon-arrow` 基类，零行为变更）：
+  - 加 `align-self: center;`——即使所在行容器忘了 `align-items:center`，箭头也按自身在交叉轴居中（已是 flex 居中行的场景：`align-self` 与父级 `align-items` 一致，**零副作用**）；
+  - 加 `vertical-align: middle;`——inline / 被文本行包裹场景的基线对齐兜底（flex 场景下被忽略，无副作用）。
+- **验证**：无头 Chrome 实测多组行——flex 居中行 r1/r2/r3 差值 = 0.0；漏设 `align-items:center` 的行 r5 修复前偏移、加 `align-self:center` 后恢复 **0.0**；`tsc --noEmit` 退出码 0；`taro build --type weapp` 编译成功。
+- **待真机确认**：开发者工具 / 真机上各列表页箭头与文字的观感（尤其个别未显式写 `align-items:center` 的行）。
+
 ### 修复：「我的」页底部「退出登录」与底部 TabBar 粘连（前端，2026-09-23）
 - **用户反馈**：「我的页面 往下拉到这就拉不动了，这个退出登录和这个导航栏连起来很难看」。
 - **根因**（`pages/profile/index.scss`）：
