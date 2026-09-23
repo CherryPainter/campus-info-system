@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+### 修复：富文本工具栏吸顶后上方仍留一条间隙（前端，2026-09-23）
+- **现象**：承接前一条（工具栏吸顶恢复）之后，滚到正文中段时工具栏**上方**空出一条带，透出正在滚动的正文。
+- **根因**：`MessageEditor.tsx` 里 `.editor-toolbar-sticky` 的吸顶偏移写死为 `top: 72px`（当初按"顶部有固定页头"给页头让位）。但本套 ProLayout 的页头会随页面一起滚走 —— 滚到正文中段时视口顶部已无页头，空出的 72px 便露出正文。前一条修复之前 sticky 一直是**失效**状态，这个偏移值从未真正生效、也就一直没暴露；sticky 恢复后它才开始起作用。
+- **改动**：`top: 72px` → `top: 0`（贴视口顶端），并注明「若将来开启固定页头（或移动端抽屉布局的固定导航），此值应改为对应高度」；同时**订正该段过期注释**——原先写「真凶是 antd Card 的 overflow: hidden」，本次排查证明实为 `.ant-pro-layout-content` 等三条全局规则的 `overflow-x`（见 `src/style.css`）。
+- **验证**：`npm run build`（tsc + vite build）通过，产物确认含 `.editor-toolbar-sticky` 规则与本次新增注释；`top: 0` 的吸顶行为已由 `技术总结/dev-scripts/sticky_overflow_test.html` 对照实验实测（clip 版滚动后工具栏视口 top = 0）。
+- **备注**：页面观感待刷新确认。
+
 ### 修复：管理端富文本编辑器工具栏「往下滚就消失」（sticky 被祖先 overflow-x 破坏）（前端，2026-09-23）
 - **现象**：编辑通知/推送时，正文下拉到中段后顶部的 WangEditor 工具栏不见了，滚回顶部又出现；控制台无任何报错。
 - **根因**：`admin-frontend/src/style.css` 的全局水平溢出防护，给 `.ant-pro-layout-content`、`.ant-pro-page-container-children-content`、`.ant-pro-grid-content` 设了 `overflow-x: hidden !important`，而这三个容器**都在 MessageEditor 工具栏的祖先链上**。按 CSS 规范，只要有一个方向的 `overflow` 不是 `visible`，另一轴的 `visible` 就会被计算成 `auto` —— 三个容器因此都成了「滚动容器」；但它们的高度由内容撑开、自身永不滚动（滚动实际发生在更外层），于是工具栏的 `position: sticky; top: 72px` 找不到真正滚动的祖先，退化成普通定位、随内容一起滚走。（同页右侧预览卡片早已因「sticky 在这套布局下不可靠」改用 JS fixed，本次是同一类问题的另一处。）

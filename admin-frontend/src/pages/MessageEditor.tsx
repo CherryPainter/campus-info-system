@@ -1167,15 +1167,23 @@ export default function MessageEditor() {
           overflow: visible;
         }
 
-        /* 富文本工具栏吸顶：长文向下滚动时工具栏固定在视口顶部，
-           提升编辑体验。
-           关键：antd Card 根元素默认 overflow:hidden，会让内部 sticky
-           相对 Card 而非视口（钉不住）。必须解除该 Card 的裁剪，
-           使工具栏的滚动容器回归视口。 */
+        /* 富文本工具栏吸顶：长文向下滚动时工具栏固定在视口顶部。
+           sticky 生效的前提是"最近的滚动祖先就是视口"——任何祖先元素只要
+           某个方向的 overflow 不是 visible（哪怕只写了 overflow-x: hidden），
+           另一轴的 visible 就会被计算成 auto、从而变成"滚动容器"；若它自身
+           并不滚动，sticky 便退化成普通定位、随内容一起滚走（曾因此在正文
+           中段找不到工具栏）。全局的 .ant-pro-layout-content / .ant-pro-grid-content
+           等三条规则已由 overflow-x: hidden 改为 clip（见 src/style.css），
+           此处保留 .ant-card 的裁剪解除作为双保险。 */
         .editor-card.ant-card { overflow: visible !important; }
         .editor-toolbar-sticky {
           position: sticky;
-          top: 72px;
+          /* 贴视口顶端。原先写死 72px 是给"固定页头"让位，但本套 ProLayout
+             的页头会随页面一起滚走 —— 滚到正文中段时视口顶部已没有页头，
+             空出的 72px 反而露出正在滚动的正文（表现为工具栏上方一条间隙）。
+             注：若将来开启固定页头（或移动端抽屉布局的固定导航），
+             此值应改为对应高度。 */
+          top: 0;
           z-index: 20;
           background: #fff;
           border-top-left-radius: 5px;
