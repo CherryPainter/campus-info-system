@@ -456,6 +456,11 @@ class ElectricityService:
         时区说明：入库 record_time 为北京本地时间（naive），此处用服务器本地时间
         now 作为"今天"近似（服务与设备均在中国时区），并以 days+1 的窗口兜底，
         避免 UTC/北京约 8 小时偏差造成边界日漏统计。
+
+        口径说明（v6.20.1 修正）：record_time 是**结算时刻**（= 用电日 + 1 天的 00:0x），
+        对外展示的「用电日」一律 = 结算日 - 1 天，与用电列表 / 日报 / 周报 / 月报统一
+        走 `_settle_date_to_usage_date`。此前本函数直接把 record_time 的日期当用电日，
+        导致趋势点整体**错位一天**（末点「今天」画的其实是昨天用电量）。
         """
         from collections import defaultdict
 
@@ -473,9 +478,12 @@ class ElectricityService:
             )
             daily = defaultdict(float)
             for r in records:
-                d = r.record_time.strftime("%Y-%m-%d") if r.record_time else None
-                if d:
-                    daily[d] += float(r.usage or 0)
+                if not r.record_time:
+                    continue
+                usage_date = self._settle_date_to_usage_date(
+                    r.record_time.strftime("%Y-%m-%d")
+                )
+                daily[usage_date] += float(r.usage or 0)
 
             points: list[dict[str, Any]] = []
             for i in range(days - 1, -1, -1):

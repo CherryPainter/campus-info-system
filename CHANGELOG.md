@@ -29,6 +29,13 @@
 - **数据订正（本地库）**：20261 学期存在 6 条 daily 复制行（教师为空、`weeks=[3]`），已软删（`deleted_reason='dup_daily_single_week_missing_teacher'`，备份见 `技术总结/courses_dup_daily_backup_20260923.tsv`）；20261 现仅剩 `full` 7 条有效行。
 - **待跟进**：补齐 20261 真实课表仍需一次成功的全量重爬；`system.semester_start_date` 仍未配置。
 
+### 修复：电量趋势图日期整体错位一天（未换算「用电日」）（后端，2026-09-23）
+- **现象**：小程序电量页「用电趋势」折线图，点位日期比实际差一天；月档末段归零的位置与真实数据停更日对不上。（用户报的"只有月有图、日/周没图"，其中日/周为空是**本地库缺近 7 天数据**，已由用户自行触发采集补齐；本条为顺带发现的日期口径缺陷。）
+- **根因**：`ElectricityService.get_usage_trend`（`app/services/electricity_service.py:476`）直接把 `electricity_records.record_time` 的日期当作「用电日」。而全项目口径是 `record_time` 为**结算时刻**（= 用电日 + 1 天的 00:0x），对外展示的用电日一律 = 结算日 - 1 天。用电记录列表、日报/周报/月报均已换算（`_settle_date_to_usage_date`），唯独趋势接口漏了 → 点位整体错位一天，末点「今天」画的其实是昨天的用量。
+- **改动**：`get_usage_trend` 聚合前先经 `self._settle_date_to_usage_date()` 换算成用电日，与其余口径统一；同步补充 docstring 口径说明。
+- **验证**：新增 `tests/test_electricity_trend_dates.py`（3 例：结算日用量须落在用电日 / 同日两块分表合并且相邻日不串点 / 点数与升序），与 `test_electricity_daily_aggregate.py` 合并跑 **14 passed**；另在真实库只读复跑（user 77）：结算 `2026-09-23 00:09:22` 的记录正确落在**用电日 2026-09-22**（2.34 度），末点今天为 0（当日尚未结算）。
+- **注意**：本次为后端代码改动，**需重启后端服务后生效**（旧进程仍按错位口径返回）。
+
 ---
 
 ## v6.20.0 (2026-09-23)
