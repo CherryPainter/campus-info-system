@@ -91,14 +91,82 @@ def _iter_students_with_cookie() -> list[tuple[int, str]]:
         session.close()
 
 
-def _send_notification(user_id: int, category: str, title: str, content: str) -> None:
-    """给指定用户写入一条站内通知（失败仅记日志，不中断任务）"""
+def _send_notification(
+    user_id: int,
+    category: str,
+    title: str,
+    content: str,
+    payload: dict | None = None,
+) -> None:
+    """
+    给指定用户写入一条站内通知（失败仅记日志，不中断任务）
+
+    payload 为可选的结构化数据：正文（content）仍是给人读的纯文本，
+    payload 是给小程序渲染可交互内容用的同一份数据（如电量周报/月报的每日明细，
+    点某一天可跳进该日用电详情）。无 payload 时消息按纯文本渲染。
+    """
     from app.services.user_notification_service import user_notification_service
 
     if not user_notification_service.create(
-        user_id=user_id, category=category, title=title, content=content
+        user_id=user_id,
+        category=category,
+        title=title,
+        content=content,
+        payload=payload,
     ):
         logger.warning(f"[电量] 站内通知写入失败 user_id={user_id} category={category}")
+
+
+def _build_report_payload(
+    report_type: str,
+    stats: dict,
+    remaining: dict,
+    period_label: str,
+) -> dict:
+    """
+    把日报/周报/月报的统计结果整理成结构化 payload（供小程序渲染）
+
+    - daily 升序（旧 -> 新），date 为**用电日**（stats 里已按 record_time - 1 天还原）
+    - meters 的电表名统一走 normalize_meter，避免「电表: 31栋512照明」与「31栋512」
+      两种写法在详情里显示成两块表
+    - 没有 daily_usage 的（日报）不输出 daily 字段
+    """
+    from app.repository.electricity_repository import ElectricityRepository
+
+    days_count = int(stats.get("days_count") or 0)
+    total = float(stats.get("total_usage") or 0)
+
+    meters = [
+        {
+            "meter": ElectricityRepository.normalize_meter(raw),
+            "usage": round(float(usage or 0), 2),
+        }
+        for raw, usage in (stats.get("meter_usage") or {}).items()
+    ]
+    meters.sort(key=lambda m: m["usage"], reverse=True)
+
+    payload: dict = {
+        "kind": "electricity_report",
+        "report_type": report_type,
+        "period_label": period_label,
+        "total_usage": round(total, 2),
+        "days_count": days_count,
+        "avg_daily": round(total / days_count, 2) if days_count > 0 else 0.0,
+        "meters": meters,
+    }
+
+    daily_usage = stats.get("daily_usage") or {}
+    if daily_usage:
+        payload["daily"] = [
+            {"date": date, "usage": round(float(usage or 0), 2)}
+            for date, usage in sorted(daily_usage.items())
+        ]
+
+    remaining_val = (remaining or {}).get("default")
+    if remaining_val is not None:
+        payload["remaining"] = round(float(remaining_val), 2)
+
+    return payload
 
 
 def _is_first_fetch(user_id: int) -> bool:
@@ -398,6 +466,7 @@ def push_electricity_daily() -> None:
                     "electricity_daily",
                     f"每日用电报告（{stats['date']}）",
                     ElectricityFormatter.format_daily(stats, remaining),
+                    payload=_build_report_payload("daily", stats, remaining, stats["date"]),
                 )
             # 独立检查低电量
             _check_low_power_internal(user_id, remaining)
@@ -449,6 +518,12 @@ def push_electricity_weekly() -> None:
                     "electricity_weekly",
                     f"每周用电报告（第{stats['week_num']}周）",
                     ElectricityFormatter.format_weekly(stats, remaining),
+                    payload=_build_report_payload(
+                        "weekly",
+                        stats,
+                        remaining,
+                        f"第 {stats['week_num']} 周（{stats['start_date']} ~ {stats['end_date']}）",
+                    ),
                 )
 
         complete_task_process(pid, "completed", "每周用电报告推送完成")
@@ -496,6 +571,12 @@ def push_electricity_monthly() -> None:
                     "electricity_monthly",
                     f"每月用电报告（{stats['year']}年{stats['month']}月）",
                     ElectricityFormatter.format_monthly(stats, remaining),
+                    payload=_build_report_payload(
+                        "monthly",
+                        stats,
+                        remaining,
+                        f"{stats['year']}年{stats['month']}月",
+                    ),
                 )
 
         complete_task_process(pid, "completed", "每月用电报告推送完成")

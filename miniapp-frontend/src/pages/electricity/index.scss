@@ -356,18 +356,80 @@
       border-bottom: none;
     }
 
+    // 左侧：用电日 + 相对标签 + 星期
+    .elec-record-left {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .elec-record-date-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 12rpx;
+    }
+
     .elec-record-date {
       font-size: $font-size-md;
-      color: $text-secondary;
+      color: $text-primary;
+      font-weight: 500;
       display: block;
     }
 
+    // 「昨天 / 前天」小标签
+    .elec-record-tag {
+      font-size: $font-size-xs;
+      color: $primary-color;
+      background: $primary-light;
+      border-radius: $radius-small;
+      padding: 2rpx 10rpx;
+      line-height: 1.6;
+      display: inline-block;
+    }
+
+    .elec-record-week {
+      display: block;
+      font-size: $font-size-xs;
+      color: $text-tertiary;
+      margin-top: 6rpx;
+    }
+
+    // 右侧：合计用量 + 单位 + 箭头
+    .elec-record-right {
+      display: flex;
+      flex-direction: row;
+      align-items: baseline;
+      gap: 4rpx;
+      flex-shrink: 0;
+      /* 作为内部 <IconArrow> 的 currentColor 来源 */
+      color: $text-tertiary;
+    }
+
     .elec-record-usage {
-      font-size: $font-size-md;
+      font-size: $font-size-xl;
       font-weight: 600;
       color: $text-primary;
       display: block;
     }
+
+    .elec-record-unit {
+      font-size: $font-size-xs;
+      color: $text-tertiary;
+      display: block;
+      margin-left: 4rpx;
+    }
+
+    .elec-record-arrow {
+      color: $text-tertiary;
+      margin-left: 12rpx;
+      align-self: center;
+    }
+  }
+
+  // 点击态（配合 View 的 hoverClass）
+  .elec-record-hover {
+    background: #f7f8fa;
   }
 
   .elec-more-btn {

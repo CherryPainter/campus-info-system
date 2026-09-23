@@ -7,6 +7,7 @@
 - 学生在小程序「我的消息」中查看，支持已读/未读
 """
 
+import json
 from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
@@ -20,6 +21,12 @@ class UserNotification(Base):
 
     user_id 指向 users.id（谁的通知）；category 区分通知类型；
     content 为纯文本（\n 换行，小程序 Text 直接渲染，不解析 Markdown）。
+
+    payload（2026-09-22 新增）为该通知的**结构化数据**（JSON 字符串，可空）。
+    存在的意义：电量周报/月报的正文虽然把「每日用电详情」逐行罗列了，但那是纯文本，
+    小程序端没法点某一天跳进当天详情。把同一份数据以结构化形式存下来后，
+    消息详情页就能渲染成可点击的每日行，与电量页的用电记录共用同一个详情页。
+    没有 payload 的老消息仍按纯文本渲染，向后兼容。
     """
 
     __tablename__ = "user_notifications"
@@ -35,6 +42,11 @@ class UserNotification(Base):
     category = Column(String(50), nullable=False, index=True, comment="通知类型")
     title = Column(String(200), nullable=False, comment="通知标题")
     content = Column(Text, nullable=True, comment="通知内容（纯文本，换行分隔）")
+    payload = Column(
+        Text,
+        nullable=True,
+        comment="结构化数据（JSON 字符串，可空；如电量周报/月报的每日明细）",
+    )
     is_read = Column(Boolean, default=False, nullable=False, comment="是否已读")
     created_at = Column(DateTime, default=datetime.now, index=True, comment="创建时间")
 
@@ -59,13 +71,20 @@ class UserNotification(Base):
         return f"<UserNotification(id={self.id}, user_id={self.user_id}, category={self.category})>"
 
     def to_dict(self) -> dict:
-        """转换为字典格式"""
+        """转换为字典格式（payload 解析为 dict，脏数据不抛异常）"""
+        parsed_payload = None
+        if self.payload:
+            try:
+                parsed_payload = json.loads(self.payload)
+            except (ValueError, TypeError):
+                parsed_payload = None
         return {
             "id": self.id,
             "user_id": self.user_id,
             "category": self.category,
             "title": self.title,
             "content": self.content,
+            "payload": parsed_payload,
             "is_read": bool(self.is_read),
             "cover_url": self.cover_url,
             "ref_type": self.ref_type,

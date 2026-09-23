@@ -6,6 +6,7 @@
 - 按用户写入/查询/统计/标记已读
 """
 
+import json
 from datetime import datetime
 
 from sqlalchemy import func, update
@@ -27,6 +28,7 @@ class UserNotificationRepository:
         cover_url: str | None = None,
         ref_type: str | None = None,
         ref_id: int | None = None,
+        payload: dict | None = None,
     ) -> UserNotification:
         """
         创建一条站内通知
@@ -40,6 +42,8 @@ class UserNotificationRepository:
             cover_url: 封面图 URL（关联公告时展示）
             ref_type: 关联业务类型（announcement 等，NULL=系统通知）
             ref_id: 关联业务 ID（如公告 ID）
+            payload: 结构化数据（dict，落库时序列化为 JSON 字符串）。
+                     供小程序渲染可交互内容（如电量周报/月报的每日明细行）。
 
         Returns:
             UserNotification: 创建的通知对象
@@ -49,6 +53,7 @@ class UserNotificationRepository:
             category=category,
             title=title,
             content=content,
+            payload=json.dumps(payload, ensure_ascii=False) if payload else None,
             cover_url=cover_url,
             ref_type=ref_type,
             ref_id=ref_id,

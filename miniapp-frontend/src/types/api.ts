@@ -274,6 +274,13 @@ export interface ElectricityCurrentResult extends ApiSuccess {
   data: { electricity: ElectricityCurrent | null; cookie_configured: boolean };
 }
 
+/**
+ * 单条原始用电记录（后端 electricity_records 表的一行）
+ *
+ * 注意：小程序端已不再直接展示原始记录（一天会有多块分表记录，不直观），
+ * 改由 ElectricityDailyRecord 按天聚合后展示。此类型仅作后端字段对照留存。
+ * `record_time` 是**结算时刻**（= 用电日 + 1 天的 00:0x），不是用电日。
+ */
 export interface ElectricityRecord {
   id?: number;
   time?: string;
@@ -283,14 +290,69 @@ export interface ElectricityRecord {
   created_at?: string;
 }
 
+/**
+ * 用电记录（**按用电日聚合**，一天一条）
+ *
+ * 后端已把同一天的各分表合并求和：一个宿舍有【两块分表】，原始记录是一天两条，
+ * 聚合后一天只有一条。`date` 是**用电日**（不是结算时刻的日期）——
+ * 记录表的 record_time 是「用电日 + 1 天」的 00:0x 结算时刻，后端已换算好。
+ */
+export interface ElectricityDailyRecord {
+  /** 用电日 YYYY-MM-DD */
+  date: string;
+  /** 当日各分表合计（度） */
+  total_usage: number;
+  /** 结算时刻 YYYY-MM-DD HH:mm:ss（用电日次日 00:0x） */
+  settle_time: string | null;
+}
+
 export interface ElectricityHistoryResult extends ApiSuccess {
   data: {
-    records: ElectricityRecord[];
+    /** 按用电日倒序；limit / offset 的单位是「天」 */
+    days: ElectricityDailyRecord[];
+    /** 有记录的天数 */
     total: number;
     offset: number;
     limit: number;
     /** 后端懒采集标记：该学生此前无任何记录且已配置 Cookie 时，本次已自动触发首次全量采集 */
     fetch_triggered?: boolean;
+  };
+}
+
+/** 单个用电日的某块分表用量 */
+export interface ElectricityDailyMeter {
+  /** 归一化后的电表名（已去「电表:」前缀与「照明」后缀） */
+  meter: string;
+  usage: number;
+  /** 占当日总用电量的百分比（0-100） */
+  percent: number;
+}
+
+/**
+ * 某个用电日的用电详情
+ *
+ * 对比口径：`prev` 是「该日之前有记录的最近一天」，`avg_recent` 是
+ * 「该日之前有记录的最近 N 天」的日均（按有记录天数平均，跳过无数据的日子）。
+ */
+export interface ElectricityDailyDetailResult extends ApiSuccess {
+  data: {
+    /** 用电日 YYYY-MM-DD */
+    date: string;
+    settle_time: string | null;
+    total_usage: number;
+    meter_count: number;
+    meters: ElectricityDailyMeter[];
+    prev: { date: string; total_usage: number } | null;
+    /** 较前一日增减（度），可为负 */
+    diff_prev: number | null;
+    avg_recent: number | null;
+    /** 参与日均计算的有记录天数（通常为 7） */
+    avg_recent_days: number;
+    /** 较近期日均增减（度），可为负 */
+    diff_avg: number | null;
+    /** 该日结算时点之后最近一次采集到的剩余电量 */
+    remaining: number | null;
+    remaining_at: string | null;
   };
 }
 
@@ -333,12 +395,40 @@ export interface ElectricityCookieTestResult extends ApiSuccess {
 
 // ==================== 个人站内通知（/api/miniapp/notifications/messages） ====================
 
+/** 电量报告的每日一行（周报/月报 payload.daily 的元素） */
+export interface ElectricityReportDailyItem {
+  /** 用电日 YYYY-MM-DD */
+  date: string;
+  usage: number;
+}
+
+/**
+ * 电量周报/月报的结构化 payload（站内通知 payload 字段）
+ *
+ * 正文 content 仍是给人读的纯文本；payload 是同一份数据的结构化形态，
+ * 供消息详情页渲染成可点击的「每日用电详情」（点某天跳该日用电详情）。
+ */
+export interface ElectricityReportPayload {
+  kind: 'electricity_report';
+  report_type: 'daily' | 'weekly' | 'monthly';
+  period_label: string;
+  total_usage: number;
+  days_count: number;
+  avg_daily: number;
+  meters: { meter: string; usage: number }[];
+  /** 日报无此字段（只有一天） */
+  daily?: ElectricityReportDailyItem[];
+  remaining?: number;
+}
+
 export interface UserNotificationItem {
   id: number;
   user_id: number;
   category: string; // electricity_daily / electricity_weekly / electricity_monthly / low_power / cookie_invalid / fetch_error / announcement
   title: string;
   content: string | null; // 纯文本，\n 换行
+  /** 结构化数据（可空）；老消息没有此字段，按纯文本渲染 */
+  payload?: ElectricityReportPayload | Record<string, unknown> | null;
   is_read: boolean;
   cover_url?: string | null; // 封面图 URL（关联公告时展示）
   ref_type?: string | null; // 关联业务类型：announcement / null

@@ -24,7 +24,8 @@
 - GET  /api/miniapp/weather/minutely           分钟级降水
 - GET  /api/miniapp/electricity/current        剩余电量（按用户隔离）
 - GET  /api/miniapp/electricity/refresh        轻量刷新剩余电量（未配置 Cookie 时引导）
-- GET  /api/miniapp/electricity/history        用电记录（该学生无任何记录时自动懒采集一次全量爬取，响应含 fetch_triggered）
+- GET  /api/miniapp/electricity/history        用电记录（按用电日聚合，一天一条；该学生无任何记录时自动懒采集一次全量爬取，响应含 fetch_triggered）
+- GET  /api/miniapp/electricity/daily/<date>   某个用电日的用电详情（总用量 + 各分表明细 + 对比 + 结算后剩余电量）
 - GET  /api/miniapp/electricity/trend          用电趋势
 - GET  /api/miniapp/electricity/cookie         电表 Cookie 配置状态（脱敏）
 - PUT  /api/miniapp/electricity/cookie         保存本人电表 Cookie
@@ -47,6 +48,8 @@ electricity_service）与 Repository，路由层只做鉴权与编排，不复�
 课表说明：Course 表是全校/单账号爬取的唯一课表数据，无学生身份维度（详见
 《微信小程序扩展开发指南》§35），小程序端查询的即该份课表，接口按周过滤返回。
 """
+
+from datetime import datetime
 
 from flask import Blueprint, g, request
 
@@ -698,25 +701,40 @@ def electricity_refresh():
 @student_bound_required
 def electricity_history():
     """
-    用电记录（按需分页，前端用多少请求多少，按 JWT 用户隔离）
+    用电记录（**按用电日聚合，一天一条**，按 JWT 用户隔离）
 
     查询参数：
-        limit  (int, 可选): 每页条数，默认 30，上限 1000
-        offset (int, 可选): 跳过条数，默认 0
-        days   (int, 可选): 仅统计/返回最近 N 天；缺省为全部
+        limit  (int, 可选): 每页**天数**（不是原始记录条数），默认 30，上限 1000
+        offset (int, 可选): 跳过天数，默认 0
 
     返回：
         {
-          "records": [...],
-          "total": <满足条件的记录总数>,
+          "days": [
+            {"date": "2026-09-17",                  # 用电日
+             "total_usage": 2.46,                   # 该日各分表合计
+             "settle_time": "2026-09-18 00:09:51"},  # 结算时刻
+            ...
+          ],
+          "total": <有记录的天数>,
           "offset": <本次偏移>,
-          "limit": <本次每页>,
+          "limit": <本次每页天数>,
           "fetch_triggered": <bool, 该学生此前无任何记录且已配置 Cookie 时自动触发首次全量采集>
         }
 
-    说明：学生第一次进入电量详情页（管理员尚未手动触发、定时任务未覆盖）时，
-    若其用电记录为空，后端自动为其触发一次全量爬取补全记录（异步执行，
-    本次仍返回空列表，前端应提示"正在首次采集，请稍后刷新"）。
+    为什么改成按天聚合（2026-09-22）：
+        一个宿舍通常有【两块分表】（如 "31栋512" 与 "310512"），同一次爬取会写入
+        两条 record_time 完全相同的记录。此前直接返回原始明细，列表就成「一天两条」，
+        每条只有一半的量，用户看不出当天真实用量。而项目里**其它所有用电展示本就是
+        按天合计**（趋势图 get_usage_trend、日报/周报/月报、本月已用 get_monthly_usage），
+        只有这一个列表口径不一致 —— 本次统一。
+
+    为什么日期是「用电日」而非 record_time 的日期：
+        record_time 是**结算时刻**（用电日次日 00:0x）。此前直接把它当用电日展示，
+        比日报的「统计日期」整体错后一天（列表写 09-18，日报写 09-17，其实是同一天的电）。
+        此处统一换算为用电日返回，前端不需要再做偏移。
+
+    说明：学生第一次进入电量详情页且其用电记录为空时，后端自动为其触发一次全量爬取
+    （异步执行，本次仍返回空列表，前端应提示"正在首次采集，请稍后刷新"）。
     """
     from app.services.electricity_service import get_electricity_service
 
@@ -727,10 +745,9 @@ def electricity_history():
     limit = max(1, min(limit, 1000))
     offset = request.args.get("offset", type=int) or 0
     offset = max(0, offset)
-    days = request.args.get("days", type=int)
 
-    records = svc.get_usage_records(days=days, limit=limit, offset=offset)
-    total = svc.count_usage_records(days=days)
+    payload = svc.get_daily_records(limit=limit, offset=offset)
+    total = payload["total"]
 
     # 懒采集：该学生从未有过任何用电记录（管理员未手动触发、定时任务尚未覆盖）时，
     # 自动为其触发一次全量爬取补全记录。异步执行不阻塞本次响应，
@@ -741,15 +758,50 @@ def electricity_history():
 
         fetch_triggered = lazy_fetch_for_user(user_id)
 
-    return api_success(
-        data={
-            "records": records,
-            "total": total,
-            "offset": offset,
-            "limit": limit,
-            "fetch_triggered": fetch_triggered,
+    return api_success(data={**payload, "fetch_triggered": fetch_triggered})
+
+
+@miniapp_bp.route("/electricity/daily/<date>", methods=["GET"])
+@student_bound_required
+def electricity_daily_detail(date: str):
+    """
+    某个用电日的用电详情（结构化，按 JWT 用户隔离）
+
+    路径参数：
+        date: 用电日 'YYYY-MM-DD'
+
+    返回：
+        {
+          "date": "2026-09-17",
+          "settle_time": "2026-09-18 00:09:51",
+          "total_usage": 2.46,
+          "meter_count": 2,
+          "meters": [{"meter": "310512", "usage": 1.71, "percent": 69.51}, ...],
+          "prev": {"date": "2026-09-16", "total_usage": 2.35} | null,
+          "diff_prev": 0.11 | null,
+          "avg_recent": 2.66 | null,      # 该日之前有记录的最近 7 天日均
+          "avg_recent_days": 7,
+          "diff_avg": -0.20 | null,
+          "remaining": 101.81 | null,     # 该日结算时点之后最近一次采集的剩余电量
+          "remaining_at": "2026-09-18 00:10:00" | null
         }
-    )
+
+    口径见 ElectricityService.get_daily_detail 的文档；该日无记录时返回 404。
+    """
+    from app.services.electricity_service import get_electricity_service
+
+    # 先校验日期格式，避免把非法串带进查询（strptime 会在 service 内抛 ValueError）
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return api_error(message="日期格式应为 YYYY-MM-DD", http_status=400)
+
+    user_id = int(g.current_user["user_id"])
+    svc = get_electricity_service(user_id=user_id)
+    detail = svc.get_daily_detail(date)
+    if detail is None:
+        return api_error(message="该日期暂无用电记录", http_status=404)
+    return api_success(data=detail)
 
 
 @miniapp_bp.route("/electricity/trend", methods=["GET"])

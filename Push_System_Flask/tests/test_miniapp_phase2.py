@@ -5,7 +5,7 @@
 - 鉴权：无 token 401、admin token 403（student_required 生效）
 - 课表：today（按 full_date 过滤）、week（按 weeks 字段过滤 + 默认当前周 + 非法周 400）、current
 - 天气：current / hourly / alerts（复用 weather_service，路由薄封装）
-- 电量：current / history（limit 透传）
+- 电量：current / history（按用电日聚合，一天一条）/ daily/<date>（用电日详情）
 
 设计：路由层所有业务查询走现有 Service 单例，测试直接 mock Service 方法
 或注入 schedule_service 内存缓存，不依赖真实 MySQL。
@@ -472,22 +472,99 @@ def test_electricity_current(client, student_token):
     assert data["electricity"]["is_low_power"] is False
 
 
-def test_electricity_history_passes_limit(client, student_token):
+def test_electricity_history_returns_daily_aggregates(client, student_token):
+    """
+    用电记录按用电日聚合（一天一条），limit / offset 的单位是「天」
+
+    为什么改：原始明细里一个宿舍一天有两条（两块分表，record_time 完全相同），
+    列表直接展示就是「一天两条」，且 record_time 是结算时刻（用电日 + 1 天），
+    整体错后一天。现由 Service 按天聚合后返回，路由只做透传。
+    """
     captured = {}
 
-    def _fake_records(days=None, limit=1000, offset=0):
-        captured["days"] = days
+    def _fake_daily(limit=30, offset=0):
         captured["limit"] = limit
-        return [{"record_time": "2026-08-27 00:00", "usage": 1.2, "meter": "default"}]
+        captured["offset"] = offset
+        return {
+            "days": [
+                {
+                    "date": "2026-09-17",
+                    "total_usage": 2.46,
+                    "settle_time": "2026-09-18 00:09:51",
+                }
+            ],
+            "total": 1,
+            "offset": offset,
+            "limit": limit,
+        }
 
     with mock.patch("app.services.electricity_service.get_electricity_service") as _get_svc:
-        _get_svc.return_value.get_usage_records.side_effect = _fake_records
-        _get_svc.return_value.count_usage_records.return_value = 1  # 非首次采集，不触发懒爬取
+        _get_svc.return_value.get_daily_records.side_effect = _fake_daily
         resp = client.get(
             "/api/miniapp/electricity/history?limit=5",
             headers={"Authorization": f"Bearer {student_token}"},
         )
     assert resp.status_code == 200
-    assert captured["days"] is None  # 不按天过滤，避免时区错配截断
-    assert captured["limit"] == 5
-    assert len(resp.get_json()["data"]["records"]) == 1
+    assert captured["limit"] == 5  # limit 透传，单位是天
+    assert captured["offset"] == 0
+
+    data = resp.get_json()["data"]
+    assert data["total"] == 1
+    assert data["days"][0]["date"] == "2026-09-17"
+    assert data["days"][0]["total_usage"] == 2.46
+    assert data["fetch_triggered"] is False  # 有记录，不触发懒采集
+
+
+def test_electricity_daily_detail_rejects_bad_date(client, student_token):
+    """用电日格式非法 → 400，且不把脏串带进查询"""
+    with mock.patch("app.services.electricity_service.get_electricity_service") as _get_svc:
+        resp = client.get(
+            "/api/miniapp/electricity/daily/not-a-date",
+            headers={"Authorization": f"Bearer {student_token}"},
+        )
+        assert resp.status_code == 400
+        _get_svc.return_value.get_daily_detail.assert_not_called()
+
+
+def test_electricity_daily_detail_404_when_no_record(client, student_token):
+    """该用电日无记录 → 404"""
+    with mock.patch("app.services.electricity_service.get_electricity_service") as _get_svc:
+        _get_svc.return_value.get_daily_detail.return_value = None
+        resp = client.get(
+            "/api/miniapp/electricity/daily/2026-09-17",
+            headers={"Authorization": f"Bearer {student_token}"},
+        )
+    assert resp.status_code == 404
+
+
+def test_electricity_daily_detail_ok(client, student_token):
+    """详情正常返回：总用量 + 各分表占比 + 对比 + 结算后剩余电量"""
+    detail = {
+        "date": "2026-09-17",
+        "settle_time": "2026-09-18 00:09:51",
+        "total_usage": 2.46,
+        "meter_count": 2,
+        "meters": [
+            {"meter": "310512", "usage": 1.71, "percent": 69.51},
+            {"meter": "31栋512", "usage": 0.75, "percent": 30.49},
+        ],
+        "prev": {"date": "2026-09-16", "total_usage": 2.35},
+        "diff_prev": 0.11,
+        "avg_recent": 2.66,
+        "avg_recent_days": 7,
+        "diff_avg": -0.20,
+        "remaining": 101.81,
+        "remaining_at": "2026-09-18 00:10:00",
+    }
+    with mock.patch("app.services.electricity_service.get_electricity_service") as _get_svc:
+        _get_svc.return_value.get_daily_detail.return_value = detail
+        resp = client.get(
+            "/api/miniapp/electricity/daily/2026-09-17",
+            headers={"Authorization": f"Bearer {student_token}"},
+        )
+    assert resp.status_code == 200
+    data = resp.get_json()["data"]
+    assert data["total_usage"] == 2.46
+    assert data["meter_count"] == 2
+    # 各分表占比合计应为 100%
+    assert round(sum(m["percent"] for m in data["meters"]), 2) == 100.00

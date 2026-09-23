@@ -68,3 +68,168 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* ==================== 电量报告的结构化正文 ==================== */
+/* 与页面一致：平铺、不用卡片包裹，靠小节标题与细分隔线分组 */
+
+.msgd-section-title {
+  display: block;
+  font-size: $font-size-md;
+  font-weight: 600;
+  color: $text-primary;
+  margin: $spacing-lg 0 $spacing-xs;
+}
+
+.msgd-section-tip {
+  display: block;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-bottom: $spacing-xs;
+}
+
+/* ---- 概况：大数字 + 统计周期 ---- */
+.msgd-total-row {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8rpx;
+}
+
+.msgd-total-num {
+  font-size: $font-size-xxl;
+  font-weight: 600;
+  color: $text-primary;
+  line-height: 1.1;
+}
+
+.msgd-total-unit {
+  font-size: $font-size-md;
+  color: $text-secondary;
+}
+
+.msgd-period {
+  display: block;
+  font-size: $font-size-sm;
+  color: $text-tertiary;
+  margin-top: 8rpx;
+}
+
+/* ---- 三列统计（统计天数 / 日均用电 / 剩余电量） ---- */
+.msgd-stat-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-top: $spacing-md;
+  padding: $spacing-md 0;
+  border-top: 1rpx solid $border-color;
+  border-bottom: 1rpx solid $border-color;
+}
+
+.msgd-stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+
+.msgd-stat-val {
+  font-size: $font-size-md;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.msgd-stat-label {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-top: 6rpx;
+}
+
+.msgd-stat-divider {
+  width: 1rpx;
+  height: 40rpx;
+  background: $border-color;
+}
+
+/* ---- 通用行（各电表用电 / 每日用电） ---- */
+.msgd-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-md 0;
+  border-bottom: 1rpx solid $border-color;
+
+  &.last {
+    border-bottom: none;
+  }
+}
+
+.msgd-row-left {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.msgd-row-label-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.msgd-row-label {
+  display: block;
+  font-size: $font-size-md;
+  color: $text-primary;
+}
+
+/* 「昨天 / 前天」小标签 */
+.msgd-row-tag {
+  font-size: $font-size-xs;
+  color: $primary-color;
+  background: $primary-light;
+  border-radius: $radius-small;
+  padding: 2rpx 10rpx;
+  line-height: 1.6;
+}
+
+.msgd-row-sub {
+  display: block;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-top: 6rpx;
+}
+
+.msgd-row-right {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 4rpx;
+  flex-shrink: 0;
+  /* 作为内部 <IconArrow> 的 currentColor 来源 */
+  color: $text-tertiary;
+}
+
+.msgd-row-value {
+  font-size: $font-size-md;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.msgd-row-unit {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-left: 4rpx;
+}
+
+.msgd-row-arrow {
+  color: $text-tertiary;
+  margin-left: 12rpx;
+  align-self: center;
+}
+
+/* 点击态（配合 View 的 hoverClass） */
+.msgd-row-hover {
+  background: #f7f8fa;
+}

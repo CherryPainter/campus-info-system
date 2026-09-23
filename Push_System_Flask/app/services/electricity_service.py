@@ -485,6 +485,180 @@ class ElectricityService:
         finally:
             session.close()
 
+    # ==================== 按「用电日」聚合与单日详情 ====================
+    #
+    # 两条不可动摇的口径（与 tasks 里的日报/周报/月报保持一致）：
+    #   1. electricity_records.record_time 是**结算时刻** = 用电日 + 1 天的 00:0x。
+    #      所以对外展示的「用电日」一律 = 结算日 - 1 天。此前用电记录列表直接把
+    #      record_time 当用电日展示，比日报的「统计日期」整体错位一天。
+    #   2. 一个宿舍通常有**两块分表**（如 31栋512 与 310512），同一次爬取写入两条
+    #      record_time 完全相同的记录。所以必须按天聚合，否则列表会「一天两条」。
+    #      分表名一律经 ElectricityRepository.normalize_meter 归一化后再合并，
+    #      否则同一块表的历史写法差异（"电表: 31栋512照明" / "31栋512"）会显示成两行。
+
+    @staticmethod
+    def _settle_date_to_usage_date(settle_date: str) -> str:
+        """结算日 -> 用电日（减 1 天）；解析失败原样返回"""
+        try:
+            return (
+                datetime.strptime(settle_date, "%Y-%m-%d") - timedelta(days=1)
+            ).strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            return settle_date
+
+    def get_daily_records(self, limit: int = 30, offset: int = 0) -> dict[str, Any]:
+        """
+        用电记录（按用电日聚合，一天一条，已合并该宿舍全部电表，按用户隔离）
+
+        分页单位是**天**（不是原始记录条数）：limit=20 表示 20 天。
+
+        Returns:
+            Dict: {
+                "days": [
+                    {"date": "2026-09-17",           # 用电日
+                     "total_usage": 2.46,            # 当日各分表合计
+                     "settle_time": "2026-09-18 00:09:51"},
+                    ...
+                ],
+                "total": <有记录的天数>,
+                "offset": ..., "limit": ...,
+            }
+        """
+        session = get_db()
+        try:
+            rows = ElectricityRepository.get_daily_aggregates(
+                session, user_id=self._user_id, limit=limit, offset=offset
+            )
+            total = ElectricityRepository.count_daily_aggregates(
+                session, user_id=self._user_id
+            )
+            days = [
+                {
+                    "date": self._settle_date_to_usage_date(r["settle_date"]),
+                    "total_usage": r["total_usage"],
+                    "settle_time": r["settle_time"],
+                }
+                for r in rows
+            ]
+            return {"days": days, "total": total, "offset": offset, "limit": limit}
+        finally:
+            session.close()
+
+    def get_daily_detail(self, usage_date: str) -> dict[str, Any] | None:
+        """
+        某个**用电日**的用电详情（结构化，按用户隔离）
+
+        Args:
+            usage_date: 用电日 'YYYY-MM-DD'
+
+        Returns:
+            Dict 或 None（该用电日无任何记录）：
+            {
+              "date": "2026-09-17",
+              "settle_time": "2026-09-18 00:09:51",
+              "total_usage": 2.46,
+              "meter_count": 2,
+              "meters": [{"meter": "310512", "usage": 1.71, "percent": 69.51}, ...],
+              "prev": {"date": "2026-09-16", "total_usage": 2.35} | None,
+              "diff_prev": 0.11 | None,
+              "avg_recent": 2.66 | None,   # 该日之前「有记录的最近 N 天」日均
+              "avg_recent_days": 7,
+              "diff_avg": -0.20 | None,
+              "remaining": 101.81 | None,  # 结算时点之后最近一次采集的剩余电量
+              "remaining_at": "2026-09-18 00:10:00" | None,
+            }
+
+        对比口径说明：`prev` 取「该日之前有记录的最近一天」，`avg_recent` 取
+        「该日之前有记录的最近 7 天」的日均（按有记录天数平均，跳过无数据的日子，
+        与周报的 `日均用电 = 总用量 / 有记录天数` 口径一致）；都跳过缺数据的日子，
+        避免把没采集到的日期当成 0 度稀释平均值。
+        """
+        session = get_db()
+        try:
+            records = ElectricityRepository.get_records_of_usage_day(
+                session, usage_date, user_id=self._user_id
+            )
+            if not records:
+                return None
+
+            # 按归一化电表名聚合（复用唯一真相源，不另立规则）
+            meter_usage: dict[str, float] = {}
+            settle_time: datetime | None = None
+            for r in records:
+                name = ElectricityRepository.normalize_meter(r.meter)
+                meter_usage[name] = meter_usage.get(name, 0.0) + float(r.usage or 0)
+                if r.record_time and (settle_time is None or r.record_time > settle_time):
+                    settle_time = r.record_time
+
+            total = round(sum(meter_usage.values()), 2)
+            meters = [
+                {
+                    "meter": name,
+                    "usage": round(usage, 2),
+                    "percent": round(usage / total * 100, 2) if total > 0 else 0.0,
+                }
+                for name, usage in sorted(
+                    meter_usage.items(), key=lambda kv: kv[1], reverse=True
+                )
+            ]
+
+            # ---- 对比数据：一次查询覆盖窗口内全部按日合计 ----
+            usage_dt = datetime.strptime(usage_date, "%Y-%m-%d")
+            window_start = usage_dt - timedelta(days=45)
+            window_end = usage_dt + timedelta(days=1)  # 排除当日自身的结算记录
+            totals = ElectricityRepository.get_daily_totals_between(
+                session,
+                start_time=window_start,
+                end_time=window_end,
+                user_id=self._user_id,
+            )
+            prior: list[tuple[str, float]] = [
+                (self._settle_date_to_usage_date(settle_date), usage)
+                for settle_date, usage in totals
+            ]
+            prior = [(d, u) for d, u in prior if d < usage_date]
+
+            prev_entry = prior[-1] if prior else None
+            recent = prior[-7:]
+            avg_recent = (
+                round(sum(u for _, u in recent) / len(recent), 2) if recent else None
+            )
+
+            # ---- 该用电日结算之后的剩余电量（remaining 表按 naive UTC 存储）----
+            cutoff_local = usage_dt + timedelta(days=1, hours=23, minutes=59, seconds=59)
+            cutoff_utc = cutoff_local - timedelta(hours=8)
+            remaining_rec = ElectricityRepository.get_remaining_at_or_before(
+                session, cutoff=cutoff_utc, meter="default", user_id=self._user_id
+            )
+
+            return {
+                "date": usage_date,
+                "settle_time": settle_time.strftime("%Y-%m-%d %H:%M:%S")
+                if settle_time
+                else None,
+                "total_usage": total,
+                "meter_count": len(meters),
+                "meters": meters,
+                "prev": {
+                    "date": prev_entry[0],
+                    "total_usage": prev_entry[1],
+                }
+                if prev_entry
+                else None,
+                "diff_prev": round(total - prev_entry[1], 2) if prev_entry else None,
+                "avg_recent": avg_recent,
+                "avg_recent_days": len(recent),
+                "diff_avg": round(total - avg_recent, 2) if avg_recent is not None else None,
+                "remaining": round(float(remaining_rec.remaining), 2)
+                if remaining_rec and remaining_rec.remaining is not None
+                else None,
+                "remaining_at": self._utc_to_local(remaining_rec.recorded_at)
+                if remaining_rec
+                else None,
+            }
+        finally:
+            session.close()
+
     def get_building_meter(self) -> str | None:
         """
         获取该用户宿舍真实楼栋名（优先可读的「照明」变体，如「31栋512照明」）

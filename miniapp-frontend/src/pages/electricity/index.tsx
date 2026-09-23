@@ -5,7 +5,8 @@ import Taro from '@tarojs/taro';
 import dayjs from 'dayjs';
 
 import * as electricityApi from '@/api/electricity';
-import type { ElectricityCurrent, ElectricityRecord, ElectricityTrendPoint } from '@/types/api';
+import type { ElectricityCurrent, ElectricityDailyRecord, ElectricityTrendPoint } from '@/types/api';
+import { relativeDayLabel, weekdayCNFromDate } from '@/utils/date';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
 import IconArrow from '@/components/IconArrow';
@@ -49,10 +50,12 @@ export default function ElectricityPage() {
   const [current, setCurrent] = useState<ElectricityCurrent | null>(null);
   // 是否已配置电表 Cookie（false = 未配置，需引导去设置；null = 接口未返回/未知）
   const [cookieConfigured, setCookieConfigured] = useState<boolean | null>(null);
-  const [records, setRecords] = useState<ElectricityRecord[]>([]);
+  // 用电记录：按「用电日」聚合，一天一条（一个宿舍有两块分表，后端已合计）
+  const [days, setDays] = useState<ElectricityDailyRecord[]>([]);
   const [trendTab, setTrendTab] = useState<TrendTab>('week');
 
-  // 用电记录按需分页：首屏拉一页，点「查看更多记录」再向后端请求下一页追加
+  // 用电记录按需分页：首屏拉一页，点「查看更多」再向后端请求下一页追加。
+  // 注意：limit / offset 的单位是【天】不是条数（后端已按天聚合）
   const RECORD_PAGE = 20;
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -81,7 +84,7 @@ export default function ElectricityPage() {
     try {
       const [cRes, hRes, tRes, mRes] = await Promise.all([
         electricityApi.getCurrent().catch(() => null),
-        electricityApi.getHistory(RECORD_PAGE, 0).catch(() => null),
+        electricityApi.getDailyRecords(RECORD_PAGE, 0).catch(() => null),
         electricityApi.getTrend(trendTab).catch(() => null),
         // 本月已用：改由后端按自然月聚合返回。
         // 此前只把首屏 20 条记录里属于本月的 usage 相加，导致详情页 74.04、
@@ -96,9 +99,9 @@ export default function ElectricityPage() {
       } else {
         setCurrent(null);
       }
-      const recs = hRes?.data?.records ?? [];
-      setRecords(recs);
-      setTotal(hRes?.data?.total ?? recs.length);
+      const dayList = hRes?.data?.days ?? [];
+      setDays(dayList);
+      setTotal(hRes?.data?.total ?? dayList.length);
       setTrendData(tRes?.data?.points ?? []);
       // 后端懒采集：该学生首次进入（无任何记录）且已配置 Cookie 时已自动触发全量爬取，
       // 本次仍返回空数据，提示稍后下拉刷新查看
@@ -114,26 +117,32 @@ export default function ElectricityPage() {
     }
   };
 
-  // 加载更多记录：向后端请求下一页并追加
+  // 加载更多记录：向后端请求下一页并追加（offset 以「已加载天数」计）
   const loadMore = async () => {
     if (loadingMore) return;
-    if (records.length >= total) return;
+    if (days.length >= total) return;
     setLoadingMore(true);
     try {
-      const hRes = await electricityApi.getHistory(RECORD_PAGE, records.length).catch(() => null);
-      const more = hRes?.data?.records ?? [];
+      const hRes = await electricityApi.getDailyRecords(RECORD_PAGE, days.length).catch(() => null);
+      const more = hRes?.data?.days ?? [];
       if (more.length > 0) {
-        setRecords((prev) => [...prev, ...more]);
-        setTotal(hRes?.data?.total ?? records.length + more.length);
+        setDays((prev) => [...prev, ...more]);
+        setTotal(hRes?.data?.total ?? days.length + more.length);
       } else {
         // 没有更多了，以已加载数量为准
-        setTotal(records.length);
+        setTotal(days.length);
       }
     } catch {
       Taro.showToast({ title: '加载失败', icon: 'none' });
     } finally {
       setLoadingMore(false);
     }
+  };
+
+  // 点击某一天的记录 → 跳该用电日详情页
+  const openDailyDetail = (date: string) => {
+    if (!date) return;
+    Taro.navigateTo({ url: `/pages/electricity-daily/index?date=${date}` });
   };
 
   // 切换趋势区间：仅重新拉取趋势点（轻量）
@@ -171,13 +180,10 @@ export default function ElectricityPage() {
   });
 
   // 电表名：清洗展示（去掉"电表:"前缀 + "照明"后缀，统一为"31栋512"格式）
-  // 优先用 current.meter；若其为占位值 "default" 或空，则从历史用电记录里解析真实楼栋
+  // current.meter 由后端从用电记录中解析出的真实楼栋名（不是分表名），
+  // 为占位值 "default" 或空时视为未配置
   const resolveMeter = (): string => {
-    const raw = (() => {
-      if (current?.meter && current.meter.trim() !== 'default') return current.meter.trim();
-      const fromHistory = records.find((r) => r.meter && r.meter.trim() !== 'default');
-      return fromHistory?.meter ? fromHistory.meter.trim() : '';
-    })();
+    const raw = current?.meter && current.meter.trim() !== 'default' ? current.meter.trim() : '';
     return raw.replace(/^电表[:：]\s*/, '').replace(/照明$/, '').trim();
   };
   const roomText = resolveMeter() || '楼栋未配置';
@@ -422,7 +428,7 @@ export default function ElectricityPage() {
     );
   }
 
-  const isEmpty = !current && records.length === 0;
+  const isEmpty = !current && days.length === 0;
 
   return (
     <ScrollView scrollY className="page electricity-page">
@@ -536,43 +542,58 @@ export default function ElectricityPage() {
             )}
           </View>
 
-          {/* ===== 用电记录（按需分页） ===== */}
+          {/* ===== 用电记录（一天一条合计，点击查看当日详情） ===== */}
           <View className="card elec-records-card">
             <View className="elec-records-head">
               <View className="elec-records-head-row">
                 <Text className="elec-records-title">用电记录</Text>
                 {total > 0 && (
-                  <Text className="elec-records-count">共 {total} 条</Text>
+                  <Text className="elec-records-count">共 {total} 天</Text>
                 )}
               </View>
-              {/* 用电记录由学校系统每日 00 点后结算前一天，故与"剩余电量"（实时）会有差异 */}
-              <Text className="elec-records-tip">每日 00 点后结算前一天的用电</Text>
+              {/* 用电记录由学校系统每日 00 点后结算前一天，故与"剩余电量"（实时）会有差异；
+                  一个宿舍有两块分表，此处已按天合计，点某天可看各分表明细 */}
+              <Text className="elec-records-tip">每日 00 点后结算前一天的用电，点击查看当日明细</Text>
             </View>
-            {records.length === 0 ? (
+            {days.length === 0 ? (
               <Text className="elec-records-empty">暂无记录</Text>
             ) : (
               <>
-                {records.map((r, idx) => {
-                  const t = r.record_time || r.time || '';
-                  const d = t ? dayjs(t) : null;
-                  const dateText = d && d.isValid() ? d.format('YYYY-MM-DD HH:mm') : '--';
-                  const isLast = idx >= records.length - 1;
+                {days.map((d, idx) => {
+                  const isLast = idx >= days.length - 1;
+                  const rel = relativeDayLabel(d.date);
+                  const wk = weekdayCNFromDate(d.date);
                   return (
                     <View
                       className={`elec-record ${isLast ? 'last' : ''}`}
-                      key={r.id ?? idx}
+                      key={d.date}
+                      hoverClass="elec-record-hover"
+                      hoverStayTime={50}
+                      onClick={() => openDailyDetail(d.date)}
                     >
-                      <Text className="elec-record-date">{dateText}</Text>
-                      <Text className="elec-record-usage">{Number(r.usage || 0).toFixed(2)}度</Text>
+                      <View className="elec-record-left">
+                        <View className="elec-record-date-row">
+                          <Text className="elec-record-date">{d.date}</Text>
+                          {rel ? <Text className="elec-record-tag">{rel}</Text> : null}
+                        </View>
+                        {wk ? <Text className="elec-record-week">{wk}</Text> : null}
+                      </View>
+                      <View className="elec-record-right">
+                        <Text className="elec-record-usage">
+                          {Number(d.total_usage || 0).toFixed(2)}
+                        </Text>
+                        <Text className="elec-record-unit">度</Text>
+                        <IconArrow size="sm" className="elec-record-arrow" />
+                      </View>
                     </View>
                   );
                 })}
-                {records.length < total ? (
+                {days.length < total ? (
                   <View className="elec-more-btn" onClick={loadMore}>
                     <Text className="elec-more-text">
                       {loadingMore
                         ? '加载中…'
-                        : `查看更多记录（${total - records.length}）`}
+                        : `查看更多（还剩 ${total - days.length} 天）`}
                     </Text>
                     {loadingMore ? null : <IconArrow size="sm" />}
                   </View>

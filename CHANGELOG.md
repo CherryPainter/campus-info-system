@@ -6,6 +6,30 @@
 
 ## Unreleased
 
+### 变更：小程序用电记录改为「按用电日一天一条」并新增用电详情页（前后端，2026-09-22）
+- **用户反馈**：「宿舍电量的用电有些不合理了，为什么？…不够直观…应该一天显示一条总的用电，并且如果想看详细的点击那条数据就要跳到详细页面」。排查后确认「不合理」有**三重根因**，且都能在库里实证：
+  1. **一天两条**：一个宿舍有**两块分表**（`31栋512` 与 `310512`），同一次爬取各写一条、`record_time` 完全相同，列表直接铺原始明细就是"同一天两行"，每行只有一半的量（截图中 `2026-09-18 00:09` 出现 0.75 与 1.71 两条，合计才是当天真实用量 2.46）。
+  2. **日期整体错后一天**：`electricity_records.record_time` 是**结算时刻**（= 实际用电日 + 1 天的 `00:0x`），直接当日期展示，列表写 09-18、站内信日报写「统计日期 09-17」，同一天的电看起来是两天。
+  3. **口径不一致**：`get_usage_trend()`、周报/月报 `get_statistics_by_range()`、`get_monthly_usage()` **本就全按天合计**，只有这个列表返回原始明细——不一致的只有它。
+- **后端**：
+  - `app/repository/electricity_repository.py` 新增「按用电日聚合」区块（含口径依据注释）：`get_daily_aggregates`（按结算日 `GROUP BY` 求和 + 分页）、`count_daily_aggregates`（`COUNT(DISTINCT day)`，分页单位是「天」）、`get_records_of_usage_day`（用电日 D 的原始记录落在 `[D+1 00:00, D+2 00:00)`）、`get_daily_totals_between`（对比口径用，一次查出区间内每日合计）、`get_remaining_at_or_before`（还原某历史用电日结算时点的剩余电量）。`func.date()` 在 MySQL 返回 `date`、SQLite 返回 `str`，统一由 `_to_date_str` 归一为 `'YYYY-MM-DD'`。
+  - `app/services/electricity_service.py` 新增 `get_daily_records(limit, offset)`（返回 `days:[{date(用电日), total_usage, settle_time}]`，`date` 已由 `_settle_date_to_usage_date` 换算，前端不再做偏移）与 `get_daily_detail(usage_date)`（`total_usage` / `meters`（按 `normalize_meter` 归一后合并、按用量倒序、带 `percent`）/ `prev` + `diff_prev` / `avg_recent` + `avg_recent_days` + `diff_avg` / `remaining` + `remaining_at`）。对比口径取「该日之前**有记录**的最近一天 / 最近 7 天」，跳过缺数据的日子，与周报「日均 = 总用量 ÷ 有记录天数」一致，不把没采集到的日期当 0 度稀释。原有 `get_usage_records` / `count_usage_records` **保留**（管理端 `admin_routes.py` 与 `electricity_routes.py` 仍在用）。
+  - `app/api/miniapp_routes.py`：`GET /api/miniapp/electricity/history` **契约变更**——返回体由 `records` 改为 `days`，`limit`/`offset` 单位由「条」改为「天」，并**删除 `days` 查询参数**（原前端未使用，留着会与"按天显示"语义混淆）；新增 `GET /api/miniapp/electricity/daily/<date>`（日期格式非法 400、该日无记录 404）。
+  - `app/model/user_notification.py` + repository + service 新增 `payload`（TEXT，可空）列与 `create(payload=...)` 透传；`tasks._build_report_payload()` 为日报/周报/月报生成结构化 payload（电表名已归一化、`daily` 升序、日报无 `daily` 字段）。**正文 `content` 仍是纯文本、格式未动**（向后兼容），`payload` 只用于前端结构化渲染，老消息无该字段照旧按纯文本显示。
+- **前端（小程序）**：
+  - `pages/electricity/index`：「用电记录」由原始明细改为**按天一条**（用电日 + `昨天/前天` 标签 + 星期 + 当日合计），每行可点，跳 `/pages/electricity-daily/index?date=YYYY-MM-DD`；文案「共 N 条」→「共 N 天」，「查看更多记录（N）」→「查看更多（还剩 N 天）」；`loadMore` 的 offset 改用「已加载天数」。电表名解析简化为直接用 `current.meter`（后端 `get_building_meter()` 已从记录中解析出楼栋名，前端不再从明细里翻）。
+  - **新增 `pages/electricity-daily`**：头部沿用「消息详情」排版，「用电概况」（当日总量 + 较前一日 + 较近 7 日均值）、「各电表用电详情」（每块分表一行 + 占比条，说清"合计是怎么来的"）、「结算信息」（统计日期 / 结算时间 / 当时剩余电量）。**刻意不照搬日报的纯文本**，改成结构化 + 只在最易困惑的"分表占比"处加占比条（与页面既有折线图不重叠）。分隔线用相邻兄弟选择器（`.a + .a`）而非 `:last-child`——末尾还有说明文字，`:last-child` 会失效。
+  - `pages/message-detail`：带 `payload` 的电量报告改为结构化渲染（概况大数字 + 三列统计 + 各电表 + **每日用电可点击进当日详情**，日报则给一条直达当日明细的入口）；payload 经 `asReportPayload()` 运行时收窄，结构不符即退回纯文本。日期口径辅助函数 `weekdayCNFromDate` / `relativeDayLabel` 收口到既有 `utils/date.ts`（不另立一套）。
+- **不兼容变更与迁移**：
+  - `/api/miniapp/electricity/history` 响应字段 `records` → `days`（老版本小程序需同步更新，否则该列表为空）。管理端接口未受影响。
+  - `user_notifications` 新增 `payload` 列：本地已跑 `python init_db.py migrate`；**生产需手动执行** `ALTER TABLE user_notifications ADD COLUMN payload TEXT;`（或跑同一迁移脚本），否则站内信详情读不到 payload（不影响纯文本正文）。
+- **验证**：
+  - 新增 `tests/test_electricity_daily_aggregate.py`（11 条：分表合并、按天分页/倒序、用户隔离、用电日窗口与**左闭右开边界**、区间合计升序、结算日→用电日换算（含跨月/跨年/非法值）、`_build_report_payload` 结构、`days_count=0` 不除零、以及一条**读真实库**的一致性校验：`days` 严格倒序不重复、同日各分表之和 == 当日合计、占比合计 ≈100%）。
+  - 原 `test_miniapp_phase2.py::test_electricity_history_passes_limit` 按新契约重写为 `test_electricity_history_returns_daily_aggregates`，并补 3 条 `/electricity/daily/<date>` 用例（400 / 404 / 200）。
+  - **全量 `pytest`：231 passed**（改动前 227 passed + 1 failed，失败那条正是旧契约用例）。
+  - 小程序端 `tsc --noEmit` 退出码 0；`taro build --type weapp` 编译成功。
+- **待真机确认**：列表点击态、详情页占比条观感、消息详情页结构化正文在真机上的排版。
+
 ### 修复：登录页「同意」勾选图标改为 CSS 矢量（前端，2026-09-22）
 - **问题**：勾选态用文本字符 `✓`（U+2713），属 dingbat 类字符，字形与粗细随用户自定义字体变化（Apple / Android / 各中文字体对 `✓` 的渲染差异很明显），与已修的 `+` / `×` / 箭头属同一类问题。
 - **改动**（仅 `pages/login/`）：

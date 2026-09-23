@@ -306,6 +306,177 @@ class ElectricityRepository:
 
         return query.scalar() or 0
 
+    # ==================== 按「用电日」聚合 ====================
+    #
+    # 关键语义（全项目统一，勿改）：electricity_records.record_time 是**结算时刻**，
+    # 即「实际用电日 + 1 天的 00:0x」。依据：
+    #   - 爬虫在用电日次日 00 点后结算前一天，同一次爬取抓到的多块分表时刻完全相同；
+    #   - tasks._build_weekly_stats / _build_monthly_stats 均按 record_time - 1 天
+    #     还原用电日；_build_daily_stats 亦按 record_time 落在 target_date + 1 天取值；
+    #   - 小程序电量页自身提示「每日 00 点后结算前一天的用电」。
+    # 因此按下表分组后，展示给用户的「用电日」= 结算日 - 1 天。
+
+    @staticmethod
+    def _settle_date_expr():
+        """结算日表达式：DATE(record_time)，MySQL / SQLite 均支持"""
+        return func.date(ElectricityRecord.record_time)
+
+    @staticmethod
+    def _to_date_str(value: Any) -> str:
+        """把 func.date() 的返回值统一成 'YYYY-MM-DD'（MySQL 返回 date，SQLite 返回 str）"""
+        if value is None:
+            return ""
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d")
+        return str(value)[:10]
+
+    @staticmethod
+    def get_daily_aggregates(
+        session: Session,
+        user_id: int | None = None,
+        limit: int = 30,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """
+        按结算日分组、分页返回每日合计用电（一天一条，已合并该日全部电表）
+
+        这是「一个宿舍多块分表 → 一天多条原始记录」的聚合层：
+        同一个宿舍的两块分表当天各有一条记录，此处按天 SUM 后一天只剩一条。
+
+        Returns:
+            List[Dict]: 按结算日倒序，每项
+                {
+                  "settle_date": "2026-09-18",      # 结算日（= 用电日 + 1 天）
+                  "total_usage": 2.46,
+                  "record_count": 2,                # 该日涉及的分表条数
+                  "settle_time": "2026-09-18 00:09:51",
+                }
+        """
+        day = ElectricityRepository._settle_date_expr()
+        query = session.query(
+            day.label("settle_date"),
+            func.sum(ElectricityRecord.usage).label("total_usage"),
+            func.count(ElectricityRecord.id).label("record_count"),
+            func.max(ElectricityRecord.record_time).label("settle_time"),
+        ).filter(ElectricityRecord.record_time.isnot(None))
+
+        if user_id is not None:
+            query = query.filter(ElectricityRecord.user_id == user_id)
+
+        rows = (
+            query.group_by(day)
+            .order_by(desc(day))
+            .limit(max(1, int(limit)))
+            .offset(max(0, int(offset)))
+            .all()
+        )
+
+        result: list[dict[str, Any]] = []
+        for settle_date, total, count, settle_time in rows:
+            result.append(
+                {
+                    "settle_date": ElectricityRepository._to_date_str(settle_date),
+                    "total_usage": round(float(total or 0), 2),
+                    "record_count": int(count or 0),
+                    "settle_time": settle_time.strftime("%Y-%m-%d %H:%M:%S")
+                    if isinstance(settle_time, datetime)
+                    else None,
+                }
+            )
+        return result
+
+    @staticmethod
+    def count_daily_aggregates(session: Session, user_id: int | None = None) -> int:
+        """统计有记录的「结算日」天数（用于按天分页的 total）"""
+        day = ElectricityRepository._settle_date_expr()
+        query = session.query(func.count(func.distinct(day))).filter(
+            ElectricityRecord.record_time.isnot(None)
+        )
+        if user_id is not None:
+            query = query.filter(ElectricityRecord.user_id == user_id)
+        return int(query.scalar() or 0)
+
+    @staticmethod
+    def get_records_of_usage_day(
+        session: Session,
+        usage_date: str,
+        user_id: int | None = None,
+    ) -> list[ElectricityRecord]:
+        """
+        取某个**用电日**的全部原始记录（该日各分表各一条）
+
+        用电日 D 的结算记录落在 [D+1 00:00, D+2 00:00)。
+
+        Args:
+            usage_date: 用电日 'YYYY-MM-DD'
+        """
+        start = datetime.strptime(usage_date, "%Y-%m-%d") + timedelta(days=1)
+        end = start + timedelta(days=1)
+
+        query = session.query(ElectricityRecord).filter(
+            and_(
+                ElectricityRecord.record_time >= start,
+                ElectricityRecord.record_time < end,
+            )
+        )
+        if user_id is not None:
+            query = query.filter(ElectricityRecord.user_id == user_id)
+        return query.order_by(ElectricityRecord.meter).all()
+
+    @staticmethod
+    def get_daily_totals_between(
+        session: Session,
+        start_time: datetime,
+        end_time: datetime,
+        user_id: int | None = None,
+    ) -> list[tuple[str, float]]:
+        """
+        取时间范围内按结算日的每日合计，返回 [(结算日 'YYYY-MM-DD', 合计), ...] 升序
+
+        用于「较前一日」「近 7 日均值」等对比口径，避免为每个对比项单独查一次库。
+        """
+        day = ElectricityRepository._settle_date_expr()
+        query = session.query(
+            day.label("settle_date"),
+            func.sum(ElectricityRecord.usage).label("total_usage"),
+        ).filter(
+            and_(
+                ElectricityRecord.record_time.isnot(None),
+                ElectricityRecord.record_time >= start_time,
+                ElectricityRecord.record_time < end_time,
+            )
+        )
+        if user_id is not None:
+            query = query.filter(ElectricityRecord.user_id == user_id)
+
+        rows = query.group_by(day).order_by(day).all()
+        return [
+            (ElectricityRepository._to_date_str(d), round(float(u or 0), 2))
+            for d, u in rows
+        ]
+
+    @staticmethod
+    def get_remaining_at_or_before(
+        session: Session,
+        cutoff: datetime,
+        meter: str = "default",
+        user_id: int | None = None,
+    ) -> ElectricityRemaining | None:
+        """
+        取 cutoff 时刻（含）之前最近一条剩余电量记录
+
+        用于给「某个历史用电日」还原当时的剩余电量；无记录返回 None。
+        """
+        query = session.query(ElectricityRemaining).filter(
+            and_(
+                ElectricityRemaining.meter == meter,
+                ElectricityRemaining.recorded_at <= cutoff,
+            )
+        )
+        if user_id is not None:
+            query = query.filter(ElectricityRemaining.user_id == user_id)
+        return query.order_by(desc(ElectricityRemaining.recorded_at)).first()
+
     @staticmethod
     def get_daily_statistics(
         session: Session,

@@ -4,6 +4,7 @@ import type {
   ElectricityCookieConfigResult,
   ElectricityCookieTestResult,
   ElectricityCurrentResult,
+  ElectricityDailyDetailResult,
   ElectricityHistoryResult,
   ElectricityMonthlyResult,
   ElectricityTrendResult,
@@ -23,15 +24,22 @@ export function refresh(): Promise<ElectricityCurrentResult> {
   return get<ElectricityCurrentResult>('/api/miniapp/electricity/refresh');
 }
 
-/** 用电记录（按需分页：limit 每页条数，offset 偏移；days 可选最近 N 天） */
-export function getHistory(
+/** 用电记录（**按用电日聚合，一天一条**；limit/offset 的单位是「天」不是条数） */
+export function getDailyRecords(
   limit = 30,
   offset = 0,
-  days?: number,
 ): Promise<ElectricityHistoryResult> {
-  const params: Record<string, unknown> = { limit, offset };
-  if (days != null) params.days = days;
-  return get<ElectricityHistoryResult>('/api/miniapp/electricity/history', params);
+  return get<ElectricityHistoryResult>('/api/miniapp/electricity/history', { limit, offset });
+}
+
+/**
+ * 某个用电日的用电详情（总用量 + 各分表明细 + 对比 + 结算后剩余电量）
+ *
+ * 口径：一个宿舍有两块分表，后端已归一化电表名并按天合计。
+ * 该用电日无记录时后端返回 404。
+ */
+export function getDailyDetail(date: string): Promise<ElectricityDailyDetailResult> {
+  return get<ElectricityDailyDetailResult>(`/api/miniapp/electricity/daily/${date}`);
 }
 
 /** 用电趋势（按日聚合，range: day|week|month），仅返回少量点 */

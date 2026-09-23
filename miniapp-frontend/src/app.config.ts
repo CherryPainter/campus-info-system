@@ -7,6 +7,7 @@ export default defineAppConfig({
     'pages/coursedetail/index',
     'pages/profile/index',
     'pages/electricity/index',
+    'pages/electricity-daily/index',
     'pages/login/index',
     'pages/weather/index',
     'pages/announcement/detail/index',

@@ -26,6 +26,7 @@ class UserNotificationService:
         cover_url: str | None = None,
         ref_type: str | None = None,
         ref_id: int | None = None,
+        payload: dict | None = None,
     ) -> bool:
         """
         给指定用户写入一条站内通知（纯文本，换行分隔）
@@ -39,6 +40,8 @@ class UserNotificationService:
             cover_url: 封面图 URL（关联公告时展示）
             ref_type: 关联业务类型（announcement 等，NULL=系统通知）
             ref_id: 关联业务 ID（如公告 ID）
+            payload: 结构化数据（dict，可空）。供小程序渲染可交互内容，
+                     如电量周报/月报的每日明细（可点进当天详情）。
 
         Returns:
             bool: 是否写入成功
@@ -55,6 +58,7 @@ class UserNotificationService:
                     cover_url=cover_url,
                     ref_type=ref_type,
                     ref_id=ref_id,
+                    payload=payload,
                 )
                 session.commit()
                 logger.info(f"[UserNotification] 已写入站内通知 user_id={user_id} category={category}")
