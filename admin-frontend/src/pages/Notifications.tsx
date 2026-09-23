@@ -50,7 +50,16 @@ const catMap: Record<NotificationCategory, { label: string; color: string }> = {
   other: { label: "其他", color: "default" },
 };
 
-export default function Notifications({ embedded = false }: { embedded?: boolean }) {
+export default function Notifications({
+  embedded = false,
+  registerCreate,
+}: {
+  embedded?: boolean;
+  /** 嵌入模式下把「打开新建弹窗」注册给宿主：新建按钮挂在宿主的卡片 extra 上
+      （与页面其它 Tab 位置一致），而弹窗状态在本组件内，故用注册回调交付动作。
+      宿主卸载时传 null 注销。 */
+  registerCreate?: (fn: (() => void) | null) => void;
+}) {
   const [loading, setLoading] = useState(false);
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
@@ -121,6 +130,15 @@ export default function Notifications({ embedded = false }: { embedded?: boolean
     });
     setModalOpen(true);
   };
+
+  // 把「打开新建弹窗」注册给宿主（仅嵌入模式）。openCreate 内部只调用稳定的
+  // setState 与 form 实例，注册一次即可，故不把 openCreate 放进依赖。
+  useEffect(() => {
+    if (!embedded || !registerCreate) return;
+    registerCreate(openCreate);
+    return () => registerCreate(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded, registerCreate]);
 
   const openEdit = async (record: NotificationItem) => {
     setEditingId(record.id);

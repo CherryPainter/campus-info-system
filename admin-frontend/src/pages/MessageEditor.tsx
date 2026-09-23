@@ -163,8 +163,8 @@ export default function MessageEditor() {
   const [searchParams] = useSearchParams();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
-  // 大屏才显示右侧预览
-  const showPreview = screens.lg && !isMobile;
+  // 宽屏才「具备」放右侧预览的空间（移动端一律不放）
+  const previewSupported = screens.lg && !isMobile;
   // App 上下文 message（替代静态 antMessage，正确消费主题/语言配置）
   const antMessage = useMessage();
 
@@ -205,6 +205,11 @@ export default function MessageEditor() {
 
   // 预览相关状态
   const [showPhonePreview, setShowPhonePreview] = useState(true);
+  // 预览面板是否真正渲染（决定左列宽度与 Row 间距）：
+  // 必须是「公告模式 + 宽屏 + 预览开关打开」三者都满足。
+  // 早先左列宽度只看「宽屏」，于是推送模式（本就没有手机预览）和关掉预览开关后，
+  // 右列不渲染、左列却仍被压成 lg=14，右侧空出一大片。
+  const previewVisible = isAnno && previewSupported && showPhonePreview;
   const [previewKey, setPreviewKey] = useState(0);
   const handleFieldChange = useCallback(() => {
     setPreviewKey((k) => k + 1);
@@ -221,7 +226,7 @@ export default function MessageEditor() {
   >(null);
 
   useEffect(() => {
-    if (!(isAnno && showPreview && showPhonePreview)) return;
+    if (!previewVisible) return;
     const update = () => {
       const el = previewColRef.current;
       if (!el) return;
@@ -240,7 +245,7 @@ export default function MessageEditor() {
       window.removeEventListener("resize", update);
       window.clearTimeout(t);
     };
-  }, [isAnno, showPreview, showPhonePreview, previewKey]);
+  }, [previewVisible, previewKey]);
 
   // ==================== 实时预览数据 ====================
 
@@ -748,14 +753,17 @@ export default function MessageEditor() {
       </Card>
 
       <Spin spinning={loading && !initialDataLoaded}>
-        <Row gutter={showPreview ? 24 : 0} align="stretch" className="editor-main-row">
+        <Row gutter={previewVisible ? 24 : 0} align="stretch" className="editor-main-row">
           {/* ===== 左侧：编辑区 ===== */}
-          <Col xs={24} lg={showPreview ? 14 : 24} xl={showPreview ? 13 : 24}>
+          {/* 宽度随「预览面板是否真正占位」收放：预览不占位时铺满整行，避免右侧留白 */}
+          <Col xs={24} lg={previewVisible ? 14 : 24} xl={previewVisible ? 13 : 24}>
             <Card
               title={pageTitle}
               extra={
                 <Space>
-                  {isAnno && showPreview && (
+                  {/* 预览开关按钮：只要宽屏就保留（关掉后还得能再打开），
+                      故条件用 previewSupported 而非 previewVisible */}
+                  {isAnno && previewSupported && (
                     <Tooltip title={showPhonePreview ? "隐藏预览" : "显示预览"}>
                       <Button
                         icon={showPhonePreview ? <EyeInvisibleOutlined /> : <EyeOutlined />}
@@ -1138,7 +1146,7 @@ export default function MessageEditor() {
           </Col>
 
           {/* ===== 右侧：手机模型预览（仅公告模式 + 大屏）===== */}
-          {isAnno && showPreview && showPhonePreview && (
+          {previewVisible && (
             <Col xs={0} lg={10} xl={11} ref={previewColRef} style={{ display: "flex" }}>
               <div
                 className="preview-sticky-wrap"

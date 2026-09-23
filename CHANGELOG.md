@@ -6,6 +6,21 @@
 
 ## Unreleased
 
+### 修复：编辑页右侧大片空白 + 「近期提醒」缺新建入口（前端，2026-09-23）
+- **现象**（一次反馈三处）：
+  1. 编辑通知时关掉「预览」开关后，右侧留出一大片空白；
+  2. 新建 / 编辑**自定义推送**时右侧同样是空白（推送本就没有手机预览，属"原生自带"）；
+  3. 消息中心「近期提醒」Tab 里没有新建入口，只能对已有条目做编辑 / 停用 / 删除。
+- **根因（前两处同源）**：`MessageEditor.tsx` 的左列宽度只看 `showPreview`（＝屏幕够宽），**没看右侧预览面板是否真的渲染**。右列的渲染条件是 `isAnno && showPreview && showPhonePreview` —— 推送模式下 `isAnno` 为假、关掉预览开关时 `showPhonePreview` 为假，两者都让右列不渲染；而左列宽度写的是 `lg={showPreview ? 14 : 24}`，宽屏下恒为 14，于是空出 10/24 无人占据。
+- **改动（前两处）**（`MessageEditor.tsx`）：
+  - 新增派生布尔 `previewVisible = isAnno && previewSupported && showPhonePreview` 作为「预览面板是否真正占位」的**唯一判据**，左列宽度、`Row gutter`、预览列渲染条件、钉住测量的 effect 全部改用它；
+  - 预览开关按钮仍用 `previewSupported`（关掉后还得能再打开，不能被自己的开关条件锁死）；
+  - 顺带把 `showPreview` 更名为 `previewSupported`：本次 bug 正是「有没有空间放」与「是否显示」这两个语义被当成一个，改名后不再混淆。
+- **根因（第三处）**：`Messages.tsx` 按「近期提醒由内嵌组件自带新建」的假设，把自己那行的新建按钮隐藏了（`!isReminder &&`）；但 `Notifications` 的新建按钮只存在于**非嵌入分支**的 `Card extra` 里，嵌入模式只渲染列表内容 —— 两边都没有入口。
+- **改动（第三处）**：新建按钮仍挂在卡片 `extra`（与其它 Tab 位置一致），由 `Notifications` 在嵌入模式下通过新增的 `registerCreate` 回调把 `openCreate` 交给宿主，宿主按钮直接调用、卸载时注销（传 `null`）。`openCreate` 内部只用稳定的 setState 与 form 实例，注册一次即可，故未放进 effect 依赖。`/notifications` 独立页（非嵌入）用法不受影响。
+- **验证**：`npm run build`（tsc + vite build，18.16s）通过；产物 `dist/assets/index-Dg5eKMT8.js` 确认含 `lg:K?14:24` / `xl:K?13:24`（`K` 即三项条件与 `d&&o&&q`）、`新建提醒`（按钮 + 弹窗标题共 3 处）、`registerCreate`（注册 + 注销 2 处）。
+- **备注**：页面观感待刷新确认。
+
 ### 修复：富文本工具栏吸顶位置（被固定页头遮挡 / 上方留间隙）（前端，2026-09-23）
 - **现象**：接前一条（sticky 恢复正常）之后，工具栏虽吸住了，但位置始终不对 —— 先是在**上方**空出一条带透出滚动正文，改成贴视口顶端后又**被固定页头遮住第一行**。
 - **根因**：`.editor-toolbar-sticky` 的吸顶偏移写死为 `top: 72px`（当初按"顶部有固定页头"给页头让位）。前一条修复之前 sticky 一直是**失效**状态，这个偏移从未真正生效、也就一直没暴露；sticky 恢复后才开始起作用。**管理端页头是固定定位、不随页面滚动**，因此：偏移取 `0` → 被页头盖住；偏移取写死的偏大值（`72px`）→ 在页头下方露出一条间隙。真实页头高度由 ProLayout / antd Layout 决定，随断点与主题变化。

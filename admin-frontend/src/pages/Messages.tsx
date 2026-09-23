@@ -10,7 +10,7 @@
  *
  * 编辑操作跳转独立编辑页（MessageEditor），不再使用 Modal 弹窗。
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Card,
@@ -97,6 +97,13 @@ export default function Messages() {
   // Tab 状态（从 URL ?tab=push|announcement 读取初始值，兼容旧路径重定向）
   const initialTab = (searchParams.get("tab") as ActiveTab) || "announcement";
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
+
+  // 提醒 Tab 的「新建」按钮与其它 Tab 一样挂在卡片 extra（视觉一致），但弹窗状态在
+  // 内嵌的 Notifications 内部 —— 由子组件把「打开新建弹窗」注册上来，按钮直接调用。
+  const reminderCreateRef = useRef<(() => void) | null>(null);
+  const registerReminderCreate = useCallback((fn: (() => void) | null) => {
+    reminderCreateRef.current = fn;
+  }, []);
 
   // ========== 公告列表状态 ==========
   const [annoList, setAnnoList] = useState<AnnouncementListItem[]>([]);
@@ -630,7 +637,15 @@ export default function Messages() {
         styles={{ body: { padding: isMobile ? 12 : 24 } }}
         extra={
           <Space>
-            {!isReminder && (
+            {isReminder ? (
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => reminderCreateRef.current?.()}
+              >
+                新建提醒
+              </Button>
+            ) : (
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
@@ -748,8 +763,9 @@ export default function Messages() {
           />
         )}
 
-        {/* 近期提醒（内嵌管理组件，含自己的筛选/表格/新建/编辑弹窗） */}
-        {isReminder && <Notifications embedded />}
+        {/* 近期提醒（内嵌管理组件，含自己的筛选/表格/编辑弹窗；新建按钮经
+            registerCreate 交给上方卡片 extra，与其它 Tab 位置一致） */}
+        {isReminder && <Notifications embedded registerCreate={registerReminderCreate} />}
       </Card>
     </div>
   );
