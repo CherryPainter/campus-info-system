@@ -1,0 +1,235 @@
+@import '../../styles/variables.scss';
+
+/**
+ * 用电详情正文（组件）
+ *
+ * 样式必须写在组件自己的 scss 里：小程序自定义组件默认样式隔离，
+ * 页面 wxss 与 app.wxss 的 class 选择器都不会作用到组件内部节点。
+ *
+ * 因此下方 .card 规格在此复写一份（与 styles/theme.scss 的 .card 完全同源，仅 6 行），
+ * 而不是另造一套卡片视觉；若将来调整卡片规格，需两处同步。
+ */
+
+.card {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  padding: $spacing-lg;
+  margin: 0 $spacing-md $spacing-md;
+}
+
+.elecd-tip {
+  padding: $spacing-xl 0;
+  text-align: center;
+  color: $text-tertiary;
+  font-size: $font-size-md;
+}
+
+// ==================== 头部（与「消息详情」页排版一致） ====================
+.elecd-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 $spacing-lg;
+  margin-bottom: $spacing-sm;
+}
+
+.elecd-cat {
+  font-size: $font-size-xs;
+  color: $primary-color;
+  background: $primary-light;
+  padding: 4rpx 16rpx;
+  border-radius: $radius-full;
+}
+
+.elecd-head-time {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}
+
+.elecd-title {
+  display: block;
+  padding: 0 $spacing-lg;
+  font-size: $font-size-lg;
+  font-weight: 600;
+  color: $text-primary;
+  line-height: 1.5;
+}
+
+.elecd-divider {
+  height: 1rpx;
+  background: $border-color;
+  margin: $spacing-md $spacing-lg;
+}
+
+// ==================== 卡片内通用 ====================
+.elecd-card-title {
+  display: block;
+  font-size: $font-size-lg;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.elecd-note {
+  display: block;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  line-height: 1.7;
+  margin-top: $spacing-md;
+}
+
+// ==================== 用电概况 ====================
+.elecd-total {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  margin-top: $spacing-md;
+}
+
+.elecd-total-num {
+  font-size: 64rpx;
+  font-weight: 600;
+  color: $text-primary;
+  line-height: 1.1;
+}
+
+.elecd-total-unit {
+  font-size: $font-size-sm;
+  color: $text-secondary;
+  margin-left: 6rpx;
+}
+
+.elecd-total-label {
+  display: block;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-top: 4rpx;
+}
+
+// 较前一日 / 较近期均值：两列并列，中间细分隔线
+.elecd-cmp-row {
+  display: flex;
+  flex-direction: row;
+  margin-top: $spacing-md;
+  padding-top: $spacing-md;
+  border-top: 1rpx solid $border-color;
+}
+
+.elecd-cmp-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.elecd-cmp-divider {
+  width: 1rpx;
+  background: $border-color;
+  margin: 0 $spacing-md;
+}
+
+.elecd-cmp-label {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+}
+
+.elecd-cmp-val {
+  font-size: $font-size-lg;
+  font-weight: 600;
+  color: $text-primary;
+  margin-top: 6rpx;
+}
+
+.elecd-cmp-sub {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-top: 2rpx;
+}
+
+// ==================== 各电表用电详情 ====================
+.elecd-card-head {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.elecd-card-count {
+  font-size: $font-size-sm;
+  color: $text-tertiary;
+}
+
+.elecd-meter {
+  margin-top: $spacing-md;
+}
+
+// 多块分表之间加细分隔线（用相邻兄弟选择器，避免依赖 :last-child —— 末尾还有说明文字）
+.elecd-meter + .elecd-meter {
+  margin-top: $spacing-lg;
+  padding-top: $spacing-lg;
+  border-top: 1rpx solid $border-color;
+}
+
+.elecd-meter-row {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.elecd-meter-name {
+  font-size: $font-size-md;
+  color: $text-primary;
+}
+
+.elecd-meter-usage {
+  font-size: $font-size-md;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+// 占比条：纯色主色填充（不做渐变，保持克制）
+.elecd-bar {
+  height: 12rpx;
+  border-radius: $radius-full;
+  background: #eef0f3;
+  margin-top: 10rpx;
+  overflow: hidden;
+}
+
+.elecd-bar-fill {
+  height: 100%;
+  border-radius: $radius-full;
+  background: $primary-color;
+}
+
+.elecd-meter-pct {
+  display: block;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-top: 6rpx;
+}
+
+// ==================== 结算信息 ====================
+// 行间分隔用相邻兄弟选择器，避免 :last-child 因为末尾的说明文字而失效
+.elecd-info-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-md 0;
+}
+
+.elecd-info-row + .elecd-info-row {
+  border-top: 1rpx solid $border-color;
+}
+
+.elecd-info-label {
+  font-size: $font-size-md;
+  color: $text-secondary;
+}
+
+.elecd-info-val {
+  font-size: $font-size-md;
+  color: $text-primary;
+}

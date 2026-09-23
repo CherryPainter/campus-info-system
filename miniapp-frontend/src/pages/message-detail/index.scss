@@ -8,6 +8,15 @@
   box-sizing: border-box;
 }
 
+/**
+ * 电量日报：整页交给 <ElectricityDailyDetail>（与用电详情页同一份实现），
+ * 底色与留白随之对齐用电详情页 —— 卡片自带左右外边距，故页面左右留白归零。
+ */
+.msgd-page--daily {
+  background: #f5f6fa;
+  padding: $spacing-lg 0 calc(48rpx + env(safe-area-inset-bottom));
+}
+
 .msgd-tip {
   padding: $spacing-xl 0;
   text-align: center;

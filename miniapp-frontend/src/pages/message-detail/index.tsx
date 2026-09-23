@@ -6,6 +6,7 @@ import * as notificationsApi from '@/api/notifications';
 import type { ElectricityReportPayload, UserNotificationItem } from '@/types/api';
 import { API_BASE_URL } from '@/utils/request';
 import { relativeDayLabel, weekdayCNFromDate } from '@/utils/date';
+import ElectricityDailyDetail from '@/components/ElectricityDailyDetail';
 import IconArrow from '@/components/IconArrow';
 import './index.scss';
 
@@ -18,6 +19,11 @@ import './index.scss';
  * 电量报告类通知额外带了结构化 payload：正文 content 是给人读的纯文本（保持兼容），
  * payload 则用于渲染「每日用电」可点击列表（点某天进那天的用电详情）。
  * 没有 payload 的老消息、以及其它类型通知，仍按纯文本渲染。
+ *
+ * 其中电量**日报**更进一步：payload.period_label 就是那天的用电日，讲的与用电记录
+ * 点进去的「用电详情」是同一件事，因此整页直接换成 <ElectricityDailyDetail>
+ * （同一份实现、实时取数），不再另写一套视觉；周报/月报没有对应的单日页面，
+ * 仍用列表式渲染，逐日点进详情。
  */
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -219,24 +225,51 @@ export default function MessageDetailPage() {
 
   // 电量报告且 payload 结构合法 → 结构化渲染；否则退回纯文本
   const report = asReportPayload(detail.payload);
+  /**
+   * 日报：payload.period_label 就是那天的用电日（周报/月报的 period_label 不是日期）。
+   *
+   * 命中则整页交给 <ElectricityDailyDetail>（= 用电详情页的同一份实现），
+   * 头部文案改用消息自己的分类标签 / 时间 / 标题，剩下三张卡片与用电详情页完全一致。
+   */
+  const reportDate =
+    report &&
+    detail.category === 'electricity_daily' &&
+    USAGE_DATE_RE.test(String(report.period_label || ''))
+      ? String(report.period_label)
+      : '';
 
   return (
-    <ScrollView scrollY className="msgd-page">
-      <View className="msgd-head">
-        <Text className="msgd-cat">{CATEGORY_LABEL[detail.category] || '系统通知'}</Text>
-        <Text className="msgd-time">{fullTime(detail.created_at)}</Text>
-      </View>
-      <Text className="msgd-title">{detail.title}</Text>
-      {/* 封面图：标题之下、正文之上，有图才渲染（无图不占位） */}
-      {detail.cover_url ? (
-        <Image className="msgd-cover" src={`${API_BASE_URL}${detail.cover_url}`} mode="widthFix" />
-      ) : null}
-      <View className="msgd-divider" />
-      {report ? (
-        <ElectricityReportBody payload={report} />
+    <ScrollView scrollY className={reportDate ? 'msgd-page msgd-page--daily' : 'msgd-page'}>
+      {reportDate ? (
+        <ElectricityDailyDetail
+          date={reportDate}
+          categoryLabel={CATEGORY_LABEL[detail.category] || '电量日报'}
+          headTime={fullTime(detail.created_at)}
+          title={detail.title}
+        />
       ) : (
-        /* 正文为纯文本、\n 换行，用 pre-wrap 保留原始排版 */
-        <Text className="msgd-content">{detail.content || '（无正文）'}</Text>
+        <>
+          <View className="msgd-head">
+            <Text className="msgd-cat">{CATEGORY_LABEL[detail.category] || '系统通知'}</Text>
+            <Text className="msgd-time">{fullTime(detail.created_at)}</Text>
+          </View>
+          <Text className="msgd-title">{detail.title}</Text>
+          {/* 封面图：标题之下、正文之上，有图才渲染（无图不占位） */}
+          {detail.cover_url ? (
+            <Image
+              className="msgd-cover"
+              src={`${API_BASE_URL}${detail.cover_url}`}
+              mode="widthFix"
+            />
+          ) : null}
+          <View className="msgd-divider" />
+          {report ? (
+            <ElectricityReportBody payload={report} />
+          ) : (
+            /* 正文为纯文本、\n 换行，用 pre-wrap 保留原始排版 */
+            <Text className="msgd-content">{detail.content || '（无正文）'}</Text>
+          )}
+        </>
       )}
     </ScrollView>
   );

@@ -6,6 +6,17 @@
 
 ## Unreleased
 
+### 优化：消息详情页「电量日报」整页改用「用电详情」的渲染（前端，2026-09-23）
+- **背景**：站内信的「电量日报」与用电记录点进去的「用电详情」讲的是同一天的事，却各写了一套渲染 —— 前者是"平铺 + 小节标题"（无卡片、电表无占比条、概况无对比项），后者是"分组卡 + 占比条 + 较前一日/较近期均值 + 结算信息"，同一份数据长出两副面孔。
+- **改动**（抽公共组件，不是复制一份代码）：
+  - 新增 `components/ElectricityDailyDetail/`：把「用电详情」的头部（分类标签 / 时间 / 标题）与三张卡片（用电概况、各电表用电详情、结算信息）整体抽为组件，头部文案可由 props 覆盖；数据仍走实时接口 `/api/miniapp/electricity/daily/<date>`；
+  - `pages/electricity-daily/index.tsx`：改为「页面容器 + 该组件」，页面只负责取路由参数与设置标题栏；
+  - `pages/message-detail/index.tsx`：`category='electricity_daily'` 且 `payload.period_label` 为日期（即日报）时**整页换成该组件**，头部沿用消息自己的分类标签 / 时间 / 标题；**周报、月报没有对应的单日页面，保持原有列表式渲染**（可逐日点进详情）不变；
+  - `pages/message-detail/index.scss`：新增 `.msgd-page--daily`（日报场景的底色与留白对齐用电详情页）。
+- **口径说明**：日报消息内显示的是**实时数据**（非通知里的 payload 快照），后续采集纠错会反映出来；周报/月报仍按发出时刻的快照展示。组件内 `.card` 规格与 `styles/theme.scss` 同源（小程序自定义组件样式隔离，无法直接继承全局类），将来调整卡片视觉时两处需同步。
+- **验证**：`tsc --noEmit` 通过；`taro build --type weapp` 构建成功，产物 **23 个页面**，`elecd-*` 样式已进 `common.wxss`、`msgd-page--daily` 已进消息页 wxss（组件样式的承载方式与项目既有组件一致）。
+- **构建环境备注**：本次构建连续失败两次，根因不在代码——① 上一轮遗留的后台构建进程与本轮并发写 `dist`；② 工作区安全删除守卫拦截了 Taro 启动时的 `emptyOutputDir`（`SAFE_DELETE_BULK_GUARD_ERROR state lock timeout`）导致 `dist` 半删。结束残留进程后完成构建。
+
 ### 修复：课表爬虫把"风控/未渲染完"的空壳页当有效课表保存（后端，2026-09-23）
 - **现象**：用户反馈当天（周三）应 1-8 节都有课，应用只显示上午。
 - **根因**：教务系统 EAMS 在被"过快点击"限流或课表尚未渲染完成时，返回的是只含导航链接的**空壳页**（`swal2` 弹窗、`startWeek` 仍在、`TaskActivity` 为 0）。爬虫"是否进入课表页"的判据含 `startWeek`，空壳页同样命中 → 误判成功；随后 `TaskActivity` 解析为空，回退 `_extract_schedule` 解析 HTML 表，得到形如 `[["[返回前页]"]]` 的**非空垃圾行**，又通过 `if merged_data.get("rows")` 校验 → 被当作有效整学期课表保存（`raw/course_table.json` 被覆盖成垃圾），`processed_course_table.json` 产出 0 门课。
