@@ -579,10 +579,14 @@ export default function SchedulePage() {
                 onClick={() => {
                   // 拆分的合成 id 形如 "X#p5-6"，详情页需要原始 id
                   const originalId = c.schedule_id.split('#p')[0];
+                  // 拆分段（5-6 / 7-8）把本段节次带给详情页，否则详情会显示整段 5-8
+                  const pnums = Array.isArray(c.periods) ? c.periods : [];
+                  const periodParam =
+                    c.schedule_id.includes('#p') && pnums.length ? `&periods=${pnums.join(',')}` : '';
                   // 带上当前查看的学期，避免历史学期课程在详情页被当成当前学期而查不到
                   const semParam = selectedSemesterId ? `&semester_id=${selectedSemesterId}` : '';
                   navigateTo({
-                    url: `/pages/coursedetail/index?id=${originalId}&week_number=${displayWeekNumber || 1}${semParam}`,
+                    url: `/pages/coursedetail/index?id=${originalId}&week_number=${displayWeekNumber || 1}${semParam}${periodParam}`,
                   });
                 }}
               />

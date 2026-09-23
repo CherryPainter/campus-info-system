@@ -5,6 +5,7 @@ import { useRouter, useLoad } from '@tarojs/taro';
 import * as scheduleApi from '@/api/schedule';
 import type { ScheduleCourse } from '@/types/api';
 import { weekdayCN } from '@/utils/date';
+import { getPeriodRangeTime } from '@/utils/scheduleBigClass';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
 import './index.scss';
@@ -29,6 +30,28 @@ function formatPeriods(course: ScheduleCourse): string {
   if (!p) return '';
   if (Array.isArray(p)) return `${p[0]}-${p[p.length - 1]}节`;
   return String(p);
+}
+
+/** 节次数组 -> "5-6节"（区间）或 "5节"（单节） */
+function formatPeriodRange(nums: number[]): string {
+  if (nums.length === 0) return '';
+  const lo = nums[0];
+  const hi = nums[nums.length - 1];
+  return lo === hi ? `${lo}节` : `${lo}-${hi}节`;
+}
+
+/**
+ * 解析 URL 的 periods 参数（首页/时间轴点进来的「拆分段」节次，如 "5,6" 或 "5-6"）。
+ * 非法或缺失返回 null（非拆分段课程不带该参数，行为与从前一致）。
+ */
+function parsePeriodsParam(raw?: string): number[] | null {
+  if (!raw) return null;
+  const nums = raw
+    .split(/[,\-~]/)
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 1 && n <= 12);
+  const uniq = [...new Set(nums)].sort((a, b) => a - b);
+  return uniq.length ? uniq : null;
 }
 
 /**
@@ -109,7 +132,18 @@ export default function CourseDetailPage() {
   const colorIdx = getCourseColorIndex(currentCourse.course_name);
   const baseColor = COURSE_COLORS[colorIdx];
   const location = `${currentCourse.extra_info?.building || ''}${currentCourse.extra_info?.classroom || ''}`;
-  const periodText = formatPeriods(currentCourse);
+  // 首页「今日课程」与「时间轴」会把一门 4 节大课拆成 5-6 / 7-8 两条展示，
+  // 点进来时 URL 带上本段节次（periods=5,6）→ 详情聚焦该段，不再显示整段 5-8。
+  // （拆分段的时间用与列表同源的 getPeriodRangeTime 计算，避免节次与时间不一致）
+  const focusPeriods = parsePeriodsParam(router.params?.periods);
+  const focusTime = focusPeriods
+    ? getPeriodRangeTime(currentCourse.extra_info?.building, focusPeriods)
+    : null;
+  const periodText = focusPeriods
+    ? formatPeriodRange(focusPeriods)
+    : formatPeriods(currentCourse);
+  const displayStart = focusTime?.start_time ?? currentCourse.start_time;
+  const displayEnd = focusTime?.end_time ?? currentCourse.end_time;
 
   return (
     <View className="cd-page">
@@ -137,7 +171,7 @@ export default function CourseDetailPage() {
           <View className="cd-header-meta-item">
             <Text className="iconfont icon-shijianzhou cd-header-icon" />
             <Text className="cd-header-meta-text">
-              {currentCourse.start_time || '--'}-{currentCourse.end_time || '--'}
+              {displayStart || '--'}-{displayEnd || '--'}
             </Text>
           </View>
         </View>
@@ -166,7 +200,7 @@ export default function CourseDetailPage() {
           {renderInfoRow('授课教师', currentCourse.extra_info?.teacher || '—')}
           {renderInfoRow(
             '上课时间',
-            `${weekdayCN(currentCourse.day_of_week)} ${periodText} (${currentCourse.start_time || '--'}-${currentCourse.end_time || '--'})`,
+            `${weekdayCN(currentCourse.day_of_week)} ${periodText} (${displayStart || '--'}-${displayEnd || '--'})`,
           )}
           {renderInfoRow('上课地点', location || '—')}
           {renderInfoRow('课程类型', currentCourse.extra_info?.credits ? '必修课' : '—')}

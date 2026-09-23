@@ -218,7 +218,15 @@ export default function HomePage() {
                       onClick={() => {
                         // 拆分的合成 id 形如 "X#p5-6"，详情页需要原始 id
                         const originalId = c.schedule_id.split('#p')[0];
-                        Taro.navigateTo({ url: `/pages/coursedetail/index?id=${originalId}` });
+                        // 拆分段（5-6 / 7-8）把本段节次带给详情页，否则详情会显示整段 5-8
+                        const pnums = Array.isArray(c.periods) ? c.periods : [];
+                        const periodParam =
+                          c.schedule_id.includes('#p') && pnums.length
+                            ? `&periods=${pnums.join(',')}`
+                            : '';
+                        Taro.navigateTo({
+                          url: `/pages/coursedetail/index?id=${originalId}${periodParam}`,
+                        });
                       }}
                     />
                   ))

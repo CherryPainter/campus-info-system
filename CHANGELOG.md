@@ -36,6 +36,15 @@
 - **验证**：新增 `tests/test_electricity_trend_dates.py`（3 例：结算日用量须落在用电日 / 同日两块分表合并且相邻日不串点 / 点数与升序），与 `test_electricity_daily_aggregate.py` 合并跑 **14 passed**；另在真实库只读复跑（user 77）：结算 `2026-09-23 00:09:22` 的记录正确落在**用电日 2026-09-22**（2.34 度），末点今天为 0（当日尚未结算）。
 - **注意**：本次为后端代码改动，**需重启后端服务后生效**（旧进程仍按错位口径返回）。
 
+### 修复：课时列表点进详情，大课段被显示成整段（点 5-6 进去显示 5-8）（前端，2026-09-23）
+- **现象**：时间轴（以及首页「今日课程」）把一门四节大课拆成 `5-6节` / `7-8节` 两条展示；点 `5-6节` 那张卡进详情页，头部却显示「（5-8节）／星期三 第5-8／14:10-18:10」。
+- **根因**：拆分是前端-only（`utils/scheduleBigClass.ts`），拆分段用合成 id `${原id}#p5-6` 标记；但两处跳详情入口都执行了 `c.schedule_id.split('#p')[0]` **只取回原始 id**，把「当前是哪一段」的信息丢掉了 → 详情页按原始 id 命中整段记录（`periods=[5,6,7,8]`），于是显示 5-8。
+- **改动**（三处，非拆分段行为完全不变）：
+  - `utils/scheduleBigClass.ts`：抽出并导出 `getPeriodRangeTime(building, periods)`（按楼栋选时间表、取该段上下课时间），`splitCourseToBigClasses` 改为复用它，保证「列表算的时间」与「详情算的时间」同源；
+  - `pages/schedule/index.tsx`、`pages/home/index.tsx`：仅当 `schedule_id` 含 `#p`（即拆分段）时，跳转 URL 追加 `&periods=5,6`；
+  - `pages/coursedetail/index.tsx`：解析 `periods` 参数并聚焦该段——节次文本与上下课时间都按该段显示（如 `5-6节` / `14:10-15:50`）；未带该参数时保持原行为。
+- **验证**：`tsc --noEmit` 通过（TSC_EXIT=0）；`taro build --type weapp` 构建成功。
+
 ---
 
 ## v6.20.0 (2026-09-23)

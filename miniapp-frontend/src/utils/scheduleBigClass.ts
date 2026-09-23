@@ -106,6 +106,29 @@ function toTimestamp(fullDate: string, hhmm: string): number {
 }
 
 /**
+ * 取「给定期次区间」的权威上下课时间（按楼栋选时间表，与拆分段口径完全一致）。
+ *
+ * 用途：详情页聚焦某个大课段（如 5-6 节）时，需要算出与列表一致的 14:10-15:50，
+ * 而不是沿用整段（5-8）的 14:10-18:10。
+ *
+ * @returns 取不到时返回 null，由调用方回退到课程自带的 start_time / end_time
+ */
+export function getPeriodRangeTime(
+  building: string | undefined,
+  periods: number[],
+): { start_time: string; end_time: string } | null {
+  const sorted = [...new Set(periods)]
+    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 12)
+    .sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const sch = getScheduleByBuilding(building);
+  const start = sch[sorted[0]]?.[0];
+  const end = sch[sorted[sorted.length - 1]]?.[1];
+  if (!start || !end) return null;
+  return { start_time: start, end_time: end };
+}
+
+/**
  * 把一门（可能跨多节）课程按「每 2 节 = 1 门大课」拆成多条。
  * 返回至少 1 条；只有单组（≤2 节）时原样返回。
  */
@@ -128,14 +151,14 @@ export function splitCourseToBigClasses(course: ScheduleCourse): ScheduleCourse[
   if (chunks.length <= 1) return [course];
 
   const building = course.extra_info?.building || '';
-  const sch = getScheduleByBuilding(building);
   const fullDate = course.extra_info?.full_date;
 
   return chunks.map((chunk) => {
     const lo = chunk[0];
     const hi = chunk[chunk.length - 1];
-    const start_time = sch[lo]?.[0] ?? course.start_time;
-    const end_time = sch[hi]?.[1] ?? course.end_time;
+    const range = getPeriodRangeTime(building, chunk);
+    const start_time = range?.start_time ?? course.start_time;
+    const end_time = range?.end_time ?? course.end_time;
     const newCourse: ScheduleCourse = {
       ...course,
       period_idx: lo,
