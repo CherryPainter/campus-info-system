@@ -226,7 +226,12 @@ export default function MessageEditor() {
   >(null);
 
   useEffect(() => {
-    if (!previewVisible) return;
+    if (!previewVisible) {
+      // 预览不占位时清掉测量结果：否则重新打开预览的第一帧会沿用旧的 left/width
+      // （隐藏期间窗口被 resize 过，就会错位一帧）
+      setPreviewState(null);
+      return;
+    }
     const update = () => {
       const el = previewColRef.current;
       if (!el) return;
