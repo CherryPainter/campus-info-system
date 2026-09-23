@@ -170,9 +170,12 @@ def run_spider(trigger_source="cron"):
             # 检查是否有被延迟的每日课表推送
             _try_deferred_daily_push()
             # 系统侧接管落库 + 周次锚点同步（爬虫子进程只产出 JSON/图片）。
-            # v6.11.1：每日爬虫同步将「当前周」数据入库（来源标记 daily）。
-            # 用每日爬取的当前周正确数据 upsert 修正全量爬取的当前周错误，实现每日校验。
-            # 空结果不会覆盖（save_to_database 空结果护栏 return (0, 0) 不入库）。
+            # v6.11.1：每日爬虫同步把爬取结果 upsert 入库（来源标记 daily），
+            # 用每日爬取的正确数据修正全量爬取留下的错误，实现「每日纠错/自愈」。
+            # 重要（v6.20.1 澄清）：本步爬取同样是 --all-weeks 全学期（见上方命令），
+            # 并非只爬当前周；因此 daily 与 full 一样受 pipeline 的「周次覆盖护栏」约束
+            # （周次集合仅 1 周视为残缺，拒绝入库不覆盖），空结果也由空结果护栏兜住。
+            # 爬虫不覆盖管理员手动课（create_batch 按 course_key 命中 admin 行即跳过）。
             # 教学周判定统一由 teaching_week_service 基于开学日推算，彻底脱离 course_weeks 表（已移除）。
             try:
                 import importlib as _il
@@ -185,7 +188,7 @@ def run_spider(trigger_source="cron"):
                     _daily_processed, logger, data_source="daily"
                 )
                 logger.info(
-                    f"[每日爬虫] 当前周数据已入库 (data_source=daily): 新增 {_created} 条 / 更新 {_updated} 条"
+                    f"[每日爬虫] 课程数据已入库 (data_source=daily，全学期): 新增 {_created} 条 / 更新 {_updated} 条"
                 )
             except Exception as _e:
                 logger.error(f"[每日爬虫] 落库失败（不影响图片生成与推送）: {_e}")

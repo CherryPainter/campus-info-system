@@ -603,33 +603,54 @@ class CourseRepository:
         # 改为预载受影响学期内 data_source='admin' 行的 course_key 集合，爬虫行 key 命中即跳过。
         _crawler_source = data_source in ("full", "daily")
         _admin_keys = set()
+        # v6.20.1：弱身份（课名|星期|节次|教室，不含教师）→ 库中已知教师 的映射。
+        # 用于「某次爬取缺教师」（daily 常见，教务源常返回空教师）时回填，避免
+        # course_key 从「有教师版」漂移成「无教师版」导致同一门课被当新课重复插入。
+        _weak_teacher: dict[str, str] = {}
         if _crawler_source:
             _sems = {
                 (d.get("semester_id") or sem["semester_id"])
                 for d in courses_data
             }
             if _sems:
-                _admins = (
+                # 一次性预载本学期全部未删除行：admin 行收其 course_key 作保护；
+                # 所有「有教师」的行登记弱身份→教师，供缺教师批次回填。
+                _rows = (
                     session.query(Course)
                     .filter(
-                        Course.data_source == "admin",
                         Course.is_deleted.is_(False),
                         Course.semester_id.in_(_sems),
                     )
                     .all()
                 )
-                for _a in _admins:
-                    _admin_keys.add(
-                        compute_course_key(
-                            {
-                                "course_name": _a.course_name,
-                                "week_day": _a.week_day,
-                                "periods": normalize_periods(_a.periods),
-                                "classroom": _a.classroom,
-                                "teacher": _a.teacher,
-                            }
+                for _r in _rows:
+                    _r_pds = normalize_periods(_r.periods)
+                    if _r.data_source == "admin":
+                        _admin_keys.add(
+                            compute_course_key(
+                                {
+                                    "course_name": _r.course_name,
+                                    "week_day": _r.week_day,
+                                    "periods": _r_pds,
+                                    "classroom": _r.classroom,
+                                    "teacher": _r.teacher,
+                                }
+                            )
                         )
-                    )
+                    _t = (_r.teacher or "").strip()
+                    if _t:
+                        _weak_teacher.setdefault(
+                            compute_course_key(
+                                {
+                                    "course_name": _r.course_name,
+                                    "week_day": _r.week_day,
+                                    "periods": _r_pds,
+                                    "classroom": _r.classroom,
+                                    "teacher": "",
+                                }
+                            ),
+                            _t,
+                        )
 
         for data in courses_data:
             # 规范化学期、周次、节次
@@ -648,6 +669,25 @@ class CourseRepository:
                     "classroom": data.get("classroom"),
                 }
             )
+            # v6.20.1：本次输入缺教师时，用弱身份（不含教师）从库中回填已知教师，
+            # 使同一门课跨爬取得到同一个稳定 key——否则缺教师批次会插入重复行
+            # （既没纠正已有错误，反而多一条），也让 admin 课保护（按 key 命中）继续生效。
+            # 注意：只在输入为空时回填，绝不反向覆盖既有非空教师（见下方更新分支）。
+            if _crawler_source and not (data.get("teacher") or "").strip() and _weak_teacher:
+                _filled = _weak_teacher.get(
+                    compute_course_key(
+                        {
+                            "course_name": data.get("course_name"),
+                            "week_day": data.get("week_day"),
+                            "periods": periods,
+                            "classroom": data.get("classroom"),
+                            "teacher": "",
+                        }
+                    )
+                )
+                if _filled:
+                    data = {**data, "teacher": _filled}
+
             # v6.19.x：稳定课程身份 key（与周次无关），作为去重/对账主键
             sid = data.get("semester_id") or sem["semester_id"]
             course_key = compute_course_key(

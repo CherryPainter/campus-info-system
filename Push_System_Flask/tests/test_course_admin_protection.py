@@ -14,6 +14,9 @@
   —— week_number 是爬取周、随每次爬取漂移，该判据不可靠。因此 course_key 不同的课
   即便落在手动课同槽位，也会正常新建；漂移产生的旧行由全量重爬 reconcile 对账软删收敛。
 - 改名/改教师/改教室会改变 course_key，视作另一门课（预期行为）。
+- v6.20.1 补充：**某次爬取缺教师**（教务源返回空教师，daily 常见）不视作「另一门课」——
+  会先按弱身份（课名/星期/节次/教室，不含教师）从库中回填已知教师，故仍命中既有行
+  upsert，既不新增重复行，手动课保护也不因此失效（见 test_missing_teacher_* 用例）。
 """
 
 import os
@@ -229,3 +232,81 @@ def test_admin_source_can_manage_admin(session):
     row = session.query(Course).one()
     assert row.building == "教四"
     assert row.weeks == [1, 2]
+
+
+def test_missing_teacher_does_not_duplicate(session):
+    """v6.20.1 契约：某次爬取缺教师时，不因 course_key 漂移而重复插入。
+
+    场景：full 爬取入库「英语 / 周三 / 第1-2节 / C303 / 甲」；随后 daily 爬取同一门课，
+    但教务源返回空教师。旧行为：空教师算出「无教师版」course_key，匹配不到既有行，
+    于是新增一条重复记录（既不纠错，反增冗余——正是「越同步越乱」的根因之一）。
+    新行为：按弱身份（课名/星期/节次/教室，不含教师）回填已知教师「甲」，
+    命中既有行 upsert，不新增，且不覆盖既有非空教师。
+    """
+    base = {
+        "course_code": "CRAWL-77777",
+        "semester_id": 20251,
+        "course_name": "英语",
+        "week_day": 3,
+        "period_idx": 1,
+        "periods": [1, 2],
+        "teacher": "甲",
+        "classroom": "C303",
+        "building": "教三",
+        "start_time": "08:00",
+        "end_time": "09:40",
+        "weeks": [1, 2, 3, 4],
+        "week_number": 1,
+    }
+    created1, _ = CourseRepository.create_batch(session, [dict(base)], data_source="full")
+    assert created1 == 1
+
+    # daily 缺教师：期望命中既有行（不新增），纠错 weeks，既有教师不被清空
+    no_teacher = {**base, "teacher": "", "weeks": [1, 2, 3, 4, 5], "week_number": 5}
+    created2, updated2 = CourseRepository.create_batch(session, [no_teacher], data_source="daily")
+    assert created2 == 0  # 回填教师后 key 命中既有行 → 不新增
+    assert updated2 == 1
+    assert session.query(Course).count() == 1
+    row = session.query(Course).one()
+    assert row.teacher == "甲"  # 既有非空教师未被空值覆盖
+    assert row.weeks == [1, 2, 3, 4, 5]  # 周次被纠正（每日纠错生效）
+    assert row.data_source == "daily"
+
+
+def test_missing_teacher_still_protects_admin_course(session):
+    """v6.20.1：daily 缺教师时，手动课保护依然生效。
+
+    管理员课身份「手动课T / 周五 / 第1节 / A101 / 老师」；爬虫行字段全同但教师为空。
+    回填教师后 course_key 命中 admin 行 → 仍整条跳过，不覆盖人工课。
+    （若不做回填，空教师 key 与 admin key 不同，保护会失效——本用例固化该回归。）
+    """
+    _admin_course(
+        session, course_code="ADMIN-T", course_name="手动课T", week_day=5, period_idx=1, periods=[1]
+    )
+    created, updated = CourseRepository.create_batch(
+        session,
+        [
+            {
+                "course_code": "CRAWL-T",
+                "semester_id": 20251,
+                "course_name": "手动课T",
+                "week_day": 5,
+                "period_idx": 1,
+                "periods": [1],
+                "teacher": "",  # 缺教师
+                "classroom": "A101",
+                "building": "教一",
+                "start_time": "08:00",
+                "end_time": "08:45",
+                "weeks": [1, 2, 3, 4, 5],
+                "week_number": 2,
+            }
+        ],
+        data_source="daily",
+    )
+    assert created == 0
+    assert updated == 0  # 被保护整条跳过
+    assert session.query(Course).count() == 1
+    row = session.query(Course).one()
+    assert row.data_source == "admin"
+    assert row.weeks == [1, 2, 3]  # 人工课周次未被爬虫改写

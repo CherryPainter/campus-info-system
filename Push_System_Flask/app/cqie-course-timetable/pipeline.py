@@ -161,17 +161,19 @@ def save_to_database(
             }
         )
 
-    # ---- 单周护栏（v6.19.x，仅 full 来源）----
-    # 全量爬虫必须带 --all-weeks 产出整学期周次位图；若解析出的周次集合仅 1 周，
-    # 说明"选全部"未生效/解析退化，此时若入库会把 courses.weeks 整体覆盖成单周，
-    # 导致"整学期课表变单周"。拒绝可疑入库并发告警，保留现有整学期数据。
-    # 每日爬虫(data_source='daily')本就只爬当前周，不受此护栏限制。
-    if data_source == "full":
+    # ---- 周次覆盖护栏（v6.20.1，覆盖 full 与 daily）----
+    # full（后台整学期爬取）与 daily（每日同步，executors.run_spider）**均以 --all-weeks
+    # 产出整学期周次位图**。若解析出的周次集合仅 1 周，说明"选全部"未生效 / 页面被
+    # "过快点击"风控挡住只渲染出当前周 / 解析退化；此时入库会把 courses.weeks 整体
+    # 覆盖成单周，导致"整学期课表变单周"。拒绝可疑入库并发告警，保留现有数据。
+    # 修正（v6.20.1）：旧注释误以为 daily 只爬当前周而豁免本护栏，与 executors 实际
+    # 行为（--all-weeks）不符，导致 daily 残缺数据（如 weeks={3}）得以覆盖整学期周次。
+    if data_source in ("full", "daily"):
         _all_weeks: set = set()
         for _t in transformed_data:
             _all_weeks.update(normalize_weeks(_t.get("weeks")))
         if len(_all_weeks) <= 1:
-            _alert_single_week(logger, _all_weeks)
+            _alert_single_week(logger, _all_weeks, data_source)
             return 0, 0
 
     session = get_db()
@@ -234,19 +236,21 @@ def _alert_empty_result(logger, data_source: str, week_number: int):
         logger.warning(f"[空结果护栏] 告警发送失败（已忽略）: {_ne}")
 
 
-def _alert_single_week(logger, all_weeks: set):
-    """单周护栏：full 来源解析出周次集合仅 1 周时拒绝入库并发企微告警（不覆盖现有整学期数据）。"""
+def _alert_single_week(logger, all_weeks: set, data_source: str = "full"):
+    """周次覆盖护栏：full/daily 解析出周次集合仅 1 周时拒绝入库并发企微告警（不覆盖现有整学期数据）。"""
     from datetime import datetime as _dt
 
     _wk = sorted(all_weeks) if all_weeks else []
     _alert = (
-        f"**课程数据单周护栏**\n\n"
+        f"**课程数据周次覆盖护栏**\n\n"
+        f"来源：{data_source}\n\n"
         f"时间：{_dt.now().strftime('%Y-%m-%d %H:%M')}\n\n"
-        f"说明：full 来源爬虫解析出的周次集合仅 {len(_wk)} 周（{_wk}），"
-        f"疑似 --all-weeks「选全部」未生效或解析退化。已拒绝入库，未覆盖现有整学期数据。"
+        f"说明：{data_source} 来源爬虫解析出的周次集合仅 {len(_wk)} 周（{_wk}），"
+        f"疑似 --all-weeks「选全部」未生效、被「过快点击」风控挡住只渲染当前周或解析退化。"
+        f"已拒绝入库，未覆盖现有整学期数据。"
     )
     logger.error(
-        f"[单周护栏] full 来源周次集合仅 {len(_wk)} 周（{_wk}），疑似退化，已拒绝入库。"
+        f"[周次覆盖护栏] {data_source} 来源周次集合仅 {len(_wk)} 周（{_wk}），疑似退化，已拒绝入库。"
     )
     try:
         from app.services.notification_service import send_status_alert

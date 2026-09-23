@@ -1197,7 +1197,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     TRIG[定时 / 手动触发] --> TYPE{触发类型}
-    TYPE -->|每日爬虫<br/>scheduler.run_spider| D[爬取当前周]
+    TYPE -->|每日爬虫<br/>scheduler.run_spider --all-weeks| D[爬取全学期]
     TYPE -->|全量 / 指定学期<br/>crawl_task_service --all-weeks| F[爬取整学期]
 
     D --> LOGIN[CAS 登录<br/>Playwright 无头 Chromium]
@@ -1219,9 +1219,11 @@ flowchart TD
 
 
 - `courses` 表每条记录带 `data_source`（`full`=全量/指定学期爬虫、`daily`=每日爬虫、`admin`=后台手动）与 `last_verified_at`（最后被爬虫写入/校验时间），便于追溯数据来源与新鲜度。
-- **每日校验**：每日爬虫（`scheduler.run_spider`）成功后额外把"当前周"数据 upsert 入库（`data_source='daily'`），用每日爬取的当前周正确数据修正全量爬取的当前周错误。注意 `create_batch` 是 upsert 且只更新不删除，**非当前周的历史数据仍只由全量爬取维护**——每日爬虫按设计只爬当前周、碰不到历史周，因此历史周若全量写入了错误数据，仍需一次正确的全量/指定学期爬取覆盖。
+- **每日校验**：每日爬虫（`scheduler.run_spider`）成功后把爬取结果 upsert 入库（`data_source='daily'`），用每日爬取的正确数据修正全量爬取留下的错误，实现"每日纠错/自愈"。注意每日同步**同样是 `--all-weeks` 全学期爬取**（并非只爬当前周，见 `app/tasks/executors.py`），因此 daily 与 full 一样受下方"周次覆盖护栏"约束。`create_batch` 为 upsert，不主动删除；爬虫来源**不会覆盖、也不会重复新建**与管理员手动课（`data_source='admin'`）身份相同的行。
 - **空结果护栏**：`save_to_database` 在爬虫产出 0 条课程时**拒绝入库（不会清空库）**并返回 `(0, 0)`；若数据库该周已有历史课程则判定"疑似解析退化"，升级 `logger.error` 并经由 `WECOM_STATUS_WEBHOOK` 发送企业微信告警，否则仅 `logger.warning`。正常入库返回 `(新建数, 更新数)` 元组。
-- **手动课保护（v6.11.2）**：后台创建/编辑的课程落库时打 `data_source='admin'`；`create_batch` 在爬虫来源（`full`/`daily`）下**不会覆盖已有的 `admin` 记录，也不会在同一时间槽插入第二条挤占手动课**——你手动加/改的课在每日与全量爬取中始终保留。手动来源调用 `create_batch` 不受此限。
+- **周次覆盖护栏（v6.20.1）**：`full` 与 `daily` 均以 `--all-weeks` 产出整学期周次位图；若解析出的周次集合仅 1 周（"选全部"未生效 / 被"过快点击"风控挡住只渲染当前周 / 解析退化），**拒绝入库并发企微告警**，避免 `courses.weeks` 被整体覆盖成单周（旧版误以为 daily 只爬当前周而豁免该护栏，导致残缺数据写坏周次）。
+- **缺教师回填（v6.20.1）**：`course_key` 含教师字段，而 daily 爬取常拿不到教师。`create_batch` 会按弱身份（课名/星期/节次/教室，**不含教师**）回填库中已知教师后再计算 `course_key`，避免同一门课因缺教师被当成新课重复插入；同时也让"手动课保护"在缺教师时依然生效。回填**仅在输入教师为空时**进行，不会用空值覆盖既有非空教师。
+- **手动课保护（v6.11.2，键口径 v6.19.x）**：后台创建/编辑的课程落库时打 `data_source='admin'`；`create_batch` 在爬虫来源（`full`/`daily`）下，爬虫行的 `course_key` 命中已有 `admin` 行即**整条跳过**（既不覆盖也不新建）——你手动加/改的课在每日与全量爬取中始终保留。手动来源调用 `create_batch` 不受此限。
 
 **课程数据写入流程（来源与保护）**：
 
@@ -1239,13 +1241,14 @@ flowchart TD
     B -->|pipeline.save_to_database| R
     C -->|course_routes 直写| DB[(courses 表)]
 
-    R --> D{按 course_code + week_day<br/>+ period_idx + week_number 去重<br/>仅匹配未删除行}
+    R --> K[course_key = md5<br/>课名|星期|节次|教室|教师<br/>缺教师时按弱身份回填已知教师]
+    K --> D{按 semester_id + course_key<br/>去重，仅匹配未删除行}
     D -->|命中 existing| E{爬虫源 且<br/>existing 为 admin?}
     E -->|是| X[跳过：保留手动修正]
     E -->|否| U[upsert 更新字段<br/>刷新 data_source / last_verified_at]
-    D -->|未命中| F{爬虫源 且 该时间槽<br/>已被 admin 占据?}
-    F -->|是| X
-    F -->|否| V[插入新记录<br/>data_source = 爬虫源]
+    D -->|未命中| G{爬虫源 且 course_key<br/>命中 admin 行?}
+    G -->|是| X
+    G -->|否| V[插入新记录<br/>data_source = 爬虫源]
 
     U --> DB
     V --> DB

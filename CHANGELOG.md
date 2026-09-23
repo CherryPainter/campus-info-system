@@ -17,6 +17,18 @@
 - **验证**：`py_compile` 通过；用真实函数断言——`[["[返回前页]"]]` / 仅表头 / 空 rows / None / 空壳周期行 均判 `False`，含课程格的网格判 `True`（6/6 通过）。
 - **待跟进（本次未做）**：① 本修复只防"残缺被当成功"，**真正补齐 20261 仍需一次成功的全量重爬**（可能需等风控冷却 / 有头模式人工等待）；② 派生开学日为 2026-09-01（`system.semester_start_date` 为空时按 term 推算），而 school 端渲染疑似慢一周，建议核对开学日配置以免"当前教学周"整体偏移；③ 失败那次已把 `output/course-data/images/course_week1.jpg` 重生成为**空白占位图**，如有对外推送需留意。
 
+### 修复：每日同步把残缺数据写坏课表（单周覆盖 + 缺教师重复行）——爬虫准确性与稳定性（后端，2026-09-23）
+- **背景**：上一条只挡住"空壳页被当成功"，但每日同步（`data_source='daily'`）仍能把**非空但残缺**的结果写库，产生两类脏数据，正是"越同步越乱"的根因。
+- **根因一（单周覆盖，护栏豁免错误）**：`pipeline.save_to_database` 的"周次覆盖护栏"（周次集合 ≤1 周即拒绝入库）此前**只对 `data_source='full'` 生效**，注释称"每日爬虫本就只爬当前周"；但 `executors.run_spider` 每日同步实际执行的是 `--all-weeks`（全学期爬取，`app/tasks/executors.py:108`），**注释与行为不符**。于是 daily 那批"被风控挡住只渲染出第 3 周"（`weeks=[3]`）的残缺结果被放行入库，把该门课整学期周次覆盖成单周。
+- **根因二（缺教师 → 重复行）**：`course_key = md5(课程名|星期|排序节次|教室|教师)`（与周次无关）。daily 拿不到教师（教务源返回空），算出的 key 是"无教师版"，与 full 行"有教师版"不匹配 → 同一门课被当新课**重复插入**；又因插入的是 `data_source='daily'` 行，full 的对账软删（只清理 full 行）清不掉它——**既不纠错，反增冗余**。
+- **改动**：
+  - `app/cqie-course-timetable/pipeline.py`：周次覆盖护栏由"仅 full"扩为 `data_source in ("full", "daily")`，修正注释与告警文案（`_alert_single_week` 增加 `data_source` 参数，告警标明来源）；
+  - `app/repository/course_repository.py`：`create_batch` 在爬虫来源下预载本学期"弱身份（课名|星期|节次|教室，不含教师）→ 已知教师"映射；某批输入缺教师时按弱身份**回填库中已知教师**再算 `course_key`，使同一门课跨爬取得到同一稳定 key——既不重复插入，也让"手动课保护"（按 key 命中 admin 行）在缺教师时依然生效；回填**只在输入为空时**进行，不会用空值覆盖既有非空教师；
+  - `app/tasks/executors.py`：修正 daily 相关注释与日志（澄清每日同步为 `--all-weeks` 全学期爬取，故与 full 同受周次护栏约束）。
+- **验证**：`py_compile` 三文件通过；`tests/test_course_admin_protection.py` 原有 4 例全绿，新增 2 例回归（`test_missing_teacher_does_not_duplicate`、`test_missing_teacher_still_protects_admin_course`）共 **6 passed**；`pipeline` 模块可正常加载，`_alert_single_week(logger, {3}, "daily")` 与 `"full"` 均正常输出。
+- **数据订正（本地库）**：20261 学期存在 6 条 daily 复制行（教师为空、`weeks=[3]`），已软删（`deleted_reason='dup_daily_single_week_missing_teacher'`，备份见 `技术总结/courses_dup_daily_backup_20260923.tsv`）；20261 现仅剩 `full` 7 条有效行。
+- **待跟进**：补齐 20261 真实课表仍需一次成功的全量重爬；`system.semester_start_date` 仍未配置。
+
 ---
 
 ## v6.20.0 (2026-09-23)
