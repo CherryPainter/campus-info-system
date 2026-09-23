@@ -230,7 +230,12 @@ export default function CourseDetailPage() {
             );
             // 当前课程 + 同名课程 → 按 week_day 索引
             const byDay: Record<number, ScheduleCourse[]> = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
-            byDay[currentCourse.day_of_week] = [currentCourse];
+            // 从拆分段点进来时（如 5-6），本节课也按该段显示，避免出现
+            // 「头部 5-6 节、这里 5-8 节」的自相矛盾
+            const focusCourse: ScheduleCourse = focusPeriods
+              ? { ...currentCourse, periods: focusPeriods }
+              : currentCourse;
+            byDay[currentCourse.day_of_week] = [focusCourse];
             for (const c of sameCourses) {
               const dow = c.day_of_week;
               if (dow >= 1 && dow <= 7) byDay[dow].push(c);

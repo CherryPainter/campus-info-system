@@ -42,7 +42,7 @@
 - **改动**（三处，非拆分段行为完全不变）：
   - `utils/scheduleBigClass.ts`：抽出并导出 `getPeriodRangeTime(building, periods)`（按楼栋选时间表、取该段上下课时间），`splitCourseToBigClasses` 改为复用它，保证「列表算的时间」与「详情算的时间」同源；
   - `pages/schedule/index.tsx`、`pages/home/index.tsx`：仅当 `schedule_id` 含 `#p`（即拆分段）时，跳转 URL 追加 `&periods=5,6`；
-  - `pages/coursedetail/index.tsx`：解析 `periods` 参数并聚焦该段——节次文本与上下课时间都按该段显示（如 `5-6节` / `14:10-15:50`）；未带该参数时保持原行为。
+  - `pages/coursedetail/index.tsx`：解析 `periods` 参数并聚焦该段——**节次文本、上下课时间、以及底部「课程安排」区块**都按该段显示（如 `5-6节` / `14:10-15:50`），不再出现「头部 5-6、下面 5-8」的自相矛盾；未带该参数时保持原行为。
 - **验证**：`tsc --noEmit` 通过（TSC_EXIT=0）；`taro build --type weapp` 构建成功。
 
 ---
