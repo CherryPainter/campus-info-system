@@ -8,8 +8,10 @@
   box-sizing: border-box;
 
   /* 自定义 TabBar 实际高度为 112rpx（见 custom-tab-bar/index.scss）+ 安全区。
-     预留必须 ≥ TabBar 高度，否则末尾元素底边会被 TabBar 压住 */
-  padding-bottom: calc(112rpx + env(safe-area-inset-bottom));
+     预留必须 ≥ TabBar 高度，否则末尾元素底边会被 TabBar 压住。
+     再叠加一层 $spacing-lg 的页脚留白：内容接近一屏时整页仍有舒适的下拉余量，
+     不再"拉不动"，且「退出登录」卡与 TabBar 之间留得更开 */
+  padding-bottom: calc(112rpx + env(safe-area-inset-bottom) + #{$spacing-lg});
 }
 
 // 顶部 hero 区：资料头部 + 校园卡

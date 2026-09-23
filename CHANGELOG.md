@@ -13,9 +13,10 @@
   - `.logout-btn` 的 `margin-bottom` 又是 `0`，「退出登录」卡与 TabBar 两块白色底直接贴合，看起来像长在 TabBar 上；
   - 「我的」页内容高度本就接近一屏，可滚动量极小，配合上述贴合，观感即「拉不动 + 连成一片」。
 - **改动**（仅 `pages/profile/index.scss`）：
-  - `.profile-page` 底部预留 108rpx → **112rpx**（与 TabBar 真实高度对齐），注释同步更正；
-  - `.logout-btn` 的 `margin` 第三值 `0` → `$spacing-lg`，与顶部间距对称，滚到底时与 TabBar 之间保留 32rpx 间距。
-- **验证**：`taro build --type weapp` 编译成功（仅原有 285KB 体积告警）；产物 `dist/pages/profile/index.wxss` 已输出 `.profile-page{...padding-bottom:calc(112rpx + env(safe-area-inset-bottom))}` 与 `.logout-btn{...margin:32rpx 24rpx...}`；`process.env` 残留 0。
+  - `.profile-page` 底部预留 108rpx → **112rpx**（与 TabBar 真实高度对齐）+ 再叠加 `$spacing-lg`(32rpx) 页脚留白，注释同步更正；
+  - `.logout-btn` 的 `margin` 第三值 `0` → `$spacing-lg`，与顶部间距对称。
+  - 两者合力：滚到底时「退出登录」卡与 TabBar 之间约 **64rpx** 间距（32rpx 页脚 + 32rpx 卡片底），整页同时获得约 32rpx 的舒适下拉余量（原先内容≈一屏，几乎拉不动）。
+- **验证**：`taro build --type weapp` 编译成功（仅原有 285KB 体积告警）；产物 `dist/pages/profile/index.wxss` 已输出 `.profile-page{...padding-bottom:calc(112rpx + env(safe-area-inset-bottom) + 32rpx)}` 与 `.logout-btn{...margin:32rpx 24rpx...}`；`process.env` 残留 0。
 - **待真机确认**：「退出登录」与底部 TabBar 的间距观感。
 
 ### 变更：小程序用电记录改为「按用电日一天一条」并新增用电详情页（前后端，2026-09-22）
