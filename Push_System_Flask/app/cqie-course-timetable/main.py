@@ -66,6 +66,38 @@ def _infer_semester_by_date():
     }
 
 
+def _grid_has_real_courses(grid) -> bool:
+    """判断 {headers, rows} 网格是否含真实课程（用于拦截"空壳页"被误判为成功）。
+
+    背景：教务系统被"过快点击"限流、或课表尚未渲染完成时，返回的是只含导航
+    链接的空壳页；该页经 _extract_schedule 解析会得到形如 [["[返回前页]"]] 的
+    "非空 rows"。若仅以"rows 非空"作为成功判据，就会把空壳当有效课表保存，
+    覆盖掉上次成功数据，导致整学期课表长期停在旧快照、页面显示残缺。
+
+    判据：排除表头（节次/周次）、星期名、节次名（第X节）、纯方括号导航文本后，
+    只要还存在任意非空单元格，即视为含真实课程。
+    """
+    if not isinstance(grid, dict):
+        return False
+    rows = grid.get("rows") or []
+    day_names = {"星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"}
+    period_re = re.compile(r"^第[一二三四五六七八九十百]+节$")
+    for row in rows:
+        if not isinstance(row, (list, tuple)):
+            continue
+        for cell in row:
+            text = str(cell or "").strip()
+            if not text:
+                continue
+            if text == "节次/周次" or text in day_names or period_re.match(text):
+                continue
+            # 纯方括号导航/提示文本（如 [返回前页]）
+            if text.startswith("[") and text.endswith("]"):
+                continue
+            return True
+    return False
+
+
 from course_processing.process_course_data import CourseProcessor
 
 # 可选：从教务系统导出的「全部」课表 xlsx 解析（作为整学期权威数据源，
@@ -912,7 +944,20 @@ class CourseTableTool:
         return {"headers": headers, "rows": rows}
 
     def _save_raw_data(self, course_data, html, all_weeks=False):
-        """保存原始数据"""
+        """保存原始数据。
+
+        安全护栏（单点，覆盖全部调用方）：解析结果不含任何真实课程时拒绝落盘并
+        返回 False。典型场景：教务系统被"过快点击"限流、或课表尚未渲染完成，
+        回退解析得到形如 [["[返回前页]"]] 的导航垃圾行——若照常保存，会把空壳当
+        有效课表覆盖掉上次成功数据，导致整学期课表长期停在旧快照（本次修复根因）。
+        """
+        if not _grid_has_real_courses(course_data):
+            self.logger.error(
+                "拒绝保存原始数据：解析结果不含任何真实课程"
+                "（疑似被“过快点击”限流或课表未渲染完成），保留上次成功数据"
+            )
+            return False
+
         script_dir = os.path.dirname(os.path.abspath(__file__))
         raw_data_dir = os.path.join(script_dir, CONFIG["processing"]["raw_data_dir"])
         # 【学期隔离】若指定了学期，数据落到 semester_<id>/ 子目录，避免覆盖当前学期
@@ -944,6 +989,8 @@ class CourseTableTool:
         root_json_path = os.path.join(script_dir, "course_table.json")
         with open(root_json_path, "w", encoding="utf-8") as f:
             json.dump(course_data, f, ensure_ascii=False, indent=2)
+
+        return True
 
     async def _extract_semesters(self, page):
         """
@@ -1237,9 +1284,13 @@ class CourseTableTool:
                 self.logger.error("课程表数据结构不完整，缺少必要字段")
                 return None
 
+            # 单点护栏（_save_raw_data 内）判定不含真实课程时返回 False → 本次判失败，
+            # 保留上次成功数据，避免"过快点击"空壳页覆盖。
+            if not self._save_raw_data(course_data, html):
+                return None
+
             self.logger.info(f"成功解析课程表，包含 {len(course_data['rows'])} 行数据")
             self.course_data = course_data
-            self._save_raw_data(course_data, html)
             self.logger.info("课程表获取成功！")
             return course_data
 
@@ -1589,12 +1640,16 @@ class CourseTableTool:
                 except Exception as e:
                     self.logger.warning(f"渲染表格解析也失败: {e}")
 
-            if merged_data and merged_data.get("rows"):
-                self._save_raw_data(merged_data, html, all_weeks=True)
+            # 单点护栏（_save_raw_data 内）判定不含真实课程时返回 False → 本次判失败，
+            # 不保存、不入库，保留上次成功数据（避免空壳页把整学期数据带偏）。
+            if merged_data and self._save_raw_data(merged_data, html, all_weeks=True):
                 return merged_data
-            else:
-                self.logger.error("整学期课程数据解析失败（TaskActivity 与渲染表格均失败）")
-                return None
+
+            self.logger.error(
+                "整学期课程数据解析失败：未解析到任何真实课程"
+                "（疑似被“过快点击”限流或课表未渲染完成），本次不保存、不入库，保留上次成功数据"
+            )
+            return None
 
         except Exception as e:
             self.logger.error(f"获取所有周次课程表时发生错误: {e}", exc_info=True)
