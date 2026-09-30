@@ -16,7 +16,7 @@ import re
 import time
 from datetime import datetime
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 
 from app.core.config import Config
 from app.core.database import get_db
@@ -191,6 +191,7 @@ def cleanup_all_unused_announcement_images(db=None, min_age_hours=DEFAULT_MIN_AG
 _EDITABLE_FIELDS = {
     "title",
     "category",
+    "channel",
     "content",
     "summary",
     "department",
@@ -532,11 +533,26 @@ class AnnouncementService:
 
     # ==================== 小程序端 ====================
 
-    def list_for_user(self, user_id, category=None, page=1, page_size=20, only_unread=False, only_favorite=False):
+    def list_for_user(
+        self,
+        user_id,
+        category=None,
+        department=None,
+        channel=None,
+        keyword=None,
+        page=1,
+        page_size=20,
+        only_unread=False,
+        only_favorite=False,
+    ):
         """小程序列表（仅已发布可见，带 is_read / is_favorite / 附件数）
 
         Args:
-            only_favorite: True 时仅返回该用户收藏过的通知（用于"我的收藏"页）
+            department: 发布部门精确筛选（预留，当前列表页未使用）。
+            channel: 频道精确筛选；缺省 / "all" / "全部" / "我的关注" 表示不按频道过滤。
+                "我的关注" 由 only_favorite 处理，不在 channel 维度生效。
+            keyword: 关键词搜索，匹配 title 或 summary（LIKE，前后模糊）。
+            only_favorite: True 时仅返回该用户收藏过的通知（用于"我的关注"/"我的收藏"页）
 
         Returns:
             (items, total)
@@ -548,6 +564,15 @@ class AnnouncementService:
             query = db.query(Announcement).filter(self._visible_filter())
             if category and category != "all":
                 query = query.filter(Announcement.category == category)
+            if department and department != "all":
+                query = query.filter(Announcement.department == department)
+            if channel and channel not in ("all", "全部", "我的关注"):
+                query = query.filter(Announcement.channel == channel)
+            if keyword:
+                kw = f"%{keyword}%"
+                query = query.filter(
+                    or_(Announcement.title.like(kw), Announcement.summary.like(kw))
+                )
 
             # 仅收藏：先用 AnnouncementFavorite 取该用户全部收藏 id，再过滤
             if only_favorite:
@@ -609,6 +634,45 @@ class AnnouncementService:
                 data["attachment_count"] = att_counts.get(row.id, 0)
                 items.append(data)
             return items, total
+        finally:
+            db.close()
+
+    def count_visible(self):
+        """当前对学生可见的公告总数（列表页「全部」标签计数）
+
+        口径与 list_for_user 的可见性完全一致，但不含未读/收藏/分类等筛选。
+        """
+        db = get_db()
+        try:
+            return db.query(Announcement).filter(self._visible_filter()).count()
+        finally:
+            db.close()
+
+    def list_channels(self):
+        """可见公告的频道聚合（小程序顶部频道标签用）
+
+        只统计「已发布可见且填写了频道」的公告；按公告数量倒序，
+        数量相同时按频道名升序，保证标签顺序稳定（刷新不跳动）。
+        未填频道的公告不进标签（仅在「我的关注」或各频道之外不可见）。
+
+        Returns:
+            [{"key": "学校要闻", "name": "学校要闻", "count": 3}, ...]
+        """
+        db = get_db()
+        try:
+            rows = (
+                db.query(Announcement.channel, func.count(Announcement.id))
+                .filter(self._visible_filter())
+                .filter(Announcement.channel.isnot(None))
+                .filter(Announcement.channel != "")
+                .group_by(Announcement.channel)
+                .order_by(func.count(Announcement.id).desc(), Announcement.channel.asc())
+                .all()
+            )
+            return [
+                {"key": name, "name": name, "count": int(count or 0)}
+                for name, count in rows
+            ]
         finally:
             db.close()
 

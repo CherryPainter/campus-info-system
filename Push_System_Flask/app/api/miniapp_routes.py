@@ -36,7 +36,8 @@
 - GET  /api/miniapp/notifications/unread-count 消息未读统计（站内通知+公告，角标用）
 - GET  /api/miniapp/notifications/upcoming     近期提醒（学校日历事件）
 - GET  /api/miniapp/notifications/all          全部未过期提醒
-- GET  /api/miniapp/announcements              校园通知列表（纯拉取）
+- GET  /api/miniapp/announcements              校园通知列表（纯拉取，支持 category/department/channel/keyword 筛选）
+- GET  /api/miniapp/announcements/channels      频道清单（列表页顶部频道标签）
 - GET  /api/miniapp/announcements/unread-count 未读通知数（首页红点）
 - GET  /api/miniapp/announcements/<id>         通知详情（自动记已读）
 - POST /api/miniapp/announcements/<id>/favorite 收藏/取消收藏
@@ -1011,10 +1012,11 @@ def user_notification_detail(notification_id: int):
     if not detail:
         return api_error(message="消息不存在", http_status=404)
 
-    # 进入详情即视为已读
-    if not detail.get("is_read"):
-        user_notification_service.mark_read(user_id, notification_id)
+    # 进入详情即视为已读、已看（两层已读：is_read 清外部气泡，is_viewed 清卡片红点）
+    if not detail.get("is_read") or not detail.get("is_viewed"):
+        user_notification_service.mark_viewed(user_id, notification_id)
         detail["is_read"] = True
+        detail["is_viewed"] = True
 
     return api_success(data={"notification": detail})
 
@@ -1059,6 +1061,39 @@ def user_notifications_read():
         },
         message="已标记已读",
     )
+
+
+@miniapp_bp.route("/notifications/messages/viewed", methods=["POST"])
+@student_bound_required
+def user_notifications_viewed():
+    """
+    标记单条个人站内通知已看过（点进详情/关联业务详情）
+
+    用于「卡片右上角红点」语义：进入列表已把全部标记 is_read（清外部气泡），
+    但「已读≠看过」，点进详情才清卡片红点（is_viewed）。
+    普通通知的 is_viewed 由详情 GET 自动标记；公告类通知（ref_type=announcement）
+    点击后跳转的是公告详情页而非消息详情，故由本接口显式标记。
+
+    请求体：
+        { "id": int }   必填，要标记已看的通知 ID
+
+    返回：
+        { "affected": <受影响条数> }
+    """
+    from app.services.user_notification_service import user_notification_service
+
+    user_id = int(g.current_user["user_id"])
+    data = request.get_json(silent=True) or {}
+    notification_id = data.get("id")
+    if notification_id is None:
+        return api_error(message="缺少通知 ID", http_status=400)
+    try:
+        notification_id = int(notification_id)
+    except (TypeError, ValueError):
+        return api_error(message="通知 ID 无效", http_status=400)
+
+    affected = user_notification_service.mark_viewed(user_id, notification_id)
+    return api_success(data={"affected": affected}, message="已标记已看")
 
 
 @miniapp_bp.route("/notifications/unread-count", methods=["GET"])
@@ -1159,18 +1194,23 @@ def announcements_list():
 
     查询参数：
         category (str, 可选): notice/activity/urgent/system，缺省或 all 表示全部
+        department (str, 可选): 发布部门精确筛选，缺省或 all 表示全部
         page (int, 可选): 页码，默认 1
         page_size (int, 可选): 每页条数，默认 20，上限 50
         only_unread (str, 可选): "1"/"true" 时仅返回未读
 
     返回：
-        items: 通知列表（含 is_top/is_read/is_favorite/attachment_count/summary）
+        items: 通知列表（含 is_top/is_read/is_favorite/attachment_count/summary；
+               display_cover 为卡片展示图，已按「配置封面 → 正文首图」回退）
         total: 满足条件的总条数
     """
     from app.services.announcement_service import announcement_service
 
     user_id = int(g.current_user["user_id"]) if g.current_user else None
     category = request.args.get("category") or None
+    department = request.args.get("department") or None
+    channel = request.args.get("channel") or None
+    keyword = request.args.get("keyword") or None
     page = request.args.get("page", type=int) or 1
     page_size = request.args.get("page_size", type=int) or 20
     only_unread = (request.args.get("only_unread") or "").lower() in ("1", "true", "yes")
@@ -1179,6 +1219,9 @@ def announcements_list():
     items, total = announcement_service.list_for_user(
         user_id,
         category=category,
+        department=department,
+        channel=channel,
+        keyword=keyword,
         page=page,
         page_size=page_size,
         only_unread=only_unread,
@@ -1186,6 +1229,26 @@ def announcements_list():
     )
     return api_success(
         data={"items": items, "total": total, "page": page, "page_size": page_size}
+    )
+
+
+@miniapp_bp.route("/announcements/channels", methods=["GET"])
+@miniapp_optional
+def announcements_channels():
+    """频道清单（小程序列表页顶部频道标签数据源）
+
+    只统计当前对学生可见（已发布、未过期、未软删）且填写了频道的公告，
+    items 为 [{"key": "学校要闻", "name": "学校要闻", "count": 3}, ...]，按公告数量倒序；
+    total 为可见公告总数（含未填频道的），供标签上的条数定位。
+    该清单不随筛选变化（始终是全量口径），便于标签上的条数保持稳定。
+    """
+    from app.services.announcement_service import announcement_service
+
+    return api_success(
+        data={
+            "items": announcement_service.list_channels(),
+            "total": announcement_service.count_visible(),
+        }
     )
 
 

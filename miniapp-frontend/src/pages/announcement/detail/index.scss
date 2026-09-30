@@ -18,6 +18,24 @@
   font-size: $font-size-sm;
 }
 
+// 加载态转圈：纯 CSS 矢量，替代 NutUI <Icon name="loading">
+// （NutUI Icon 渲染 createElement('i') 会触发 Taro「Template tmpl_0_i not found」）
+.detail-spinner {
+  width: 48rpx;
+  height: 48rpx;
+  border: 4rpx solid rgba(200, 204, 212, 0.35);
+  border-top-color: #c8ccd4;
+  border-radius: 50%;
+  box-sizing: border-box;
+  animation: detail-spin 0.8s linear infinite;
+}
+
+@keyframes detail-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ---------- 滚动区 ---------- */
 .detail-scroll {
   flex: 1;

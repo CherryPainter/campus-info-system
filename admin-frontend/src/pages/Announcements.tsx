@@ -44,6 +44,7 @@ import {
 import {
   announcementApi,
   CATEGORY_OPTIONS,
+  CHANNEL_OPTIONS,
   STATUS_OPTIONS,
   type AnnouncementListItem,
   type AnnouncementAttachment,
@@ -144,6 +145,7 @@ export default function Announcements() {
       title: (values.title || "").trim(),
       category: values.category || "notice",
       department: (values.department || "").trim(),
+      channel: (values.channel || "").trim(),
       is_top: !!values.is_top,
       content: values.content || "",
       summary: (values.summary || "").trim(),
@@ -179,6 +181,7 @@ export default function Announcements() {
           title: d.title,
           category: d.category,
           department: d.department || "",
+          channel: d.channel || "",
           is_top: d.is_top,
           content: d.content || "",
           summary: d.summary || "",
@@ -405,6 +408,14 @@ export default function Announcements() {
       width: 120,
       ellipsis: true,
       render: (d: string | null) => d || <span style={{ color: "#999" }}>-</span>,
+    },
+    {
+      title: "频道",
+      dataIndex: "channel",
+      key: "channel",
+      width: 110,
+      ellipsis: true,
+      render: (c: string | null) => c || <span style={{ color: "#999" }}>-</span>,
     },
     {
       title: "阅读数",
@@ -635,6 +646,14 @@ export default function Announcements() {
             <Form.Item name="department" label="来源部门">
               <Input placeholder="如：学生处" style={{ width: 200 }} maxLength={100} />
             </Form.Item>
+            <Form.Item name="channel" label="频道">
+              <Select
+                placeholder="如：学校要闻"
+                style={{ width: 160 }}
+                allowClear
+                options={CHANNEL_OPTIONS.map((c) => ({ value: c.value, label: c.label }))}
+              />
+            </Form.Item>
             <Form.Item name="is_top" label="置顶" valuePropName="checked">
               <Switch checkedChildren="置顶" unCheckedChildren="普通" />
             </Form.Item>
@@ -655,7 +674,7 @@ export default function Announcements() {
 
           <Form.Item
             label="封面图（可选）"
-            extra="展示在「我的消息」推送卡片与公告详情页顶部（无图则不显示）"
+            extra="展示在公告详情页顶部与「我的消息」推送卡片。列表卡片为纯文字、不配图（留空即可）。"
           >
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <Upload

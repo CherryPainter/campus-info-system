@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text, RichText, ScrollView, Image } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
-import { Icon } from '@nutui/nutui-react-taro';
 import * as announcementsApi from '@/api/announcements';
 import type { AnnouncementAttachment, AnnouncementDetail } from '@/types/api';
 import { API_BASE_URL, ensureFreshAccessToken } from '@/utils/request';
@@ -207,7 +206,7 @@ export default function AnnouncementDetail() {
 
       {loading ? (
         <View className="detail-loading">
-          <Icon name="loading" size={24} color="#c8ccd4" />
+          <View className="detail-spinner" />
         </View>
       ) : !detail ? (
         <View className="detail-error">

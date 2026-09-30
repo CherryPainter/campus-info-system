@@ -31,6 +31,7 @@ export interface AnnouncementListItem {
   category_label: string;
   summary: string | null;
   department: string | null;
+  channel?: string | null;
   audience_type: string;
   is_top: boolean;
   status: AnnouncementStatus;
@@ -60,10 +61,12 @@ export interface AnnouncementPayload {
   content?: string;
   summary?: string;
   department?: string;
+  /** 频道/栏目（学校要闻/学院动态/媒体聚焦…），用于小程序列表顶部频道标签 */
+  channel?: string;
   is_top?: boolean;
   /** 过期时间，字符串或 null（长期有效） */
   expired_at?: string | null;
-  /** 封面图 URL（消息推送卡片 / 详情页展示，无图则不显示） */
+  /** 封面图 URL（详情页 / 消息推送卡片展示，无图则不显示） */
   cover_url?: string | null;
   /** 仅创建时有效：true 则直接发布 */
   publish?: boolean;
@@ -75,6 +78,13 @@ export const CATEGORY_OPTIONS: { value: AnnouncementCategory; label: string; col
   { value: "activity", label: "活动", color: "purple" },
   { value: "urgent", label: "紧急", color: "red" },
   { value: "system", label: "系统", color: "cyan" },
+];
+
+/** 频道（与后端 CHANNEL_OPTIONS 对齐；用于小程序列表顶部频道标签） */
+export const CHANNEL_OPTIONS: { value: string; label: string }[] = [
+  { value: "学校要闻", label: "学校要闻" },
+  { value: "学院动态", label: "学院动态" },
+  { value: "媒体聚焦", label: "媒体聚焦" },
 ];
 
 /** 状态中文与色标 */

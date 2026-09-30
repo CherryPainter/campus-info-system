@@ -6,6 +6,88 @@
 
 ## Unreleased
 
+### 新增：小程序设置页消息提醒开关 + 关于页聚合条款入口（前端，2026-09-30）
+- **需求**：设置页需要可配置消息提醒开关，用户可静默每日电量等红色数字气泡；「关于」不再用弹框，而是进入独立页面展示用户协议、隐私政策等必要条款。
+- **新增文件**：
+  - `miniapp-frontend/src/stores/notificationSettingsStore.ts`：本地持久化的消息提醒设置 store，含总开关 + 电量日报/低电量/公告/反馈回复子开关，提供 `isNotificationEnabled` 判断辅助。
+  - `miniapp-frontend/src/pages/about/index.tsx` + `.scss` + `.config.ts`：关于页，聚合「用户协议」「隐私政策」「第三方 SDK 列表」「开源声明」「意见反馈」入口与版本/客服/开发者信息。
+  - `miniapp-frontend/src/pages/third-party-sdks/index.tsx` + `.scss` + `.config.ts`：第三方 SDK 列表页。
+  - `miniapp-frontend/src/pages/open-source/index.tsx` + `.scss` + `.config.ts`：开源声明页。
+- **改动**：
+  - `miniapp-frontend/src/pages/settings/index.tsx`：新增「消息提醒」分组（总开关 + 4 项子开关），使用自绘 iOS 风格胶囊开关（`components/Switch`，纯 CSS，不依赖 NutUI）；「关于」改为 `navigateTo('/pages/about/index')`；底部版本号改为读取 `APP_VERSION` 真源。
+  - `miniapp-frontend/src/pages/settings/index.scss`：追加 `.set-cell-switch` / `.set-cell-label-group` / `.set-cell-hint` 开关行样式。
+  - `miniapp-frontend/src/hooks/useFeedbackBadge.ts`：读取消息设置，总开关或反馈回复关闭时不再发请求、直接清空 TabBar 红点。
+  - `miniapp-frontend/src/pages/profile/index.tsx`：读取消息设置，总开关或公告通知关闭时不拉取未读计数、不渲染消息入口红点。
+  - `miniapp-frontend/src/pages/messages/index.tsx`：总开关关闭时未读统计与卡片红点均不显示，列表仍可查看历史。
+  - `miniapp-frontend/src/app.config.ts`：注册 `pages/about/index`、`pages/third-party-sdks/index`、`pages/open-source/index` 三个新页面。
+- **验证**：前端 `tsc --noEmit` 0 错；`taro build --type weapp` 编译成功（产物已核对含 about、third-party-sdks、open-source 三个新页面及 settings 页 Switch 相关编译输出）。
+
+### 新增：小程序通知列表改版——部门筛选 + 置顶轮播 + 公众号式卡片（前后端，2026-09-24）（已被下方 v2「校园新闻门户」样式整体替代）
+- **需求**（用户 2026-09-24）：卡片仿微信公众号通知卡片；置顶做成轮播；卡片图可配封面，无封面则取正文首图，再无则不配图（**不摆占位图**）；多部门发布的公告要分门别类、可供筛选。
+- **后端**（`Push_System_Flask`）：
+  - `app/model/announcement.py`：新增模块级 `extract_first_content_image(html)`（正则取正文首个 `<img src>`，跳过 `data:` 内联图，取不到返回 None）；`to_dict` 新增 `display_cover = cover_url or extract_first_content_image(content)` 即卡片封面回退链；`auto_summary` 里局部的 `import re` 提到模块顶层。
+  - `app/services/announcement_service.py`：`list_for_user` 新增 `department` 参数（精确匹配；缺省或 `all` 表示全部，**传具体部门时未填写部门的公告不会命中**，避免"筛教务处却混进无部门公告"）；新增 `count_visible()`（可见公告总数）与 `list_departments()`（按部门聚合，`count desc, name asc` 保证标签顺序刷新不跳动；只统计 `department` 非空的可见公告）。
+  - `app/api/miniapp_routes.py`：列表接口新增 `department` 查询参数；新增 `GET /api/miniapp/announcements/departments` → `{items:[{name,count}], total}`（该清单始终全量口径，不随筛选变化）。
+- **前端·小程序**（`miniapp-frontend`）：
+  - `types/api.ts`：`AnnouncementItem` 加 `display_cover`；新增 `AnnouncementDepartment` / `AnnouncementDepartmentsResult`。
+  - `api/announcements.ts`：`getList` 支持 `department`；新增 `getDepartments()`。
+  - `pages/announcement/index/index.tsx` + `.scss` 重写：
+    1. 顶部**横滑部门标签**（全部 + 各部门，带可见条数；选中态主色浅底），点击即走后端筛选；
+    2. **置顶区改 Swiper 轮播大图卡片**（上图下文分离，避开遮罩渐变；有图 240rpx 图 + 文字区，无图退化为浅主色底文字卡）；多张时右下角角标 `1/N`，`autoplay + circular`，单张不轮播；
+    3. **全部公告改公众号式行卡片**（左：标题两行 + 标签/部门/时间；右：160rpx 方形缩略图 `aspectFill`）；无图时文字占满整行，不留占位块；
+    4. 筛选行在「加载中 / 空态」下依然渲染（否则筛到空部门后无法切回全部），空态文案随筛选变化；
+    5. `reqIdRef` 请求序号丢弃过期响应，避免快速切换部门时串数据。
+  - `admin-frontend/src/pages/Announcements.tsx`：封面图 `extra` 文案补上「通知列表卡片 / 置顶轮播大图」用途与回退链说明（原文案只提了消息推送卡与详情页，已过期）。
+- **验证**：
+  - 后端 `py_compile` 通过；Flask `test_client` 实测（独立进程、不开端口，不干扰开发服务）：列表各项均含 `display_cover` —— id=4 由**正文首图**回退得到 `/api/announcement-images/...png`，置顶 id=2 无封面且正文无图 → `display_cover=null`；`/announcements/departments` 返回 `[{"count":1,"name":"学生处"},{"count":1,"name":"教务处"}]`；`?department=学生处` → `total=1`，逐条核对无混入其它部门/无部门公告，与标签计数一致；`department=all` 的 total 与各部门计数之和相符。
+  - 前端 `tsc --noEmit` 0 错；`sass` 单文件编译通过；`taro build --type weapp` **编译成功（17.93s）**，产物 `dist/pages/announcement/index/` 已核对含 `display_cover`、`department`、`alist-dept-chip`（含 `is-active` 分支）、`swiper` 标签、中文文案与全部新样式类。
+  - **构建踩坑（重要，已定位）**：在**无 TTY / 无 stdin** 的环境里 `taro build` 会**静默挂起**——日志只打印 banner、dist 不更新，连跑 19 分钟像卡死；给命令加 `< /dev/null` 提供 stdin EOF 后 **18 秒**即编译完成。以后再遇构建"卡住"，先怀疑 stdin 阻塞而非代码问题。
+- **备注**：置顶区数据取自当前筛选结果的第一页（后端排序已保证置顶在最前），若置顶条数超过一页才会漏，实际场景不会；无图不摆占位图是用户明确选择，故无图卡片退化为纯文字布局。
+
+### 新增：小程序通知公告列表 v2 改版——校园新闻门户样式（前后端，2026-09-24）
+- **背景**：上条 v1（部门横滑标签 + 置顶大图轮播 + 右侧缩略图行卡）被否，按用户目标截图（校园新闻门户样式）整体重做；详情页本轮不动。
+- **采用方案**：企划 Q1–Q7 的 A 系列推荐——Q1-A 新增 `channel` 字段；Q2-A「我的关注」= 我的收藏（复用 `only_favorite`，零新表）；Q3-A 列表卡片纯文字不配图（`display_cover` 保留但列表不用）；Q4-A 取消轮播、置顶按 `is_top desc` 自然排最前（本轮未单加角标）；Q5-A 独立搜索页；Q6-A 卡片来源显示 `department`；Q7 不显示分类色标、保留 `is_read` 已读淡化。
+- **后端**（`Push_System_Flask`）：
+  - `app/model/announcement.py`：新增 `CHANNEL_OPTIONS = ["学校要闻","学院动态","媒体聚焦"]`；`Announcement` 新增 `channel = Column(String(50), nullable=True)`；`to_dict` 输出 `channel` / `channel_label`。
+  - `app/services/announcement_service.py`：`_EDITABLE_FIELDS` 加入 `"channel"`（缺则 `create/update` 静默丢字段，已修复并重测）；`list_for_user` 新增 `channel`、`keyword`（channel 非空且非 `all`/`我的关注` 时精确过滤；`keyword` 匹配 `title LIKE` 或 `summary LIKE`，前后模糊）；新增 `list_channels()`（按 `channel` 聚合计数，`count desc, channel asc`，仅统计 `channel` 非空的可见公告）。
+  - `app/api/miniapp_routes.py`：`GET /api/miniapp/announcements` 透传 `channel`、`keyword`；新增 `GET /api/miniapp/announcements/channels` → `{items:[{key,name,count}], total}`；文件头路由清单 docstring 同步。
+  - 迁移：`python init_db.py migrate`（只补不删）已执行，`SHOW COLUMNS` 确认 `channel varchar(50) NULL`。
+- **前端·小程序**（`miniapp-frontend`）：
+  - `types/api.ts`：`AnnouncementItem` 增 `channel`/`channel_label`/`is_read`/`is_favorite`；新增 `AnnouncementChannel` / `AnnouncementChannelsResult`（替换原 `AnnouncementDepartment`）。
+  - `api/announcements.ts`：`AnnouncementListParams` 增 `channel`/`keyword`/`only_favorite`；`getList` 跳过 `all`/`我的关注` 的 channel 透传、始终带 `keyword`；新增 `getChannels()`。
+  - `pages/announcement/index/index.tsx` + `.scss` 整页重写：顶部胶囊搜索栏（CSS 放大镜，点击跳搜索页）+ 频道文本标签行（`ScrollView scrollX`、选中主色下划线、右侧汉堡「更多频道」弹全部频道）+ 纯文字卡片（标题两行 + 来源/日期 meta、`is-read` 整体淡化）+ 触底加载/空态/加载态；保留 `reqIdRef` 请求序号守卫防串数据。
+  - 新增 `pages/announcement/search/`（输入框 350ms 防抖 → `getList({keyword})` + `useReachBottom` 加载更多 + 纯文字结果卡 + 空态）；`app.config.ts` 注册 `pages/announcement/search/index`；搜索页 `index.config.ts` 用 `definePageConfig`（`navigationBarTitleText: '搜索资讯'`）。
+- **管理端**（`admin-frontend`）：
+  - `api/announcement.ts`：新增 `CHANNEL_OPTIONS` 常量；`AnnouncementPayload` / `AnnouncementListItem` 增 `channel`。
+  - `pages/Announcements.tsx`：表单新增「频道」Select（allowClear，选项取自 `CHANNEL_OPTIONS`）；`buildPayload` / `openEdit` 同步 `channel`；表格新增「频道」列；封面图 `extra` 文案更新（列表卡片不配图，封面仅用于详情页与消息推送卡）。
+- **前后端联通**：进页面并发加载「默认频道列表第一页」+「频道清单」；切频道带 `channel` 重拉第一页（序号守卫）；搜索带 `keyword`（可叠加 `channel`）；卡片标题/来源/日期/已读淡化取自 `title`/`department`/`published_label`/`is_read`（全既有字段，仅 `channel`/`channel_label`/`keyword` 为新增）；频道清单始终全量口径、不随筛选变化。
+- **验证**：
+  - 后端 `py_compile` 通过；Flask `test_client` 独立进程实测 13 项全过：列表含 `channel`/`channel_label`；`/channels` 聚合正确；`keyword` 命中 + 无意义词返回 0；`channel` 过滤命中且不串频道；临时公告创建/删除回滚无误。
+  - 前端 `tsc --noEmit`（小程序 + 管理端）0 错；`taro build --type weapp < /dev/null` 编译成功（约 21s）；产物 `dist/pages/announcement/index` 与 `search` 核对：旧 v1 类（`alist-dept-chip`/`alist-top-swiper`/`alist-row-thumb`/`alist-tag`）已移除，新类（`alist-search`/`alist-channel-item`/`alist-channel-underline`/`alist-hb-bar`/`alist-picker-mask`/`alist-card.is-read`）齐全；所有硬编码中文文案（我的关注 / 搜索资讯 / 没有更多了 / 选择频道 / 你还没有关注的通知 / 没有找到相关通知 等）均以 `\uXXXX` 转义正确进入 JS 包（Taro 标准处理，已逐项解码核对）。
+  - **构建踩坑（重申）**：无 TTY 环境 `taro build` 静默挂起，须加 `< /dev/null`。
+- **备注**：存量公告 `channel` 为空 → 只出现在「全部」，不落具体频道，建议后续管理端支持批量指定默认频道；UI 真机/微信开发者工具观感待用户刷新确认（`.env` API base 为本地 `127.0.0.1:29528`，真机需切生产域名）。
+- **修复 1（数据不可见，非数据丢失）**：上线后用户反馈"我的数据呢"。根因——前端 `tabs = [TAB_FOLLOW, ...channels]` **无「全部」入口**，且 `activeTab` 默认 `我的关注`；存量真实公告（id=2 开学说明 / id=4 校园之星选举活动获奖通知）`channel` 全为 NULL（迁移只加列未回填），`list_channels()` 仅聚合非空 `channel` 故返回 `[]` → 只剩「我的关注」标签 → 用户未收藏 → 空态，观感像数据丢失。**数据从未丢失**。修复：新增 `TAB_ALL = '全部'` 作为首个且默认标签，`loadFirst`/`loadMore` 对 `我的关注`/`全部` 均不下发 `channel` 过滤；`loadChannels` 不再自动切到首个频道；`api/announcements.ts` 与后端 `list_for_user` 白名单同步把 `全部`/我的关注` 视为"取全部"（不误当真实频道）；后端 `test_client` 实测 `list total=2` 正确返回 id=2/id=4，`/channels` 返回 `{items:[], total:2}`。
+- **修复 2（`Template tmpl_0_i not found` 运行时报错）**：用户截图报 `WXMLRT_$gwx_XC_4:./base.wxml:template:251:20: Template tmpl_0_i not found`。根因——`components/EmptyState` 用了 NutUI `<Icon name="empty">`，其源码 `defaultProps = { tag: 'i' }` 且 `React.createElement(type, ...)` 在运行时才确定 `<i>` 标签，Taro 静态分析无法为其生成模板 → `xs.a(l,n,s)` 在 `n='i'` 时查 `tmpl_0_i` 未定义 → 报错（用户截图里的灰点即未渲染的 Icon）。`prebundle: {enable:false}` 配置方案已实测无效（重构建仍缺 `tmpl_0_i`）。**可靠修法：移除 NutUI `<Icon>`**。三处调用全部改为纯 CSS 矢量：①`EmptyState` 空态 → `.state-icon`「空文档」字形（theme.scss 全局）；②`NoticeCard` 加载态 → `.notice-spinner` CSS 转圈；③`announcement/detail` 加载态 → `.detail-spinner` CSS 转圈；并移除三处 `import { Icon } from '@nutui/nutui-react-taro'`。重构建 `taro build --type weapp < /dev/null` 编译成功，`grep -rl "tmpl_0_i" dist/` 全仓 0 命中，`tmpl_0_i` 彻底消失。
+
+### 新增：我的消息·我的反馈「两层已读」模型（前后端，2026-09-23）
+- **背景**：原「我的消息/我的反馈」只有单一"已读"态 —— 一旦进入即全标已读、外部气泡消失，但无法区分"已读"与"点进详情细看过"。对强迫症用户，清掉外部气泡后便无从知晓哪些还没认真看。
+- **需求**：进入「我的反馈/我的消息」=全部已读，外部不要气泡角标；但"已读≠看过"，卡片右上角可标红点，点进去就不显示 —— 既能消除外部气泡，又能在有时间细看时知道哪些没看过。
+- **模型**：`is_read`（进列表自动全标，清外部气泡）vs `is_viewed`（点进详情才标，清卡片红点）两层。
+- **后端·我的消息**：`user_notifications` 新增 `is_viewed Boolean` 列（本地 `init_db.py migrate` 已补）；`to_dict` 输出该字段；新增 `UserNotificationRepository.mark_viewed` / `UserNotificationService.mark_viewed`（同时置 `is_read`，因看过必已读）；详情 GET 改为读取时一并标记 `is_viewed`；新增 `POST /api/miniapp/notifications/messages/viewed` 供"公告类站内信"（点击跳转公告详情而非消息详情）显式清红点。
+- **前端·我的消息**（`pages/messages`）：进入列表 `useLoad` 静默调用全部已读（清外部气泡，不动 `is_viewed`）；卡片红点由 `!is_read` 改为 `!is_viewed`，并绝对定位卡片右上角；卡片首屏态类名由 `is-read/unread` 改为 `is-seen/is-unseen`（=是否点进详情看过），"整卡灰化留档"改为"看过才灰"；手动「全部已读」仅清 `is_read`（保留卡片红点）。
+- **前端·我的反馈（零后端改动）**（`utils/feedbackBadge.ts` 新增 `viewedIds` 维度）：新增 `getViewedIds` / `markFeedbackViewed` / `isFeedbackViewed`（`feedback.viewedIds` 本地存储）；列表进入时遍历 `markViewed(id, status)` 把所有当前反馈状态标记为已看 → 外部气泡清 0，并 `setSharedBadgeCount(0)` 同步 TabBar；卡片右上角红点 = `!isFeedbackViewed(id)`，与"状态更新未读"气泡是两个独立维度；详情页进入时 `markFeedbackViewed(id)` 清卡片红点。
+- **验证**：后端改动 `py_compile` 通过、本地 `init_db.py migrate` 确认 `user_notifications.is_viewed` 已补；前端 `tsc --noEmit` 0 错、`taro build --type weapp` 编译成功（产物含 app.json、messages/index、feedback/list、feedback/detail）。
+- **备注**：列表进入即全标已读会使"新公告"提醒块在进页瞬间清空（与手动「全部已读」语义一致）；外部气泡/卡片红点行为待真机刷新确认。
+
+### 修复：课程表 course_key 公式漂移导致 20261 重复 + semester_291 孤儿数据并入（后端，2026-09-23）
+- **背景**：`20261/full` 此前出现 22 行（9-06 旧批 7 门 + 9-23 07:04 新批 15 门），同一门课两批 `weeks` 不一致且共存。
+- **根因（重复）**：`compute_course_key` 当前用**完整节次列表**算 key；实测 9-06 旧批（如 `1002` Web服务器 wd1 p[1,2]）的存储 key 恰好等于「用 `period_idx` 单首节」的旧公式结果，而 9-23 新批（如 `1073`）用「节次列表」公式 —— **两批 key 公式不一致**。旧公式行的 `course_key` 非 NULL，而 `_find_existing_course` 的弱身份兜底原本**只接 `course_key IS NULL` 的行**，于是 9-23 重爬把同课当新行插入，产生重复。
+- **改动（根因）**（`app/repository/course_repository.py` 的 `_find_existing_course`）：弱身份兜底从「仅 `course_key IS NULL`」扩为「**非 NULL 但错配** 也兜底」，按 课名/星期/教室/教师 + 节次一致 命中即把存储 key 纠正为当前公式值。这样历史漂移旧行与未来任何公式变动都能被后续批次正确命中去重，而非永远插重复。
+- **改动（孤儿数据）**：`course_meta.json` 的 `current_semester_id` 由误写的 `"291"` 改回 `"261"`（与 DB `20261` 经 eams 末三位映射一致；semesters 列表同名重复项一并归一）。9-23 15:04 成功爬取原本落在 `processed/semester_291/`（顶层 `processed_course_table.json` 仍是 10:19 失败产物、读不到），本次用一次性脚本指向该子目录、`semester_id=20261`、`data_source='full'`（即 `reconcile=True`）执行覆盖合并。
+- **结果（已验证）**：`20261/full` 收敛为 **16 行**干净数据 —— 6 行 9-06 漂移旧行（1002/1003/1004/1006/1007/1008）被对账软删（`deleted_reason='stale_reconcile'`）；孤儿 `1005`（wd3 第1节 综合实训，9-23 两批均未含）经弱身份兜底被重新命中并保留、key 已纠正；弱身份重复校验返回 0 行。
+- **测试**：`tests/test_course_admin_protection.py` 新增 `test_drifted_non_null_course_key_matched_by_weak_identity`（非 NULL 错配 key 命中既有行、不插重复、key 被纠正）；该文件 7 passed。迁移脚本保留于 `技术总结/dev-scripts/ingest_semester291_to_20261.py`，旧批 7 行已备份至 `技术总结/dev-scripts/backup_20261_old_full_1002_1008.tsv`。
+- **待跟进**：`_resolve_eams_id(semester_id)` 按「DB id 末三位」反推教务内部学期号（20261→'261'）；若学校教务系统当前学期实际内部号为 `291`（meta 原值），则下次全量爬取会按 `261` 去爬错学期 —— 需核实学校真实 eams 学期号后再决定是否修正映射（本次已按 261 入库，数据正确）。
+
 ### 清理：移除已不可达旧页面的死引用（前端，2026-09-23）
 - `App.tsx` 里 `Push` / `Announcements` 两个旧页面**只 import、从不渲染**（`/push`、`/announcements` 早在消息中心聚合时已改为重定向到 `/messages?tab=...`），容易让人误以为旧页面仍在路由上。本次移除这两行 import。
 - **不构成体积优化**：实测构建产物主包为 `1523880 → 1523894` 字节（`+14`，属 hash/长度抖动），即这两个模块此前已被 tree-shaking 掉，本次仅为可读性与可维护性清理。

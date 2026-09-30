@@ -430,6 +430,8 @@ export interface UserNotificationItem {
   /** 结构化数据（可空）；老消息没有此字段，按纯文本渲染 */
   payload?: ElectricityReportPayload | Record<string, unknown> | null;
   is_read: boolean;
+  /** 是否已看过（点进详情页细看）；两层已读模型：is_read=进列表已读（清外部气泡），is_viewed=点进详情已看（清卡片红点） */
+  is_viewed?: boolean;
   cover_url?: string | null; // 封面图 URL（关联公告时展示）
   ref_type?: string | null; // 关联业务类型：announcement / null
   ref_id?: number | null; // 关联业务 ID（如公告 ID），点击跳转用
@@ -509,7 +511,16 @@ export interface AnnouncementItem {
   published_label: string | null; // 已格式化，如「2026-08-31 14:30」
   expired_at: string | null;
   view_count: number;
-  cover_url?: string | null;     // 封面图 URL（消息推送卡片 / 详情页展示，无图则不显示）
+  cover_url?: string | null;     // 管理员配置的封面图（详情页 / 消息推送卡片展示；列表卡片不配图）
+  channel?: string | null;       // 频道/栏目（学校要闻 / 学院动态 / 媒体聚焦…）
+  channel_label?: string | null; // 频道中文（与 channel 同值）
+  is_read?: boolean;             // 当前用户是否已读（详情页 GET 自动记已读；列表用于已读淡化）
+  is_favorite?: boolean;         // 当前用户是否收藏
+  /**
+   * 列表卡片实际展示图（后端已按「配置封面 → 正文第一张图」回退）
+   * 为 null 表示两者都没有；v2 列表卡片统一不配图，该字段列表不再使用。
+   */
+  display_cover?: string | null;
 }
 
 export interface AnnouncementListResult extends ApiSuccess {
@@ -518,6 +529,21 @@ export interface AnnouncementListResult extends ApiSuccess {
     total: number;
     page: number;
     page_size: number;
+  };
+}
+
+/** 频道（列表页顶部标签，count 为该频道当前可见公告数） */
+export interface AnnouncementChannel {
+  key: string;
+  name: string;
+  count: number;
+}
+
+export interface AnnouncementChannelsResult extends ApiSuccess {
+  data: {
+    items: AnnouncementChannel[];
+    /** 当前可见公告总数（含未填频道的），供标签上的条数定位 */
+    total: number;
   };
 }
 

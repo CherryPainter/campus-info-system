@@ -1,13 +1,9 @@
 @import '../../../styles/variables.scss';
 
-/* 通知公告总览页（先看板后列表）
- * - 每条公告独立成卡（白底 + 圆角 + 轻阴影），卡片之间留足上下间距
- *   （修复 2026-09-20：原先多条共用一个白卡容器、仅靠 1rpx 细线分隔，
- *    视觉上「上下粘连」；现与「我的消息」页 .msg-item 卡片规格保持一致）
- * - 上：「置顶公告」专区（独立标题 + 卡片）
- * - 下：「全部公告」列表（含全部条目）
- * - 置顶条目用左侧色条强化
- * - 标签颜色与首页 NoticeCard / 详情页统一
+/* 通知公告总览页 v2（2026-09-30）：校园新闻门户样式
+ * - 顶部：胶囊搜索栏（点击进入独立搜索页）
+ * - 频道标签行：我的关注 + 各频道，横滑，选中短下划线；右侧「更多频道」汉堡打开选择器
+ * - 列表卡片：纯文字上下结构（标题两行 + 来源/日期），不配图；已读条目整体淡化
  */
 
 .alist-page {
@@ -21,81 +17,167 @@
   padding-top: 120rpx;
 }
 
-/* 分区（置顶专区 / 全部公告） */
-.alist-section {
-  margin-bottom: $spacing-lg;
-}
-
-.alist-section-head {
+/* ==================== 搜索栏 ==================== */
+.alist-search {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0 4rpx $spacing-sm;
+  align-items: center;
+  gap: 12rpx;
+  background: #eef0f4;
+  border-radius: $radius-full;
+  padding: $spacing-sm $spacing-md;
+  margin-bottom: $spacing-md;
 }
 
-.alist-section-title {
-  font-size: $font-size-md;
-  font-weight: 600;
-  color: $text-primary;
-}
+.alist-search-icon {
+  position: relative;
+  width: 28rpx;
+  height: 28rpx;
+  flex: none;
 
-.alist-section-count {
-  font-size: $font-size-xs;
-  color: $text-tertiary;
-}
+  &::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 20rpx;
+    height: 20rpx;
+    border: 3rpx solid #b3b8c0;
+    border-radius: 50%;
+    box-sizing: border-box;
+  }
 
-/* 列表容器：透明，仅负责条目之间的间距（每条公告独立成卡） */
-.alist-card {
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-md;
-}
-
-/* 单条公告 = 一张独立卡片 */
-.alist-item {
-  background: $card-background;
-  border-radius: $radius-large;
-  box-shadow: $shadow-card;
-  padding: $spacing-md $spacing-md;
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-
-  // 置顶条目：左侧色条
-  &-top {
-    border-left: 6rpx solid $error;
-    padding-left: $spacing-md - 6rpx;
+  &::before {
+    content: '';
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 12rpx;
+    height: 3rpx;
+    background: #b3b8c0;
+    transform: rotate(45deg);
+    border-radius: 2rpx;
   }
 }
 
-/* 列表卡片封面（卡片内嵌横幅，有图才渲染；无图不占位） */
-.alist-item-cover {
-  display: block;
-  width: 100%;
-  margin-bottom: $spacing-xs;
-  border-radius: $radius-medium;
-  background: #f2f3f5;
+.alist-search-ph {
+  font-size: 26rpx;
+  color: #9aa0a8;
 }
 
-.alist-item-main {
+/* ==================== 频道标签行 ==================== */
+.alist-channel-bar {
+  display: flex;
+  align-items: center;
+  position: relative;
+  margin-bottom: $spacing-md;
+}
+
+.alist-channel-scroll {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.alist-channel-inner {
+  display: inline-block;
+  white-space: nowrap;
+  padding: 4rpx 0;
+}
+
+.alist-channel-item {
+  position: relative;
+  display: inline-block;
+  margin-right: 40rpx;
+  padding: 8rpx 0 12rpx;
+}
+
+.alist-channel-text {
+  font-size: 28rpx;
+  color: $text-secondary;
+}
+
+.alist-channel-item.is-active {
+  .alist-channel-text {
+    color: $primary-color;
+    font-weight: 600;
+  }
+}
+
+.alist-channel-underline {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 36rpx;
+  height: 6rpx;
+  background: $primary-color;
+  border-radius: 3rpx;
+}
+
+/* 右侧「更多频道」汉堡 + 左侧渐隐（避免标签被生切） */
+.alist-channel-more {
+  position: relative;
+  flex: none;
+  padding-left: 24rpx;
+  display: flex;
+  align-items: center;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 24rpx;
+    height: 100%;
+    background: linear-gradient(to right, $background, rgba(246, 247, 251, 0));
+    pointer-events: none;
+  }
+}
+
+.alist-hamburger {
   display: flex;
   flex-direction: column;
   gap: 6rpx;
+  padding: 6rpx 4rpx;
 }
 
-.alist-item-title {
-  font-size: $font-size-md;
+.alist-hb-bar {
+  width: 32rpx;
+  height: 4rpx;
+  background: $text-secondary;
+  border-radius: 2rpx;
+}
+
+/* ==================== 列表卡片（纯文字） ==================== */
+.alist-card-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.alist-card {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  padding: $spacing-md;
+  margin-bottom: $spacing-md;
+
+  /* 已读：标题与 meta 整体淡化 */
+  &.is-read {
+    .alist-card-title {
+      color: #b3b8c0;
+    }
+
+    .alist-card-dept,
+    .alist-card-time {
+      color: #c2c6cc;
+    }
+  }
+}
+
+.alist-card-title {
+  font-size: 30rpx;
   font-weight: 600;
   color: $text-primary;
-  line-height: 1.4;
-  word-break: break-all;
-}
-
-.alist-item-summary {
-  display: block;
-  font-size: $font-size-sm;
-  color: $text-secondary;
-  line-height: 1.5;
+  line-height: 1.45;
   word-break: break-all;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -103,55 +185,88 @@
   overflow: hidden;
 }
 
-.alist-item-meta {
+.alist-card-meta {
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
-  margin-top: 4rpx;
+  gap: 16rpx;
+  margin-top: 12rpx;
 }
 
-.alist-item-dept {
-  font-size: $font-size-xs;
+.alist-card-dept {
+  font-size: 24rpx;
   color: $text-tertiary;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.alist-item-time {
-  font-size: $font-size-xs;
+.alist-card-time {
+  font-size: 24rpx;
   color: $text-tertiary;
-  margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
 
-/* 标签：与首页 NoticeCard / 详情页统一样式 */
-.alist-tag {
-  display: inline-block;
-  align-self: flex-start;
-  font-size: $font-size-xs;
-  font-weight: 600;
-  padding: 2rpx 12rpx;
-  border-radius: 6rpx;
-
-  &.tag-top {
-    background: rgba(207, 19, 34, 0.08);
-    color: #cf1322;
-  }
-
-  &.tag-cat {
-    background: rgba(26, 115, 232, 0.1);
-    color: $primary-color;
-  }
-}
-
-/* 触底加载 / 加载中 / 没有更多 */
+/* ==================== 触底加载 / 没有更多 ==================== */
 .alist-more {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4rpx;
   padding: $spacing-md 0;
 }
 
 .alist-more-text {
-  font-size: $font-size-xs;
+  font-size: 24rpx;
   color: $text-tertiary;
+}
+
+/* ==================== 频道选择器（汉堡触发） ==================== */
+.alist-picker-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+}
+
+.alist-picker-panel {
+  width: 100%;
+  background: $card-background;
+  border-radius: $radius-large $radius-large 0 0;
+  padding: $spacing-lg;
+  max-height: 60vh;
+  box-sizing: border-box;
+}
+
+.alist-picker-title {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: $text-secondary;
+  margin-bottom: $spacing-md;
+}
+
+.alist-picker-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.alist-picker-item {
+  padding: $spacing-md 0;
+  border-bottom: 1rpx solid $border-color;
+
+  &.is-active {
+    .alist-picker-text {
+      color: $primary-color;
+      font-weight: 600;
+    }
+  }
+}
+
+.alist-picker-text {
+  font-size: 30rpx;
+  color: $text-primary;
 }

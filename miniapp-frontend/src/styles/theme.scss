@@ -81,6 +81,36 @@
     color: $text-tertiary;
     margin-top: $spacing-xs;
   }
+
+  // 空状态图标：纯 CSS 矢量「空文档」字形（替代 NutUI <Icon>，
+  // 避免 createElement('i') 触发 Taro 「Template tmpl_0_i not found」）
+  .state-icon {
+    position: relative;
+    width: 96rpx;
+    height: 96rpx;
+    border: 3rpx solid #c8ccd4;
+    border-radius: 16rpx;
+    box-sizing: border-box;
+
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      left: 20rpx;
+      right: 20rpx;
+      border-top: 3rpx solid #c8ccd4;
+      border-radius: 3rpx;
+    }
+
+    &::before {
+      top: 36rpx;
+    }
+
+    &::after {
+      top: 56rpx;
+      right: 38rpx;
+    }
+  }
 }
 
 // 状态标签（未开始/进行中/已结束）

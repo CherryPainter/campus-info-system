@@ -16,6 +16,7 @@
 - announcement_favorites   用户收藏记录
 """
 
+import re
 from datetime import datetime
 
 from sqlalchemy import (
@@ -39,10 +40,36 @@ CATEGORY_LABELS = {
     "system": "系统",
 }
 
+# 公告频道（与小程序端顶部频道标签一一对应；管理端可配，默认如下）
+CHANNEL_OPTIONS = ["学校要闻", "学院动态", "媒体聚焦"]
+
 # 公告状态
 STATUS_DRAFT = "draft"
 STATUS_PUBLISHED = "published"
 STATUS_WITHDRAWN = "withdrawn"
+
+# 正文 <img> 的 src 提取（列表卡片封面回退链用）
+_CONTENT_IMG_RE = re.compile(r"<img\b[^>]*?src\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
+
+
+def extract_first_content_image(html):
+    """取正文中第一张图片的 src，没有则返回 None
+
+    用于列表卡片封面的回退链：管理员配置的 cover_url → 正文首图 → 无图。
+
+    正文图片由富文本编辑器上传，src 形如 /api/announcement-images/<name>
+    （相对路径，前端自行拼 API 域名）；也兼容管理员手工粘贴的完整 URL。
+    取不到可用 src 时返回 None，由前端决定退化样式（不显示图，不占位）。
+    """
+    if not html:
+        return None
+    match = _CONTENT_IMG_RE.search(str(html))
+    if not match:
+        return None
+    src = (match.group(1) or "").strip()
+    if not src or src.startswith("data:"):
+        return None
+    return src
 
 
 class Announcement(Base):
@@ -61,6 +88,11 @@ class Announcement(Base):
     content = Column(Text, nullable=True, comment="正文（纯文本/富文本）")
     summary = Column(String(300), nullable=True, comment="摘要（列表页展示，为空则由正文截取）")
     department = Column(String(100), nullable=True, comment="来源部门")
+    channel = Column(
+        String(50),
+        nullable=True,
+        comment="频道/栏目（学校要闻/学院动态/媒体聚焦…）；用于列表顶部频道标签筛选",
+    )
     audience_type = Column(
         String(20),
         nullable=False,
@@ -95,8 +127,6 @@ class Announcement(Base):
         当成摘要（如 '<img src=...'）。必须先用正则剥除标签，只保留纯文本。
         即使 summary 字段已有值，也做防御性 strip（历史可能存入 HTML 脏数据）。
         """
-        import re
-
         _strip = lambda s: re.sub(r"<[^>]*>", " ", re.sub(r"<\w[\s\S]*$", "", s or "")).strip()
         if self.summary:
             text = _strip(self.summary)
@@ -131,6 +161,8 @@ class Announcement(Base):
             "category_label": CATEGORY_LABELS.get(self.category, "通知"),
             "summary": self.auto_summary(),
             "department": self.department,
+            "channel": self.channel,
+            "channel_label": self.channel or "",
             "audience_type": self.audience_type,
             "is_top": bool(self.is_top),
             "status": self.status,
@@ -141,6 +173,9 @@ class Announcement(Base):
             "expired_at": self.expired_at.isoformat() if self.expired_at else None,
             "view_count": self.view_count or 0,
             "cover_url": self.cover_url,
+            # 卡片实际展示用图（封面回退链）：
+            # 管理员配置的封面 → 正文第一张图 → None（前端无图不占位）
+            "display_cover": self.cover_url or extract_first_content_image(self.content),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

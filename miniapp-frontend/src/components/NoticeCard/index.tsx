@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { Icon } from '@nutui/nutui-react-taro';
 import * as announcementsApi from '@/api/announcements';
 import IconArrow from '@/components/IconArrow';
 
@@ -74,7 +73,7 @@ export default function NoticeCard() {
 
       {loading ? (
         <View className="notice-loading">
-          <Icon name="loading" size={20} color="#c8ccd4" />
+          <View className="notice-spinner" />
         </View>
       ) : list.length === 0 ? (
         <View className="notice-empty">
