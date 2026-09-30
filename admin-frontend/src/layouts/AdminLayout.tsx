@@ -3,7 +3,7 @@
  */
 import { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { ProLayout, PageContainer } from "@ant-design/pro-components";
+import { ProLayout, PageContainer, type MenuDataItem } from "@ant-design/pro-components";
 import { Dropdown, Avatar, Spin, App, Grid, Badge } from "antd";
 import {
   DashboardOutlined,
@@ -13,7 +13,6 @@ import {
   BookOutlined,
   ScheduleOutlined,
   SendOutlined,
-  AppstoreOutlined,
   PlayCircleOutlined,
   LinkOutlined,
   SettingOutlined,
@@ -68,7 +67,7 @@ export default function AdminLayout() {
   }, [isMobile]);
 
   // 根据角色动态生成菜单
-  const menuItems = isAdmin
+  const menuItems: MenuDataItem[] = isAdmin
     ? [
         { path: "/dashboard", name: "仪表盘", icon: <DashboardOutlined /> },
         { path: "/access", name: "用户与权限", icon: <UserOutlined /> },
@@ -76,20 +75,27 @@ export default function AdminLayout() {
         { path: "/electricity", name: "电量管理", icon: <ThunderboltOutlined /> },
         { path: "/course", name: "课程管理", icon: <BookOutlined /> },
         { path: "/tasks", name: "任务管理", icon: <ScheduleOutlined /> },
-        { path: "/messages", name: "消息中心", icon: <SendOutlined /> },
-        { path: "/messages/channels", name: "频道管理", icon: <AppstoreOutlined /> },
+        {
+          path: "/messages",
+          name: "消息中心",
+          icon: <SendOutlined />,
+          children: [
+            { path: "/messages", name: "消息列表" },
+            { path: "/messages/channels", name: "频道管理" },
+          ],
+        },
         { path: "/processes", name: "进程管理", icon: <PlayCircleOutlined /> },
         { path: "/webhooks", name: "Webhook 管理", icon: <LinkOutlined /> },
         { path: "/feedback", name: "意见与反馈", icon: <CommentOutlined /> },
         { path: "/holiday", name: "推送静默", icon: <CalendarOutlined /> },
         { path: "/settings", name: "系统设置", icon: <SettingOutlined /> },
-        { path: "/profile", name: "个人设置", icon: <ProfileOutlined /> },
+        { path: "/profile", name: "个人中心", icon: <ProfileOutlined /> },
       ]
     : [
         { path: "/welcome", name: "首页", icon: <HomeOutlined /> },
         { path: "/weather", name: "天气管理", icon: <CloudOutlined /> },
         { path: "/course", name: "课程管理", icon: <BookOutlined /> },
-        { path: "/profile", name: "个人设置", icon: <ProfileOutlined /> },
+        { path: "/profile", name: "个人中心", icon: <ProfileOutlined /> },
       ];
 
   const handleLogout = async () => {
@@ -110,7 +116,7 @@ export default function AdminLayout() {
     {
       key: "profile",
       icon: <UserOutlined />,
-      label: "个人设置",
+      label: "个人中心",
       onClick: () => navigate("/profile"),
     },
     { type: "divider" },
@@ -139,7 +145,7 @@ export default function AdminLayout() {
 
   return (
     <ProLayout
-      title={isMobile ? (isAdmin ? "后台" : "首页") : isAdmin ? "管理中心" : "个人设置"}
+      title={isMobile ? (isAdmin ? "后台" : "首页") : isAdmin ? "管理中心" : "个人中心"}
       logo={
         <div style={{ fontSize: "24px" }}>
           <DashboardOutlined />
