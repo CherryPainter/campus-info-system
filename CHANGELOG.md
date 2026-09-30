@@ -10,7 +10,7 @@
 - **需求**：设置页需要可配置消息提醒开关，用户可静默每日电量等红色数字气泡；「关于」不再用弹框，而是进入独立页面展示用户协议、隐私政策等必要条款。
 - **新增文件**：
   - `miniapp-frontend/src/stores/notificationSettingsStore.ts`：本地持久化的消息提醒设置 store，含总开关 + 电量日报/低电量/公告/反馈回复子开关，提供 `isNotificationEnabled` 判断辅助。
-  - `miniapp-frontend/src/pages/about/index.tsx` + `.scss` + `.config.ts`：关于页，聚合「用户协议」「隐私政策」「第三方 SDK 列表」「开源声明」「意见反馈」入口与版本/客服/开发者信息。
+  - `miniapp-frontend/src/pages/about/index.tsx` + `.scss` + `.config.ts`：关于页，聚合「用户协议」「隐私政策」「第三方 SDK 列表」「开源声明」「意见反馈」入口与版本/开发者信息。
   - `miniapp-frontend/src/pages/third-party-sdks/index.tsx` + `.scss` + `.config.ts`：第三方 SDK 列表页。
   - `miniapp-frontend/src/pages/open-source/index.tsx` + `.scss` + `.config.ts`：开源声明页。
 - **改动**：
@@ -20,8 +20,9 @@
   - `miniapp-frontend/src/pages/profile/index.tsx`：读取消息设置，总开关或公告通知关闭时不拉取未读计数、不渲染消息入口红点。
   - `miniapp-frontend/src/pages/messages/index.tsx`：总开关关闭时未读统计与卡片红点均不显示，列表仍可查看历史。
   - `miniapp-frontend/src/app.config.ts`：注册 `pages/about/index`、`pages/third-party-sdks/index`、`pages/open-source/index` 三个新页面。
-  - `miniapp-frontend/src/assets/images/logo.png`：新增小程序 logo 图片资源（浅蓝圆角底 + 主色「宜」字），关于页顶部改用真实图片替代 CSS 自绘方块。
-- **验证**：前端 `tsc --noEmit` 0 错；`taro build --type weapp` 编译成功（产物已核对含 about、third-party-sdks、open-source 三个新页面、settings 页 Switch 相关编译输出，以及复制到 `dist/assets/images/logo.png` 的图片资源）。
+  - `miniapp-frontend/src/assets/images/logo.png`：新增小程序 logo 图片资源占位（当前为浅蓝圆角底 + 主色「宜」字），关于页顶部改用真实图片替代 CSS 自绘方块；待用户提供正式小程序 logo 后替换此文件。
+  - 删除 about 页「客服邮箱」信息项（`infoItems` 移除 `support@gelsomino.cn`）。
+- **验证**：前端 `tsc --noEmit` 0 错；`taro build --type weapp` 编译成功（产物已核对含 about、third-party-sdks、open-source 三个新页面、settings 页 Switch 相关编译输出，以及 about 页 `data:image/png;base64` 内联的 logo 图片）。
 
 ### 新增：小程序通知列表改版——部门筛选 + 置顶轮播 + 公众号式卡片（前后端，2026-09-24）（已被下方 v2「校园新闻门户」样式整体替代）
 - **需求**（用户 2026-09-24）：卡片仿微信公众号通知卡片；置顶做成轮播；卡片图可配封面，无封面则取正文首图，再无则不配图（**不摆占位图**）；多部门发布的公告要分门别类、可供筛选。

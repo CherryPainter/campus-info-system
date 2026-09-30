@@ -43,7 +43,6 @@ export default function AboutPage() {
 
   const infoItems: AboutItem[] = [
     { label: '版本号', value: APP_VERSION },
-    { label: '客服邮箱', value: 'support@gelsomino.cn' },
     { label: '开发者', value: '校园信息聚合与智能推送系统团队' },
   ];
 
