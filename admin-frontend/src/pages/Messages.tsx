@@ -45,6 +45,7 @@ import {
   ThunderboltOutlined,
   EyeOutlined,
   ClockCircleOutlined,
+  CloseCircleOutlined,
   CalendarOutlined,
 } from "@ant-design/icons";
 import {
@@ -84,6 +85,19 @@ const msgTypeIconMap: Record<string, { color: string; text: string; icon: React.
   template: { color: "volcano", text: "模板", icon: <ThunderboltOutlined /> },
 };
 
+/**
+ * 安全取分页总数：任意请求失败都回退 0，不阻塞主流程。
+ * 用于统计卡片——各状态计数通过 status 过滤后读 pagination.total，避免依赖当前页列表。
+ */
+const totalOf = async (p: Promise<any>): Promise<number> => {
+  try {
+    const r = await p;
+    return r?.pagination?.total ?? 0;
+  } catch {
+    return 0;
+  }
+};
+
 type ActiveTab = "announcement" | "push" | "reminder";
 
 export default function Messages() {
@@ -121,13 +135,15 @@ export default function Messages() {
   const [pushPage, setPushPage] = useState(1);
   const [pushPageSize, setPushPageSize] = useState(10);
 
-  // ========== 统计数据 ==========
+  // ========== 统计数据（按状态细分，直接反映待办/未发布/投递异常）==========
   const [stats, setStats] = useState({
     annoTotal: 0,
+    annoDraft: 0,
     annoPublished: 0,
-    annoToday: 0,
+    annoWithdrawn: 0,
     pushTotal: 0,
     pushPending: 0,
+    pushFailed: 0,
     reminderTotal: 0,
   });
 
@@ -176,54 +192,44 @@ export default function Messages() {
 
   const fetchStats = async () => {
     try {
-      // 公告统计：分别查总数和今日新增
-      const [allRes, todayRes] = await Promise.all([
-        announcementApi.list({ page: 1, page_size: 1 }),
-        announcementApi.list({
-          page: 1,
-          page_size: 1,
-          status: "published",
-          keyword: undefined,
-        }),
+      // 分别按状态过滤取 pagination.total——直接反映草稿/未发布/投递异常，
+      // 不再依赖当前页列表（旧实现仅在 push Tab 才加载列表，导致「待发送」恒为 0）。
+      const [
+        annoTotal,
+        annoDraft,
+        annoPublished,
+        annoWithdrawn,
+        pushTotal,
+        pushPending,
+        pushFailed,
+        reminderTotal,
+      ] = await Promise.all([
+        totalOf(announcementApi.list({ page: 1, page_size: 1 })),
+        totalOf(announcementApi.list({ page: 1, page_size: 1, status: "draft" })),
+        totalOf(announcementApi.list({ page: 1, page_size: 1, status: "published" })),
+        totalOf(announcementApi.list({ page: 1, page_size: 1, status: "withdrawn" })),
+        totalOf(pushApi.getList({ page: 1, per_page: 1 })),
+        totalOf(pushApi.getList({ page: 1, per_page: 1, status: "pending" })),
+        totalOf(pushApi.getList({ page: 1, per_page: 1, status: "failed" })),
+        totalOf(notificationApi.getList({ page: 1, page_size: 1 })),
       ]);
-      const annoTotalCount = allRes.pagination?.total ?? 0;
-      const publishedCount = todayRes.pagination?.total ?? 0;
-
-      // 推送统计
-      let pushTotalCount = 0;
-      let pushPendingCount = 0;
-      try {
-        const pushRes = await pushApi.getList({ page: 1, per_page: 1 });
-        setPaginationFromRes(pushRes.pagination);
-        pushTotalCount = pushTotal;
-        // pending 数从当前列表估算或单独接口
-        pushPendingCount = pushList.filter((p) => p.status === "pending").length;
-      } catch {
-        /* 推送统计失败不阻塞 */
-      }
-
-      // 近期提醒统计：取总数用于顶部总览卡（细分计数交由内嵌 Notifications 表格自身）
-      let reminderTotalCount = 0;
-      try {
-        const listRes = await notificationApi.getList({ page: 1, page_size: 1 });
-        reminderTotalCount = listRes.pagination?.total ?? 0;
-      } catch {
-        /* 提醒统计失败不阻塞 */
-      }
 
       setStats({
-        annoTotal: annoTotalCount,
-        annoPublished: publishedCount,
-        annoToday: publishedCount, // 简化：用已发布数代替
-        pushTotal: pushTotalCount,
-        pushPending: pushPendingCount,
-        reminderTotal: reminderTotalCount,
+        annoTotal,
+        annoDraft,
+        annoPublished,
+        annoWithdrawn,
+        pushTotal,
+        pushPending,
+        pushFailed,
+        reminderTotal,
       });
     } catch {
       /* 统计失败不阻塞主流程 */
     }
   };
 
+  // 列表数据：随分页/筛选/Tab 变化
   useEffect(() => {
     if (activeTab === "announcement") {
       fetchAnnouncements();
@@ -231,11 +237,16 @@ export default function Messages() {
       fetchPushes();
     }
     // 近期提醒 Tab 由内嵌 <Notifications embedded /> 自管理数据，此处不拉取
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, annoPage, annoPageSize, annoKeyword, filterCategory, filterStatus, pushPage, pushPageSize]);
+
+  // 统计概览：仅随 Tab 切换刷新，避免分页/筛选时反复触发 8 个计数请求
+  useEffect(() => {
     if (activeTab !== "reminder") {
       fetchStats();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, annoPage, annoPageSize, annoKeyword, filterCategory, filterStatus, pushPage, pushPageSize]);
+  }, [activeTab]);
 
   // ==================== 公告筛选 ====================
 
@@ -578,9 +589,9 @@ export default function Messages() {
 
   return (
     <div>
-      {/* ===== 统计卡片行（消息中心聚合页总览：固定五项，不随 Tab 变化）===== */}
+      {/* ===== 统计卡片行（按状态细分：草稿/未发布/投递异常一目了然）===== */}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={12} sm={8} md={4}>
+        <Col xs={12} sm={8} md={3}>
           <Card size="small" hoverable>
             <Statistic
               title="通知总数"
@@ -590,7 +601,17 @@ export default function Messages() {
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={4}>
+        <Col xs={12} sm={8} md={3}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="草稿"
+              value={stats.annoDraft}
+              prefix={<FileOutlined style={{ color: "#8c8c8c" }} />}
+              valueStyle={{ fontSize: isMobile ? 18 : 22, color: "#8c8c8c" }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8} md={3}>
           <Card size="small" hoverable>
             <Statistic
               title="已发布"
@@ -600,27 +621,47 @@ export default function Messages() {
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={4}>
+        <Col xs={12} sm={8} md={3}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="已撤回"
+              value={stats.annoWithdrawn}
+              prefix={<RollbackOutlined style={{ color: "#fa8c16" }} />}
+              valueStyle={{ fontSize: isMobile ? 18 : 22, color: "#fa8c16" }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8} md={3}>
           <Card size="small" hoverable>
             <Statistic
               title="推送记录"
               value={stats.pushTotal}
               prefix={<ThunderboltOutlined style={{ color: "#722ed1" }} />}
-              valueStyle={{ fontSize: isMobile ? 18 : 22 }}
+              valueStyle={{ fontSize: isMobile ? 18 : 22, color: "#722ed1" }}
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={4} style={{ display: isMobile ? "none" : "block" }}>
+        <Col xs={12} sm={8} md={3}>
           <Card size="small" hoverable>
             <Statistic
-              title="待发送"
+              title="推送待发送"
               value={stats.pushPending}
-              prefix={<ClockCircleOutlined style={{ color: "#fa8c16" }} />}
-              valueStyle={{ fontSize: 22, color: "#fa8c16" }}
+              prefix={<ClockCircleOutlined style={{ color: "#faad14" }} />}
+              valueStyle={{ fontSize: isMobile ? 18 : 22, color: "#faad14" }}
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={4}>
+        <Col xs={12} sm={8} md={3}>
+          <Card size="small" hoverable>
+            <Statistic
+              title="推送失败"
+              value={stats.pushFailed}
+              prefix={<CloseCircleOutlined style={{ color: "#ff4d4f" }} />}
+              valueStyle={{ fontSize: isMobile ? 18 : 22, color: "#ff4d4f" }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8} md={3}>
           <Card size="small" hoverable>
             <Statistic
               title="近期提醒"
