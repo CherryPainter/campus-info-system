@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { View, Text, ScrollView } from '@tarojs/components';
+import { View, Text, ScrollView, Input } from '@tarojs/components';
 import Taro, { useLoad, usePullDownRefresh, useReachBottom, stopPullDownRefresh } from '@tarojs/taro';
 
 import * as announcementsApi from '@/api/announcements';
@@ -16,11 +16,9 @@ import './index.scss';
  * - GET /api/miniapp/announcements/channels → {items:[{key,name,count}], total}
  *
  * 页面结构：
- * 1. 顶部搜索栏（点击进入独立搜索页 /pages/announcement/search）
+ * 1. 顶部搜索栏（页内联即时筛选，不新开搜索页）：输入即按 keyword 重新拉取当前列表
  * 2. 频道标签行：全部（默认）+ 我的关注 + 各频道（横滑，选中短下划线）；右侧「更多频道」汉堡打开频道选择器
- * 3. 列表卡片：纯文字上下结构（标题两行 + 来源/日期），不配图；已读条目整体淡化
- *
- * 数据连通：频道走 channel 参数；"我的关注"走 only_favorite；搜索走 keyword（见搜索页）。
+ * 3. 列表卡片：纯文字上下结构（标题两行 + 来源/日期），不配图；已读/未读视觉一致，不做阅读后变灰
  */
 
 const PAGE_SIZE = 10;
@@ -40,11 +38,16 @@ export default function AnnouncementListPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [keyword, setKeyword] = useState('');
+
+  // 搜索关键词：用 ref 让 loadFirst/loadMore 始终读到最新值，避免闭包陷阱
+  const keywordRef = useRef('');
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 请求序号：切换频道时丢弃过期响应，避免串数据
   const reqIdRef = useRef(0);
 
-  /** 拉第一页（首屏 / 下拉刷新 / 切换频道 / 选频道共用） */
+  /** 拉第一页（首屏 / 下拉刷新 / 切换频道 / 选频道 / 搜索共用） */
   const loadFirst = useCallback(async (tab: string) => {
     const reqId = ++reqIdRef.current;
     setLoading(true);
@@ -53,11 +56,13 @@ export default function AnnouncementListPage() {
     try {
       const isFollow = tab === TAB_FOLLOW;
       const isAll = tab === TAB_ALL;
+      const kw = keywordRef.current.trim();
       const res = await announcementsApi.getList({
         page: 1,
         page_size: PAGE_SIZE,
         only_favorite: isFollow || undefined,
         channel: isFollow || isAll ? undefined : tab,
+        keyword: kw || undefined,
       });
       if (reqId !== reqIdRef.current) return;
       const list = res?.data?.items ?? [];
@@ -78,7 +83,6 @@ export default function AnnouncementListPage() {
     try {
       const res = await announcementsApi.getChannels();
       setChannels(res?.data?.items ?? []);
-      // 默认停留在「全部」Tab，不自动切到某个具体频道（避免频道无内容时又落入空态）
     } catch {
       setChannels([]);
     }
@@ -92,11 +96,13 @@ export default function AnnouncementListPage() {
     try {
       const isFollow = activeTab === TAB_FOLLOW;
       const isAll = activeTab === TAB_ALL;
+      const kw = keywordRef.current.trim();
       const res = await announcementsApi.getList({
         page: nextPage,
         page_size: PAGE_SIZE,
         only_favorite: isFollow || undefined,
         channel: isFollow || isAll ? undefined : activeTab,
+        keyword: kw || undefined,
       });
       if (reqId !== reqIdRef.current) return;
       const more = res?.data?.items ?? [];
@@ -118,8 +124,21 @@ export default function AnnouncementListPage() {
     Taro.navigateTo({ url: `/pages/announcement/detail/index?id=${id}` });
   };
 
-  const goSearch = () => {
-    Taro.navigateTo({ url: '/pages/announcement/search/index' });
+  // 搜索：页内联即时筛选（防抖 350ms 后重新拉第一页），不新开搜索页
+  const handleSearchInput = (value: string) => {
+    setKeyword(value);
+    keywordRef.current = value;
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      loadFirst(activeTab);
+    }, 350);
+  };
+
+  const clearSearch = () => {
+    setKeyword('');
+    keywordRef.current = '';
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    loadFirst(activeTab);
   };
 
   const selectTab = (tab: string) => {
@@ -129,7 +148,6 @@ export default function AnnouncementListPage() {
     loadFirst(tab);
   };
 
-  // 首屏
   useLoad(() => {
     loadFirst(TAB_ALL);
     loadChannels();
@@ -146,9 +164,13 @@ export default function AnnouncementListPage() {
 
   const tabs = [TAB_ALL, TAB_FOLLOW, ...channels.map((c) => c.key)];
 
+  // 空态文案：优先判断搜索关键词（筛选无结果），其次按频道
   let emptyTitle = '该频道暂无通知';
   let emptyDesc = '换个频道，或下拉刷新看看';
-  if (activeTab === TAB_ALL) {
+  if (keyword.trim()) {
+    emptyTitle = '没有找到相关通知';
+    emptyDesc = '换个关键词试试';
+  } else if (activeTab === TAB_ALL) {
     emptyTitle = '暂无通知';
     emptyDesc = '下拉刷新试试';
   } else if (activeTab === TAB_FOLLOW) {
@@ -158,10 +180,18 @@ export default function AnnouncementListPage() {
 
   return (
     <View className="alist-page">
-      {/* ====== 搜索栏（点击进入独立搜索页） ====== */}
-      <View className="alist-search" onClick={goSearch}>
+      {/* ====== 搜索栏（页内联筛选，不新开页面） ====== */}
+      <View className="alist-search">
         <View className="alist-search-icon" />
-        <Text className="alist-search-ph">搜索资讯</Text>
+        <Input
+          className="alist-search-input"
+          value={keyword}
+          placeholder="搜索资讯"
+          placeholderClass="alist-search-ph"
+          confirmType="search"
+          onInput={(e) => handleSearchInput(e.detail.value)}
+        />
+        {keyword ? <View className="alist-search-clear" onClick={clearSearch} /> : null}
       </View>
 
       {/* ====== 频道标签行 ====== */}
@@ -201,7 +231,7 @@ export default function AnnouncementListPage() {
           {items.map((item) => (
             <View
               key={item.id}
-              className={`alist-card ${item.is_read ? 'is-read' : ''}`}
+              className="alist-card"
               onClick={() => goDetail(item.id)}
             >
               <Text className="alist-card-title">{item.title || '无标题'}</Text>

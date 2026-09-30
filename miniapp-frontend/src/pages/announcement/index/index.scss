@@ -1,9 +1,9 @@
 @import '../../../styles/variables.scss';
 
 /* 通知公告总览页 v2（2026-09-30）：校园新闻门户样式
- * - 顶部：胶囊搜索栏（点击进入独立搜索页）
+ * - 顶部：胶囊搜索栏（页内联即时筛选，不新开搜索页）
  * - 频道标签行：我的关注 + 各频道，横滑，选中短下划线；右侧「更多频道」汉堡打开选择器
- * - 列表卡片：纯文字上下结构（标题两行 + 来源/日期），不配图；已读条目整体淡化
+ * - 列表卡片：纯文字上下结构（标题两行 + 来源/日期），不配图；已读/未读视觉一致，不做阅读后变灰
  */
 
 .alist-page {
@@ -62,6 +62,42 @@
 .alist-search-ph {
   font-size: 26rpx;
   color: #9aa0a8;
+}
+
+.alist-search-input {
+  flex: 1;
+  height: 40rpx;
+  font-size: 26rpx;
+  color: $text-primary;
+  background: transparent;
+  padding: 0;
+}
+
+.alist-search-clear {
+  position: relative;
+  width: 22rpx;
+  height: 22rpx;
+  flex: none;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 22rpx;
+    height: 3rpx;
+    background: #b3b8c0;
+    border-radius: 2rpx;
+  }
+
+  &::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+  }
+
+  &::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+  }
 }
 
 /* ==================== 频道标签行 ==================== */
@@ -160,17 +196,7 @@
   padding: $spacing-md;
   margin-bottom: $spacing-md;
 
-  /* 已读：标题与 meta 整体淡化 */
-  &.is-read {
-    .alist-card-title {
-      color: #b3b8c0;
-    }
-
-    .alist-card-dept,
-    .alist-card-time {
-      color: #c2c6cc;
-    }
-  }
+  /* 已读/未读视觉一致：不做阅读后变灰（用户 2026-09-30 明确要求） */
 }
 
 .alist-card-title {
