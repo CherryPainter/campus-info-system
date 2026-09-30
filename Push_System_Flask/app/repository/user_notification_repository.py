@@ -139,6 +139,38 @@ class UserNotificationRepository:
         return result.rowcount or 0
 
     @staticmethod
+    def mark_viewed(
+        session: Session,
+        user_id: int,
+        notification_id: int,
+    ) -> int:
+        """
+        标记已看过（点进详情页细看）
+
+        看过必然已读：一次置位同时把 is_read 也置 True，
+        与详情页 GET 上「进入即已读」语义保持一致，避免只清红点却留着未读态。
+
+        Args:
+            session: 数据库会话
+            user_id: 接收用户ID（防越权，必须匹配）
+            notification_id: 指定通知ID
+
+        Returns:
+            int: 受影响行数
+        """
+        q = (
+            update(UserNotification)
+            .where(
+                UserNotification.user_id == user_id,
+                UserNotification.id == notification_id,
+            )
+            .values(is_viewed=True, is_read=True)
+        )
+        result = session.execute(q)
+        session.flush()
+        return result.rowcount or 0
+
+    @staticmethod
     def get_by_id(
         session: Session,
         user_id: int,

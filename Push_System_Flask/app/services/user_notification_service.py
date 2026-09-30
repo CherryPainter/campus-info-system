@@ -166,6 +166,35 @@ class UserNotificationService:
         finally:
             session.close()
 
+    @staticmethod
+    def mark_viewed(user_id: int, notification_id: int) -> int:
+        """
+        标记某条通知已看过（点进详情页细看）
+
+        两层已读模型：is_read=进入列表已读（清外部气泡），is_viewed=点进详情已看（清卡片红点）。
+        此处只处理 is_viewed，同时把 is_read 一并置 True（看过必然已读）。
+
+        Args:
+            user_id: 接收用户ID
+            notification_id: 指定通知ID
+
+        Returns:
+            int: 受影响行数
+        """
+        session = get_db()
+        try:
+            affected = UserNotificationRepository.mark_viewed(
+                session, user_id=user_id, notification_id=notification_id
+            )
+            session.commit()
+            return affected
+        except Exception as exc:
+            session.rollback()
+            logger.error(f"[UserNotification] 标记已看失败 user_id={user_id}: {exc}")
+            return 0
+        finally:
+            session.close()
+
 
 # 模块级单例
 user_notification_service = UserNotificationService()

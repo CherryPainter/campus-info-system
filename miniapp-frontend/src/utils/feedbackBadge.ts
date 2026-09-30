@@ -65,6 +65,49 @@ export function computeUnread(
   ).length;
 }
 
+// ============ 反馈「详情已看」集合（卡片右上角红点用）============
+//
+// 与上方「状态更新未读」(viewedStatus) 是两个独立维度（两层已读模型）：
+// - viewedStatus：管理员更新了状态且我没看过该状态 → 驱动「我的」页外部气泡；
+// - viewedIds：  我是否点进过这条反馈的详情页 → 驱动卡片右上角红点。
+// 进入「我的反馈」列表即把所有当前反馈 markViewed(状态)，外部气泡清 0；
+// 但「已读 ≠ 看过」，卡片红点仍按 viewedIds 显示，直到用户真正点进某条详情。
+// 两者都为零后端改动，纯本地存储。
+
+const VIEWED_IDS_KEY = 'feedback.viewedIds';
+
+/** 读取「已点进详情看过」的反馈 id 集合（容错：损坏数据回退空集合） */
+export function getViewedIds(): Set<number> {
+  try {
+    const raw = Taro.getStorageSync(VIEWED_IDS_KEY);
+    if (Array.isArray(raw)) return new Set(raw as number[]);
+    if (typeof raw === 'string' && raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return new Set(parsed as number[]);
+    }
+  } catch {
+    /* 解析失败回退空 */
+  }
+  return new Set();
+}
+
+/** 记录某条反馈「已点进详情看过」 */
+export function markFeedbackViewed(id: number): void {
+  const set = getViewedIds();
+  if (set.has(id)) return;
+  set.add(id);
+  try {
+    Taro.setStorageSync(VIEWED_IDS_KEY, Array.from(set));
+  } catch {
+    /* 忽略写入失败（不影响主流程） */
+  }
+}
+
+/** 是否已点进详情看过（用于卡片红点：未看才显示红点） */
+export function isFeedbackViewed(id: number): boolean {
+  return getViewedIds().has(id);
+}
+
 // ============ 模块级共享计数（供 CustomTabBar 直接读取）============
 
 let _sharedCount = 0;

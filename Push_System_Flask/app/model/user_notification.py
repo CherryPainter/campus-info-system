@@ -47,7 +47,11 @@ class UserNotification(Base):
         nullable=True,
         comment="结构化数据（JSON 字符串，可空；如电量周报/月报的每日明细）",
     )
-    is_read = Column(Boolean, default=False, nullable=False, comment="是否已读")
+    is_read = Column(Boolean, default=False, nullable=False, comment="是否已读（进入列表即标记）")
+    # 两层已读模型（2026-09-23 新增）：
+    # - is_read  = 进入「我的消息」列表即全部标记已读，用于清掉「我的」页外部气泡角标；
+    # - is_viewed = 点进某条详情页细看后才标记，用于卡片右上角的红点（已读≠看过）。
+    is_viewed = Column(Boolean, default=False, nullable=False, comment="是否已看过（点进详情页细看）")
     created_at = Column(DateTime, default=datetime.now, index=True, comment="创建时间")
 
     # 封面图与业务关联（公告类推送带封面，点击跳转公告详情）
@@ -86,6 +90,7 @@ class UserNotification(Base):
             "content": self.content,
             "payload": parsed_payload,
             "is_read": bool(self.is_read),
+            "is_viewed": bool(self.is_viewed),
             "cover_url": self.cover_url,
             "ref_type": self.ref_type,
             "ref_id": self.ref_id,
