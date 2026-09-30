@@ -1,9 +1,9 @@
 /**
  * 个人中心页面
  *
- * 设计：区别于仪表盘的「全局监控大屏」范式，采用个人空间的标准结构——
- *   顶部个人横幅（头像 + 身份标识 + 安全评分环）
- *   下方左栏导航 / 右侧面板切换（账户资料 · 登录安全 · 登录记录）
+ * 设计取向：与仪表盘同一套「卡片网格」视觉语言（16px 间距、等高 hover、标题图标），
+ * 但内容是真实个人中心、做到企业级克制——顶部一行概览卡一眼看完关键状态，
+ * 下面分内容卡（账户资料 / 安全设置）+ 登录记录表，自然纵向滚动，不堆花活。
  * 功能：
  * - 头像上传、修改用户名（需验证密码）、修改密码
  * - 双因素认证（MFA）管理
@@ -27,11 +27,10 @@ import {
   Switch,
   App,
   Divider,
-  Empty,
-  Tabs,
+  Table,
+  Badge,
   Progress,
   Grid,
-  Badge,
 } from "antd";
 import dayjs from "dayjs";
 import { formatTimeShort, formatDateTime, formatDate } from "@/utils/datetime";
@@ -45,7 +44,6 @@ import {
   MobileOutlined,
   ClockCircleOutlined,
   ReloadOutlined,
-  IdcardOutlined,
   CheckCircleFilled,
   CloseCircleFilled,
 } from "@ant-design/icons";
@@ -93,6 +91,40 @@ function InfoRow({
   );
 }
 
+/** 概览卡：与仪表盘 kpi-card 同一观感（标签/大值/副行 + 右上图标），保证整站语言一致 */
+function OverviewCard({
+  icon,
+  label,
+  value,
+  valueColor,
+  sub,
+  iconColor,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: ReactNode;
+  valueColor?: string;
+  sub?: ReactNode;
+  iconColor?: string;
+}) {
+  return (
+    <Card hoverable style={{ height: "100%" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: "rgba(0,0,0,0.45)" }}>{label}</div>
+          <div style={{ fontSize: 28, fontWeight: 600, lineHeight: 1.3, marginTop: 6, color: valueColor }}>
+            {value}
+          </div>
+          {sub && <div style={{ fontSize: 12, color: "rgba(0,0,0,0.45)", marginTop: 4 }}>{sub}</div>}
+        </div>
+        <div style={{ fontSize: 22, color: iconColor || "#1677ff", opacity: 0.85, flexShrink: 0 }}>
+          {icon}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export default function Profile() {
   const { message } = App.useApp();
   const { isOffline } = useServerStatus();
@@ -125,9 +157,6 @@ export default function Profile() {
   const [mfaDisableVisible, setMfaDisableVisible] = useState(false);
   const [mfaDisableCode, setMfaDisableCode] = useState("");
   const [mfaDisableLoading, setMfaDisableLoading] = useState(false);
-
-  // 当前激活的面板（账户资料 / 登录安全 / 登录记录）
-  const [tab, setTab] = useState("profile");
 
   // 头像是否有未保存的改动（预置值与已存头像一致时禁用「保存头像」）
   const avatarDirty = (avatarPreview || "") !== (user?.avatar || "");
@@ -186,15 +215,10 @@ export default function Profile() {
     }
   };
 
-  // 处理 Base64 头像预览（前端先做类型/大小校验，后端再做权威校验）
   const handleAvatarPreview = (file: File) => {
-    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-    if (!allowedTypes.includes(file.type)) {
-      message.error("仅支持 JPG / PNG / GIF / WEBP 格式头像");
-      return false;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      message.error("头像大小不能超过 2MB");
+    const isLt2M = file.size / 1024 / 1024 < 2;
+    if (!isLt2M) {
+      message.error("头像图片不能超过 2MB");
       return false;
     }
     const reader = new FileReader();
@@ -365,11 +389,28 @@ export default function Profile() {
     setUsernameModalVisible(true);
   };
 
+  const handleRefresh = () => {
+    fetchProfile();
+    fetchMfaStatus();
+    fetchLogs(1);
+  };
+
   // ── 派生信息 ──
   const roleLabel = ROLE_LABEL[user?.role || ""] || user?.role || "-";
   const activeDays = user?.created_at
     ? Math.max(0, dayjs().diff(dayjs(user.created_at), "day"))
     : null;
+
+  // 最近登录展示：移动端概览卡较窄，用紧凑日期（MM-DD）避免长值折行
+  const lastLogin = user?.last_login ? dayjs(user.last_login) : null;
+  const lastLoginOk = !!lastLogin && lastLogin.isValid();
+  const lastLoginValue = !user?.last_login
+    ? "尚未登录"
+    : lastLoginOk
+      ? lastLogin!.format(isMobile ? "MM-DD" : "YYYY-MM-DD")
+      : "-";
+  const lastLoginSub =
+    !user?.last_login || !lastLoginOk ? "—" : `${lastLogin!.format("HH:mm")} · ${user.last_login_ip || "-"}`;
 
   // 安全评分（仅基于后端真实可取的因子，不作任何编造）
   const securityFactors: { ok: boolean; score: number; label: string; tip: string }[] = [
@@ -383,302 +424,95 @@ export default function Profile() {
   const securityColor =
     securityScore >= 80 ? "#52c41a" : securityScore >= 60 ? "#faad14" : "#ff4d4f";
 
-  // 登录会话卡片
   const shortenAgent = (agent?: string) => {
     if (!agent) return "";
     const m = agent.match(/(Chrome|Firefox|Safari|Edg|MicroMessenger)\/[\d.]+/);
     return m ? m[0] : agent.slice(0, 24);
   };
-  const SessionCard = ({ log }: { log: LoginLog }) => {
-    const isSuccess = log.status === "success";
-    const agent = shortenAgent(log.user_agent);
-    return (
-      <div
-        style={{
-          border: "1px solid #f0f0f0",
-          borderRadius: 8,
-          padding: "12px 14px",
-          marginBottom: 12,
-          transition: "all 0.2s",
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#d6e4ff")}
-        onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#f0f0f0")}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <Space size={8}>
-            <Badge status={isSuccess ? "success" : "error"} />
-            <Text strong>{isSuccess ? "登录成功" : "登录失败"}</Text>
-          </Space>
-          <Text type="secondary" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-            {formatTimeShort(log.login_time)}
-          </Text>
-        </div>
-        <div style={{ marginTop: 8 }}>
-          <Space size={6} wrap split={<Divider type="vertical" style={{ margin: "0 2px", borderColor: "#f0f0f0" }} />}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              <GlobalOutlined style={{ marginRight: 4 }} />
-              {log.ip_address || "-"}
-            </Text>
-            {agent && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {agent}
-              </Text>
-            )}
-            {log.logout_time && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                退出 {formatTimeShort(log.logout_time)}
-              </Text>
-            )}
-            {log.duration && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                在线 {log.duration}
-              </Text>
-            )}
-          </Space>
-        </div>
-        {!isSuccess && log.failure_reason && (
-          <div style={{ color: "#ff4d4f", fontSize: 12, marginTop: 6 }}>
-            原因：{log.failure_reason}
-          </div>
-        )}
-      </div>
-    );
-  };
 
-  // ── 三个面板 ──
-  const renderProfilePanel = () => (
-    <Card>
-      <Row gutter={[24, 20]} align="middle">
-        <Col xs={24} sm={8} style={{ textAlign: "center" }}>
-          <div style={{ position: "relative", display: "inline-block" }}>
-            <Avatar
-              size={isMobile ? 88 : 104}
-              src={avatarPreview}
-              icon={!avatarPreview && <UserOutlined />}
-              style={{ backgroundColor: "#f0f5ff", color: "#1677ff" }}
-            />
-            <span
-              style={{
-                position: "absolute",
-                right: 6,
-                bottom: 6,
-                width: 16,
-                height: 16,
-                borderRadius: "50%",
-                background: "#52c41a",
-                border: "3px solid #fff",
-              }}
-            />
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <Upload
-              accept=".jpg,.jpeg,.png,.gif,.webp"
-              showUploadList={false}
-              beforeUpload={handleAvatarPreview}
-            >
-              <Button icon={<EditOutlined />}>更换头像</Button>
-            </Upload>
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <Button type="primary" loading={loading} disabled={!avatarDirty} onClick={handleUpdateProfile}>
-              保存头像
-            </Button>
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              JPG / PNG / GIF / WEBP，不超过 2MB
-            </Text>
-          </div>
-        </Col>
-        <Col xs={24} sm={16}>
-          <InfoRow label="用户名">
-            <Space size={8} wrap>
-              <Text strong style={{ fontSize: 14 }}>
-                {user?.username || "-"}
-              </Text>
-              {user?.is_primary && (
-                <Tag color="gold" style={{ margin: 0 }}>
-                  主账号
-                </Tag>
-              )}
-              <Button
-                type="link"
-                size="small"
-                icon={<EditOutlined />}
-                style={{ padding: 0, height: "auto" }}
-                onClick={openUsernameModal}
-              >
-                修改
-              </Button>
-            </Space>
-          </InfoRow>
-          <InfoRow label="角色">
-            <Tag color={user?.role === "admin" ? "blue" : "default"} style={{ margin: 0 }}>
-              {roleLabel}
-            </Tag>
-          </InfoRow>
-          <InfoRow label="上次登录">
-            <Text type="secondary">{formatDateTime(user?.last_login)}</Text>
-          </InfoRow>
-          <InfoRow label="登录 IP">
-            <Text type="secondary">{user?.last_login_ip || "-"}</Text>
-          </InfoRow>
-          <InfoRow label="注册时间" last>
-            <Text type="secondary">{formatDate(user?.created_at)}</Text>
-          </InfoRow>
-        </Col>
-      </Row>
-    </Card>
-  );
-
-  const renderSecurityPanel = () => (
-    <Row gutter={[16, 16]}>
-      <Col xs={24} md={14}>
-        <Card>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-              padding: 12,
-              background: "#fafafa",
-              borderRadius: 8,
-            }}
-          >
-            <div style={{ minWidth: 0 }}>
-              <div>
-                <MobileOutlined style={{ marginRight: 6, color: "#8c8c8c" }} />
-                <Text strong>双因素认证</Text>
-              </div>
-              <div style={{ marginTop: 4 }}>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {mfaEnabled ? "已启用 - 登录时需要额外验证" : "未启用 - 建议开启以提高账户安全性"}
-                </Text>
-              </div>
-            </div>
-            <Switch
-              checked={mfaEnabled}
-              onChange={handleMfaToggle}
-              loading={mfaStatusLoading || mfaSetupLoading}
-            />
-          </div>
-          <Divider style={{ margin: "16px 0" }} />
-          <Space direction="vertical" size={10} style={{ width: "100%" }}>
-            <Button type="primary" block icon={<LockOutlined />} onClick={() => setPasswordModalVisible(true)}>
-              修改密码
-            </Button>
-            <Button block icon={<UserOutlined />} onClick={openUsernameModal}>
-              修改用户名
-            </Button>
-          </Space>
-        </Card>
-      </Col>
-      <Col xs={24} md={10}>
-        <Card title="安全评分">
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <Progress type="circle" percent={securityScore} size={84} strokeColor={securityColor} format={() => securityScore} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Text strong style={{ color: securityColor }}>
-                安全等级：{securityLevel}
-              </Text>
-              <div style={{ marginTop: 6 }}>
-                {securityFactors.map((f) => (
-                  <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                    {f.ok ? (
-                      <CheckCircleFilled style={{ color: "#52c41a", fontSize: 13 }} />
-                    ) : (
-                      <CloseCircleFilled style={{ color: "#bfbfbf", fontSize: 13 }} />
-                    )}
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {f.label}
-                      {!f.ok && (
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          （可 +{f.score} 分）
-                        </Text>
-                      )}
-                    </Text>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Card>
-      </Col>
-    </Row>
-  );
-
-  const renderLogsPanel = () => (
-    <Card
-      title={
-        <span>
-          共 {logTotal} 条{logStatus ? "（已筛选）" : ""}
-        </span>
-      }
-      extra={
-        <Space>
-          <Select
-            value={logStatus}
-            onChange={(v) => setLogStatus(v)}
-            placeholder="筛选状态"
-            style={{ width: 120 }}
-            allowClear
-          >
-            <Option value="success">成功</Option>
-            <Option value="failed">失败</Option>
-          </Select>
-          <Button icon={<ReloadOutlined />} onClick={() => fetchLogs(1)} loading={logsLoading}>
-            刷新
-          </Button>
+  // ── 登录记录表 ──
+  const logColumns = [
+    {
+      title: "状态",
+      dataIndex: "status",
+      width: 96,
+      render: (s: string) => (
+        <Space size={6}>
+          <Badge status={s === "success" ? "success" : "error"} />
+          <Text>{s === "success" ? "成功" : "失败"}</Text>
         </Space>
-      }
-    >
-      {(!logs || logs.length === 0) && !logsLoading && (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={logStatus ? "当前筛选条件下暂无登录记录" : "暂无登录记录，请重新登录以记录"}
-          style={{ padding: "40px 0" }}
-        />
-      )}
-      {logs && logs.length > 0 && (
-        <>
-          <div>
-            {logs.map((log) => (
-              <SessionCard key={log.id} log={log} />
-            ))}
-          </div>
-          {logTotal > logs.length && (
-            <div style={{ textAlign: "center", marginTop: 4 }}>
-              <Button onClick={() => fetchLogs(logPage + 1)} loading={logsLoading}>
-                加载更多（已显示 {logs.length} / {logTotal}）
-              </Button>
-            </div>
-          )}
-        </>
-      )}
-    </Card>
-  );
+      ),
+    },
+    {
+      title: "登录时间",
+      dataIndex: "login_time",
+      render: (t?: string) => (t ? formatDateTime(t) : "-"),
+    },
+    {
+      title: "退出 / 在线时长",
+      render: (_: unknown, r: LoginLog) =>
+        r.logout_time ? (
+          <span>
+            {formatTimeShort(r.logout_time)}
+            {r.duration ? ` · ${r.duration}` : ""}
+          </span>
+        ) : (
+          <Text type="secondary">在线中</Text>
+        ),
+    },
+    {
+      title: "IP 地址",
+      dataIndex: "ip_address",
+      width: 140,
+      render: (ip?: string) => (
+        <Space size={4}>
+          <GlobalOutlined style={{ color: "rgba(0,0,0,0.45)" }} />
+          <span>{ip || "-"}</span>
+        </Space>
+      ),
+    },
+    {
+      title: "设备",
+      render: (_: unknown, r: LoginLog) => shortenAgent(r.user_agent) || "-",
+    },
+    {
+      title: "失败原因",
+      render: (_: unknown, r: LoginLog) =>
+        r.status !== "success" && r.failure_reason ? (
+          <Text style={{ color: "#ff4d4f" }}>{r.failure_reason}</Text>
+        ) : (
+          <Text type="secondary">-</Text>
+        ),
+    },
+  ];
 
   return (
     <div>
-      {/* 顶部个人横幅 */}
-      <Card style={{ marginBottom: 16, position: "relative", overflow: "hidden" }}>
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 4,
-            background: "#1677ff",
-          }}
-        />
+      {/* 页头 */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        }}
+      >
+        {/* 与仪表盘一致：PageContainer 已渲染菜单名「个人中心」，此处用不同的内容标题，避免重复 */}
+        <Title level={4} style={{ margin: 0 }}>
+          账户总览
+        </Title>
+        <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={logsLoading}>
+          刷新
+        </Button>
+      </div>
+
+      {/* 账户摘要 */}
+      <Card style={{ marginBottom: 16 }}>
         <Row align="middle" gutter={[24, 16]} wrap>
-          {/* 断点：<md 竖排（各占满宽），>=md 横排三栏（头像 5 / 身份 13 / 安全环 6） */}
-          <Col xs={24} md={5} lg={4} style={{ textAlign: "center" }}>
+          <Col xs={24} sm={4} lg={3} style={{ textAlign: "center" }}>
             <div style={{ position: "relative", display: "inline-block" }}>
               <Avatar
-                size={isMobile ? 80 : 96}
+                size={isMobile ? 80 : 92}
                 src={avatarPreview}
                 icon={!avatarPreview && <UserOutlined />}
                 style={{ backgroundColor: "#f0f5ff", color: "#1677ff" }}
@@ -697,7 +531,7 @@ export default function Profile() {
               />
             </div>
           </Col>
-          <Col xs={24} md={13} lg={14}>
+          <Col xs={24} sm={20} lg={21}>
             <Space size={8} wrap align="center">
               <Title level={3} style={{ margin: 0 }}>
                 {user?.username || "-"}
@@ -715,7 +549,7 @@ export default function Profile() {
                   成员 {activeDays ?? "-"} 天
                 </Text>
                 <Text type="secondary" style={{ fontSize: 13 }}>
-                  上次登录 {formatDateTime(user?.last_login)}
+                  上次登录 {user?.last_login ? formatDateTime(user.last_login) : "-"}
                 </Text>
                 <Space size={4}>
                   <Badge status={isOffline ? "error" : "success"} />
@@ -726,60 +560,252 @@ export default function Profile() {
               </Space>
             </div>
           </Col>
-          <Col xs={24} md={6} style={{ textAlign: "center" }}>
-            <Progress
-              type="circle"
-              percent={securityScore}
-              size={isMobile ? 72 : 84}
-              strokeColor={securityColor}
-              format={() => securityScore}
-            />
-            <div style={{ marginTop: 4 }}>
-              <Text style={{ color: securityColor, fontSize: 12 }}>安全等级：{securityLevel}</Text>
-            </div>
-          </Col>
         </Row>
       </Card>
 
-      {/* 左栏导航 / 右侧面板（桌面左栏、移动顶部） */}
-      <Tabs
-        activeKey={tab}
-        onChange={setTab}
-        tabPosition={isMobile ? "top" : "left"}
-        tabBarGutter={isMobile ? 12 : 32}
-        items={[
-          {
-            key: "profile",
-            label: (
-              <span>
-                <IdcardOutlined style={{ marginRight: 6 }} />
-                账户资料
-              </span>
-            ),
-            children: renderProfilePanel(),
-          },
-          {
-            key: "security",
-            label: (
-              <span>
-                <SafetyOutlined style={{ marginRight: 6 }} />
-                登录安全
-              </span>
-            ),
-            children: renderSecurityPanel(),
-          },
-          {
-            key: "logs",
-            label: (
-              <span>
-                <HistoryOutlined style={{ marginRight: 6 }} />
-                登录记录
-              </span>
-            ),
-            children: renderLogsPanel(),
-          },
-        ]}
-      />
+      {/* 概览卡（一眼看完关键状态） */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={6} lg={6}>
+          <OverviewCard
+            icon={<SafetyOutlined />}
+            label="双因素认证"
+            value={mfaEnabled ? "已启用" : "未启用"}
+            valueColor={mfaEnabled ? "#52c41a" : "#ff4d4f"}
+            sub={mfaEnabled ? "登录需额外验证" : "建议尽快开启"}
+          />
+        </Col>
+        <Col xs={12} sm={6} lg={6}>
+          <OverviewCard
+            icon={<ClockCircleOutlined />}
+            label="最近登录"
+            value={lastLoginValue}
+            sub={lastLoginSub}
+          />
+        </Col>
+        <Col xs={12} sm={6} lg={6}>
+          <OverviewCard
+            icon={<HistoryOutlined />}
+            label="登录记录"
+            value={logTotal}
+            sub="累计登录记录"
+          />
+        </Col>
+        <Col xs={12} sm={6} lg={6}>
+          <OverviewCard
+            icon={<UserOutlined />}
+            label="成员时长"
+            value={activeDays != null ? `${activeDays} 天` : "-"}
+            sub={user?.created_at ? `自 ${formatDate(user.created_at)}` : "—"}
+          />
+        </Col>
+      </Row>
+
+      {/* 账户与安全 */}
+      <div style={{ marginBottom: 6 }}>
+        <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>
+          账户与安全
+        </Text>
+      </div>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        {/* 账户资料 */}
+        <Col xs={24} lg={16}>
+          <Card title="账户资料">
+            <Row gutter={[24, 20]} align="middle">
+              <Col xs={24} sm={8} style={{ textAlign: "center" }}>
+                <div style={{ position: "relative", display: "inline-block" }}>
+                  <Avatar
+                    size={isMobile ? 88 : 104}
+                    src={avatarPreview}
+                    icon={!avatarPreview && <UserOutlined />}
+                    style={{ backgroundColor: "#f0f5ff", color: "#1677ff" }}
+                  />
+                  <span
+                    style={{
+                      position: "absolute",
+                      right: 6,
+                      bottom: 6,
+                      width: 16,
+                      height: 16,
+                      borderRadius: "50%",
+                      background: "#52c41a",
+                      border: "3px solid #fff",
+                    }}
+                  />
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <Upload
+                    accept=".jpg,.jpeg,.png,.gif,.webp"
+                    showUploadList={false}
+                    beforeUpload={handleAvatarPreview}
+                  >
+                    <Button icon={<EditOutlined />}>更换头像</Button>
+                  </Upload>
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <Button
+                    type="primary"
+                    loading={loading}
+                    disabled={!avatarDirty}
+                    onClick={handleUpdateProfile}
+                  >
+                    保存头像
+                  </Button>
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    JPG / PNG / GIF / WEBP，不超过 2MB
+                  </Text>
+                </div>
+              </Col>
+              <Col xs={24} sm={16}>
+                <InfoRow label="用户名">
+                  <Space size={8} wrap>
+                    <Text strong style={{ fontSize: 14 }}>
+                      {user?.username || "-"}
+                    </Text>
+                    {user?.is_primary && (
+                      <Tag color="gold" style={{ margin: 0 }}>
+                        主账号
+                      </Tag>
+                    )}
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<EditOutlined />}
+                      style={{ padding: 0, height: "auto" }}
+                      onClick={openUsernameModal}
+                    >
+                      修改
+                    </Button>
+                  </Space>
+                </InfoRow>
+                <InfoRow label="角色">
+                  <Tag color={user?.role === "admin" ? "blue" : "default"} style={{ margin: 0 }}>
+                    {roleLabel}
+                  </Tag>
+                </InfoRow>
+                <InfoRow label="上次登录">
+                  <Text type="secondary">{formatDateTime(user?.last_login)}</Text>
+                </InfoRow>
+                <InfoRow label="登录 IP">
+                  <Text type="secondary">{user?.last_login_ip || "-"}</Text>
+                </InfoRow>
+                <InfoRow label="注册时间" last>
+                  <Text type="secondary">{formatDate(user?.created_at)}</Text>
+                </InfoRow>
+              </Col>
+            </Row>
+          </Card>
+        </Col>
+
+        {/* 安全设置 */}
+        <Col xs={24} lg={8}>
+          <Card title="安全设置" style={{ height: "100%" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+                padding: 12,
+                background: "#fafafa",
+                borderRadius: 8,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div>
+                  <MobileOutlined style={{ marginRight: 6, color: "#8c8c8c" }} />
+                  <Text strong>双因素认证</Text>
+                </div>
+                <div style={{ marginTop: 4 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {mfaEnabled ? "已启用 - 登录时需要额外验证" : "未启用 - 建议开启以提高账户安全性"}
+                  </Text>
+                </div>
+              </div>
+              <Switch
+                checked={mfaEnabled}
+                onChange={handleMfaToggle}
+                loading={mfaStatusLoading || mfaSetupLoading}
+              />
+            </div>
+            <Divider style={{ margin: "16px 0" }} />
+            <Space direction="vertical" size={10} style={{ width: "100%" }}>
+              <Button type="primary" block icon={<LockOutlined />} onClick={() => setPasswordModalVisible(true)}>
+                修改密码
+              </Button>
+              <Button block icon={<UserOutlined />} onClick={openUsernameModal}>
+                修改用户名
+              </Button>
+            </Space>
+
+            <Divider style={{ margin: "16px 0" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Progress percent={securityScore} showInfo={false} strokeColor={securityColor} style={{ flex: 1 }} />
+              <Text strong style={{ color: securityColor, fontSize: 13, whiteSpace: "nowrap" }}>
+                {securityLevel}
+              </Text>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              {securityFactors.map((f) => (
+                <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                  {f.ok ? (
+                    <CheckCircleFilled style={{ color: "#52c41a", fontSize: 13 }} />
+                  ) : (
+                    <CloseCircleFilled style={{ color: "#bfbfbf", fontSize: 13 }} />
+                  )}
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {f.label}
+                    {!f.ok && <span style={{ marginLeft: 4 }}>（可 +{f.score} 分）</span>}
+                  </Text>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* 登录记录 */}
+      <Card
+        title={`登录记录（共 ${logTotal} 条${logStatus ? "，已筛选" : ""}）`}
+        extra={
+          <Space>
+            <Select
+              value={logStatus}
+              onChange={(v) => setLogStatus(v)}
+              placeholder="筛选状态"
+              style={{ width: 120 }}
+              allowClear
+            >
+              <Option value="success">成功</Option>
+              <Option value="failed">失败</Option>
+            </Select>
+            <Button icon={<ReloadOutlined />} onClick={() => fetchLogs(1)} loading={logsLoading}>
+              刷新
+            </Button>
+          </Space>
+        }
+      >
+        <Table<LoginLog>
+          rowKey="id"
+          size="middle"
+          columns={logColumns}
+          dataSource={logs}
+          loading={logsLoading}
+          pagination={false}
+          scroll={{ x: 680 }}
+          locale={{
+            emptyText: logStatus ? "当前筛选条件下暂无登录记录" : "暂无登录记录，请重新登录以记录",
+          }}
+        />
+        {logTotal > logs.length && (
+          <div style={{ textAlign: "center", marginTop: 12 }}>
+            <Button onClick={() => fetchLogs(logPage + 1)} loading={logsLoading}>
+              加载更多（已显示 {logs.length} / {logTotal}）
+            </Button>
+          </div>
+        )}
+      </Card>
 
       {/* 修改密码弹窗 */}
       <Modal
@@ -833,7 +859,7 @@ export default function Profile() {
             <Space style={{ width: "100%", justifyContent: "flex-end" }}>
               <Button onClick={() => setUsernameModalVisible(false)}>取消</Button>
               <Button type="primary" htmlType="submit" loading={changingUsername}>
-                确认修改
+                {usernameForm.getFieldValue("new_username") === user?.username ? "确认" : "确认修改"}
               </Button>
             </Space>
           </Form.Item>

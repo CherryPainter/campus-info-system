@@ -494,7 +494,7 @@ Push_System_Flask/
 |       |   |-- Webhooks.tsx              # Webhook 管理
 |       |   |-- HolidayMode.tsx           # 推送静默 (假期模式)
 |       |   |-- Settings.tsx              # 系统设置 (模块配置/MFA)
-|       |   |-- Profile.tsx               # 个人中心 (账户资料/登录安全/登录记录)
+|       |   |-- Profile.tsx               # 个人中心 (账户总览/账户与安全/登录记录)
 |       |   |-- Welcome.tsx               # 欢迎页 (用户端首页)
 |       |   |-- AccessControl.tsx         # 用户与权限整合页 (用户/会话/访问控制)
 |       |   |-- UserManagement.tsx        # 用户管理
@@ -1040,7 +1040,7 @@ POST /api/auth/login
 | Webhook 管理 | `/webhooks`    | 管理员   | Webhook CRUD/测试/重载                         |
 | 系统设置     | `/settings`    | 管理员   | 模块配置查看与修改                             |
 | 用户管理     | `/users`       | 管理员   | 用户 CRUD/密码重置/MFA 重置                    |
-| 个人中心     | `/profile`     | 所有用户 | 账户资料 / 登录安全 / 登录记录（含头像、修改密码/用户名、MFA 管理） |
+| 个人中心     | `/profile`     | 所有用户 | 账户总览概览卡 / 账户资料与安全设置 / 登录记录表（含头像、修改密码/用户名、MFA 管理） |
 | 欢迎页       | `/welcome`     | 所有用户 | 普通用户默认首页                               |
 
 ### 前端开发

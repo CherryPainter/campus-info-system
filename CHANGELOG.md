@@ -20,6 +20,16 @@
   - 顶部卡片重排为 8 张，按状态配色：通知总数(蓝)/草稿(灰)/已发布(绿)/已撤回(橙)/推送记录(紫)/推送待发送(金)/推送失败(红)/近期提醒(粉)，桌面端 `md={3}` 一排容纳。
 - **验证**：管理端 `tsc --noEmit` exit 0；`vite build` 成功（18.75s）。真实计数依赖本地后端 + MySQL，未代跑（沙箱无 flask 依赖、连不上本地库）；但请求方式复用既有 `announcementApi.list({status})` / `pushApi.getList({status})` 的 `status` 过滤契约，与列表筛选同源，口径一致。
 
+### 优化：频道管理改为「消息中心」页内首个 Tab（撤销侧边栏子菜单，前端，2026-09-30）
+- **背景**：上一步把「频道管理」做成侧边栏「消息中心」子菜单（提交 `1d6aea0`）。用户截图圈出该子菜单、箭头指向页内 Tab 行的「校园通知」，指出应「加在校园通知前面」——即页内第一个 Tab。确认后改为页内 Tab。
+- **改动**：
+  - `admin-frontend/src/pages/Messages.tsx`：新增 `channel` Tab（排首位，位于「校园通知」前）；引入 `ChannelManage` 内嵌；`ActiveTab` 扩为 `channel | announcement | push | reminder`；卡片 extra 按 Tab 切换动作（频道 Tab 显示「刷新 / 新增频道」，动作由内嵌 `ChannelManage` 经 `registerActions` 注册，与提醒 Tab 的 `registerCreate` 同模式）；公告/推送表格改为 `!isReminder && !isChannel` 才渲染。默认激活 Tab 仍为「校园通知」（`?tab=channel` 可直达）。
+  - `admin-frontend/src/pages/ChannelManage.tsx`：新增 `embedded` + `registerActions` props（镜像 `Notifications` 模式）——embedded 时不包外层 Card，仅渲染说明 + 表格，并把「新增频道 / 刷新」动作注册给宿主卡片 extra；卸载时 `registerActions(null)` 注销。
+  - `admin-frontend/src/App.tsx`：删除 `/messages/channels` 独立路由与 `ChannelManage` 导入，改 `Navigate` 重定向到 `/messages?tab=channel`（兼容旧书签）。
+  - `admin-frontend/src/layouts/AdminLayout.tsx`：侧边栏「消息中心」恢复为单项（撤销上一轮的 children 子菜单）。
+- **验证**：`tsc --noEmit` exit 0；`vite build` 成功 17.80s（仅既有 chunk 体积告警）。运行态未截图核实（无可用口令/端口、未连真实后端）；Tab 切换渲染与 extra 动作注册逻辑与既有 `Notifications` 内嵌完全一致。
+- **未做（待定）**：`ChannelManage.tsx` 的 `scroll={{ x: 600 }}` 与四列合计约 550 不符，窄容器下仍会多出一条横向滚动条——属历史遗留，本轮未动（用户未确认）。
+
 ### 重构：Webhook 多用户定向推送（scope 框架 + 管理端页面重构，前后端，2026-09-30）
 - **背景**：电量从「全局单 Cookie」改为「多用户各自配 Cookie」后，原企业微信电量推送被整体移除，只保留小程序站内通知，导致班级群/管理端看不到汇总电量。原 webhook 是「按模块广播」的模块级模式，不适应「把汇总电量只发给特定班级/学生」的多用户新框架，全员广播会刷屏。用户确认「方案 B：升级 webhook 为 scope 感知的定向推送源」并顺带重做管理端 Webhook 页面。
 - **事实核对**：电量任务（`push_electricity_daily/weekly/monthly`）此前确实不再调用 webhook（`tasks.py` 顶部注释与 `formatter.py` 顶部注释均明示）；`Webhook` 模型此前只有模块路由，无受众维度；且 `Webhook.update()` 的 `allowed_fields` 漏了新增的 `scope`/`scope_target`，即使路由传了也写不进库（已修）。
@@ -31,7 +41,7 @@
   - `app/modules/electricity/tasks.py`：`push_electricity_daily/weekly/monthly` 改用 `_iter_students_with_cookie_named()`（返回 `(user_id, cookie, display_name)`），收集 `webhook_entries`（含 `user_id/display_name/markdown_block`），循环结束后调用 `send_module_report("electricity", ...)` 发送汇总；原有的站内通知通道不变。
 - **前端改动**：
   - `admin-frontend/src/api/admin.ts`：`Webhook` 接口同步后端（删除后端不存在的 `webhook_type` 幽灵字段，补 `modules`/`module_list`/`scope`/`scope_target`）。
-  - `admin-frontend/src/pages/Webhooks.tsx`：重做编辑弹窗——新增「接收范围」下拉（全局/指定学生/指定组织），`scope=student` 时从 `adminApi.getElectricityStudents()` 拉学生多选、`scope=org` 时从 `orgApi.tree()` 拉组织树（压平带完整路径）多选；列表新增「接收范围」列展示范围标签 + 目标名称摘要；编辑回填 scope/scope_target。
+  - `admin-frontend/src/pages/Webhooks.tsx`（初版）：重做编辑弹窗——新增「接收范围」下拉（全局/指定学生/指定组织），`scope=student` 时学生候选项初取自 `adminApi.getElectricityStudents()`（末次重做已改为 `rosterApi` 完整名单接口，见末条）、`scope=org` 时从 `orgApi.tree()` 拉组织树（压平带完整路径）多选；列表新增「接收范围」列展示范围标签 + 目标名称摘要；编辑回填 scope/scope_target。
 - **验证**：管理端 `tsc --noEmit` exit 0，`vite build` 成功（17.19s，仅历史遗留的 antd vendor 大 chunk 告警）；后端改动文件 `py_compile` 通过；`webhook_push_service.py`/`tasks.py`/`formatter.py` 调用签名与 entry 结构（user_id/display_name/markdown_block）逐一核对一致；`send_module_report` 仅在 `tasks.py` 三处电量推送被调用，为电量→webhook 唯一路径，无旧全局广播残留；增量迁移逻辑（`app/schema/migrate.py`）核对确认会给 `webhooks` 补 `scope VARCHAR(20) NOT NULL DEFAULT 'global'` 与 `scope_target JSON` 两列（JSON 类型在 `_column_type_to_sql` 正确识别）。
 - **已知边界与已消除的有害不一致**：
   - scope 定向目前**只在电量模块生效**：电量走 `_iter_students_with_cookie_named()` + `send_module_report` 新路径，`send_module_report` 仅在 `tasks.py` 三处电量推送被调用，是电量→webhook 的唯一路径，不会被旧广播重复。
@@ -40,6 +50,7 @@
   - `delivery_service.py` 的 `adapter_name="electricity"` 仅服务于图片任务队列，电量文本报告不走该路径，故电量不会被图片队列重复广播。
 - **待执行（用户本地环境）**：沙箱无 flask 依赖且连不上本地 MySQL，未跑 `init_db.py migrate`；需在 `Push_System_Flask` 部署环境执行 `python init_db.py migrate` 以新增 `webhooks.scope`、`webhooks.scope_target` 两列（仅新增列，非破坏操作）。
 - **顺带补全（同批次，见下条）**：管理端「电量任务」页（`Tasks.tsx`）原本缺「单次采集」入口——已补 `fetch_electricity_data` 任务卡，与后端 `trigger_electricity_task` 的 `task_map` 对齐，不再属遗留项。
+- **前端二次重做（2026-09-30 末，用户反馈"页面简陋 + 没跟用户与权限联动"）**：`admin-frontend/src/pages/Webhooks.tsx` 整页重构——①**学生候选项数据源由 `adminApi.getElectricityStudents()`（仅配电表 Cookie 的学生）改为 `rosterApi.getList()` 完整学生名单**（与「用户与权限」页同源，仅已绑定账号的 `bound_user_id` 可作定向目标），组织候选项仍读 `orgApi.tree()`，真正吃权限体系数据，不再是脱离权限系统的独立选择器；②列表由表格改为「每条独立成卡」（iOS 分组表单式，容器 `gap`、无 border-bottom 分隔），卡片含名称/启停开关/操作/URL/模块标签/接收范围/测试状态；③弹窗改为分组表单（基本信息 / 接收范围 / 其他）；④说明文案如实标注 scope 定向目前仅电量真正生效，课表/天气/系统 payload 为全站共享、当前按全局发送，逐人/逐组织定向为后续项；删去上一版冗长 9 行 Alert。`tsc --noEmit` exit 0，`vite build` 成功（17.02s）。仍遗留：课表/天气/系统 `scope≠global` 的 webhook 当前不会被投递（旧广播已收窄为仅 global），如需这些模块也按受众定向，需把 scope 过滤下沉进 `get_adapter`/`send_to_all`（单独重构，未做）。
 
 ### 修复：管理端「电量任务」补回「单次采集」入口（前端，2026-09-30）
 - **背景**：用户截图反馈管理端电量任务没有「单次爬取」。核对后端——`app/api/admin_routes.py` 的 `trigger_electricity_task` 的 `task_map` 早已支持 `fetch_electricity_data`（电量数据采集：仅入库最新电量、不推送、假期不静默），`app/modules/electricity/tasks.py:41` 也有实现（进程名「爬取电量数据」）；但前端 `Tasks.tsx` 电量分类只列了日/周/月推送、Cookie 检测、`fetch_all`（全量 50 页重爬），唯独漏了 `fetch_electricity_data`，管理员在页面上点不到单次采集。
@@ -48,21 +59,26 @@
 - **说明**：与「电量全量爬取」(`fetch_all`，最多 50 页、走独立端点 `electricityApi.triggerFetchAll`) 区分——`fetch_electricity_data` 是轻量单次「只采最新、不推送」。
 
 ### 优化：管理端「个人设置」更名「个人中心」并重做页面 UI（前端，2026-09-30）
-- **背景**：用户反馈「个人设置」这个叫法不贴切——该页实际是账户资料 + 账户安全 + 登录日志，称「个人中心」更准确；且页面自早期版本以来未随迭代更新，观感简陋。要求重做到与仪表盘同一质量水准，且**明确不要照搬仪表盘**（首版因「沿用仪表盘信息架构」被批敷衍，已推倒重来）。
+- **背景**：用户反馈「个人设置」这个叫法不贴切——该页实际是账户资料 + 账户安全 + 登录日志，称「个人中心」更准确；且页面自早期版本以来未随迭代更新，观感简陋。要求重做到与仪表盘同一质量水准。
 - **更名**（仅文案，路由 `/profile` 不变）：
   - `admin-frontend/src/layouts/AdminLayout.tsx`：管理员/普通用户两套菜单、顶栏用户下拉菜单、普通用户端站点标题统一改为「个人中心」。
   - `admin-frontend/src/pages/Welcome.tsx`：首页快捷入口改为「个人中心 / 账号与安全设置」。
   - `Push_System_Flask/README.md`：前端文件清单与页面权限表同步。
-- **UI 重做**（`admin-frontend/src/pages/Profile.tsx`）：刻意区别于仪表盘的「全局监控大屏」范式，改用**个人空间的标准结构**——顶部个人横幅 + 左栏导航/右侧面板。
-  - **顶部个人横幅**：卡片顶部一条 4px 品牌色细条；横排三栏（断点：`<md` 竖排、`≥md` 横排 `md=5/13/6`、`lg=4/14/6`）——头像（右下叠加在线绿点）· 身份（用户名 + 角色标签 + 主账号标签 + 成员天数/上次登录/服务状态元信息）· 右侧「安全评分环」（分数 + 安全等级，颜色随分数切换）。
-  - **左栏导航 / 右侧面板**（`Tabs`，桌面 `tabPosition=left` 左栏、移动 `top` 顶部）：账户资料 / 登录安全 / 登录记录，三面板各自独立（避免单页长滚动）。
-  - **账户资料**：头像预览 + 更换/保存（**仅在头像确有改动时「保存头像」可用**，原实现任何时候都可点、无变更也发一次请求）；信息行式列表（用户名带主账号标识与修改入口、角色、上次登录、登录 IP、注册时间，行间细分隔线）。
-  - **登录安全**：左「双因素认证」卡（开关 + 已启用/未启用说明，下接修改密码/修改用户名）、右「安全评分」卡（评分环 + 因子核对清单）。
-  - **登录记录**：会话卡片式列表（**每条独立成卡**，成功/失败徽标 + IP + 浏览器 + 时间；已退出的行补退出时间与在线时长；失败行单独一行红字原因），支持按状态筛选 + 加载更多。
+- **UI 方案迭代（两版废弃 → 企业级定稿，`admin-frontend/src/pages/Profile.tsx`）**：
+  - 首版（账户概览 KPI 行 + 账户安全卡 + 登录日志时间线，直接沿用仪表盘信息架构）被批「完全照着仪表盘做、敷衍」，废弃。
+  - 第二版（个人横幅 + 左栏 Tabs / 右侧面板 + 安全评分环）被批「反而不直观」——把仪表盘最有效的「一眼看全」概览拆成了需点页签逐一看，废弃。
+  - **定稿（按用户「按照企业级来做」）**：采用与仪表盘同一套「卡片网格」视觉语言（`Card hoverable` + `Row gutter=[16,16]` + 等高卡片 + 章节小标签），但内容是真实个人中心，纵向自然滚动：
+    1. **页头**：内容标题「账户总览」+ 刷新（刷新同时重拉资料 / MFA / 日志）。
+    2. **账户摘要卡**：头像（右下在线绿点）+ 用户名 + 角色/主账号标签 + 元信息（成员天数 / 上次登录 / 服务状态）。
+    3. **概览卡行（4 张，`xs=12 sm=6`，`OverviewCard` 组件）**：双因素认证（已启用/未启用，绿/红）、最近登录（日期 + 时分·IP）、登录记录（总数）、成员时长（天数 + 起始日期）。
+    4. **账户与安全**：账户资料卡（`lg=16`，头像预览/更换/保存 + 信息行列表）+ 安全设置卡（`lg=8`，MFA 开关 + 修改密码/用户名 + **线性**安全评分 + 因子核对清单）。
+    5. **登录记录卡**：antd `Table<LoginLog>`（状态/登录时间/退出与在线时长/IP/设备/失败原因），支持状态筛选 + 加载更多。
+  - **标题层级对齐仪表盘**：`PageContainer` 已渲染菜单名「个人中心」，页面内容标题用**不同的**「账户总览」（与仪表盘「仪表盘 + 系统概览」同一模式），避免出现两个一模一样的「个人中心」。
   - **安全评分口径**：**仅基于后端真实可得字段**，不编造——双因素认证（+40，取 `authApi.getMfaStatus`）、主账号（+15，取 `user.is_primary`）、绑定邮箱（+15，取 `user.email`）、基础账户（+30，恒真）；满分 100，`≥80` 高 / `≥60` 中 / `<60` 待提升，颜色绿/橙/红。
-- **说明**：纯前端改动，接口与后端契约未变，未新增依赖；后端无对应改动。首版（账户概览 KPI 行 + 账户安全卡 + 登录日志时间线，沿用仪表盘语言）已废弃。
-- **验证**：管理端 `tsc --noEmit` 0 错；`eslint` 该文件 0 error / 0 warning；`vite build` 成功（17.46s，仅既有 chunk 体积告警）。页面清理了首版遗留的未使用代码（`SaveOutlined`、`logStats`/`fetchLogStats`、`refreshAll`、`setLogPageSize`）。
-- **视觉核对方式（可复用）**：本地用户 dev server 端口被另一项目占用、且管理员口令已被修改（默认口令登录失败），故改用「接口 mock + 无头浏览器截图」核对：Playwright 在页面侧拦截 `/api/...` 返回构造数据，注入假 token 后分别以 1440×900（桌面）与 390×844（移动）在 MFA 开/关、三个页签下逐一截图，未连真实后端、未写库。临时脚本 `技术总结/dev-scripts/profile-ui-shot.py`（gitignored，已扩展为逐页签截图）；注意路由拦截不能用 `**/api/**`——Vite dev 下 `/src/api/*.ts` 模块路径同样含 `/api/`，会被误拦成 JSON 导致白屏。核对中发现横幅三栏在桌面端被 `xs={24}` 强制占满而竖向堆叠（浪费横向空间），已改为带断点的显式栅格；移动端三个顶部页签曾溢出出现「⋯」，已收窄 `tabBarGutter` 使其完整放下。
+- **说明**：纯前端改动，接口与后端契约未变，未新增依赖；后端无对应改动；功能（头像/改名/改密、MFA 开关与设置·禁用弹窗、日志筛选与分页）逻辑保持原样，本轮仅重构渲染层。
+- **验证**：管理端 `tsc --noEmit` 0 错；`eslint src/pages/Profile.tsx` 0 error / 0 warning；`vite build` 成功（17.40s，仅既有 chunk 体积告警）。
+- **视觉核对方式（可复用）**：本地 dev server 端口被另一项目占用、且管理员口令已改（默认口令登录失败），故改用「接口 mock + 无头浏览器截图」核对：Playwright 在页面侧拦截 `/api/...` 返回构造数据，注入假 token 后以 1440×900（桌面）与 390×844（移动）在 MFA 开/关下整页截图，未连真实后端、未写库。临时脚本 `技术总结/dev-scripts/profile-ui-shot.py`（gitignored）。注意路由拦截不能用 `**/api/**`——Vite dev 下 `/src/api/*.ts` 模块路径同样含 `/api/`，会被误拦成 JSON 导致白屏。
+- **截图核对发现并修复的 2 处**：①移动端概览卡「最近登录」的完整日期 `2026-09-30` 在 `xs=12` 窄卡内折行 → 移动端值改紧凑格式 `MM-DD`、副行给 `HH:mm · IP`；②`PageContainer` 标题与页面标题重复（均为「个人中心」）→ 页面内容标题改为「账户总览」。另用无头浏览器实测移动端首列表头「状态」单元格宽 96px、行高 39px（单行），确认截图中看似折行只是缩图假象，未做无谓改动。
 - **数据影响**：核对过程中曾用默认口令尝试连接本地后端以取真实数据，两次均失败，登录日志新增 2 条来自 127.0.0.1 的失败记录（非系统异常，可忽略）。
 
 ### 优化：移除「推送静默」假期区间的硬编码类型（前后端，2026-09-30）
