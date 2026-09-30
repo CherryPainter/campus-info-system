@@ -6,6 +6,26 @@
 
 ## Unreleased
 
+### 修复：管理端「类型」胶囊样式不统一（实心 hex vs 浅底预设，2026-09-30）
+- **现象**：进程管理页三张表的「类型」胶囊样式不统一——定时任务表（定时/间隔）与状态/启用标签是 Antd 预设浅底胶囊，而执行历史、动态规则、任务详情的「类型」胶囊是实心填充（课表绿、天气青等），观感割裂。
+- **根因**：`constants/statusMaps.ts` 的 `TASK_TYPE_MAP.color` 是十六进制（供 ECharts 图表用），但 Processes.tsx 直接把它喂给 `<Tag color={hex}>`，Antd 会把 hex 渲染成实心胶囊；而定时/间隔/状态用的是预设色名（浅底）。两路混用导致风格不一致。
+- **改动**：
+  - `constants/statusMaps.ts`：`TASK_TYPE_MAP` 每条新增 `tagColor`（Antd 预设色名：spider/course_spider→blue、course→green、weather→cyan、electricity→orange、system→red、course_full_crawl/custom→purple），原 `color`（hex）仅保留给 ECharts；补注释说明二者分工。
+  - `pages/Processes.tsx`：4 处「类型」胶囊（`columns` 执行历史、`scheduledColumns` 详情、`dynamicRuleColumns` 列表与详情）改读 `typeMap[...]?.tagColor`，统一为浅底胶囊。
+  - 未改动 `Push.tsx`（本就用预设色名，已统一）与 `Dashboard.tsx`（hex 仅喂 ECharts，不渲染胶囊）。
+- **验证**：`tsc --noEmit` 0 错；`vite build` 成功（18.82s，仅预存 chunk 体积告警与本次无关）；无全局 `.ant-tag` 覆盖，Antd 预设浅底样式生效。实际观感待用户在管理端预览确认。
+
+### 优化：小程序占位页空态升级为「功能筹备中」（前端，2026-09-30）
+- **背景**：校历查询、空闲教室、校园卡三个宫格入口暂无可靠后端数据源，原先占位页只有一句居中灰字「暂时没有最新数据」，点进去显空、不像"功能待开放"而像"坏掉了"。按铁律不编未实现数据、不谎称可用。
+- **改动**：
+  - `miniapp-frontend/src/components/FeaturePlaceholder/index.tsx`：占位组件由单句灰字升级为「功能筹备中」空态——纯 CSS 矢量插图（待填充卡片 + 右上角 warning 色"进行中"圆点，无 emoji）+ 主标题 + 诚实说明；新增 `title` / `text` 可选 props。
+  - `miniapp-frontend/src/components/FeaturePlaceholder/index.scss`：新增空态样式，统一使用设计 token（`$background` / `$border-color` / `$warning` / `$shadow-card` 等），底部保留 `safe-area-inset` 内边距。
+  - `miniapp-frontend/src/pages/calendar/index.tsx`：校历查询传入「校历（开学、放假、考试安排）校方暂未开放数据接口」说明。
+  - `miniapp-frontend/src/pages/classroom/index.tsx`：空闲教室传入「需教务实时课室占用数据，暂未接入」说明。
+  - `miniapp-frontend/src/pages/campus-card/index.tsx`：校园卡传入「学校侧暂未开放接口」说明。
+- **说明**：宫格入口全部保留（7 项不变），不删功能、不造假数据；后端接入后直接替换各页真实业务即可，入口无需改动。
+- **验证**：`tsc --noEmit` 0 错；SCSS 编译通过（仅 Sass `@import` 弃用警告，项目普遍现象，非错误）。完整 `taro build --type weapp` 在本机会静默挂起（已知现象），未以之作验证依据。
+
 ### 新增：小程序设置页消息提醒开关 + 关于页聚合条款入口（前端，2026-09-30）
 - **需求**：设置页需要可配置消息提醒开关，用户可静默每日电量等红色数字气泡；「关于」不再用弹框，而是进入独立页面展示用户协议、隐私政策等必要条款。
 - **新增文件**：
