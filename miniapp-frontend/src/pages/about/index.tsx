@@ -1,7 +1,8 @@
-import { View, Text } from '@tarojs/components';
+import { View, Text, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
 import IconArrow from '@/components/IconArrow';
+import logoPng from '@/assets/images/logo.png';
 import { APP_VERSION } from '@/version';
 import './index.scss';
 
@@ -50,7 +51,7 @@ export default function AboutPage() {
     <View className="about-page">
       <View className="about-header">
         <View className="about-logo">
-          <Text className="about-logo-text">宜</Text>
+          <Image className="about-logo-img" src={logoPng} mode="aspectFit" />
         </View>
         <Text className="about-name">校园宜知行</Text>
         <Text className="about-version">版本 {APP_VERSION}</Text>

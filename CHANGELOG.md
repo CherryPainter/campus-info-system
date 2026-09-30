@@ -20,7 +20,8 @@
   - `miniapp-frontend/src/pages/profile/index.tsx`：读取消息设置，总开关或公告通知关闭时不拉取未读计数、不渲染消息入口红点。
   - `miniapp-frontend/src/pages/messages/index.tsx`：总开关关闭时未读统计与卡片红点均不显示，列表仍可查看历史。
   - `miniapp-frontend/src/app.config.ts`：注册 `pages/about/index`、`pages/third-party-sdks/index`、`pages/open-source/index` 三个新页面。
-- **验证**：前端 `tsc --noEmit` 0 错；`taro build --type weapp` 编译成功（产物已核对含 about、third-party-sdks、open-source 三个新页面及 settings 页 Switch 相关编译输出）。
+  - `miniapp-frontend/src/assets/images/logo.png`：新增小程序 logo 图片资源（浅蓝圆角底 + 主色「宜」字），关于页顶部改用真实图片替代 CSS 自绘方块。
+- **验证**：前端 `tsc --noEmit` 0 错；`taro build --type weapp` 编译成功（产物已核对含 about、third-party-sdks、open-source 三个新页面、settings 页 Switch 相关编译输出，以及复制到 `dist/assets/images/logo.png` 的图片资源）。
 
 ### 新增：小程序通知列表改版——部门筛选 + 置顶轮播 + 公众号式卡片（前后端，2026-09-24）（已被下方 v2「校园新闻门户」样式整体替代）
 - **需求**（用户 2026-09-24）：卡片仿微信公众号通知卡片；置顶做成轮播；卡片图可配封面，无封面则取正文首图，再无则不配图（**不摆占位图**）；多部门发布的公告要分门别类、可供筛选。
