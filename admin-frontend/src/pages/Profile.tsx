@@ -29,7 +29,6 @@ import {
   Divider,
   Table,
   Badge,
-  Progress,
   Grid,
 } from "antd";
 import dayjs from "dayjs";
@@ -44,8 +43,6 @@ import {
   MobileOutlined,
   ClockCircleOutlined,
   ReloadOutlined,
-  CheckCircleFilled,
-  CloseCircleFilled,
 } from "@ant-design/icons";
 import { userApi, type LoginLog } from "@/api/admin";
 import { authApi } from "@/api/auth";
@@ -412,18 +409,6 @@ export default function Profile() {
   const lastLoginSub =
     !user?.last_login || !lastLoginOk ? "—" : `${lastLogin!.format("HH:mm")} · ${user.last_login_ip || "-"}`;
 
-  // 安全评分（仅基于后端真实可取的因子，不作任何编造）
-  const securityFactors: { ok: boolean; score: number; label: string; tip: string }[] = [
-    { ok: mfaEnabled, score: 40, label: "双因素认证", tip: "登录需额外验证码" },
-    { ok: !!user?.is_primary, score: 15, label: "主账号", tip: "拥有完整管理权限" },
-    { ok: !!user?.email, score: 15, label: "绑定邮箱", tip: "可用于找回与通知" },
-    { ok: true, score: 30, label: "基础账户", tip: "已激活且可正常登录" },
-  ];
-  const securityScore = securityFactors.reduce((s, f) => s + (f.ok ? f.score : 0), 0);
-  const securityLevel = securityScore >= 80 ? "高" : securityScore >= 60 ? "中" : "待提升";
-  const securityColor =
-    securityScore >= 80 ? "#52c41a" : securityScore >= 60 ? "#faad14" : "#ff4d4f";
-
   const shortenAgent = (agent?: string) => {
     if (!agent) return "";
     const m = agent.match(/(Chrome|Firefox|Safari|Edg|MicroMessenger)\/[\d.]+/);
@@ -738,29 +723,6 @@ export default function Profile() {
                 修改用户名
               </Button>
             </Space>
-
-            <Divider style={{ margin: "16px 0" }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Progress percent={securityScore} showInfo={false} strokeColor={securityColor} style={{ flex: 1 }} />
-              <Text strong style={{ color: securityColor, fontSize: 13, whiteSpace: "nowrap" }}>
-                {securityLevel}
-              </Text>
-            </div>
-            <div style={{ marginTop: 8 }}>
-              {securityFactors.map((f) => (
-                <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                  {f.ok ? (
-                    <CheckCircleFilled style={{ color: "#52c41a", fontSize: 13 }} />
-                  ) : (
-                    <CloseCircleFilled style={{ color: "#bfbfbf", fontSize: 13 }} />
-                  )}
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {f.label}
-                    {!f.ok && <span style={{ marginLeft: 4 }}>（可 +{f.score} 分）</span>}
-                  </Text>
-                </div>
-              ))}
-            </div>
           </Card>
         </Col>
       </Row>

@@ -48,9 +48,21 @@
   - **已消除有害不一致（2026-09-30 末）**：旧 `adapter_service.get_adapter(module)` 全局广播在聚合 DB webhook 时**不读 scope**，导致一个 `scope=student/org` 的 webhook（即便 `modules` 含 course/weather/system）也会被全局广播误推——这是真正会出错的不一致。已在 `app/services/adapter_service.py` 的 `_load_webhooks_from_db` 中把模块广播收窄为**仅 `scope=global`** 的 webhook（`global_webhooks = [w for w in webhooks if (w.scope or "global")=="global"]`），定向（student/org）webhook 一律不再进旧广播。零风险：现有全部 global webhook 行为完全不变。
   - 课程/天气/系统仍走旧全局广播，本身**不支持**定向（其 `modules` 下的定向 webhook 现在被正确排除，而非误推）——这是「未做全模块 scope」，不是「会出错」。若要让 scope 对课程/天气/系统也生效，需把 scope 过滤下沉进 `get_adapter`/`send_to_all`（属单独重构，本次未做，留作后续）。
   - `delivery_service.py` 的 `adapter_name="electricity"` 仅服务于图片任务队列，电量文本报告不走该路径，故电量不会被图片队列重复广播。
-- **待执行（用户本地环境）**：沙箱无 flask 依赖且连不上本地 MySQL，未跑 `init_db.py migrate`；需在 `Push_System_Flask` 部署环境执行 `python init_db.py migrate` 以新增 `webhooks.scope`、`webhooks.scope_target` 两列（仅新增列，非破坏操作）。
+- **待执行（用户本地环境）**：沙箱无 flask 依赖且连不上本地 MySQL，未跑 `init_db.py migrate`；需在 `Push_System_Flask` 部署环境执行 `python init_db.py migrate` 以新增 `webhooks.scope`、`webhooks.scope_target` 两列（宿舍维度重构后另需 `student_profiles.dorm` 一列，见末条「scope 模型终稿」）。
 - **顺带补全（同批次，见下条）**：管理端「电量任务」页（`Tasks.tsx`）原本缺「单次采集」入口——已补 `fetch_electricity_data` 任务卡，与后端 `trigger_electricity_task` 的 `task_map` 对齐，不再属遗留项。
 - **前端二次重做（2026-09-30 末，用户反馈"页面简陋 + 没跟用户与权限联动"）**：`admin-frontend/src/pages/Webhooks.tsx` 整页重构——①**学生候选项数据源由 `adminApi.getElectricityStudents()`（仅配电表 Cookie 的学生）改为 `rosterApi.getList()` 完整学生名单**（与「用户与权限」页同源，仅已绑定账号的 `bound_user_id` 可作定向目标），组织候选项仍读 `orgApi.tree()`，真正吃权限体系数据，不再是脱离权限系统的独立选择器；②列表由表格改为「每条独立成卡」（iOS 分组表单式，容器 `gap`、无 border-bottom 分隔），卡片含名称/启停开关/操作/URL/模块标签/接收范围/测试状态；③弹窗改为分组表单（基本信息 / 接收范围 / 其他）；④说明文案如实标注 scope 定向目前仅电量真正生效，课表/天气/系统 payload 为全站共享、当前按全局发送，逐人/逐组织定向为后续项；删去上一版冗长 9 行 Alert。`tsc --noEmit` exit 0，`vite build` 成功（17.02s）。仍遗留：课表/天气/系统 `scope≠global` 的 webhook 当前不会被投递（旧广播已收窄为仅 global），如需这些模块也按受众定向，需把 scope 过滤下沉进 `get_adapter`/`send_to_all`（单独重构，未做）。
+- **scope 模型终稿（org → dorm，2026-09-30 末，用户最终裁定）**：用户指出 `org` 组织树是建在"多租户/多课表"的错误假设上——电量天然 per-student/per-dorm 私有、课程 `courses` 表无 `user_id` 列（仅本人单课表），组织树 BFS 纯属过度搭建；且"用户表里应该有存宿舍的吧，宿舍一样的不就是一个组"。据此**移除 `org` scope，定稿为 `{global, student, dorm}` 三类**：
+  - 后端 `app/model/webhook.py`：`WEBHOOK_SCOPE_ORG` 删除，改 `WEBHOOK_SCOPE_DORM="dorm"`，`WEBHOOK_SCOPES={global,student,dorm}`；`scope_target` 注释改为 dorm 时存宿舍值（字符串）列表。
+  - `app/model/student_profile.py`：新增 `dorm` 列（`VARCHAR(100)`，如"A栋305"；同宿舍学生构成一个组，用于电量按宿舍聚合推送）+ `to_dict` 补 `dorm`。
+  - `app/api/webhook_routes.py`：`_normalize_scope_target` 改为 scope 感知——global 返回 None、dorm 返回去空去重的字符串列表、student 返回整数 ID 列表；校验文案同步（student=整数 ID 列表 / dorm=宿舍值列表）。
+  - `app/services/webhook_push_service.py`：`_expand_org_user_ids`（OrgUnit BFS）替换为 `_expand_dorm_user_ids(dorms)`——`StudentProfile.query.filter(dorm.in_(dorms), user_id.isnot(None))` 返回 user_id 集；导入改用 `WEBHOOK_SCOPE_DORM`。
+  - `app/api/admin_routes.py`：新增 `GET /admin/students/dorms`（去重宿舍枚举），供前端 dorm 选择器。
+  - 前端 `admin-frontend/src/api/admin.ts`：`Webhook.scope` 联合类型加 `"dorm"`、`scope_target` 类型放宽；`adminApi` 加 `getDorms()`。
+  - 前端 `admin-frontend/src/pages/Webhooks.tsx`：移除 `orgApi`/`ApartmentOutlined`/`flattenOrgTree`，改 `HomeOutlined` + `adminApi.getDorms()` 拉宿舍枚举；scope 下拉 `{global,student,dorm}`，scope=dorm 时多选宿舍；SCOPE_MAP 加 dorm 蓝标「指定宿舍」；renderScope 显示宿舍名。初版数据源口径修正：学生选项末次已改为 `rosterApi.getList()`（非 `getElectricityStudents()`）。`tsc --noEmit` exit 0；`vite build` 成功（19.51s，仅 antd vendor 大 chunk 告警）。
+  - **分组规则（最终）**：同一 `student_profiles.dorm` 值 = 一个组；scope=dorm 的 webhook 把该宿舍全部"已配置电表 Cookie"的 user 聚合为**一条**汇总消息推送（不按人头）；scope=student 仍逐人；scope=global 全员。未配置电表的学生不参与电量聚合（不推送、不报错）。
+  - 小程序**不动**（本次纯 webhook 后端 + 管理端）；`adapter_service.py` 旧广播收窄为仅 global 的字符串判断 `(w.scope or "global")=="global"` 不受 org→dorm 改名影响，无需改。
+  - 全仓 grep 确认无残留 webhook `org` scope 代码（仅 `OrgUnit`/`org_unit_service` 等权限/花名册系统的合法引用，与 webhook scope 无关）。
+  - **待用户本地执行（重要，三列）**：`python init_db.py migrate` 现需新增 **三列**——`webhooks.scope`(`VARCHAR(20) NOT NULL DEFAULT 'global'`) + `webhooks.scope_target`(`JSON`) + `student_profiles.dorm`(`VARCHAR(100)`)；重启后端；给学生在档案里补 `dorm` 值（经管理端/后端档案编辑，**非小程序**）；配一个 `scope=dorm`（或 student）电量 webhook 实测聚合推送。
 
 ### 修复：管理端「电量任务」补回「单次采集」入口（前端，2026-09-30）
 - **背景**：用户截图反馈管理端电量任务没有「单次爬取」。核对后端——`app/api/admin_routes.py` 的 `trigger_electricity_task` 的 `task_map` 早已支持 `fetch_electricity_data`（电量数据采集：仅入库最新电量、不推送、假期不静默），`app/modules/electricity/tasks.py:41` 也有实现（进程名「爬取电量数据」）；但前端 `Tasks.tsx` 电量分类只列了日/周/月推送、Cookie 检测、`fetch_all`（全量 50 页重爬），唯独漏了 `fetch_electricity_data`，管理员在页面上点不到单次采集。
@@ -71,12 +83,13 @@
     1. **页头**：内容标题「账户总览」+ 刷新（刷新同时重拉资料 / MFA / 日志）。
     2. **账户摘要卡**：头像（右下在线绿点）+ 用户名 + 角色/主账号标签 + 元信息（成员天数 / 上次登录 / 服务状态）。
     3. **概览卡行（4 张，`xs=12 sm=6`，`OverviewCard` 组件）**：双因素认证（已启用/未启用，绿/红）、最近登录（日期 + 时分·IP）、登录记录（总数）、成员时长（天数 + 起始日期）。
-    4. **账户与安全**：账户资料卡（`lg=16`，头像预览/更换/保存 + 信息行列表）+ 安全设置卡（`lg=8`，MFA 开关 + 修改密码/用户名 + **线性**安全评分 + 因子核对清单）。
+    4. **账户与安全**：账户资料卡（`lg=16`，头像预览/更换/保存 + 信息行列表）+ 安全设置卡（`lg=8`，MFA 开关 + 修改密码/用户名）。
     5. **登录记录卡**：antd `Table<LoginLog>`（状态/登录时间/退出与在线时长/IP/设备/失败原因），支持状态筛选 + 加载更多。
   - **标题层级对齐仪表盘**：`PageContainer` 已渲染菜单名「个人中心」，页面内容标题用**不同的**「账户总览」（与仪表盘「仪表盘 + 系统概览」同一模式），避免出现两个一模一样的「个人中心」。
-  - **安全评分口径**：**仅基于后端真实可得字段**，不编造——双因素认证（+40，取 `authApi.getMfaStatus`）、主账号（+15，取 `user.is_primary`）、绑定邮箱（+15，取 `user.email`）、基础账户（+30，恒真）；满分 100，`≥80` 高 / `≥60` 中 / `<60` 待提升，颜色绿/橙/红。
+  - **安全评分模块（已按用户要求移除）**：定稿时曾在安全设置卡内放「线性安全评分 + 因子核对清单」（当时口径仅取后端真实字段——双因素认证 +40 / 主账号 +15 / 绑定邮箱 +15 / 基础账户 +30，`≥80` 高 / `≥60` 中 / `<60` 待提升）；用户看过截图后要求删除该模块，已连同 `Progress`、`CheckCircleFilled`、`CloseCircleFilled` 三个导入与 `securityFactors`/`securityScore`/`securityLevel`/`securityColor` 计算一并移除。安全设置卡现为：MFA 开关块 + 修改密码 / 修改用户名。
 - **说明**：纯前端改动，接口与后端契约未变，未新增依赖；后端无对应改动；功能（头像/改名/改密、MFA 开关与设置·禁用弹窗、日志筛选与分页）逻辑保持原样，本轮仅重构渲染层。
 - **验证**：管理端 `tsc --noEmit` 0 错；`eslint src/pages/Profile.tsx` 0 error / 0 warning；`vite build` 成功（17.40s，仅既有 chunk 体积告警）。
+- **移除安全评分模块后的复验**：`tsc --noEmit` 0 错；`eslint` 0/0；残留检查 `Progress` / `CheckCircleFilled` / `CloseCircleFilled` / `securityFactors` / `securityScore` / `securityLevel` / `securityColor` 均为 **0 处**；`vite build` 成功 16.66s；Playwright mock 桌面 1440×900 + 移动 390×844 整页截图确认该模块已消失。
 - **视觉核对方式（可复用）**：本地 dev server 端口被另一项目占用、且管理员口令已改（默认口令登录失败），故改用「接口 mock + 无头浏览器截图」核对：Playwright 在页面侧拦截 `/api/...` 返回构造数据，注入假 token 后以 1440×900（桌面）与 390×844（移动）在 MFA 开/关下整页截图，未连真实后端、未写库。临时脚本 `技术总结/dev-scripts/profile-ui-shot.py`（gitignored）。注意路由拦截不能用 `**/api/**`——Vite dev 下 `/src/api/*.ts` 模块路径同样含 `/api/`，会被误拦成 JSON 导致白屏。
 - **截图核对发现并修复的 2 处**：①移动端概览卡「最近登录」的完整日期 `2026-09-30` 在 `xs=12` 窄卡内折行 → 移动端值改紧凑格式 `MM-DD`、副行给 `HH:mm · IP`；②`PageContainer` 标题与页面标题重复（均为「个人中心」）→ 页面内容标题改为「账户总览」。另用无头浏览器实测移动端首列表头「状态」单元格宽 96px、行高 39px（单行），确认截图中看似折行只是缩图假象，未做无谓改动。
 - **数据影响**：核对过程中曾用默认口令尝试连接本地后端以取真实数据，两次均失败，登录日志新增 2 条来自 127.0.0.1 的失败记录（非系统异常，可忽略）。
