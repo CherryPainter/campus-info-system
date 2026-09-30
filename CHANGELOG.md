@@ -6,6 +6,36 @@
 
 ## Unreleased
 
+### 优化：移除「推送静默」假期区间的硬编码类型（前后端，2026-09-30）
+- **背景**：管理员新增假期区间时，「假期类型」是个硬编码三选一枚举（寒假 / 暑假 / 自定义）。用户指出其"生硬、耦合太强"——例如新增「国庆假期2026」只能勉强落到「自定义」，国庆/清明/五一这类通用假期根本盖不住。
+- **事实核对**：该字段**只用于显示标签，不驱动任何逻辑**——静默命中仅看 `enabled` + 日期区间（`holiday_service._hit_enabled_period`），却硬编码散落在 6 处（后端模型字段+注释、后端枚举常量+两处校验、管理端类型联合、两处 label map、表单下拉），成本与收益不符。
+- **改动**（按用户确认「删掉类型」执行）：
+  - 后端 `app/model/holiday_period.py`：`holiday_type` 列**保留**（DB 列为 `NOT NULL` 且无服务端默认，删字段会让 INSERT 报错），降级为 `[弃用]` 兼容字段，注释说明不再由接口/UI 读写；`to_dict` 移除该字段。
+  - 后端 `app/services/holiday_service.py`：删除 `_HOLIDAY_TYPE_VALUES` 常量、`create_period` 的 holiday_type 写入、`update_period` 与 `_validate` 的两处类型校验（不再对类型做约束）。
+  - 后端 `app/api/holiday_routes.py`：更新新建区间请求体文档（去掉 holiday_type）。
+  - 管理端 `admin-frontend/src/api/holiday.ts`：`HolidayPeriod` 移除 `holiday_type`。
+  - 管理端 `admin-frontend/src/pages/HolidayMode.tsx`：移除 `TYPE_MAP`、表格「类型」列、表单「假期类型」下拉及相关的 setFieldsValue / initialValues / handleSave 字段，并清理随之无用的 `Tag` / `Select` 导入。
+  - 管理端 `admin-frontend/src/components/HolidayCourseView.tsx`：移除 `HOLIDAY_TYPE_LABEL` 与类型 Tag（静默卡片仅保留名称与日期区间）。
+- **说明**：区间信息改由「假期名称」表达（如「国庆假期2026」），页面更简洁；历史行的 `holiday_type` 值原样留存于 DB，不再展示，不影响静默判断。
+- **验证**：管理端 `tsc --noEmit` exit 0（无报错）；后端 `pytest tests/test_holiday_mute.py` 40 passed；后端三文件 `py_compile` 通过。
+
+### 优化：公告「频道」改为受管（管理端 CRUD + 编辑器下拉 + 小程序动态标签，2026-09-30）
+- **背景**：之前频道是硬编码常量 `CHANNEL_OPTIONS`（学校要闻/学院动态/媒体聚焦），且编辑器根本没有频道字段可填——导致小程序顶部频道标签永远为空（除「全部/我的关注」外无内容）。用户确认「复用 channel 字段、管理端可增删、小程序顶栏动态显示」。
+- **事实核对**：`announcement.channel`（String(50) 可空）早存在于模型，小程序 `GET /api/miniapp/announcements/channels` 已动态聚合，但因为没有入口写入，该字段始终为 NULL。改造只需补「写入入口 + 受管表」，小程序端**无需改动**。
+- **改动**：
+  - 新增模型 `app/model/announcement_channel.py`：`announcement_channels` 表（id、name UNIQUE、sort_order、is_active、时间戳），并在 `app/model/__init__.py` 注册 → 由 `init_db.py migrate` 自动建表。
+  - `app/services/announcement_service.py`：
+    - `list_channels()`（小程序用）改为从受管表读取——只取 `is_active=True` 的频道，按 `sort_order` 升序，并 LEFT JOIN 统计各频道下「已发布可见」公告数作角标；返回形态仍为 `[{key,name,count}]`，小程序零改动。
+    - 新增 `list_managed_channels(active_only)` / `create_channel` / `update_channel` / `delete_channel` 四个方法（重名校验、硬删）。
+  - `app/api/announcement_routes.py`：新增管理端路由 `GET/POST /admin/announcements/channels`、`PUT/DELETE /admin/announcements/channels/<id>`（均 `@admin_required`）。
+  - 管理端 `src/api/announcement.ts`：新增 `AnnouncementChannelAdmin` 类型与 `announcementApi.channelAdmin`（list/create/update/remove）。
+  - 管理端 `src/pages/ChannelManage.tsx`（新）：频道管理页——列表（名称/排序/启停）、新增/编辑/删除（弹窗），沿用 `HolidayMode` 的列表+弹窗结构。
+  - `src/App.tsx`：新增路由 `/messages/channels`；`src/layouts/AdminLayout.tsx`：菜单新增「频道管理」（消息中心下，图标 `AppstoreOutlined`）。
+  - 编辑器 `src/pages/MessageEditor.tsx`：`department` 后新增「频道」字段，改为受管频道的**严格 Select**（仅启用中的、可清空、无自由输入）；`loadDetail` 回填 `channel`、提交 `payload` 携带 `channel`。
+  - `app/schema/seed.py`：种子数据新增 3 个默认频道（学校要闻/学院动态/媒体聚焦，仅当表为空时写入，自带容错不阻断 seed）。
+- **说明**：停用某频道只隐藏其小程序标签，该频道下公告仍可在「全部」查看；删除频道是硬删，相关公告的 `channel` 字段保留原值（仅标签不再展示）。编辑器下拉只列启用中的频道。
+- **验证**：后端四文件 `py_compile` 通过；管理端 `tsc --noEmit` exit 0（无报错）。**未**连真实数据库跑端点（本环境无 DB 进程），表自动创建与接口行为待本地/服务器启动后实测确认。
+
 ### 修复：管理端「类型」胶囊样式不统一（实心 hex vs 浅底预设，2026-09-30）
 - **现象**：进程管理页三张表的「类型」胶囊样式不统一——定时任务表（定时/间隔）与状态/启用标签是 Antd 预设浅底胶囊，而执行历史、动态规则、任务详情的「类型」胶囊是实心填充（课表绿、天气青等），观感割裂。
 - **根因**：`constants/statusMaps.ts` 的 `TASK_TYPE_MAP.color` 是十六进制（供 ECharts 图表用），但 Processes.tsx 直接把它喂给 `<Tag color={hex}>`，Antd 会把 hex 渲染成实心胶囊；而定时/间隔/状态用的是预设色名（浅底）。两路混用导致风格不一致。
