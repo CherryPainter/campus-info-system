@@ -1,0 +1,50 @@
+@import '../../styles/variables.scss';
+
+.os-page {
+  min-height: 100vh;
+  background: $background;
+  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.os-card {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  padding: $spacing-lg;
+}
+
+.os-intro {
+  font-size: $font-size-md;
+  color: $text-secondary;
+  line-height: 1.6;
+  margin-bottom: $spacing-lg;
+}
+
+.os-item {
+  padding: $spacing-md 0;
+  border-bottom: 1rpx solid $border-color;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.os-name {
+  font-size: $font-size-md;
+  color: $text-primary;
+  font-weight: 500;
+  margin-bottom: $spacing-xs;
+}
+
+.os-license {
+  font-size: $font-size-sm;
+  color: $primary-color;
+}
+
+.os-desc {
+  font-size: $font-size-sm;
+  color: $text-secondary;
+  margin-top: $spacing-xs;
+  line-height: 1.5;
+}

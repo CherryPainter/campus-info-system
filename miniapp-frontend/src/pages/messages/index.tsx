@@ -9,6 +9,7 @@ import { API_BASE_URL } from '@/utils/request';
 import LoadingState from '@/components/LoadingState';
 import EmptyState from '@/components/EmptyState';
 import IconArrow from '@/components/IconArrow';
+import { useNotificationSettingsStore } from '@/stores/notificationSettingsStore';
 import './index.scss';
 
 /**
@@ -88,8 +89,10 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const { masterEnabled } = useNotificationSettingsStore();
 
-  const totalUnread = unreadCount + announcementUnread;
+  // 消息提醒总开关关闭时，不再显示任何未读统计与红点，但列表仍可查看历史。
+  const totalUnread = masterEnabled ? unreadCount + announcementUnread : 0;
 
   const loadFirst = async () => {
     setLoading(true);
@@ -143,19 +146,29 @@ export default function MessagesPage() {
     Taro.navigateTo({ url: `/pages/message-detail/index?id=${id}` });
   };
 
-  /** 全部已读：站内通知 + 新公告一次清空 */
-  const markAllRead = async () => {
-    if (totalUnread === 0) return;
+  /**
+   * 标记全部已读（清外部气泡，不动 is_viewed）：
+   * - 手动「全部已读」按钮调用（带 toast）
+   * - 进入列表时静默调用（清「我的」页角标，不打扰）
+   * 两层已读：这里只清 is_read（外部气泡），卡片红点（is_viewed）需点进详情才清。
+   */
+  const markAllReadApi = async (): Promise<void> => {
     try {
       const res = await notificationsApi.markRead();
       setUnreadCount(res?.data?.unread_count ?? 0);
       setAnnouncementUnread(res?.data?.announcement_unread ?? 0);
       setItems((prev) => prev.map((i) => ({ ...i, is_read: true })));
       setAnnouncements([]);
-      Taro.showToast({ title: '已全部标记已读', icon: 'success' });
-    } catch (e) {
-      Taro.showToast({ title: (e as Error).message || '操作失败', icon: 'none' });
+    } catch {
+      /* 静默失败：返回「我的」页时会重新拉取未读 */
     }
+  };
+
+  /** 全部已读：站内通知 + 新公告一次清空（带 toast 反馈） */
+  const markAllRead = async () => {
+    if (totalUnread === 0) return;
+    await markAllReadApi();
+    Taro.showToast({ title: '已全部标记已读', icon: 'success' });
   };
 
   /** 点击公告 → 详情页（自动记已读），返回时刷新 */
@@ -163,22 +176,28 @@ export default function MessagesPage() {
     Taro.navigateTo({ url: `/pages/announcement/detail/index?id=${id}` });
   };
 
-  /** 点击公告类站内信：先标记该条已读（与公告未读角标一致），再跳公告详情 */
+  /** 点击公告类站内信：标记该条已读 + 已看（清卡片红点），再跳公告详情 */
   const openAnnouncementNotification = async (item: UserNotificationItem) => {
     try {
       const res = await notificationsApi.markRead(item.id);
       // 乐观更新：清掉该条未读态与未读计数
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, is_read: true } : i)));
       setUnreadCount(res?.data?.unread_count ?? 0);
+      // 公告类通知点开的是公告详情页（非消息详情），显式标记 is_viewed 清卡片红点
+      await notificationsApi.markViewed(item.id);
+      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, is_viewed: true } : i)));
     } catch {
       /* 标记失败不阻断跳转 */
     }
     goAnnouncement(item.ref_id as number);
   };
 
-  useLoad(() => {
+  useLoad(async () => {
     Taro.setNavigationBarTitle({ title: '我的消息' });
-    loadFirst();
+    // 进入列表即全部已读：清掉「我的」页外部气泡角标（is_read 维度），
+    // 但保留 is_viewed（卡片红点），让想细看的人知道哪些还没点进详情。
+    await markAllReadApi();
+    await loadFirst();
   });
 
   // 非首次显示（从公告/消息详情返回）时刷新：公告已读态、消息已读态、未读数
@@ -271,13 +290,14 @@ export default function MessagesPage() {
                 </View>
               )}
               <View
-                className={`msg-item${item.is_read ? ' is-read' : ' unread'}`}
+                className={`msg-item${item.is_viewed ? ' is-seen' : ' is-unseen'}`}
                 onClick={() =>
                   item.ref_type === 'announcement' && item.ref_id
                     ? openAnnouncementNotification(item)
                     : goDetail(item.id)
                 }
               >
+                {masterEnabled && !item.is_viewed && <View className="msg-item-dot" />}
                 {item.cover_url ? (
                   <Image
                     className="msg-item-cover"
@@ -288,7 +308,6 @@ export default function MessagesPage() {
                 <View className="msg-item-main">
                   <View className="msg-item-head">
                     <Text className="msg-item-cat">{categoryText(item.category)}</Text>
-                    {!item.is_read && <Text className="msg-item-dot" />}
                   </View>
                   <Text className="msg-item-title">{item.title}</Text>
                   {item.content ? (

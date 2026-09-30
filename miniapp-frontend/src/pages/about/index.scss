@@ -1,0 +1,90 @@
+@import '../../styles/variables.scss';
+
+.about-page {
+  min-height: 100vh;
+  background: $background;
+  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.about-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: $spacing-xl 0;
+}
+
+.about-logo {
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: $radius-large;
+  background: $primary-light;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: $spacing-md;
+}
+
+.about-logo-text {
+  font-size: $font-size-xxl;
+  color: $primary-color;
+  font-weight: 500;
+}
+
+.about-name {
+  font-size: $font-size-lg;
+  color: $text-primary;
+  font-weight: 500;
+  margin-bottom: $spacing-xs;
+}
+
+.about-version {
+  font-size: $font-size-sm;
+  color: $text-tertiary;
+}
+
+.about-card {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  margin-bottom: $spacing-md;
+  overflow: hidden;
+}
+
+.about-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-md $spacing-lg;
+  border-bottom: 1rpx solid $border-color;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.about-cell-label {
+  font-size: $font-size-md;
+  color: $text-primary;
+}
+
+.about-cell-value {
+  font-size: $font-size-md;
+  color: $text-tertiary;
+}
+
+.about-footer {
+  margin-top: $spacing-xl;
+  text-align: center;
+}
+
+.about-footer-text {
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  line-height: 1.8;
+}
+
+.about-arrow {
+  color: $text-tertiary;
+  margin-left: $spacing-xs;
+}

@@ -15,6 +15,7 @@ import CampusCard from '@/components/CampusCard';
 import FeedbackBadge from '@/components/FeedbackBadge';
 import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
 import { useLoginGuard } from '@/hooks/useLoginGuard';
+import { useNotificationSettingsStore } from '@/stores/notificationSettingsStore';
 import { useBindStatusWatcher } from '@/hooks/useBindStatusWatcher';
 import { isBindGuideActive } from '@/utils/bindGuard';
 import IconArrow from '@/components/IconArrow';
@@ -39,6 +40,8 @@ export default function ProfilePage() {
   const { count: feedbackUnread, refresh: refreshFeedbackBadge } = useFeedbackBadge();
   // 消息未读（站内通知 + 新公告，消息图标角标）
   const [msgUnread, setMsgUnread] = useState(0);
+  // 消息提醒本地开关
+  const { masterEnabled, announcement } = useNotificationSettingsStore();
 
   const [statusBarHeight, setStatusBarHeight] = useState(20);
   const [electricity, setElectricity] = useState<ElectricityCurrent | null>(null);
@@ -98,7 +101,12 @@ export default function ProfilePage() {
   };
 
   // 消息未读统计（站内通知 + 新公告），失败静默不影响主体
+  // 若用户在设置页关闭了总开关或公告通知，则不再拉取计数、不显示红点。
   const loadMsgUnread = async () => {
+    if (!masterEnabled || !announcement) {
+      setMsgUnread(0);
+      return;
+    }
     try {
       const res = await notificationsApi.getUnreadCount();
       setMsgUnread(res?.data?.total ?? 0);
@@ -250,7 +258,7 @@ export default function ProfilePage() {
               }
             >
               <Text className="iconfont icon-tongzhi profile-msg-icon" />
-              {isLoggedIn && msgUnread > 0 && (
+              {isLoggedIn && masterEnabled && msgUnread > 0 && (
                 <View className="profile-msg-badge">
                   <Text className="profile-msg-badge-num">
                     {msgUnread > 99 ? '99+' : msgUnread}
@@ -352,7 +360,7 @@ export default function ProfilePage() {
             <Text className="iconfont icon-tongzhi profile-item-icon" />
           </View>
           <Text className="profile-label">我的消息</Text>
-          {isLoggedIn ? <FeedbackBadge count={msgUnread} /> : null}
+          {isLoggedIn && masterEnabled ? <FeedbackBadge count={msgUnread} /> : null}
           <IconArrow className="profile-arrow" size="md" />
         </View>
         {/* 我的课表：跳到课表详情页（周视图，含周次切换/课程卡片），而不是首页 tabBar 的「时间轴」 */}

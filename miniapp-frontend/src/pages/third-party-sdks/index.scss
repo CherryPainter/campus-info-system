@@ -1,0 +1,51 @@
+@import '../../styles/variables.scss';
+
+.sdks-page {
+  min-height: 100vh;
+  background: $background;
+  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.sdks-card {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  padding: $spacing-lg;
+}
+
+.sdks-intro {
+  font-size: $font-size-md;
+  color: $text-secondary;
+  line-height: 1.6;
+  margin-bottom: $spacing-lg;
+}
+
+.sdks-item {
+  padding: $spacing-md 0;
+  border-bottom: 1rpx solid $border-color;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.sdks-name {
+  font-size: $font-size-md;
+  color: $text-primary;
+  font-weight: 500;
+  margin-bottom: $spacing-xs;
+}
+
+.sdks-desc {
+  font-size: $font-size-sm;
+  color: $text-secondary;
+  line-height: 1.5;
+}
+
+.sdks-link {
+  font-size: $font-size-sm;
+  color: $primary-color;
+  margin-top: $spacing-xs;
+  word-break: break-all;
+}

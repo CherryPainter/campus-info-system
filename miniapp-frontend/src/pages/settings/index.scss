@@ -139,3 +139,23 @@
   font-size: $font-size-xs;
   color: $text-tertiary;
 }
+
+/* 开关条目 */
+.set-cell-switch {
+  min-height: 104rpx;
+  padding-top: $spacing-sm;
+  padding-bottom: $spacing-sm;
+}
+
+.set-cell-label-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  flex: 1;
+  padding-right: $spacing-sm;
+}
+
+.set-cell-hint {
+  font-size: $font-size-sm;
+  color: $text-tertiary;
+}

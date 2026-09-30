@@ -1,39 +1,54 @@
 import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
+import { Switch } from '@nutui/nutui-react-taro';
 
 import { logout as logoutApi } from '@/api/auth';
 import { useAuthStore } from '@/stores/authStore';
 import { setSharedBadgeCount } from '@/utils/feedbackBadge';
 import { useUserStore } from '@/stores/userStore';
+import {
+  useNotificationSettingsStore,
+  type NotificationSettings,
+} from '@/stores/notificationSettingsStore';
+import { APP_VERSION } from '@/version';
 import IconArrow from '@/components/IconArrow';
 import './index.scss';
 
 /**
- * 设置页（仅保留「通用」与「退出登录」）
- * - 顶部「个人资料」入口指向 `pages/profile-detail/index`：包含头像/身份信息/
- *   学籍信息/可编辑资料/注销账号。
- * - 2026-09-07 起个人资料页已改为「原地编辑」：详情页内切换编辑态，仅昵称+头像可改，
- *   学号/班级/学校/学院/专业/校园卡号置灰只读；原独立页 `pages/profile-edit/index`
- *   已无入口、从路由移除，源码亦已删除（可在历史 git 中找回）。
+ * 设置页
+ * - 顶部「个人资料」入口指向 `pages/profile-detail/index`。
+ * - 「消息提醒」分组：总开关 + 电量日报/低电量/公告/反馈回复子开关，
+ *   关闭后不再显示红色数字气泡，但仍可进入「我的消息」查看历史。
+ * - 「关于」跳转独立页面，聚合用户协议/隐私政策/第三方 SDK/开源声明等条款。
  */
 
 export default function SettingsPage() {
   const { refreshToken, logout: clearAuth } = useAuthStore();
   const { setProfile } = useUserStore();
+  const {
+    masterEnabled,
+    electricityDaily,
+    lowPower,
+    announcement,
+    feedback,
+    setMasterEnabled,
+    setChannelEnabled,
+  } = useNotificationSettingsStore();
 
   /** 清除本地缓存（不含登录态 Token / 用户信息） */
   const handleClearCache = () => {
     Taro.showModal({
       title: '清除缓存',
-      content: '将清除反馈红点状态与学生资料缓存，登录状态不受影响，确定继续吗？',
+      content: '将清除反馈红点状态、消息提醒设置与学生资料缓存，登录状态不受影响，确定继续吗？',
       confirmText: '清除',
       confirmColor: '#e8380f',
       success: (res) => {
         if (!res.confirm) return;
         try {
-          // 反馈红点已读状态 + 学生资料缓存（保留 miniapp.auth 登录态）
+          // 反馈红点已读状态 + 学生资料缓存 + 消息提醒设置（保留 miniapp.auth 登录态）
           Taro.removeStorageSync('feedback.viewedStatus');
           Taro.removeStorageSync('miniapp.user');
+          Taro.removeStorageSync('miniapp.notificationSettings');
           // 内存中的 TabBar 共享红点一并复位
           setSharedBadgeCount(0);
           setProfile(null);
@@ -45,12 +60,8 @@ export default function SettingsPage() {
     });
   };
 
-  const handleAbout = () => {
-    Taro.showModal({
-      title: '关于',
-      content: '校园宜知行 · 校园信息聚合与智能推送系统\n微信小程序客户端',
-      showCancel: false,
-    });
+  const goAbout = () => {
+    Taro.navigateTo({ url: '/pages/about/index' });
   };
 
   const handleLogout = () => {
@@ -85,6 +96,18 @@ export default function SettingsPage() {
     Taro.navigateTo({ url: '/pages/messages/index' });
   };
 
+  const toggleMaster = (value: boolean) => {
+    setMasterEnabled(value);
+    // 关闭总开关时同步清空 TabBar 反馈红点，避免残留
+    if (!value) {
+      setSharedBadgeCount(0);
+    }
+  };
+
+  const toggleChannel = (key: Exclude<keyof NotificationSettings, 'masterEnabled'>) => {
+    return (value: boolean) => setChannelEnabled(key, value);
+  };
+
   return (
     <View className="set-page">
       {/* 个人资料入口（指向详情页，包含头像/身份/基础资料/编辑/注销） */}
@@ -96,7 +119,7 @@ export default function SettingsPage() {
         </View>
       </View>
 
-      {/* 服务：电表配置（学生自行配置宿舍电表 Cookie）/ 我的消息（电量日报/低电量提醒等站内通知） */}
+      {/* 服务：电表配置 / 我的消息 */}
       <Text className="set-card-title">服务</Text>
       <View className="set-card" style={{ marginTop: '8rpx' }}>
         <View className="set-cell" onClick={goElectricityConfig}>
@@ -109,6 +132,38 @@ export default function SettingsPage() {
         </View>
       </View>
 
+      {/* 消息提醒：总开关 + 分类开关 */}
+      <Text className="set-card-title">消息提醒</Text>
+      <View className="set-card" style={{ marginTop: '8rpx' }}>
+        <View className="set-cell set-cell-switch">
+          <View className="set-cell-label-group">
+            <Text className="set-cell-label">接收消息提醒</Text>
+            <Text className="set-cell-hint">关闭后不再显示红色数字气泡</Text>
+          </View>
+          <Switch checked={masterEnabled} onChange={toggleMaster} />
+        </View>
+        {masterEnabled && (
+          <>
+            <View className="set-cell set-cell-switch">
+              <Text className="set-cell-label">每日电量日报</Text>
+              <Switch checked={electricityDaily} onChange={toggleChannel('electricityDaily')} />
+            </View>
+            <View className="set-cell set-cell-switch">
+              <Text className="set-cell-label">低电量提醒</Text>
+              <Switch checked={lowPower} onChange={toggleChannel('lowPower')} />
+            </View>
+            <View className="set-cell set-cell-switch">
+              <Text className="set-cell-label">公告通知</Text>
+              <Switch checked={announcement} onChange={toggleChannel('announcement')} />
+            </View>
+            <View className="set-cell set-cell-switch">
+              <Text className="set-cell-label">反馈回复</Text>
+              <Switch checked={feedback} onChange={toggleChannel('feedback')} />
+            </View>
+          </>
+        )}
+      </View>
+
       {/* 通用 */}
       <Text className="set-card-title">通用</Text>
       <View className="set-card" style={{ marginTop: '8rpx' }}>
@@ -116,7 +171,7 @@ export default function SettingsPage() {
           <Text className="set-cell-label">清除缓存</Text>
           <IconArrow className="set-arrow" size="md" />
         </View>
-        <View className="set-cell" onClick={handleAbout}>
+        <View className="set-cell" onClick={goAbout}>
           <Text className="set-cell-label">关于</Text>
           <IconArrow className="set-arrow" size="md" />
         </View>
@@ -128,7 +183,7 @@ export default function SettingsPage() {
         </View>
       </View>
 
-      <Text className="set-version">校园宜知行 v1.0.0</Text>
+      <Text className="set-version">校园宜知行 v{APP_VERSION}</Text>
     </View>
   );
 }

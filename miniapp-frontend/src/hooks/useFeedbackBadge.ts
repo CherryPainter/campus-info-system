@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 
 import * as feedbackApi from '@/api/feedback';
 import { useAuthStore } from '@/stores/authStore';
+import { useNotificationSettingsStore } from '@/stores/notificationSettingsStore';
 import { computeUnread, getViewedStatusMap, setSharedBadgeCount } from '@/utils/feedbackBadge';
 
 /**
@@ -13,14 +14,23 @@ import { computeUnread, getViewedStatusMap, setSharedBadgeCount } from '@/utils/
  *
  * 游客态保护：未登录时 refresh() 直接 no-op，避免触发 401 噪音
  * （feedback 接口需登录，但游客也可能通过 tabBar 预加载或他处被动调到此 hook）。
+ *
+ * 消息设置保护：用户在设置页关闭「反馈回复」或总开关后，不再显示红点，也不再发请求。
  */
 export function useFeedbackBadge() {
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const { isLoggedIn } = useAuthStore();
+  const { masterEnabled, feedback: feedbackEnabled } = useNotificationSettingsStore();
 
   const refresh = useCallback(async () => {
     if (!isLoggedIn) return; // 游客态：no-op，不发请求
+    if (!masterEnabled || !feedbackEnabled) {
+      // 用户已静默反馈提醒：清空红点并同步到 TabBar
+      setCount(0);
+      setSharedBadgeCount(0);
+      return;
+    }
     setLoading(true);
     try {
       const viewed = getViewedStatusMap();
@@ -34,7 +44,7 @@ export function useFeedbackBadge() {
     } finally {
       setLoading(false);
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, masterEnabled, feedbackEnabled]);
 
   return { count, loading, refresh };
 }
