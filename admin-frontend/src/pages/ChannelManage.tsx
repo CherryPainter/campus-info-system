@@ -35,7 +35,16 @@ import { useMessage } from "@/utils/message";
 
 const { Text } = Typography;
 
-export default function ChannelManage() {
+export default function ChannelManage({
+  embedded = false,
+  registerActions,
+}: {
+  embedded?: boolean;
+  /** 嵌入模式下把「新增频道 / 刷新」动作注册给宿主（消息中心 Tab），
+      按钮挂在宿主卡片 extra 上、与页面其它 Tab 位置一致；弹窗状态仍在本组件内。
+      宿主卸载时传 null 注销。 */
+  registerActions?: (actions: { create: () => void; refresh: () => void } | null) => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [list, setList] = useState<AnnouncementChannelAdmin[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -137,6 +146,14 @@ export default function ChannelManage() {
     }
   };
 
+  // 嵌入模式：把「新增频道 / 刷新」动作注册给宿主卡片 extra
+  useEffect(() => {
+    if (!embedded || !registerActions) return;
+    registerActions({ create: handleAdd, refresh: fetchAll });
+    return () => registerActions(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded, registerActions]);
+
   const columns = [
     {
       title: "频道名称",
@@ -195,41 +212,53 @@ export default function ChannelManage() {
     },
   ];
 
-  return (
-    <div>
-      <Card
-        title={
-          <Space>
-            <AppstoreOutlined />
-            <span>频道管理</span>
-          </Space>
-        }
-        extra={
-          <Space>
-            <Button icon={<ReloadOutlined />} onClick={fetchAll}>
-              刷新
-            </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-              新增频道
-            </Button>
-          </Space>
-        }
-      >
-        <div style={{ marginBottom: 16, color: "#595959", fontSize: 13 }}>
-          频道用于小程序端公告列表顶部的栏目标签。停用某个频道后，其标签不再展示，
-          但该频道下的公告仍可在「全部」中查看。修改即时生效，无需重启服务。
-        </div>
+  const listContent = (
+    <>
+      <div style={{ marginBottom: 16, color: "#595959", fontSize: 13 }}>
+        频道用于小程序端公告列表顶部的栏目标签。停用某个频道后，其标签不再展示，
+        但该频道下的公告仍可在「全部」中查看。修改即时生效，无需重启服务。
+      </div>
 
-        <ResponsiveTable
-          dataSource={list}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          pagination={false}
-          scroll={{ x: 600 }}
-          locale={{ emptyText: <Text type="secondary">暂无频道，点击右上角「新增频道」添加</Text> }}
-        />
-      </Card>
+      <ResponsiveTable
+        dataSource={list}
+        columns={columns}
+        rowKey="id"
+        loading={loading}
+        pagination={false}
+        scroll={{ x: 600 }}
+        locale={{ emptyText: <Text type="secondary">暂无频道，点击右上角「新增频道」添加</Text> }}
+      />
+    </>
+  );
+
+  return (
+    <>
+      {embedded ? (
+        <div>{listContent}</div>
+      ) : (
+        <div>
+          <Card
+            title={
+              <Space>
+                <AppstoreOutlined />
+                <span>频道管理</span>
+              </Space>
+            }
+            extra={
+              <Space>
+                <Button icon={<ReloadOutlined />} onClick={fetchAll}>
+                  刷新
+                </Button>
+                <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+                  新增频道
+                </Button>
+              </Space>
+            }
+          >
+            {listContent}
+          </Card>
+        </div>
+      )}
 
       <Modal
         title={editing ? "编辑频道" : "新增频道"}
@@ -262,6 +291,6 @@ export default function ChannelManage() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </>
   );
 }

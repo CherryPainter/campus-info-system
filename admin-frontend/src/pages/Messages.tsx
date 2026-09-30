@@ -1,9 +1,10 @@
 /**
  * 消息中心（统一管理页面）
  *
- * 合并原「校园通知」(announcements)、「自定义推送」(push) 与「近期提醒」(reminder) 为单一入口，
- * 通过 Tab 切换三种消息模式。后端 API 各自独立，仅前端统一。
+ * 合并「频道管理」(channel)、「校园通知」(announcement)、「自定义推送」(push) 与
+ * 「近期提醒」(reminder) 为单一入口，通过 Tab 切换。后端 API 各自独立，仅前端统一。
  *
+ * - 频道管理：公告「频道/栏目」受管表 CRUD（内嵌 ChannelManage，排在 Tab 首位）
  * - 校园通知：结构化公告（分类/状态/发布撤回/阅读量/附件）
  * - 自定义推送：管理员编辑消息（文本/图片/模板），经企业微信 Webhook 通道推送，支持立即/定时/周期
  * - 近期提醒：小程序时间轴「近期提醒」卡片的后台定义（内嵌 Notifications 组件）
@@ -47,6 +48,8 @@ import {
   ClockCircleOutlined,
   CloseCircleOutlined,
   CalendarOutlined,
+  AppstoreOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import {
   announcementApi,
@@ -58,6 +61,7 @@ import {
 } from "@/api/announcement";
 import { pushApi, notificationApi, type CustomPush } from "@/api/admin";
 import Notifications from "@/pages/Notifications";
+import ChannelManage from "@/pages/ChannelManage";
 import { PUSH_STATUS_MAP } from "@/constants/statusMaps";
 import dayjs from "dayjs";
 import { useMessage } from "@/utils/message";
@@ -98,7 +102,7 @@ const totalOf = async (p: Promise<any>): Promise<number> => {
   }
 };
 
-type ActiveTab = "announcement" | "push" | "reminder";
+type ActiveTab = "channel" | "announcement" | "push" | "reminder";
 
 export default function Messages() {
   const navigate = useNavigate();
@@ -118,6 +122,15 @@ export default function Messages() {
   const registerReminderCreate = useCallback((fn: (() => void) | null) => {
     reminderCreateRef.current = fn;
   }, []);
+
+  // 频道管理 Tab 的「刷新 / 新增频道」同样挂在卡片 extra，动作由内嵌 ChannelManage 注册上来。
+  const channelActionsRef = useRef<{ create: () => void; refresh: () => void } | null>(null);
+  const registerChannelActions = useCallback(
+    (actions: { create: () => void; refresh: () => void } | null) => {
+      channelActionsRef.current = actions;
+    },
+    []
+  );
 
   // ========== 公告列表状态 ==========
   const [annoList, setAnnoList] = useState<AnnouncementListItem[]>([]);
@@ -555,6 +568,15 @@ export default function Messages() {
 
   const tabItems = [
     {
+      key: "channel",
+      label: (
+        <span>
+          <AppstoreOutlined /> 频道管理
+        </span>
+      ),
+      children: null, // 内容在下方统一渲染
+    },
+    {
       key: "announcement",
       label: (
         <span>
@@ -583,6 +605,7 @@ export default function Messages() {
     },
   ];
 
+  const isChannel = activeTab === "channel";
   const isAnno = activeTab === "announcement";
   const isPush = activeTab === "push";
   const isReminder = activeTab === "reminder";
@@ -678,7 +701,23 @@ export default function Messages() {
         styles={{ body: { padding: isMobile ? 12 : 24 } }}
         extra={
           <Space>
-            {isReminder ? (
+            {isChannel ? (
+              <>
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={() => channelActionsRef.current?.refresh()}
+                >
+                  刷新
+                </Button>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => channelActionsRef.current?.create()}
+                >
+                  新增频道
+                </Button>
+              </>
+            ) : isReminder ? (
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
@@ -775,7 +814,7 @@ export default function Messages() {
         )}
 
         {/* 表格（公告 / 推送） */}
-        {!isReminder && (
+        {!isReminder && !isChannel && (
           <Table
             dataSource={(isAnno ? annoList : pushList) as any}
             columns={(isAnno ? annoColumns : pushColumns) as any}
@@ -807,6 +846,10 @@ export default function Messages() {
         {/* 近期提醒（内嵌管理组件，含自己的筛选/表格/编辑弹窗；新建按钮经
             registerCreate 交给上方卡片 extra，与其它 Tab 位置一致） */}
         {isReminder && <Notifications embedded registerCreate={registerReminderCreate} />}
+
+        {/* 频道管理（内嵌管理组件，排在 Tab 首位；刷新 / 新增频道经 registerActions
+            交给上方卡片 extra，与其它 Tab 的位置一致） */}
+        {isChannel && <ChannelManage embedded registerActions={registerChannelActions} />}
       </Card>
     </div>
   );

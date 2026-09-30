@@ -75,15 +75,7 @@ export default function AdminLayout() {
         { path: "/electricity", name: "电量管理", icon: <ThunderboltOutlined /> },
         { path: "/course", name: "课程管理", icon: <BookOutlined /> },
         { path: "/tasks", name: "任务管理", icon: <ScheduleOutlined /> },
-        {
-          path: "/messages",
-          name: "消息中心",
-          icon: <SendOutlined />,
-          children: [
-            { path: "/messages", name: "消息列表" },
-            { path: "/messages/channels", name: "频道管理" },
-          ],
-        },
+        { path: "/messages", name: "消息中心", icon: <SendOutlined /> },
         { path: "/processes", name: "进程管理", icon: <PlayCircleOutlined /> },
         { path: "/webhooks", name: "Webhook 管理", icon: <LinkOutlined /> },
         { path: "/feedback", name: "意见与反馈", icon: <CommentOutlined /> },

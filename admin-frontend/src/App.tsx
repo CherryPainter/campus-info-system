@@ -33,7 +33,6 @@ import HolidayMode from "@/pages/HolidayMode";
 import Notifications from "@/pages/Notifications";
 import Messages from "@/pages/Messages";
 import MessageEditor from "@/pages/MessageEditor";
-import ChannelManage from "@/pages/ChannelManage";
 import Settings from "@/pages/Settings";
 import Profile from "@/pages/Profile";
 import AccessControl from "@/pages/AccessControl";
@@ -135,13 +134,10 @@ export default function App() {
                       </AdminGuard>
                     }
                   />
+                  {/* 频道管理已并入消息中心页内 Tab（首位），旧路径重定向 */}
                   <Route
                     path="/messages/channels"
-                    element={
-                      <AdminGuard>
-                        <ChannelManage />
-                      </AdminGuard>
-                    }
+                    element={<Navigate to="/messages?tab=channel" replace />}
                   />
                   {/* 旧路径兼容重定向 → 消息中心 */}
                   <Route path="/push" element={<Navigate to="/messages?tab=push" replace />} />
