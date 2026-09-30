@@ -12,7 +12,6 @@ export default defineAppConfig({
     'pages/weather/index',
     'pages/announcement/detail/index',
     'pages/announcement/index/index',
-    'pages/announcement/search/index',
     'pages/favorites/index',
     'pages/feedback/submit/index',
     'pages/feedback/list/index',
