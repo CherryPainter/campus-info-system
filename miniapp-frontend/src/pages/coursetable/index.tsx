@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import { View, Text, PickerView, PickerViewColumn } from '@tarojs/components';
 import { useLoad, usePullDownRefresh, stopPullDownRefresh, navigateTo } from '@tarojs/taro';
 import dayjs from 'dayjs';
@@ -483,6 +483,36 @@ export default function CourseTablePage() {
     await applyWeek(targetWk, curId);
   }, [semesters, selectedSemesterId, weekNumber, availableWeeks, applyWeek]);
 
+  // 左右滑动切换周次：在表格区域监听横向滑动手势（左滑 = 下一周，右滑 = 上一周）
+  // 选择 touch 手势而非 Swiper：课表是整页高列表，Swiper 有固定高度裁剪问题，手势方案更稳且无需 3 倍渲染
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const onTableTouchStart = useCallback((e: any) => {
+    const t = e.touches && e.touches[0];
+    if (t) touchStartRef.current = { x: t.clientX, y: t.clientY };
+  }, []);
+
+  const onTableTouchEnd = useCallback((e: any) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start) return;
+    const t = e.changedTouches && e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    // 仅当「横向位移为主」且超过阈值才切换周次，避免与竖向滚动 / 点击课程卡片冲突
+    if (Math.abs(dx) < 40 || Math.abs(dx) <= Math.abs(dy)) return;
+    if (availableWeeks.length === 0) return;
+    const minWk = Math.min(...availableWeeks.map((w) => w.week_number));
+    const maxWk = Math.max(...availableWeeks.map((w) => w.week_number));
+    let target = displayWeekNumber;
+    if (dx < 0 && displayWeekNumber < maxWk) target = displayWeekNumber + 1; // 左滑：下一周
+    else if (dx > 0 && displayWeekNumber > minWk) target = displayWeekNumber - 1; // 右滑：上一周
+    if (target !== displayWeekNumber) {
+      applyWeek(target, selectedSemesterId);
+    }
+  }, [availableWeeks, displayWeekNumber, selectedSemesterId, applyWeek]);
+
   // ====== 课程表版式数据 ======
   const { map, maxPeriod } = useMemo(
     () => buildCellMap(weekCourses, weekNumber, displayWeekNumber, isCurrentSemester(selectedSemesterId)),
@@ -648,7 +678,16 @@ export default function CourseTablePage() {
         </View>
       </View>
 
+      {/* 滑动切换周次提示（轻量、可移除） */}
+      <Text className="ct-swipe-hint">← 左右滑动切换周次 →</Text>
+
       {/* ====== 课程表版式：始终渲染完整表格（有/无课都显示网格，空格子占位） ====== */}
+      {/* 左右滑动切换周次：在表格区域监听横向滑动手势 */}
+      <View
+        className="ct-swipe-area"
+        onTouchStart={onTableTouchStart}
+        onTouchEnd={onTableTouchEnd}
+      >
       {loading ? (
         renderGridSkeleton()
       ) : (
@@ -697,6 +736,7 @@ export default function CourseTablePage() {
             </View>
           </View>
         )}
+      </View>
 
       {/* 周次选择器 */}
       {showWeekPicker && (

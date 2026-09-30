@@ -36,6 +36,15 @@
 - **说明**：停用某频道只隐藏其小程序标签，该频道下公告仍可在「全部」查看；删除频道是硬删，相关公告的 `channel` 字段保留原值（仅标签不再展示）。编辑器下拉只列启用中的频道。
 - **验证**：后端四文件 `py_compile` 通过；管理端 `tsc --noEmit` exit 0（无报错）。**未**连真实数据库跑端点（本环境无 DB 进程），表自动创建与接口行为待本地/服务器启动后实测确认。
 
+### 优化：小程序课表页支持左右滑动切换周次（2026-09-30）
+- **背景**：用户希望小程序课表页像「日程」页一样，能左右滑动切换教学周次。
+- **方案取舍**：未采用 `Swiper` 组件包裹整表——课表是整页高列表，`Swiper` 在微信/Taro 下默认高度固定（参照 schedule 页 `week-swiper` 仅 138rpx，因其内容只是日期条），包整表会高度裁剪且需 3 倍渲染。改为在表格区域监听 `onTouchStart/onTouchEnd` 横向滑动手势：左滑 = 下一周、右滑 = 上一周，阈值 40px 且以横向位移为主，避免与竖向滚动 / 点击课程卡片冲突。
+- **改动**：
+  - `miniapp-frontend/src/pages/coursetable/index.tsx`：引入 `useRef`；新增 `touchStartRef` 与 `onTableTouchStart/onTableTouchEnd`（按 `availableWeeks` 的 min/max 夹紧周次边界，调用既有 `applyWeek` 复用拉取/锚定逻辑）；用 `.ct-swipe-area` 容器包裹表格区并挂载手势；顶栏下方新增轻量提示「← 左右滑动切换周次 →」（可移除）。
+  - `miniapp-frontend/src/pages/coursetable/index.scss`：新增 `.ct-swipe-area`（仅作事件容器，宽 100%，不影响布局）与 `.ct-swipe-hint`（居中浅灰小字）。
+- **说明**：保留原周次选择器（Picker）与「本周」按钮，滑动为增量能力；学期边界不跨学期连续切换（与 schedule 页一致，越界不动作）。微信下滑动手势不会触发 `tap`，误触课程卡片跳转已天然规避。
+- **验证**：小程序 `tsc --noEmit` 通过，coursetable 无类型错误。**未**在真机/模拟器实测滑动（本环境无法跑 `taro build` 且无法预览），手势阈值与边界待真机验证。
+
 ### 修复：管理端「类型」胶囊样式不统一（实心 hex vs 浅底预设，2026-09-30）
 - **现象**：进程管理页三张表的「类型」胶囊样式不统一——定时任务表（定时/间隔）与状态/启用标签是 Antd 预设浅底胶囊，而执行历史、动态规则、任务详情的「类型」胶囊是实心填充（课表绿、天气青等），观感割裂。
 - **根因**：`constants/statusMaps.ts` 的 `TASK_TYPE_MAP.color` 是十六进制（供 ECharts 图表用），但 Processes.tsx 直接把它喂给 `<Tag color={hex}>`，Antd 会把 hex 渲染成实心胶囊；而定时/间隔/状态用的是预设色名（浅底）。两路混用导致风格不一致。

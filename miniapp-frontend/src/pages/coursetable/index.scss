@@ -200,6 +200,20 @@
   margin: $spacing-md 0 0;
 }
 
+// 滑动手势捕获区：仅作事件挂载容器，不影响原有布局
+.ct-swipe-area {
+  width: 100%;
+}
+
+// 滑动切换周次提示（轻量、可移除）
+.ct-swipe-hint {
+  display: block;
+  text-align: center;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  margin-top: 8rpx;
+}
+
 .ct-table-inner {
   display: flex;
   border-radius: $radius-medium;
