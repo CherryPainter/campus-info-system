@@ -1,0 +1,40 @@
+@import '../../styles/variables.scss';
+
+/* 自绘 iOS 风格胶囊开关 */
+.app-switch {
+  position: relative;
+  width: 88rpx;
+  height: 48rpx;
+  border-radius: $radius-full;
+  background: $border-color; // 关闭：灰色
+  transition: background-color 0.25s ease;
+  flex-shrink: 0;
+
+  &.is-on {
+    background: $success; // 开启：绿色
+  }
+
+  &.is-disabled {
+    opacity: 0.45;
+  }
+}
+
+.app-switch-hover {
+  opacity: 0.85;
+}
+
+.app-switch-knob {
+  position: absolute;
+  top: 4rpx;
+  left: 4rpx;
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: $radius-full;
+  background: #ffffff;
+  box-shadow: 0 2rpx 6rpx rgba(0, 0, 0, 0.2);
+  transition: transform 0.25s ease;
+}
+
+.app-switch.is-on .app-switch-knob {
+  transform: translateX(40rpx); // 88 - 40 - 4*2 = 40
+}

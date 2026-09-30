@@ -1,6 +1,5 @@
 import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { Switch } from '@nutui/nutui-react-taro';
 
 import { logout as logoutApi } from '@/api/auth';
 import { useAuthStore } from '@/stores/authStore';
@@ -12,6 +11,7 @@ import {
 } from '@/stores/notificationSettingsStore';
 import { APP_VERSION } from '@/version';
 import IconArrow from '@/components/IconArrow';
+import Switch from '@/components/Switch';
 import './index.scss';
 
 /**
