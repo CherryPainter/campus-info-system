@@ -16,7 +16,10 @@ export default function ClassroomPage() {
 
   return (
     <View className="classroom-page">
-      <FeaturePlaceholder />
+      <FeaturePlaceholder
+        title="空闲教室 · 筹备中"
+        text="空闲教室需教务实时课室占用数据，目前暂未接入，接入后支持按教学楼 / 时段查询。"
+      />
     </View>
   );
 }

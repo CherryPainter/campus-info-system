@@ -1,10 +1,11 @@
 @import '../../styles/variables.scss';
 
-/* 功能占位页：整屏居中一句提示文字 */
+/* 功能占位页：整屏居中「功能筹备中」空态 */
 .fp-wrap {
   min-height: 100vh;
   box-sizing: border-box;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: $spacing-xl $spacing-lg calc(48rpx + env(safe-area-inset-bottom));
@@ -12,7 +13,61 @@
   text-align: center;
 }
 
+/* 空态插图：一张待填充的卡片（纯 CSS，无 emoji） */
+.fp-illust {
+  position: relative;
+  width: 168rpx;
+  height: 168rpx;
+  margin-bottom: $spacing-lg;
+  border: 2rpx solid $border-color;
+  border-radius: $radius-large;
+  background: $card-background;
+  box-shadow: $shadow-card;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14rpx;
+
+  &::before {
+    content: '';
+    width: 88rpx;
+    height: 10rpx;
+    border-radius: $radius-full;
+    background: $border-color;
+  }
+
+  &::after {
+    content: '';
+    width: 60rpx;
+    height: 10rpx;
+    border-radius: $radius-full;
+    background: $border-color;
+  }
+}
+
+/* 右上角「进行中」标记：用 warning 色语义表达筹备/进行中，非报错 */
+.fp-status-dot {
+  position: absolute;
+  top: -10rpx;
+  right: -10rpx;
+  width: 24rpx;
+  height: 24rpx;
+  border-radius: 50%;
+  background: $warning;
+  border: 4rpx solid $background;
+}
+
+.fp-title {
+  font-size: $font-size-lg;
+  font-weight: 500;
+  color: $text-primary;
+  margin-bottom: $spacing-xs;
+}
+
 .fp-text {
   font-size: $font-size-md;
+  line-height: 1.6;
   color: $text-tertiary;
+  max-width: 480rpx;
 }

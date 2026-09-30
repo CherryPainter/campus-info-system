@@ -16,7 +16,10 @@ export default function CalendarPage() {
 
   return (
     <View className="calendar-page">
-      <FeaturePlaceholder />
+      <FeaturePlaceholder
+        title="校历查询 · 筹备中"
+        text="校历（开学、放假、考试安排）校方暂未开放数据接口，接入后第一时间在这里更新。"
+      />
     </View>
   );
 }

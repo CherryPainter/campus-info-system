@@ -17,7 +17,10 @@ export default function CampusCardPage() {
 
   return (
     <View className="campus-card-page">
-      <FeaturePlaceholder />
+      <FeaturePlaceholder
+        title="校园卡 · 筹备中"
+        text="校园卡在线服务（余额、流水、支付）学校侧暂未开放接口，接入后在这里提供。"
+      />
     </View>
   );
 }
