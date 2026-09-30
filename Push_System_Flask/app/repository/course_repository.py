@@ -268,9 +268,12 @@ def _find_existing_course(
     在 (semester_id, course_key) 维度查找未删除的既有课程行（v6.19.x 新增）。
 
     主匹配：直接用稳定 course_key。
-    迁移兜底：老行 course_key 为 NULL（迁移期未跑回填脚本），按规范身份
-    (课程名/星期/教室/教师 + 节次一致) 兜底匹配，命中后顺手补齐 course_key，
-    防止漏跑回填脚本时又产生重复行。
+    弱身份兜底：course_key 因历史公式漂移（如旧批次用 period_idx、新批次用
+    periods 列表算 key）导致与当前公式不一致时，按规范身份
+    (课程名/星期/教室/教师 + 节次一致) 兜底匹配，命中后顺手把存储的 course_key
+    纠正为当前 key，防止「同课因 key 公式变化被当新课重复插入 / 永远命不中」。
+    该兜底对 course_key 为 NULL（迁移期未跑回填脚本）与「非 NULL 但错配」两种
+    情形同样生效——只要规范身份一致即视为同一门课。
     """
     existing = (
         session.query(Course)
@@ -287,7 +290,6 @@ def _find_existing_course(
         session.query(Course)
         .filter(
             Course.semester_id == sid,
-            Course.course_key.is_(None),
             Course.is_deleted.is_(False),
             Course.course_name == (data.get("course_name") or ""),
             Course.week_day == week_day,

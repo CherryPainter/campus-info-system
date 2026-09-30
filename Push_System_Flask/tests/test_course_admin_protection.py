@@ -163,6 +163,74 @@ def test_crawler_inserts_when_key_differs_in_admin_slot(session):
     assert admin_row.course_name == "手动课2"
 
 
+def test_drifted_non_null_course_key_matched_by_weak_identity(session):
+    """回归用例（2026-09-23）：旧批次因 course_key 公式漂移（period_idx vs periods 列表）
+    产生与当前公式不一致、但非 NULL 的「错配 key」。create_batch 必须靠弱身份兜底命中
+    既有行、刷新并纠正 key，而不是插出重复行。
+
+    复现场景：手工预置一行身份完全相同、course_key 却故意写成错配值（非 NULL）的行，
+    再喂入正确数据，断言命中既有行（updated=1, created=0）且 key 被纠正。
+    """
+    from app.repository.course_repository import compute_course_key
+
+    wrong_key = "deadbeef" * 4  # 与真实 key 不同、且非 NULL
+    old = Course(
+        course_code="CRAWL-OLD",
+        course_key=wrong_key,
+        course_name="漂移课",
+        semester_id=20251,
+        semester_name="2025-2026-1",
+        academic_year="2025-2026",
+        term=1,
+        week_day=3,
+        period_idx=1,
+        periods=[1, 2],
+        teacher="王五",
+        classroom="C303",
+        building="教三",
+        start_time="08:00",
+        end_time="09:45",
+        weeks=[2, 3, 4],
+        week_number=2,
+        data_source="full",
+    )
+    session.add(old)
+    session.commit()
+
+    real_key = compute_course_key(
+        {"course_name": "漂移课", "week_day": 3, "periods": [1, 2], "classroom": "C303", "teacher": "王五"}
+    )
+    assert real_key != wrong_key
+
+    created, updated = CourseRepository.create_batch(
+        session,
+        [
+            {
+                "course_code": "CRAWL-NEW",
+                "semester_id": 20251,
+                "course_name": "漂移课",
+                "week_day": 3,
+                "period_idx": 1,
+                "periods": [1, 2],
+                "teacher": "王五",
+                "classroom": "C303",
+                "building": "教三",
+                "start_time": "08:00",
+                "end_time": "09:45",
+                "weeks": [2, 3, 4, 5],  # 周次有变化，应被更新
+                "week_number": 3,
+            }
+        ],
+        data_source="full",
+    )
+    assert created == 0          # 没有新建重复行
+    assert updated == 1          # 命中既有行并刷新
+    assert session.query(Course).count() == 1
+    kept = session.query(Course).one()
+    assert kept.course_key == real_key   # 错配 key 已被纠正为当前公式值
+    assert kept.weeks == [2, 3, 4, 5]    # 周次被更新
+
+
 def test_crawler_updates_non_admin_course(session):
     # 同一 course_key（课名/星期/节次/教室/教师都不变）再次爬取 → 更新既有行（回归：保护不影响正常 upsert）
     first = {
