@@ -6,6 +6,65 @@
 
 ## Unreleased
 
+### 优化：消息中心顶部统计改为按状态细分（草稿/已撤回/待发送/失败），修复恒为 0 与口径错误（前端，2026-09-30）
+- **背景**：用户反馈消息中心顶部统计「非常鸡肋，一点都不细节」——看不到草稿、看不到未发布，且「待发送」永远为 0，质疑该模块意义。核对发现统计口径有多处失真。
+- **事实核对（旧实现的 bug）**：
+  - 旧 `fetchStats` 把 `annoToday` 直接赋成「已发布数」且从未渲染（死字段 + 口径错）；顶部只展示「通知总数 / 已发布 / 推送记录 / 待发送 / 近期提醒」，无任何草稿或撤回维度。
+  - `pushPending` 旧实现从 `pushList.filter(status==="pending")` 估算，但 `pushList` 仅在该 Tab 激活时才加载，故在公告/提醒 Tab 下恒为 0。
+  - `pushTotalCount = pushTotal` 读取的是**上一帧**的 state（`setPaginationFromRes` 尚未生效），为隐性错位。
+  - 公告状态枚举为 `draft / published / withdrawn`，推送为 `pending / sent / failed / cancelled`——旧卡片既没体现草稿/撤回，也没体现投递失败的异常态。
+- **改动**（`admin-frontend/src/pages/Messages.tsx`）：
+  - 统计状态 `stats` 细化为 `annoTotal / annoDraft / annoPublished / annoWithdrawn / pushTotal / pushPending / pushFailed / reminderTotal`，移除失效的 `annoToday`。
+  - `fetchStats` 改为按 `status` 过滤后端列表取 `pagination.total`（公告 `draft/published/withdrawn`、推送 `pending/failed`），新增模块级 `totalOf()` 统一安全取总数（任意失败回退 0，不阻塞主流程），去掉对当前页列表的依赖。
+  - 拆分 Effect：列表数据随分页/筛选变化；统计概览**仅随 Tab 切换刷新**（旧实现在每次分页/搜索都触发 8 个计数请求）。
+  - 顶部卡片重排为 8 张，按状态配色：通知总数(蓝)/草稿(灰)/已发布(绿)/已撤回(橙)/推送记录(紫)/推送待发送(金)/推送失败(红)/近期提醒(粉)，桌面端 `md={3}` 一排容纳。
+- **验证**：管理端 `tsc --noEmit` exit 0；`vite build` 成功（18.75s）。真实计数依赖本地后端 + MySQL，未代跑（沙箱无 flask 依赖、连不上本地库）；但请求方式复用既有 `announcementApi.list({status})` / `pushApi.getList({status})` 的 `status` 过滤契约，与列表筛选同源，口径一致。
+
+### 重构：Webhook 多用户定向推送（scope 框架 + 管理端页面重构，前后端，2026-09-30）
+- **背景**：电量从「全局单 Cookie」改为「多用户各自配 Cookie」后，原企业微信电量推送被整体移除，只保留小程序站内通知，导致班级群/管理端看不到汇总电量。原 webhook 是「按模块广播」的模块级模式，不适应「把汇总电量只发给特定班级/学生」的多用户新框架，全员广播会刷屏。用户确认「方案 B：升级 webhook 为 scope 感知的定向推送源」并顺带重做管理端 Webhook 页面。
+- **事实核对**：电量任务（`push_electricity_daily/weekly/monthly`）此前确实不再调用 webhook（`tasks.py` 顶部注释与 `formatter.py` 顶部注释均明示）；`Webhook` 模型此前只有模块路由，无受众维度；且 `Webhook.update()` 的 `allowed_fields` 漏了新增的 `scope`/`scope_target`，即使路由传了也写不进库（已修）。
+- **后端改动**：
+  - `app/model/webhook.py`：`webhooks` 表新增 `scope`（global/student/org，默认 global）与 `scope_target`（JSON，student 存 user_id 列表 / org 存 org_unit id 列表），`to_dict`/`create` 同步；`update` 的 `allowed_fields` 补 `scope`/`scope_target`（**修复写库 bug**）。
+  - `app/api/webhook_routes.py`：`create`/`update` 校验 `scope ∈ {global,student,org}` 并用 `_normalize_scope_target` 规整为整数 ID 列表；`update` 在 `scope` 切回 `global` 时清空残留 `scope_target`。
+  - 新增 `app/services/webhook_push_service.py`：`send_module_report(module, entries, header)` 按每个 webhook 的 scope 解析受众（global=全部；student=指定 user_id；org=BFS 展开组织树子孙班级→`student_rosters.bound_user_id`），过滤 entries 后聚合为单条 Markdown（企业微信 3800 字节上限，超长截断），失败静默、绝不影响主推送流程。
+  - `app/modules/electricity/formatter.py`：新增 `format_daily/weekly/monthly_markdown` 与 `format_low_power_markdown`（单学生 block，供 webhook 聚合用）。
+  - `app/modules/electricity/tasks.py`：`push_electricity_daily/weekly/monthly` 改用 `_iter_students_with_cookie_named()`（返回 `(user_id, cookie, display_name)`），收集 `webhook_entries`（含 `user_id/display_name/markdown_block`），循环结束后调用 `send_module_report("electricity", ...)` 发送汇总；原有的站内通知通道不变。
+- **前端改动**：
+  - `admin-frontend/src/api/admin.ts`：`Webhook` 接口同步后端（删除后端不存在的 `webhook_type` 幽灵字段，补 `modules`/`module_list`/`scope`/`scope_target`）。
+  - `admin-frontend/src/pages/Webhooks.tsx`：重做编辑弹窗——新增「接收范围」下拉（全局/指定学生/指定组织），`scope=student` 时从 `adminApi.getElectricityStudents()` 拉学生多选、`scope=org` 时从 `orgApi.tree()` 拉组织树（压平带完整路径）多选；列表新增「接收范围」列展示范围标签 + 目标名称摘要；编辑回填 scope/scope_target。
+- **验证**：管理端 `tsc --noEmit` exit 0，`vite build` 成功（17.19s，仅历史遗留的 antd vendor 大 chunk 告警）；后端改动文件 `py_compile` 通过；`webhook_push_service.py`/`tasks.py`/`formatter.py` 调用签名与 entry 结构（user_id/display_name/markdown_block）逐一核对一致；`send_module_report` 仅在 `tasks.py` 三处电量推送被调用，为电量→webhook 唯一路径，无旧全局广播残留；增量迁移逻辑（`app/schema/migrate.py`）核对确认会给 `webhooks` 补 `scope VARCHAR(20) NOT NULL DEFAULT 'global'` 与 `scope_target JSON` 两列（JSON 类型在 `_column_type_to_sql` 正确识别）。
+- **已知边界与已消除的有害不一致**：
+  - scope 定向目前**只在电量模块生效**：电量走 `_iter_students_with_cookie_named()` + `send_module_report` 新路径，`send_module_report` 仅在 `tasks.py` 三处电量推送被调用，是电量→webhook 的唯一路径，不会被旧广播重复。
+  - **已消除有害不一致（2026-09-30 末）**：旧 `adapter_service.get_adapter(module)` 全局广播在聚合 DB webhook 时**不读 scope**，导致一个 `scope=student/org` 的 webhook（即便 `modules` 含 course/weather/system）也会被全局广播误推——这是真正会出错的不一致。已在 `app/services/adapter_service.py` 的 `_load_webhooks_from_db` 中把模块广播收窄为**仅 `scope=global`** 的 webhook（`global_webhooks = [w for w in webhooks if (w.scope or "global")=="global"]`），定向（student/org）webhook 一律不再进旧广播。零风险：现有全部 global webhook 行为完全不变。
+  - 课程/天气/系统仍走旧全局广播，本身**不支持**定向（其 `modules` 下的定向 webhook 现在被正确排除，而非误推）——这是「未做全模块 scope」，不是「会出错」。若要让 scope 对课程/天气/系统也生效，需把 scope 过滤下沉进 `get_adapter`/`send_to_all`（属单独重构，本次未做，留作后续）。
+  - `delivery_service.py` 的 `adapter_name="electricity"` 仅服务于图片任务队列，电量文本报告不走该路径，故电量不会被图片队列重复广播。
+- **待执行（用户本地环境）**：沙箱无 flask 依赖且连不上本地 MySQL，未跑 `init_db.py migrate`；需在 `Push_System_Flask` 部署环境执行 `python init_db.py migrate` 以新增 `webhooks.scope`、`webhooks.scope_target` 两列（仅新增列，非破坏操作）。
+- **顺带补全（同批次，见下条）**：管理端「电量任务」页（`Tasks.tsx`）原本缺「单次采集」入口——已补 `fetch_electricity_data` 任务卡，与后端 `trigger_electricity_task` 的 `task_map` 对齐，不再属遗留项。
+
+### 修复：管理端「电量任务」补回「单次采集」入口（前端，2026-09-30）
+- **背景**：用户截图反馈管理端电量任务没有「单次爬取」。核对后端——`app/api/admin_routes.py` 的 `trigger_electricity_task` 的 `task_map` 早已支持 `fetch_electricity_data`（电量数据采集：仅入库最新电量、不推送、假期不静默），`app/modules/electricity/tasks.py:41` 也有实现（进程名「爬取电量数据」）；但前端 `Tasks.tsx` 电量分类只列了日/周/月推送、Cookie 检测、`fetch_all`（全量 50 页重爬），唯独漏了 `fetch_electricity_data`，管理员在页面上点不到单次采集。
+- **改动**（`admin-frontend/src/pages/Tasks.tsx`）：电量分类新增 `fetch_electricity_data` 任务卡（label「电量单次采集」、desc「爬取并保存最新电量（仅入库，不推送）」）；`PROCESS_NAME_BY_TASK` 补 `fetch_electricity_data: "爬取电量数据"` 供运行状态轮询。触发走 `module="electricity"` 分支的 `adminApi.triggerElectricity("fetch_electricity_data")` → `POST /admin/electricity/trigger`，命中后端已有 `task_map`；该任务不在假期静默拦截集，前端 `HOLIDAY_SKIPPED_KEYS` 无需改动。
+- **验证**：管理端 `tsc --noEmit` exit 0（无类型错误）。真实触发行为依赖本地后端 + MySQL，未代跑（沙箱无 flask 依赖）。
+- **说明**：与「电量全量爬取」(`fetch_all`，最多 50 页、走独立端点 `electricityApi.triggerFetchAll`) 区分——`fetch_electricity_data` 是轻量单次「只采最新、不推送」。
+
+### 优化：管理端「个人设置」更名「个人中心」并重做页面 UI（前端，2026-09-30）
+- **背景**：用户反馈「个人设置」这个叫法不贴切——该页实际是账户资料 + 账户安全 + 登录日志，称「个人中心」更准确；且页面自早期版本以来未随迭代更新，观感简陋。要求重做到与仪表盘同一质量水准，且**明确不要照搬仪表盘**（首版因「沿用仪表盘信息架构」被批敷衍，已推倒重来）。
+- **更名**（仅文案，路由 `/profile` 不变）：
+  - `admin-frontend/src/layouts/AdminLayout.tsx`：管理员/普通用户两套菜单、顶栏用户下拉菜单、普通用户端站点标题统一改为「个人中心」。
+  - `admin-frontend/src/pages/Welcome.tsx`：首页快捷入口改为「个人中心 / 账号与安全设置」。
+  - `Push_System_Flask/README.md`：前端文件清单与页面权限表同步。
+- **UI 重做**（`admin-frontend/src/pages/Profile.tsx`）：刻意区别于仪表盘的「全局监控大屏」范式，改用**个人空间的标准结构**——顶部个人横幅 + 左栏导航/右侧面板。
+  - **顶部个人横幅**：卡片顶部一条 4px 品牌色细条；横排三栏（断点：`<md` 竖排、`≥md` 横排 `md=5/13/6`、`lg=4/14/6`）——头像（右下叠加在线绿点）· 身份（用户名 + 角色标签 + 主账号标签 + 成员天数/上次登录/服务状态元信息）· 右侧「安全评分环」（分数 + 安全等级，颜色随分数切换）。
+  - **左栏导航 / 右侧面板**（`Tabs`，桌面 `tabPosition=left` 左栏、移动 `top` 顶部）：账户资料 / 登录安全 / 登录记录，三面板各自独立（避免单页长滚动）。
+  - **账户资料**：头像预览 + 更换/保存（**仅在头像确有改动时「保存头像」可用**，原实现任何时候都可点、无变更也发一次请求）；信息行式列表（用户名带主账号标识与修改入口、角色、上次登录、登录 IP、注册时间，行间细分隔线）。
+  - **登录安全**：左「双因素认证」卡（开关 + 已启用/未启用说明，下接修改密码/修改用户名）、右「安全评分」卡（评分环 + 因子核对清单）。
+  - **登录记录**：会话卡片式列表（**每条独立成卡**，成功/失败徽标 + IP + 浏览器 + 时间；已退出的行补退出时间与在线时长；失败行单独一行红字原因），支持按状态筛选 + 加载更多。
+  - **安全评分口径**：**仅基于后端真实可得字段**，不编造——双因素认证（+40，取 `authApi.getMfaStatus`）、主账号（+15，取 `user.is_primary`）、绑定邮箱（+15，取 `user.email`）、基础账户（+30，恒真）；满分 100，`≥80` 高 / `≥60` 中 / `<60` 待提升，颜色绿/橙/红。
+- **说明**：纯前端改动，接口与后端契约未变，未新增依赖；后端无对应改动。首版（账户概览 KPI 行 + 账户安全卡 + 登录日志时间线，沿用仪表盘语言）已废弃。
+- **验证**：管理端 `tsc --noEmit` 0 错；`eslint` 该文件 0 error / 0 warning；`vite build` 成功（17.46s，仅既有 chunk 体积告警）。页面清理了首版遗留的未使用代码（`SaveOutlined`、`logStats`/`fetchLogStats`、`refreshAll`、`setLogPageSize`）。
+- **视觉核对方式（可复用）**：本地用户 dev server 端口被另一项目占用、且管理员口令已被修改（默认口令登录失败），故改用「接口 mock + 无头浏览器截图」核对：Playwright 在页面侧拦截 `/api/...` 返回构造数据，注入假 token 后分别以 1440×900（桌面）与 390×844（移动）在 MFA 开/关、三个页签下逐一截图，未连真实后端、未写库。临时脚本 `技术总结/dev-scripts/profile-ui-shot.py`（gitignored，已扩展为逐页签截图）；注意路由拦截不能用 `**/api/**`——Vite dev 下 `/src/api/*.ts` 模块路径同样含 `/api/`，会被误拦成 JSON 导致白屏。核对中发现横幅三栏在桌面端被 `xs={24}` 强制占满而竖向堆叠（浪费横向空间），已改为带断点的显式栅格；移动端三个顶部页签曾溢出出现「⋯」，已收窄 `tabBarGutter` 使其完整放下。
+- **数据影响**：核对过程中曾用默认口令尝试连接本地后端以取真实数据，两次均失败，登录日志新增 2 条来自 127.0.0.1 的失败记录（非系统异常，可忽略）。
+
 ### 优化：移除「推送静默」假期区间的硬编码类型（前后端，2026-09-30）
 - **背景**：管理员新增假期区间时，「假期类型」是个硬编码三选一枚举（寒假 / 暑假 / 自定义）。用户指出其"生硬、耦合太强"——例如新增「国庆假期2026」只能勉强落到「自定义」，国庆/清明/五一这类通用假期根本盖不住。
 - **事实核对**：该字段**只用于显示标签，不驱动任何逻辑**——静默命中仅看 `enabled` + 日期区间（`holiday_service._hit_enabled_period`），却硬编码散落在 6 处（后端模型字段+注释、后端枚举常量+两处校验、管理端类型联合、两处 label map、表单下拉），成本与收益不符。
@@ -44,6 +103,13 @@
   - `miniapp-frontend/src/pages/coursetable/index.scss`：新增 `.ct-swipe-area`（仅作事件容器，宽 100%，不影响布局）与 `.ct-swipe-hint`（居中浅灰小字）。
 - **说明**：保留原周次选择器（Picker）与「本周」按钮，滑动为增量能力；学期边界不跨学期连续切换（与 schedule 页一致，越界不动作）。微信下滑动手势不会触发 `tap`，误触课程卡片跳转已天然规避。
 - **验证**：小程序 `tsc --noEmit` 通过，coursetable 无类型错误。**未**在真机/模拟器实测滑动（本环境无法跑 `taro build` 且无法预览），手势阈值与边界待真机验证。
+
+### 优化：管理端「频道管理」纳入「消息中心」子菜单（2026-09-30）
+- **背景**：用户截图红框反馈——`频道管理` 与 `消息中心` 在侧边栏是平级顶级菜单，`频道管理` 应作为 `消息中心` 的子项。
+- **改动**：`admin-frontend/src/layouts/AdminLayout.tsx`——把 `消息中心` 改成可展开父菜单，其 `children` 为「消息列表」（`/messages`）与「频道管理」（`/messages/channels`）；`menuItems` 显式标注 `MenuDataItem[]`；随之移除仅服务于原平级项、现已无用的 `AppstoreOutlined` 导入。
+- **技术要点**：本版 `@ant-design/pro-components` 的 `MenuDataItem` 子菜单字段是 `children`（`routes` 被显式声明为 `undefined`，仅运行时兼容），用 `routes` 会类型报错；`menuItemRender` 只作用于叶子项，子菜单标题不会误加「点击导航」，行为安全。
+- **说明**：`layout="mix"` 下 `splitMenus` 默认 `false`，子菜单仍渲染在侧边栏内（不会把一级菜单挪到顶栏）。
+- **验证**：管理端 `tsc --noEmit` exit 0；`vite build` 成功（32.21s，仅既有 chunk 体积告警）。**未**在运行态截图核对侧边栏展开形态（本环境无可用管理员口令/端口，未连真实后端）。
 
 ### 修复：管理端「类型」胶囊样式不统一（实心 hex vs 浅底预设，2026-09-30）
 - **现象**：进程管理页三张表的「类型」胶囊样式不统一——定时任务表（定时/间隔）与状态/启用标签是 Antd 预设浅底胶囊，而执行历史、动态规则、任务详情的「类型」胶囊是实心填充（课表绿、天气青等），观感割裂。

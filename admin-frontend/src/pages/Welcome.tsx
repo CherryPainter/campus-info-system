@@ -42,9 +42,9 @@ const menuItems = [
   },
   {
     path: "/profile",
-    name: "个人设置",
+    name: "个人中心",
     icon: <SettingOutlined />,
-    description: "管理个人信息",
+    description: "账号与安全设置",
     color: "#722ed1",
   },
 ];
