@@ -20,9 +20,9 @@
   - `miniapp-frontend/src/pages/profile/index.tsx`：读取消息设置，总开关或公告通知关闭时不拉取未读计数、不渲染消息入口红点。
   - `miniapp-frontend/src/pages/messages/index.tsx`：总开关关闭时未读统计与卡片红点均不显示，列表仍可查看历史。
   - `miniapp-frontend/src/app.config.ts`：注册 `pages/about/index`、`pages/third-party-sdks/index`、`pages/open-source/index` 三个新页面。
-  - `miniapp-frontend/src/assets/images/logo.png`：新增小程序 logo 图片资源占位（当前为浅蓝圆角底 + 主色「宜」字），关于页顶部改用真实图片替代 CSS 自绘方块；待用户提供正式小程序 logo 后替换此文件。
+  - 关于页 `about/index.tsx`：顶部 logo 改用登录页同款 `src/assets/images/login-illustration.png`（与登录页统一形象），替代之前临时生成的「宜」字占位图 `logo.png`（已 `git rm` 移除）。
   - 删除 about 页「客服邮箱」信息项（`infoItems` 移除 `support@gelsomino.cn`）。
-- **验证**：前端 `tsc --noEmit` 0 错；`taro build --type weapp` 编译成功（产物已核对含 about、third-party-sdks、open-source 三个新页面、settings 页 Switch 相关编译输出，以及 about 页 `data:image/png;base64` 内联的 logo 图片）。
+- **验证**：前端 `tsc --noEmit` 0 错；`taro build --type weapp` 编译成功（产物已核对含 about、third-party-sdks、open-source 三个新页面、settings 页 Switch 相关编译输出，以及 about 页内联的 `login-illustration.png` 插画）。
 
 ### 新增：小程序通知列表改版——部门筛选 + 置顶轮播 + 公众号式卡片（前后端，2026-09-24）（已被下方 v2「校园新闻门户」样式整体替代）
 - **需求**（用户 2026-09-24）：卡片仿微信公众号通知卡片；置顶做成轮播；卡片图可配封面，无封面则取正文首图，再无则不配图（**不摆占位图**）；多部门发布的公告要分门别类、可供筛选。
@@ -70,6 +70,15 @@
 - **备注**：存量公告 `channel` 为空 → 只出现在「全部」，不落具体频道，建议后续管理端支持批量指定默认频道；UI 真机/微信开发者工具观感待用户刷新确认（`.env` API base 为本地 `127.0.0.1:29528`，真机需切生产域名）。
 - **修复 1（数据不可见，非数据丢失）**：上线后用户反馈"我的数据呢"。根因——前端 `tabs = [TAB_FOLLOW, ...channels]` **无「全部」入口**，且 `activeTab` 默认 `我的关注`；存量真实公告（id=2 开学说明 / id=4 校园之星选举活动获奖通知）`channel` 全为 NULL（迁移只加列未回填），`list_channels()` 仅聚合非空 `channel` 故返回 `[]` → 只剩「我的关注」标签 → 用户未收藏 → 空态，观感像数据丢失。**数据从未丢失**。修复：新增 `TAB_ALL = '全部'` 作为首个且默认标签，`loadFirst`/`loadMore` 对 `我的关注`/`全部` 均不下发 `channel` 过滤；`loadChannels` 不再自动切到首个频道；`api/announcements.ts` 与后端 `list_for_user` 白名单同步把 `全部`/我的关注` 视为"取全部"（不误当真实频道）；后端 `test_client` 实测 `list total=2` 正确返回 id=2/id=4，`/channels` 返回 `{items:[], total:2}`。
 - **修复 2（`Template tmpl_0_i not found` 运行时报错）**：用户截图报 `WXMLRT_$gwx_XC_4:./base.wxml:template:251:20: Template tmpl_0_i not found`。根因——`components/EmptyState` 用了 NutUI `<Icon name="empty">`，其源码 `defaultProps = { tag: 'i' }` 且 `React.createElement(type, ...)` 在运行时才确定 `<i>` 标签，Taro 静态分析无法为其生成模板 → `xs.a(l,n,s)` 在 `n='i'` 时查 `tmpl_0_i` 未定义 → 报错（用户截图里的灰点即未渲染的 Icon）。`prebundle: {enable:false}` 配置方案已实测无效（重构建仍缺 `tmpl_0_i`）。**可靠修法：移除 NutUI `<Icon>`**。三处调用全部改为纯 CSS 矢量：①`EmptyState` 空态 → `.state-icon`「空文档」字形（theme.scss 全局）；②`NoticeCard` 加载态 → `.notice-spinner` CSS 转圈；③`announcement/detail` 加载态 → `.detail-spinner` CSS 转圈；并移除三处 `import { Icon } from '@nutui/nutui-react-taro'`。重构建 `taro build --type weapp < /dev/null` 编译成功，`grep -rl "tmpl_0_i" dist/` 全仓 0 命中，`tmpl_0_i` 彻底消失。
+- **修复 3（用户 2026-09-30 截图反馈：搜索改页内联筛选 + 取消已读变灰）**：用户两张截图分别指出——①列表项「已读后整体变灰」不符合预期，已读/未读应保持视觉一致；②搜索不应新开独立页面，应是列表页内的一个筛选模块。对应撤销原 v2 方案 Q5-A（独立搜索页）与 Q7（保留 `is_read` 已读淡化）。
+  - `pages/announcement/index/index.tsx`：
+    - 移除卡片 `is-read` 淡化逻辑——className 由 `` `alist-card ${item.is_read ? 'is-read' : ''}` `` 简化为 `"alist-card"`，已读/未读视觉完全一致；
+    - 删除 `goSearch` 跳转；新增页内联搜索——导入 `Input`，`keyword` 受控态 + `keywordRef`（读最新值避免闭包陈旧）+ `searchTimerRef`；`handleSearchInput` 对 `e.detail.value` 做 350ms 防抖后调用 `loadFirst(activeTab)`；`clearSearch` 清空并立刻重拉；`loadFirst`/`loadMore` 传 `keyword: kw || undefined`（`kw = keywordRef.current.trim()`），与既有 `channel`/`only_favorite` 筛选叠加；
+    - 顶部胶囊搜索栏改为内联筛选框：CSS 放大镜 + `Input(placeholder="搜索资讯", confirmType="search")` + 有内容时显示 CSS 矢量 `×`（`.alist-search-clear`，纯 CSS `::before`/`::after` 旋转 45/-45°，不使用文本字符）；
+    - 空态分支优先判 `keyword` 命中（「没有找到相关通知」/「换个关键词试试」），再回落到频道/关注/全部口径。
+  - `pages/announcement/index/index.scss`：删除 `&.is-read` 淡化样式块（含 `.alist-card-title`/`.alist-card-dept`/`.alist-card-time` 灰化），改为注释说明「已读/未读视觉一致：不做阅读后变灰（用户 2026-09-30 明确要求）」；新增 `.alist-search-input`（flex:1、透明底、26rpx）与 `.alist-search-clear`（CSS ×）。
+  - 删除 `pages/announcement/search/` 整个目录（index.tsx / index.scss / index.config.ts）；`app.config.ts` 已由 `20a501d` 移除 `pages/announcement/search/index` 注册，本修复仅清掉孤儿文件（路由清单已不再引用）。
+  - **验证**：`taro build --type weapp < /dev/null` 编译成功（18.55s，仅 `app-origin.wxss` 超 244KiB 体积告警与 `NoAsyncChunksWarning` 两条预存告警，均与本修复无关）；`dist/pages/announcement/` 产物核对：`search` 目录不再生成，列表 `index.wxss` 含 `.alist-search`/`.alist-search-clear`、不含 `.is-read` 灰化规则；提交 `c184ece`（本地，未推送）。
 
 ### 新增：我的消息·我的反馈「两层已读」模型（前后端，2026-09-23）
 - **背景**：原「我的消息/我的反馈」只有单一"已读"态 —— 一旦进入即全标已读、外部气泡消失，但无法区分"已读"与"点进详情细看过"。对强迫症用户，清掉外部气泡后便无从知晓哪些还没认真看。
