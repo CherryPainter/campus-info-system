@@ -30,6 +30,7 @@ from app.model.announcement import (
     AnnouncementFavorite,
     AnnouncementRead,
 )
+from app.model.announcement_channel import AnnouncementChannel
 from app.model.custom_push import CustomPush
 
 logger = get_logger(__name__)
@@ -649,30 +650,149 @@ class AnnouncementService:
             db.close()
 
     def list_channels(self):
-        """可见公告的频道聚合（小程序顶部频道标签用）
+        """可见公告的频道清单（小程序顶部频道标签用）
 
-        只统计「已发布可见且填写了频道」的公告；按公告数量倒序，
-        数量相同时按频道名升序，保证标签顺序稳定（刷新不跳动）。
-        未填频道的公告不进标签（仅在「我的关注」或各频道之外不可见）。
+        数据来自受管表 announcement_channels，只取「启用中」的频道，
+        每个频道统计其下「已发布可见」的公告数作为标签角标。
+        频道标签的 key/name 均取频道名，order 由受管表的 sort_order 决定，
+        保证刷新不跳动（不再依赖公告数量倒序）。
 
         Returns:
             [{"key": "学校要闻", "name": "学校要闻", "count": 3}, ...]
         """
         db = get_db()
         try:
-            rows = (
-                db.query(Announcement.channel, func.count(Announcement.id))
-                .filter(self._visible_filter())
-                .filter(Announcement.channel.isnot(None))
-                .filter(Announcement.channel != "")
-                .group_by(Announcement.channel)
-                .order_by(func.count(Announcement.id).desc(), Announcement.channel.asc())
+            channels = (
+                db.query(AnnouncementChannel)
+                .filter(AnnouncementChannel.is_active.is_(True))
+                .order_by(
+                    AnnouncementChannel.sort_order.asc(),
+                    AnnouncementChannel.name.asc(),
+                )
                 .all()
             )
-            return [
-                {"key": name, "name": name, "count": int(count or 0)}
-                for name, count in rows
-            ]
+            result = []
+            for ch in channels:
+                count = (
+                    db.query(func.count(Announcement.id))
+                    .filter(self._visible_filter())
+                    .filter(Announcement.channel == ch.name)
+                    .scalar()
+                    or 0
+                )
+                result.append(
+                    {"key": ch.name, "name": ch.name, "count": int(count)}
+                )
+            return result
+        finally:
+            db.close()
+
+    # ==================== 受管频道（管理端 CRUD）====================
+
+    def list_managed_channels(self, active_only: bool = False):
+        """管理端：受管频道列表（按 sort_order 升序）
+
+        Args:
+            active_only: True 时只返回启用中的频道（编辑器下拉用）
+        """
+        db = get_db()
+        try:
+            q = db.query(AnnouncementChannel)
+            if active_only:
+                q = q.filter(AnnouncementChannel.is_active.is_(True))
+            rows = q.order_by(
+                AnnouncementChannel.sort_order.asc(),
+                AnnouncementChannel.name.asc(),
+            ).all()
+            return [r.to_dict() for r in rows]
+        finally:
+            db.close()
+
+    def create_channel(self, data: dict):
+        """新建受管频道
+
+        Args:
+            data: {name(必填), sort_order(可选,默认0), is_active(可选,默认True)}
+        Raises:
+            ValueError: 名称为空或重名
+        """
+        name = str(data.get("name") or "").strip()
+        if not name:
+            raise ValueError("频道名称不能为空")
+        db = get_db()
+        try:
+            dup = (
+                db.query(AnnouncementChannel)
+                .filter(AnnouncementChannel.name == name)
+                .first()
+            )
+            if dup:
+                raise ValueError(f"频道「{name}」已存在")
+            ch = AnnouncementChannel(
+                name=name,
+                sort_order=int(data.get("sort_order") or 0),
+                is_active=bool(data.get("is_active", True)),
+            )
+            db.add(ch)
+            db.commit()
+            db.refresh(ch)
+            logger.info(f"公告频道已创建: id={ch.id}, name={ch.name}")
+            return ch.to_dict()
+        finally:
+            db.close()
+
+    def update_channel(self, channel_id: int, data: dict):
+        """更新受管频道（name / sort_order / is_active 均可单独或部分更新）"""
+        db = get_db()
+        try:
+            ch = (
+                db.query(AnnouncementChannel)
+                .filter(AnnouncementChannel.id == channel_id)
+                .first()
+            )
+            if not ch:
+                return None
+            if data.get("name") is not None:
+                name = str(data["name"]).strip()
+                if not name:
+                    raise ValueError("频道名称不能为空")
+                dup = (
+                    db.query(AnnouncementChannel)
+                    .filter(
+                        AnnouncementChannel.name == name,
+                        AnnouncementChannel.id != channel_id,
+                    )
+                    .first()
+                )
+                if dup:
+                    raise ValueError(f"频道「{name}」已存在")
+                ch.name = name
+            if data.get("sort_order") is not None:
+                ch.sort_order = int(data["sort_order"])
+            if data.get("is_active") is not None:
+                ch.is_active = bool(data["is_active"])
+            db.commit()
+            db.refresh(ch)
+            logger.info(f"公告频道已更新: id={channel_id}")
+            return ch.to_dict()
+        finally:
+            db.close()
+
+    def delete_channel(self, channel_id: int):
+        """删除受管频道（硬删；相关公告的 channel 字段保留原值，仅标签不再展示）"""
+        db = get_db()
+        try:
+            ch = (
+                db.query(AnnouncementChannel)
+                .filter(AnnouncementChannel.id == channel_id)
+                .first()
+            )
+            if not ch:
+                return False
+            db.delete(ch)
+            db.commit()
+            logger.info(f"公告频道已删除: id={channel_id}, name={ch.name}")
+            return True
         finally:
             db.close()
 

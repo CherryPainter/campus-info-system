@@ -222,6 +222,64 @@ def delete_announcement(announcement_id):
     return api_success(message="已删除")
 
 
+# ==================== 受管频道（管理端 CRUD）====================
+# "/channels" 是静态前缀，不会被 "/<int:announcement_id>" 吞掉
+# （Flask 静态路由优先于动态路由，且 "channels" 不匹配 int 转换）。
+
+
+@announcement_bp.route("/channels", methods=["GET"])
+@admin_required
+def list_channels_admin():
+    """受管频道列表
+
+    查询参数：
+        active_only (str)  "1" 时只返回启用中的频道（编辑器下拉用），缺省返回全部。
+    返回：AnnouncementChannel.to_dict() 列表，按 sort_order 升序。
+    """
+    active_only = request.args.get("active_only") == "1"
+    items = announcement_service.list_managed_channels(active_only=active_only)
+    return api_success(data=items)
+
+
+@announcement_bp.route("/channels", methods=["POST"])
+@admin_required
+def create_channel_admin():
+    """新建频道
+
+    请求体：{ name(必填), sort_order(可选,默认0), is_active(可选,默认True) }
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        item = announcement_service.create_channel(data)
+    except ValueError as e:
+        return api_error(message=str(e), http_status=400)
+    return api_success(data=item, message="创建成功")
+
+
+@announcement_bp.route("/channels/<int:channel_id>", methods=["PUT"])
+@admin_required
+def update_channel_admin(channel_id):
+    """更新频道（name / sort_order / is_active 均可单独或部分更新）"""
+    data = request.get_json(silent=True) or {}
+    try:
+        item = announcement_service.update_channel(channel_id, data)
+    except ValueError as e:
+        return api_error(message=str(e), http_status=400)
+    if not item:
+        return api_error(message="频道不存在", http_status=404)
+    return api_success(data=item, message="更新成功")
+
+
+@announcement_bp.route("/channels/<int:channel_id>", methods=["DELETE"])
+@admin_required
+def delete_channel_admin(channel_id):
+    """删除频道（硬删；相关公告的 channel 字段保留，仅标签页不再展示）"""
+    ok = announcement_service.delete_channel(channel_id)
+    if not ok:
+        return api_error(message="频道不存在", http_status=404)
+    return api_success(message="已删除")
+
+
 # ==================== 附件 ====================
 
 # 富文本编辑器正文图片（WangEditor v5）专用：与公告附件分离存储

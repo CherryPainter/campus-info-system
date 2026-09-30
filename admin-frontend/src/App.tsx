@@ -33,6 +33,7 @@ import HolidayMode from "@/pages/HolidayMode";
 import Notifications from "@/pages/Notifications";
 import Messages from "@/pages/Messages";
 import MessageEditor from "@/pages/MessageEditor";
+import ChannelManage from "@/pages/ChannelManage";
 import Settings from "@/pages/Settings";
 import Profile from "@/pages/Profile";
 import AccessControl from "@/pages/AccessControl";
@@ -131,6 +132,14 @@ export default function App() {
                     element={
                       <AdminGuard>
                         <MessageEditor />
+                      </AdminGuard>
+                    }
+                  />
+                  <Route
+                    path="/messages/channels"
+                    element={
+                      <AdminGuard>
+                        <ChannelManage />
                       </AdminGuard>
                     }
                   />

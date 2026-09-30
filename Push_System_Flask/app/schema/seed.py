@@ -74,6 +74,26 @@ def _seed_data(interactive: bool = False):
         session.commit()
         print(f'  {Style.ok("✓")} 模块配置已就绪')
 
+        # ── 默认公告频道（受管表 announcement_channels，仅当为空时写入）──
+        try:
+            from app.model.announcement_channel import AnnouncementChannel
+
+            if session.query(AnnouncementChannel).count() == 0:
+                defaults = ["学校要闻", "学院动态", "媒体聚焦"]
+                for idx, name in enumerate(defaults):
+                    session.add(
+                        AnnouncementChannel(name=name, sort_order=idx, is_active=True)
+                    )
+                session.commit()
+                print(
+                    f'  {Style.ok("✓")} 默认公告频道已写入: {", ".join(defaults)}'
+                )
+            else:
+                print(f'  {Style.dim("✓ 公告频道已存在，跳过种子")}')
+        except Exception as ch_e:
+            session.rollback()
+            print(f'  {Style.warn(f"⚠ 公告频道种子写入失败（忽略）: {ch_e}")}')
+
     except Exception as e:
         session.rollback()
         print(f'  {Style.err(f"✗ 种子数据写入失败: {e}")}')

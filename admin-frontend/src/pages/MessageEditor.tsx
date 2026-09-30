@@ -206,6 +206,11 @@ export default function MessageEditor() {
   const [currentStatus, setCurrentStatus] = useState<string>("draft");
   const [attachments, setAttachments] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
+  // 受管频道（编辑器下拉用，仅启用中的）
+  const [channelOptions, setChannelOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
+  const [channelLoading, setChannelLoading] = useState(false);
 
   // 推送特有状态
   const [msgType, setMsgType] = useState<PushMsgType>("text");
@@ -376,6 +381,7 @@ export default function MessageEditor() {
               title: d.title,
               category: d.category || "notice",
               department: d.department || "",
+              channel: d.channel || "",
               is_top: d.is_top || false,
               summary: stripHtml(d.summary || ""),
               expired_at: d.expired_at ? dayjs(d.expired_at) : null,
@@ -423,6 +429,26 @@ export default function MessageEditor() {
     }
   }, [isAnno]);
 
+  // 加载受管频道（仅启用中的），供编辑器下拉选择
+  useEffect(() => {
+    if (!isAnno) return;
+    setChannelLoading(true);
+    announcementApi
+      .channelAdmin.list({ active_only: true })
+      .then((res) => {
+        if (res.status === "success" && res.data) {
+          setChannelOptions(
+            (res.data as { name: string }[]).map((c) => ({
+              value: c.name,
+              label: c.name,
+            }))
+          );
+        }
+      })
+      .catch(() => {})
+      .finally(() => setChannelLoading(false));
+  }, [isAnno]);
+
   // ==================== 公告操作 ====================
 
   const handleSaveAnno = async (publishNow = false) => {
@@ -438,6 +464,7 @@ export default function MessageEditor() {
         title: (values.title || "").trim(),
         category: values.category || "notice",
         department: (values.department || "").trim(),
+        channel: (values.channel || "").trim(),
         is_top: !!values.is_top,
         content: editorHtml,
         summary: (values.summary || "").trim(),
@@ -867,6 +894,19 @@ export default function MessageEditor() {
                         <Col xs={24} sm={12}>
                           <Form.Item name="department" label="来源部门">
                             <Input placeholder="如：学生处" maxLength={100} />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+
+                      <Row gutter={16}>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="channel" label="频道">
+                            <Select
+                              placeholder="选择频道（可选）"
+                              allowClear
+                              loading={channelLoading}
+                              options={channelOptions}
+                            />
                           </Form.Item>
                         </Col>
                       </Row>

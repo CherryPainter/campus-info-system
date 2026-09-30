@@ -54,6 +54,16 @@ export interface AnnouncementDetail extends AnnouncementListItem {
   attachments: AnnouncementAttachment[];
 }
 
+/** 受管频道（管理端 CRUD 用） */
+export interface AnnouncementChannelAdmin {
+  id: number;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 /** 新建 / 更新提交体 */
 export interface AnnouncementPayload {
   title: string;
@@ -149,4 +159,36 @@ export const announcementApi = {
       `/admin/announcements/upload-cover`,
       formData
     ),
+
+  /** 受管频道 CRUD（管理端「频道管理」页 + 编辑器下拉共用） */
+  channelAdmin: {
+    /** 列表：默认全部；active_only=true 只返回启用中的频道（编辑器下拉用） */
+    list: (params?: { active_only?: boolean }) =>
+      request.get<any, ApiResponse<AnnouncementChannelAdmin[]>>(
+        `/admin/announcements/channels`,
+        { params }
+      ),
+    /** 新建：{ name, sort_order?, is_active? } */
+    create: (data: {
+      name: string;
+      sort_order?: number;
+      is_active?: boolean;
+    }) =>
+      request.post<any, ApiResponse<AnnouncementChannelAdmin>>(
+        `/admin/announcements/channels`,
+        data
+      ),
+    /** 更新：可部分更新 name / sort_order / is_active */
+    update: (
+      id: number,
+      data: Partial<{ name: string; sort_order: number; is_active: boolean }>
+    ) =>
+      request.put<any, ApiResponse<AnnouncementChannelAdmin>>(
+        `/admin/announcements/channels/${id}`,
+        data
+      ),
+    /** 删除 */
+    remove: (id: number) =>
+      request.delete<any, ApiResponse>(`/admin/announcements/channels/${id}`),
+  },
 };

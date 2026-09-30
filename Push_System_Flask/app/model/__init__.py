@@ -14,6 +14,7 @@ from app.model.announcement import (
     AnnouncementFavorite,
     AnnouncementRead,
 )
+from app.model.announcement_channel import AnnouncementChannel
 from app.model.course import Course
 from app.model.custom_push import CustomPush
 from app.model.electricity import ElectricityRecord, ElectricityRemaining, ElectricityTotalCapacity
@@ -67,6 +68,7 @@ __all__ = [
     "AnnouncementAttachment",
     "AnnouncementRead",
     "AnnouncementFavorite",
+    "AnnouncementChannel",
     "IPBlacklist",
     "IPSecurityEvent",
     "ServerSession",
