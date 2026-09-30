@@ -12,7 +12,7 @@
  *
  * 集成 WangEditor v5 富文本编辑器。
  */
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Card,
@@ -149,6 +149,28 @@ const SafeToolbar = ({
 const { Option } = Select;
 const { TextArea } = Input;
 
+/**
+ * 表单分组区块（iOS 分组表单式）。
+ *
+ * 用一条细分隔线 + 左侧色条小标题把同类字段归到一组，视觉层级清晰、
+ * 克制不花哨；组与组之间靠 `.form-section + .form-section` 的细分隔线分隔，
+ * 避免堆卡片或加重阴影。
+ */
+const FormSection = ({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) => (
+  <section className="form-section">
+    <div className="form-section-head">
+      <span className="form-section-title">{title}</span>
+    </div>
+    <div className="form-section-body">{children}</div>
+  </section>
+);
+
 type EditorMode = "announcement" | "push";
 type PushMsgType = "text" | "image" | "template";
 type PushPushType = "immediate" | "scheduled" | "recurring";
@@ -225,14 +247,25 @@ export default function MessageEditor() {
     { left: number; width: number; pinned: boolean } | null
   >(null);
 
+  // 记录上一次 previewVisible，用于区分「刚展开」与「内容变化导致的重测」
+  const prevPreviewVisible = useRef(false);
   useEffect(() => {
     if (!previewVisible) {
       // 预览不占位时清掉测量结果：否则重新打开预览的第一帧会沿用旧的 left/width
       // （隐藏期间窗口被 resize 过，就会错位一帧）
       setPreviewState(null);
+      prevPreviewVisible.current = false;
       return;
     }
+    // 刚展开时，Col 正处于 0→目标宽度 的过渡动画中，首帧测得 width≈0，
+    // 若立刻据此设 position:fixed 会把面板钉死在 0 宽。故动画结束（约 360ms）
+    // 后再测量钉住，过渡期间用 CSS sticky 兜底（previewState 保持 null）。
+    // 而内容变化（previewKey 变）触发的重测应当即时，避免钉住位置滞后。
+    const justOpened = !prevPreviewVisible.current;
+    prevPreviewVisible.current = true;
+    let ready = !justOpened;
     const update = () => {
+      if (!ready) return;
       const el = previewColRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
@@ -240,15 +273,21 @@ export default function MessageEditor() {
       const pinned = rect.top <= getAdminHeaderHeight();
       setPreviewState({ left: rect.left, width: rect.width, pinned });
     };
-    update();
     window.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);
-    // 编辑器/内容异步加载后再校准一次，避免布局抖动导致定位偏移
-    const t = window.setTimeout(update, 300);
+    let timer: number | undefined;
+    if (justOpened) {
+      timer = window.setTimeout(() => {
+        ready = true;
+        update();
+      }, 360);
+    } else {
+      update();
+    }
     return () => {
       window.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
-      window.clearTimeout(t);
+      if (timer) window.clearTimeout(timer);
     };
   }, [previewVisible, previewKey]);
 
@@ -761,7 +800,7 @@ export default function MessageEditor() {
         <Row gutter={previewVisible ? 24 : 0} align="stretch" className="editor-main-row">
           {/* ===== 左侧：编辑区 ===== */}
           {/* 宽度随「预览面板是否真正占位」收放：预览不占位时铺满整行，避免右侧留白 */}
-          <Col xs={24} lg={previewVisible ? 14 : 24} xl={previewVisible ? 13 : 24}>
+          <Col xs={24} lg={previewVisible ? 14 : 24} xl={previewVisible ? 13 : 24} className="editor-col">
             <Card
               title={pageTitle}
               extra={
@@ -798,239 +837,240 @@ export default function MessageEditor() {
                 }}
                 onValuesChange={handleFieldChange}
               >
-                {/* ===== 基础信息 ===== */}
-                <Form.Item
-                  name="title"
-                  label="标题"
-                  rules={[{ required: true, message: "请输入标题" }]}
-                >
-                  <Input
-                    placeholder={isAnno ? "如：关于 2026 年中秋节放假安排的通知" : "推送标题"}
-                    maxLength={200}
-                    showCount
-                  />
-                </Form.Item>
+                {/* ===== 基础信息 / 推送设置 ===== */}
+                <FormSection title={isAnno ? "基础信息" : "推送设置"}>
+                  <Form.Item
+                    name="title"
+                    label="标题"
+                    rules={[{ required: true, message: "请输入标题" }]}
+                  >
+                    <Input
+                      placeholder={isAnno ? "如：关于 2026 年中秋节放假安排的通知" : "推送标题"}
+                      maxLength={200}
+                      showCount
+                    />
+                  </Form.Item>
 
-                {/* ===== 公告专属字段 ===== */}
-                {isAnno && (
-                  <>
-                    <Row gutter={16}>
-                      <Col xs={24} sm={12}>
-                        <Form.Item name="category" label="分类">
-                          <Select>
-                            {CATEGORY_OPTIONS.map((c) => (
-                              <Option key={c.value} value={c.value}>{c.label}</Option>
+                  {/* ===== 公告专属字段 ===== */}
+                  {isAnno && (
+                    <>
+                      <Row gutter={16}>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="category" label="分类">
+                            <Select>
+                              {CATEGORY_OPTIONS.map((c) => (
+                                <Option key={c.value} value={c.value}>{c.label}</Option>
+                              ))}
+                            </Select>
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="department" label="来源部门">
+                            <Input placeholder="如：学生处" maxLength={100} />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+
+                      <Row gutter={16}>
+                        <Col xs={12} sm={8}>
+                          <Form.Item name="is_top" label="置顶" valuePropName="checked">
+                            <Switch checkedChildren="置顶" unCheckedChildren="普通" />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={12} sm={16}>
+                          <Form.Item name="expired_at" label="过期时间">
+                            <DatePicker
+                              showTime
+                              format="YYYY-MM-DD HH:mm:ss"
+                              placeholder="留空表示长期有效"
+                              style={{ width: "100%" }}
+                            />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+
+                      <Form.Item name="summary" label="摘要（可选）">
+                        <TextArea
+                          placeholder="列表页展示的简短摘要，留空则自动截取正文前 100 字"
+                          rows={2}
+                          maxLength={300}
+                          showCount
+                        />
+                      </Form.Item>
+                    </>
+                  )}
+
+                  {/* ===== 推送专属字段 ===== */}
+                  {!isAnno && (
+                    <>
+                      <Row gutter={16}>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="msg_type" label="消息类型" rules={[{ required: true }]}>
+                            <Select onChange={(v: PushMsgType) => {
+                              setMsgType(v);
+                              form.setFieldsValue({ content: undefined, image_path: undefined, template_id: undefined });
+                            }}>
+                              <Option value="text">文本消息</Option>
+                              <Option value="image">图片消息</Option>
+                              <Option value="template">模板消息</Option>
+                            </Select>
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="push_type" label="推送方式" rules={[{ required: true }]}>
+                            <Select onChange={(v: PushPushType) => {
+                              setPushType(v);
+                              form.setFieldsValue({ scheduled_time: undefined, cron_expression: undefined });
+                            }}>
+                              <Option value="immediate">立即推送</Option>
+                              <Option value="scheduled">定时推送（单次）</Option>
+                              <Option value="recurring">周期推送（重复）</Option>
+                            </Select>
+                          </Form.Item>
+                        </Col>
+                      </Row>
+
+                      {pushType === "scheduled" && (
+                        <Form.Item
+                          name="scheduled_time"
+                          label="定时时间"
+                          rules={[{ required: true, message: "请选择推送时间" }]}
+                        >
+                          <DatePicker
+                            showTime
+                            format="YYYY-MM-DD HH:mm"
+                            style={{ width: "100%" }}
+                            disabledDate={(current) => current && current < dayjs().startOf("day")}
+                          />
+                        </Form.Item>
+                      )}
+
+                      {pushType === "recurring" && (
+                        <>
+                          <Form.Item
+                            name="cron_expression"
+                            label="Cron 表达式"
+                            rules={[
+                              { required: true, message: "请输入 Cron 表达式" },
+                              { pattern: /^[\d*,/-\s]+$/, message: "格式不正确" },
+                            ]}
+                          >
+                            <Input placeholder="0 8 * * *" />
+                          </Form.Item>
+                          <Alert
+                            description={
+                              <div style={{ fontSize: 12, lineHeight: 1.8 }}>
+                                <code>0 8 * * *</code> 每天 8:00 &nbsp;|&nbsp;
+                                <code>0 9 * * 1</code> 每周一 9:00 &nbsp;|&nbsp;
+                                <code>0 */6 * * *</code> 每 6 小时
+                              </div>
+                            }
+                            type="info"
+                            showIcon
+                            style={{ marginBottom: 16 }}
+                          />
+                        </>
+                      )}
+
+                      {msgType === "image" && (
+                        <Form.Item
+                          name="image_path"
+                          label="图片路径"
+                          rules={[{ required: true, message: "请输入图片路径" }]}
+                          extra="服务器上的图片相对路径，如 data/electricity/charts/chart.png"
+                        >
+                          <Input placeholder="data/images/notice.jpg" />
+                        </Form.Item>
+                      )}
+
+                      {msgType === "template" && (
+                        <Form.Item
+                          name="template_id"
+                          label="选择模板"
+                          rules={[{ required: true, message: "请选择模板" }]}
+                        >
+                          <Select placeholder="选择内置模板">
+                            {templates.map((tpl) => (
+                              <Option key={tpl.id} value={tpl.id}>
+                                {tpl.name} - {tpl.description}
+                              </Option>
                             ))}
                           </Select>
                         </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={12}>
-                        <Form.Item name="department" label="来源部门">
-                          <Input placeholder="如：学生处" maxLength={100} />
-                        </Form.Item>
-                      </Col>
-                    </Row>
-
-                    <Row gutter={16}>
-                      <Col xs={12} sm={8}>
-                        <Form.Item name="is_top" label="置顶" valuePropName="checked">
-                          <Switch checkedChildren="置顶" unCheckedChildren="普通" />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={12} sm={16}>
-                        <Form.Item name="expired_at" label="过期时间">
-                          <DatePicker
-                            showTime
-                            format="YYYY-MM-DD HH:mm:ss"
-                            placeholder="留空表示长期有效"
-                            style={{ width: "100%" }}
-                          />
-                        </Form.Item>
-                      </Col>
-                    </Row>
-
-                    <Form.Item name="summary" label="摘要（可选）">
-                      <TextArea
-                        placeholder="列表页展示的简短摘要，留空则自动截取正文前 100 字"
-                        rows={2}
-                        maxLength={300}
-                        showCount
-                      />
-                    </Form.Item>
-                  </>
-                )}
-
-                {/* ===== 推送专属字段 ===== */}
-                {!isAnno && (
-                  <>
-                    <Row gutter={16}>
-                      <Col xs={24} sm={12}>
-                        <Form.Item name="msg_type" label="消息类型" rules={[{ required: true }]}>
-                          <Select onChange={(v: PushMsgType) => {
-                            setMsgType(v);
-                            form.setFieldsValue({ content: undefined, image_path: undefined, template_id: undefined });
-                          }}>
-                            <Option value="text">文本消息</Option>
-                            <Option value="image">图片消息</Option>
-                            <Option value="template">模板消息</Option>
-                          </Select>
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} sm={12}>
-                        <Form.Item name="push_type" label="推送方式" rules={[{ required: true }]}>
-                          <Select onChange={(v: PushPushType) => {
-                            setPushType(v);
-                            form.setFieldsValue({ scheduled_time: undefined, cron_expression: undefined });
-                          }}>
-                            <Option value="immediate">立即推送</Option>
-                            <Option value="scheduled">定时推送（单次）</Option>
-                            <Option value="recurring">周期推送（重复）</Option>
-                          </Select>
-                        </Form.Item>
-                      </Col>
-                    </Row>
-
-                    {pushType === "scheduled" && (
-                      <Form.Item
-                        name="scheduled_time"
-                        label="定时时间"
-                        rules={[{ required: true, message: "请选择推送时间" }]}
-                      >
-                        <DatePicker
-                          showTime
-                          format="YYYY-MM-DD HH:mm"
-                          style={{ width: "100%" }}
-                          disabledDate={(current) => current && current < dayjs().startOf("day")}
-                        />
-                      </Form.Item>
-                    )}
-
-                    {pushType === "recurring" && (
-                      <>
-                        <Form.Item
-                          name="cron_expression"
-                          label="Cron 表达式"
-                          rules={[
-                            { required: true, message: "请输入 Cron 表达式" },
-                            { pattern: /^[\d*,/-\s]+$/, message: "格式不正确" },
-                          ]}
-                        >
-                          <Input placeholder="0 8 * * *" />
-                        </Form.Item>
-                        <Alert
-                          description={
-                            <div style={{ fontSize: 12, lineHeight: 1.8 }}>
-                              <code>0 8 * * *</code> 每天 8:00 &nbsp;|&nbsp;
-                              <code>0 9 * * 1</code> 每周一 9:00 &nbsp;|&nbsp;
-                              <code>0 */6 * * *</code> 每 6 小时
-                            </div>
-                          }
-                          type="info"
-                          showIcon
-                          style={{ marginBottom: 16 }}
-                        />
-                      </>
-                    )}
-
-                    {msgType === "image" && (
-                      <Form.Item
-                        name="image_path"
-                        label="图片路径"
-                        rules={[{ required: true, message: "请输入图片路径" }]}
-                        extra="服务器上的图片相对路径，如 data/electricity/charts/chart.png"
-                      >
-                        <Input placeholder="data/images/notice.jpg" />
-                      </Form.Item>
-                    )}
-
-                    {msgType === "template" && (
-                      <Form.Item
-                        name="template_id"
-                        label="选择模板"
-                        rules={[{ required: true, message: "请选择模板" }]}
-                      >
-                        <Select placeholder="选择内置模板">
-                          {templates.map((tpl) => (
-                            <Option key={tpl.id} value={tpl.id}>
-                              {tpl.name} - {tpl.description}
-                            </Option>
-                          ))}
-                        </Select>
-                      </Form.Item>
-                    )}
-                  </>
-                )}
-
-                {/* ===== 分隔线 ===== */}
-                <Divider />
-
-                {/* ===== 富文本编辑器 ===== */}
-                <Form.Item
-                  label={isAnno ? "正文" : "内容"}
-                  rules={[{ required: true, message: "请输入内容" }]}
-                  validateTrigger={[]}
-                >
-                  {/* 编辑模式且数据加载完后才挂载 WangEditor：
-                      Editor 的 defaultContent 只在挂载时生效一次。
-                      loadDetail 是异步 useEffect，若 Editor 第一次渲染时
-                      content 还在加载中（空），挂载后就再也不读 defaultContent。
-                      用 key={id} 切换不同公告时强制重新挂载。 */}
-                  {editorReady && Editor && initialDataLoaded ? (
-                    <div className="editor-wrapper" key={`editor-wrapper-${id ?? "new"}`}>
-                      {/* Toolbar 必须在 editorInstance 创建后再挂载，且与 Editor 同 key 一起销毁/重建，
-                          否则 id 变化时 Editor 重挂而 Toolbar 被 React 复用，会在已有工具栏的 DOM
-                          节点上再次 createToolbar，触发 "Repeated create toolbar" 报错。 */}
-                      {editorInstance ? (
-                        <div className="editor-toolbar-sticky">
-                          <SafeToolbar
-                            key={`toolbar-${id ?? "new"}`}
-                            editor={editorInstance}
-                            defaultConfig={toolbarConfig}
-                            mode="default"
-                          />
-                        </div>
-                      ) : null}
-                      <Editor
-                        key={`editor-${id ?? "new"}`}
-                        defaultHtml={editorHtml}
-                        defaultConfig={editorConfig}
-                        mode="default"
-                        style={{ minHeight: 400, height: "auto" }}
-                        onCreated={(editor: any) => {
-                          setEditorInstance(editor);
-                          // 防御性兜底：WangEditor 5.1.x 在 requestIdleCallback 空闲遍历正文
-                          // 节点做变更上报（reportAllChanges）时，若 content 含损坏/孤儿节点
-                          // （如指向缺失文件的 <img>）会抛
-                          // "Cannot read properties of undefined (reading 'startTime')" 内部崩溃。
-                          // 该内部记账对单用户编辑器非必需，包裹 try-catch 吞掉异常即可消除干扰。
-                          if (typeof editor.reportAllChanges === "function") {
-                            const _orig = editor.reportAllChanges.bind(editor);
-                            editor.reportAllChanges = (...args: any[]) => {
-                              try {
-                                return _orig(...args);
-                              } catch (err) {
-                                console.warn("[WangEditor] reportAllChanges 内部异常已忽略:", err);
-                              }
-                            };
-                          }
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <TextArea
-                      rows={8}
-                      placeholder={
-                        isAnno
-                          ? editorReady
-                            ? "通知内容加载中..."
-                            : "富文本编辑器加载中，请稍候..."
-                          : "推送内容"
-                      }
-                      value={editorHtml}
-                      onChange={(e) => setEditorHtml(e.target.value)}
-                    />
+                      )}
+                    </>
                   )}
-                </Form.Item>
+                </FormSection>
+
+                {/* ===== 正文 / 推送内容 ===== */}
+                <FormSection title={isAnno ? "正文内容" : "推送内容"}>
+                  <Form.Item
+                    label={isAnno ? "正文" : "内容"}
+                    rules={[{ required: true, message: "请输入内容" }]}
+                    validateTrigger={[]}
+                  >
+                    {/* 编辑模式且数据加载完后才挂载 WangEditor：
+                        Editor 的 defaultContent 只在挂载时生效一次。
+                        loadDetail 是异步 useEffect，若 Editor 第一次渲染时
+                        content 还在加载中（空），挂载后就再也不读 defaultContent。
+                        用 key={id} 切换不同公告时强制重新挂载。 */}
+                    {editorReady && Editor && initialDataLoaded ? (
+                      <div className="editor-wrapper" key={`editor-wrapper-${id ?? "new"}`}>
+                        {/* Toolbar 必须在 editorInstance 创建后再挂载，且与 Editor 同 key 一起销毁/重建，
+                            否则 id 变化时 Editor 重挂而 Toolbar 被 React 复用，会在已有工具栏的 DOM
+                            节点上再次 createToolbar，触发 "Repeated create toolbar" 报错。 */}
+                        {editorInstance ? (
+                          <div className="editor-toolbar-sticky">
+                            <SafeToolbar
+                              key={`toolbar-${id ?? "new"}`}
+                              editor={editorInstance}
+                              defaultConfig={toolbarConfig}
+                              mode="default"
+                            />
+                          </div>
+                        ) : null}
+                        <Editor
+                          key={`editor-${id ?? "new"}`}
+                          defaultHtml={editorHtml}
+                          defaultConfig={editorConfig}
+                          mode="default"
+                          style={{ minHeight: 400, height: "auto" }}
+                          onCreated={(editor: any) => {
+                            setEditorInstance(editor);
+                            // 防御性兜底：WangEditor 5.1.x 在 requestIdleCallback 空闲遍历正文
+                            // 节点做变更上报（reportAllChanges）时，若 content 含损坏/孤儿节点
+                            // （如指向缺失文件的 <img>）会抛
+                            // "Cannot read properties of undefined (reading 'startTime')" 内部崩溃。
+                            // 该内部记账对单用户编辑器非必需，包裹 try-catch 吞掉异常即可消除干扰。
+                            if (typeof editor.reportAllChanges === "function") {
+                              const _orig = editor.reportAllChanges.bind(editor);
+                              editor.reportAllChanges = (...args: any[]) => {
+                                try {
+                                  return _orig(...args);
+                                } catch (err) {
+                                  console.warn("[WangEditor] reportAllChanges 内部异常已忽略:", err);
+                                }
+                              };
+                            }
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <TextArea
+                        rows={8}
+                        placeholder={
+                          isAnno
+                            ? editorReady
+                              ? "通知内容加载中..."
+                              : "富文本编辑器加载中，请稍候..."
+                            : "推送内容"
+                        }
+                        value={editorHtml}
+                        onChange={(e) => setEditorHtml(e.target.value)}
+                      />
+                    )}
+                  </Form.Item>
+                </FormSection>
 
                 {/* ===== 公告附件区（仅编辑模式显示）===== */}
                 {isAnno && isEdit && (
@@ -1150,9 +1190,16 @@ export default function MessageEditor() {
             </Card>
           </Col>
 
-          {/* ===== 右侧：手机模型预览（仅公告模式 + 大屏）===== */}
-          {previewVisible && (
-            <Col xs={0} lg={10} xl={11} ref={previewColRef} style={{ display: "flex" }}>
+          {/* ===== 右侧：手机模型预览（仅公告模式 + 大屏；常驻挂载以支撑展开/收起动画）===== */}
+          {isAnno && (
+            <Col
+              xs={0}
+              lg={10}
+              xl={11}
+              ref={previewColRef}
+              className={`preview-col ${previewVisible ? "preview-col--open" : "preview-col--collapsed"}`}
+              style={{ display: "flex" }}
+            >
               <div
                 className="preview-sticky-wrap"
                 style={
@@ -1205,6 +1252,45 @@ export default function MessageEditor() {
         .editor-main-row {
           /* 不覆盖 align，由 <Row align="stretch"> 控制，确保右侧 Col 拉伸到与左侧同高 */
         }
+
+        /* 左列宽度随「预览是否真正占位」收放；加过渡避免生硬跳变 */
+        .editor-col {
+          transition: flex-basis .34s cubic-bezier(.4, 0, .2, 1),
+                      max-width .34s cubic-bezier(.4, 0, .2, 1);
+        }
+
+        /* ========== 表单分组（iOS 分组表单式）========== */
+        .form-section { margin-bottom: 4px; }
+        .form-section + .form-section {
+          margin-top: 20px;
+          padding-top: 20px;
+          border-top: 1px solid #f0f0f0;
+        }
+        .form-section-head {
+          display: flex;
+          align-items: baseline;
+          gap: 8px;
+          margin-bottom: 14px;
+        }
+        .form-section-title {
+          position: relative;
+          padding-left: 10px;
+          font-size: 14px;
+          font-weight: 600;
+          color: #1a1a1a;
+        }
+        .form-section-title::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 3px;
+          height: 14px;
+          border-radius: 2px;
+          background: #1677ff;
+        }
+        .form-section-body { /* 字段容器，沿用 antd 表单原有间距 */ }
 
         .editor-card {
           min-height: 400px;
@@ -1261,6 +1347,30 @@ export default function MessageEditor() {
           align-self: flex-start;
           width: 100%;
           z-index: 10;
+        }
+
+        /* ========== 预览列展开/收起过渡 ==========
+           右侧预览 Col 常驻挂载（仅公告模式）：预览开关变化时通过
+           .preview-col--open / --collapsed 切换，靠 transition 做宽度 + 透明度 + 位移的平滑动画，
+           避免「啪」地出现/消失。collapsed 时强制宽度 0、高度 0、不拉伸，
+           左侧 Col 因此铺满整行；open 时回到 antd 栅格宽度并随行等高。 */
+        .preview-col {
+          transition: flex-basis .34s cubic-bezier(.4, 0, .2, 1),
+                      max-width .34s cubic-bezier(.4, 0, .2, 1),
+                      opacity .26s ease,
+                      transform .34s cubic-bezier(.4, 0, .2, 1);
+        }
+        .preview-col--collapsed {
+          flex: 0 0 0 !important;
+          max-width: 0 !important;
+          align-self: flex-start;
+          height: 0;
+          opacity: 0;
+          transform: translateX(24px);
+          overflow: hidden;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
+          pointer-events: none;
         }
 
         .preview-card {
