@@ -20,11 +20,14 @@ class HolidayPeriod(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False, comment="假期名称，如 2026年暑假")
+    # [弃用] 早期用 寒假/暑假/自定义 硬编码分类，只影响展示、不驱动静默逻辑，
+    # 属纯冗余耦合，已从接口/UI 层移除。DB 列保留以兼容历史行（NOT NULL 且无
+    # 服务端默认，删字段会让 INSERT 报错），新建时由 default 填 "custom" 占位。
     holiday_type = Column(
         String(20),
         nullable=False,
         default="custom",
-        comment="假期类型: winter=寒假, summer=暑假, custom=自定义",
+        comment="[弃用] 早期硬编码假期类型，仅保留列兼容历史数据，接口/UI 不再使用",
     )
     start_date = Column(Date, nullable=False, comment="静默开始日期（含）")
     end_date = Column(Date, nullable=False, comment="静默结束日期（含）")
@@ -37,7 +40,6 @@ class HolidayPeriod(Base):
         return {
             "id": self.id,
             "name": self.name,
-            "holiday_type": self.holiday_type,
             "start_date": self.start_date.isoformat() if self.start_date else None,
             "end_date": self.end_date.isoformat() if self.end_date else None,
             "enabled": bool(self.enabled),

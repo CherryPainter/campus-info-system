@@ -8,7 +8,6 @@ import type { ApiResponse } from "@/types/api";
 export interface HolidayPeriod {
   id: number;
   name: string;
-  holiday_type: "winter" | "summer" | "custom";
   start_date: string;
   end_date: string;
   enabled: boolean;

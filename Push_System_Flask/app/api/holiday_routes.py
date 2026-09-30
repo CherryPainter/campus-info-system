@@ -6,7 +6,7 @@
 - GET   /api/holiday/status       — 当前假期模式状态（紧急静默 / 是否静默中 / 命中区间）
 - PUT   /api/holiday/master       — 切换紧急静默开关 { enabled: bool }
 - GET   /api/holiday/periods      — 假期区间列表
-- POST  /api/holiday/periods      — 新建区间 { name, holiday_type, start_date, end_date, enabled, note }
+- POST  /api/holiday/periods      — 新建区间 { name, start_date, end_date, enabled, note }
 - PUT   /api/holiday/periods/<id> — 修改区间
 - DELETE /api/holiday/periods/<id>— 删除区间
 """

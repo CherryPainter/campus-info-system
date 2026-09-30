@@ -11,11 +11,9 @@ import {
   Card,
   Button,
   Space,
-  Tag,
   Modal,
   Form,
   Input,
-  Select,
   Switch,
   Tooltip,
   Popconfirm,
@@ -40,12 +38,6 @@ import { useMessage } from "@/utils/message";
 
 const { RangePicker } = DatePicker;
 const { Text, Paragraph, Title } = Typography;
-
-const TYPE_MAP: Record<string, { label: string; color: string }> = {
-  winter: { label: "寒假", color: "blue" },
-  summer: { label: "暑假", color: "orange" },
-  custom: { label: "自定义", color: "default" },
-};
 
 export default function HolidayMode() {
   const [loading, setLoading] = useState(false);
@@ -92,7 +84,7 @@ export default function HolidayMode() {
   const handleAdd = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ holiday_type: "summer", enabled: true });
+    form.setFieldsValue({ enabled: true });
     setIsModalOpen(true);
   };
 
@@ -100,7 +92,6 @@ export default function HolidayMode() {
     setEditing(record);
     form.setFieldsValue({
       name: record.name,
-      holiday_type: record.holiday_type,
       dates: [dayjs(record.start_date), dayjs(record.end_date)],
       enabled: record.enabled,
       note: record.note || "",
@@ -113,7 +104,6 @@ export default function HolidayMode() {
       const [start, end] = values.dates;
       const data = {
         name: values.name?.trim(),
-        holiday_type: values.holiday_type,
         start_date: start.format("YYYY-MM-DD"),
         end_date: end.format("YYYY-MM-DD"),
         enabled: values.enabled,
@@ -163,16 +153,6 @@ export default function HolidayMode() {
       key: "name",
       width: 160,
       render: (text: string) => <span style={{ fontWeight: 500 }}>{text}</span>,
-    },
-    {
-      title: "类型",
-      dataIndex: "holiday_type",
-      key: "holiday_type",
-      width: 100,
-      render: (t: string) => {
-        const meta = TYPE_MAP[t] || { label: t, color: "default" };
-        return <Tag color={meta.color}>{meta.label}</Tag>;
-      },
     },
     {
       title: "开始",
@@ -338,7 +318,7 @@ export default function HolidayMode() {
           form={form}
           layout="vertical"
           onFinish={handleSave}
-          initialValues={{ holiday_type: "summer", enabled: true }}
+          initialValues={{ enabled: true }}
         >
           <Form.Item
             name="name"
@@ -346,18 +326,6 @@ export default function HolidayMode() {
             rules={[{ required: true, message: "请输入假期名称" }]}
           >
             <Input placeholder="如：2026年暑假" />
-          </Form.Item>
-
-          <Form.Item
-            name="holiday_type"
-            label="假期类型"
-            rules={[{ required: true, message: "请选择假期类型" }]}
-          >
-            <Select>
-              <Select.Option value="winter">寒假</Select.Option>
-              <Select.Option value="summer">暑假</Select.Option>
-              <Select.Option value="custom">自定义</Select.Option>
-            </Select>
           </Form.Item>
 
           <Form.Item

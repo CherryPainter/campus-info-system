@@ -21,8 +21,6 @@ from app.model.module_config import ModuleConfig
 
 logger = get_logger(__name__)
 
-_HOLIDAY_TYPE_VALUES = ("winter", "summer", "custom")
-
 # 高频静默按天汇总的进程名称（与 skip_if_active record=False 分支配套）
 _HOLIDAY_SUMMARY_NAME = "假期高频静默汇总"
 # task_type -> 前端友好标签（用于汇总记录的文案）
@@ -238,7 +236,6 @@ class HolidayService:
         try:
             period = HolidayPeriod(
                 name=data["name"].strip(),
-                holiday_type=data.get("holiday_type", "custom"),
                 start_date=self._parse_date(data["start_date"]),
                 end_date=self._parse_date(data["end_date"]),
                 enabled=bool(data.get("enabled", True)),
@@ -262,10 +259,6 @@ class HolidayService:
                 return None
             if "name" in data and data["name"] is not None:
                 period.name = data["name"].strip()
-            if "holiday_type" in data and data["holiday_type"] is not None:
-                if data["holiday_type"] not in _HOLIDAY_TYPE_VALUES:
-                    raise ValueError(f'非法假期类型: {data["holiday_type"]}')
-                period.holiday_type = data["holiday_type"]
             if "start_date" in data and data["start_date"] is not None:
                 period.start_date = self._parse_date(data["start_date"])
             if "end_date" in data and data["end_date"] is not None:
@@ -344,8 +337,6 @@ class HolidayService:
         end = HolidayService._parse_date(data["end_date"])
         if start > end:
             raise ValueError("开始日期不能晚于结束日期")
-        if data.get("holiday_type") and data["holiday_type"] not in _HOLIDAY_TYPE_VALUES:
-            raise ValueError(f'非法假期类型: {data["holiday_type"]}')
 
     @staticmethod
     def _parse_date(value) -> date:

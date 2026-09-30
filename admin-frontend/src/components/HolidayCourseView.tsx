@@ -4,7 +4,6 @@
  * 联动管理员在「假期模式」中配置的区间（权威来源）。
  * 未配置时显示简洁的「非教学周」提示。
  */
-import { Tag } from "antd";
 import { CalendarOutlined } from "@ant-design/icons";
 import { WEEK_DAY_MAP } from "@/api/course";
 import type { HolidayPeriod } from "@/api/holiday";
@@ -15,12 +14,6 @@ interface HolidayCourseViewProps {
   /** 命中的假期区间（来自 GET /api/holiday/status）；未传或 null 则按非教学周展示 */
   holidayPeriod?: HolidayPeriod;
 }
-
-const HOLIDAY_TYPE_LABEL: Record<string, string> = {
-  winter: "寒假",
-  summer: "暑假",
-  custom: "自定义假期",
-};
 
 function formatToday(d: Date): string {
   const y = d.getFullYear();
@@ -79,11 +72,8 @@ export default function HolidayCourseView({
       </div>
 
       {isHolidayMode && (
-        <div style={{ marginTop: 12 }}>
-          <Tag color="blue">{HOLIDAY_TYPE_LABEL[holidayPeriod!.holiday_type] ?? "假期"}</Tag>
-          <span style={{ color: "#595959", fontSize: 14 }}>
-            {holidayPeriod!.start_date} ~ {holidayPeriod!.end_date}
-          </span>
+        <div style={{ marginTop: 12, color: "#595959", fontSize: 14 }}>
+          {holidayPeriod!.start_date} ~ {holidayPeriod!.end_date}
         </div>
       )}
 
