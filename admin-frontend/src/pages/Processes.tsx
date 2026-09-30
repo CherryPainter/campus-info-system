@@ -467,7 +467,9 @@ export default function Processes() {
       >
         <Descriptions.Item label="任务名称">{p.name}</Descriptions.Item>
         <Descriptions.Item label="任务类型">
-          <Tag color={typeMap[p.task_type]?.color}>{typeMap[p.task_type]?.text}</Tag>
+          <Tag color={typeMap[p.task_type]?.tagColor || "default"}>
+            {typeMap[p.task_type]?.text || p.task_type}
+          </Tag>
         </Descriptions.Item>
         <Descriptions.Item label="进程ID">{p.pid || "-"}</Descriptions.Item>
         <Descriptions.Item label="创建人">{p.created_by || "system"}</Descriptions.Item>
@@ -653,7 +655,7 @@ export default function Processes() {
       key: "task_type",
       width: 80,
       render: (type: string) => (
-        <Tag color={typeMap[type]?.color}>{typeMap[type]?.text || type}</Tag>
+        <Tag color={typeMap[type]?.tagColor || "default"}>{typeMap[type]?.text || type}</Tag>
       ),
     },
     {
@@ -800,7 +802,7 @@ export default function Processes() {
       key: "type",
       width: 80,
       render: (type: string) => (
-        <Tag color={typeMap[type]?.color || "default"}>{typeMap[type]?.text || type}</Tag>
+        <Tag color={typeMap[type]?.tagColor || "default"}>{typeMap[type]?.text || type}</Tag>
       ),
     },
     {
@@ -949,7 +951,7 @@ export default function Processes() {
                       mobileCollapseContent={(r: DynamicRule) => (
                         <Descriptions column={1} size="small">
                           <Descriptions.Item label="类型">
-                            <Tag color={typeMap[r.type]?.color || "default"}>
+                            <Tag color={typeMap[r.type]?.tagColor || "default"}>
                               {typeMap[r.type]?.text || r.type}
                             </Tag>
                           </Descriptions.Item>

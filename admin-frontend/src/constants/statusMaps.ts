@@ -75,16 +75,22 @@ export const TASK_STATUS_MAP: Record<string, StatusMetaWithIcon> = {
   skipped: { color: "default", icon: createElement(StopOutlined), text: "已静音" },
 };
 
-/** 任务类型（来源 Processes.tsx typeMap；color 为十六进制，Tag 与 ECharts 图表共用） */
-export const TASK_TYPE_MAP: Record<string, { color: string; text: string }> = {
-  spider: { color: "#1890ff", text: "课表爬虫" },
-  course_spider: { color: "#1890ff", text: "课表爬虫" },
-  course_full_crawl: { color: "#722ed1", text: "全量爬取" },
-  course: { color: "#52c41a", text: "课表" },
-  weather: { color: "#13c2c2", text: "天气" },
-  electricity: { color: "#fa8c16", text: "电量" },
-  system: { color: "#f5222d", text: "系统" },
-  custom: { color: "#722ed1", text: "自定义" },
+/**
+ * 任务类型
+ * - color：十六进制，仅供 ECharts 图表使用（实心色块，图表里需要高饱和色）；
+ * - tagColor：Antd Tag 预设色名，渲染「浅底胶囊」，与状态/间隔/启用等 Tag 样式保持一致
+ *   （此前 Tag 直接吃 hex，会被 Antd 渲染成实心胶囊，与页面其余浅底 Tag 不一致）；
+ * - text：展示文案。
+ */
+export const TASK_TYPE_MAP: Record<string, { color: string; tagColor: string; text: string }> = {
+  spider: { color: "#1890ff", tagColor: "blue", text: "课表爬虫" },
+  course_spider: { color: "#1890ff", tagColor: "blue", text: "课表爬虫" },
+  course_full_crawl: { color: "#722ed1", tagColor: "purple", text: "全量爬取" },
+  course: { color: "#52c41a", tagColor: "green", text: "课表" },
+  weather: { color: "#13c2c2", tagColor: "cyan", text: "天气" },
+  electricity: { color: "#fa8c16", tagColor: "orange", text: "电量" },
+  system: { color: "#f5222d", tagColor: "red", text: "系统" },
+  custom: { color: "#722ed1", tagColor: "purple", text: "自定义" },
 };
 
 /** Webhook 测试状态（来源 Webhooks.tsx TEST_STATUS_MAP） */
