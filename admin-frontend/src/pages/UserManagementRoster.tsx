@@ -47,6 +47,8 @@ import {
   DeleteOutlined,
   KeyOutlined,
   ApartmentOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from "@ant-design/icons";
 import { formatDateTime } from "@/utils/datetime";
 import ResponsiveTable from "@/components/ResponsiveTable";
@@ -114,6 +116,21 @@ export default function UserManagementRoster() {
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
+
+  // 组织架构面板折叠状态（持久化到 localStorage，避免每次重新进入恢复默认）
+  const ORG_PANEL_KEY = "push:roster:org-panel-expanded";
+  const [orgPanelExpanded, setOrgPanelExpanded] = useState(() => {
+    try {
+      return localStorage.getItem(ORG_PANEL_KEY) !== "false";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(ORG_PANEL_KEY, String(orgPanelExpanded));
+    } catch {}
+  }, [orgPanelExpanded]);
 
   const [createVisible, setCreateVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<RosterStudent | null>(null);
@@ -830,8 +847,10 @@ export default function UserManagementRoster() {
           alignItems: "stretch",
         }}
       >
-        {/* 左：组织树 */}
-        <Card
+        {orgPanelExpanded && (
+          <>
+            {/* 左：组织树 */}
+            <Card
           size="small"
           title={
             <Space>
@@ -909,6 +928,8 @@ export default function UserManagementRoster() {
             }}
           />
         )}
+          </>
+        )}
 
         {/* 右：名单 */}
         <div ref={rightRef} style={{ flex: 1, minWidth: 0 }}>
@@ -922,6 +943,13 @@ export default function UserManagementRoster() {
               marginBottom: 16,
             }}
           >
+            <Tooltip title={orgPanelExpanded ? "折叠组织架构" : "展开组织架构"}>
+              <Button
+                type="text"
+                icon={orgPanelExpanded ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+                onClick={() => setOrgPanelExpanded((v) => !v)}
+              />
+            </Tooltip>
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -986,11 +1014,13 @@ export default function UserManagementRoster() {
           >
             {tree.length === 0 ? (
               <span>
-                请先在左侧「组织架构」点击「新建学校」，逐级创建 学院 → 专业 → 班级 后，再来添加学生名单。
+                {orgPanelExpanded
+                  ? "请先在「组织架构」中点击「新建学校」，逐级创建 学院 → 专业 → 班级 后，再来添加学生名单。"
+                  : "请先点击工具栏最左侧的「展开组织架构」按钮，然后新建学校并逐级创建 学院 → 专业 → 班级。"}
               </span>
             ) : (
               <span>
-                左侧选中班级可只看该班学生；添加学生时选好班级，学校 / 学院 / 专业由组织树自动继承，无需填写。
+                在组织架构中选中班级可只看该班学生；添加学生时选好班级，学校 / 学院 / 专业由组织树自动继承，无需填写。
               </span>
             )}
           </div>
