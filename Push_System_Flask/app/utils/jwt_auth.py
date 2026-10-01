@@ -21,6 +21,7 @@ import jwt
 from app.core.database import get_db
 from app.core.logger import get_logger
 from app.model.token_blacklist import TokenBlacklist
+from app.utils.security import refresh_cookie_max_age
 
 # 使用统一日志系统
 logger = get_logger(__name__)
@@ -110,7 +111,9 @@ class JWTManager:
             absolute_expire (int): refresh 绝对上限（秒），None 时取类默认（受 remember_me 控制）
 
         Returns:
-            dict: 包含 access_token、refresh_token、expires_in 的字典
+            dict: 含 access_token、refresh_token、expires_in（access_token 有效期秒数）
+                与 refresh_cookie_max_age（浏览器端 refresh cookie 应使用的 max_age 秒数，
+                 由本 token 自身的 idle/absolute/exp 约束推导，调用方直接照用即可）
         """
         # 闲置/绝对上限可按 remember_me 透传：未传则用类默认（长会话配置）
         idle_expire = idle_expire if idle_expire is not None else self.refresh_idle_expire
@@ -163,10 +166,23 @@ class JWTManager:
             f'access_jti={access_payload["jti"]}, refresh_jti={refresh_payload["jti"]}'
         )
 
+        # 浏览器端 refresh cookie 的存活时长：由**刚写进 token 的同一组数值**推导，
+        # 调用方只负责把它交给 set_cookie，不得自行再写一个数字（见 app/utils/security.py
+        # 的 refresh_cookie_max_age 注释：三处各写 7 天曾导致「服务端 2 小时、浏览器 7 天」）。
+        # elapsed 取 session_start 至今；登录路径无 session_start（视为 0）。
+        elapsed = max(0, int(now) - int(session_start)) if session_start is not None else 0
+        cookie_max_age = refresh_cookie_max_age(
+            idle_expire=idle_expire,
+            absolute_expire=absolute_expire,
+            refresh_token_expire=self.refresh_token_expire,
+            elapsed=elapsed,
+        )
+
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "expires_in": self.access_token_expire,
+            "refresh_cookie_max_age": cookie_max_age,
         }
 
     def verify_token(self, token):

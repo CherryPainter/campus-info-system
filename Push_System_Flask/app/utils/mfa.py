@@ -15,6 +15,7 @@ import time
 from urllib.parse import quote
 
 from app.core.logger import get_logger
+from app.utils.totp_replay_guard import is_replay
 
 logger = get_logger(__name__)
 
@@ -73,9 +74,35 @@ class TOTP:
 
         return str(otp).zfill(self.digits)
 
+    def match_step(self, otp: str, window: int = 1) -> int | None:
+        """
+        返回 otp 命中的时间步号（step = epoch // interval），未命中返回 None。
+
+        步号而非布尔值是重放防护的基础：调用方需要知道「这个码属于哪一步」才能与
+        该用户上次消费的步号比较（同一窗口内不得重复使用，见 totp_replay_guard）。
+
+        Args:
+            otp: 用户输入的 OTP
+            window: 时间窗口容错范围（前后几个窗口），默认 1
+
+        Returns:
+            int | None: 命中的步号；未命中为 None
+        """
+        timestamp = int(time.time())
+
+        for i in range(-window, window + 1):
+            candidate = timestamp + i * self.interval
+            if self.generate(candidate) == otp:
+                return candidate // self.interval
+
+        return None
+
     def verify(self, otp: str, window: int = 1) -> bool:
         """
-        验证 OTP
+        验证 OTP 是否为有效的时间窗口密码。
+
+        注意：本方法只回答「这个码现在是否有效」，**不防重放**（纯函数，不记录任何状态）。
+        需要一次性语义时，请走 `MFAManager.verify_mfa`（内置按用户的重放防护）。
 
         Args:
             otp: 用户输入的 OTP
@@ -84,14 +111,7 @@ class TOTP:
         Returns:
             bool: 验证是否通过
         """
-        timestamp = int(time.time())
-
-        # 检查当前窗口及前后窗口
-        for i in range(-window, window + 1):
-            if self.generate(timestamp + i * self.interval) == otp:
-                return True
-
-        return False
+        return self.match_step(otp, window) is not None
 
     def get_provisioning_uri(self, account_name: str, issuer: str = "CampusNotify") -> str:
         """
@@ -150,22 +170,35 @@ class MFAManager:
         }
 
     @staticmethod
-    def verify_mfa(secret: str, otp: str) -> bool:
+    def verify_mfa(secret: str, otp: str, user_id) -> bool:
         """
-        验证 MFA 代码
+        验证 MFA 代码（含重放防护）。
 
         Args:
             secret: MFA 密钥
             otp: 用户输入的 6 位代码
+            user_id: 用户标识，用于记录「该用户最近消费的 TOTP 步号」。
+                必填：留成可选会让漏传的调用方静默失去重放防护，属危险默认值。
 
         Returns:
-            bool: 验证是否通过
+            bool: 验证是否通过（重放旧码一律返回 False）
         """
         if not secret or not otp:
             return False
 
         totp = TOTP(secret)
-        return totp.verify(otp)
+        step = totp.match_step(otp)
+        if step is None:
+            return False
+
+        if is_replay(user_id, step):
+            logger.warning(
+                f"[MFA] 拒绝重放: user_id={user_id} 提交了已消费过的 TOTP 步号 "
+                f"step={step}（同一窗口内一次性验证码不得重复使用）"
+            )
+            return False
+
+        return True
 
 
 # 全局 MFA 管理器实例

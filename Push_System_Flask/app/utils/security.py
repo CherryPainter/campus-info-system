@@ -566,6 +566,71 @@ def validate_password_strength(password) -> "str | None":
     return None
 
 
+# ── 会话时长单一来源 ──────────────────────────────────────────────────────────
+# 长短两会话的两组时长，以及浏览器端 refresh_token cookie 的存活时长，原先散落成
+# 多处魔数：登录 / MFA 登录各写一遍 (idle, absolute)，登录 / 刷新 / 微信登录三处
+# 各自写 refresh cookie 的 max_age（前两者恒写 7 天，与 remember_me 完全无关）。
+# 改一处漏一处就会出现「服务端 2 小时的短会话，浏览器却把 cookie 留 7 天」这种
+# 两边不一致的状态，故统一收敛到本模块。
+SESSION_SHORT_IDLE = 2 * 3600  # 短会话（未勾选记住我）：闲置 2 小时
+SESSION_SHORT_ABSOLUTE = 24 * 3600  # 短会话：绝对上限 1 天
+SESSION_LONG_IDLE = 7 * 24 * 3600  # 长会话（勾选记住我）：闲置 7 天
+SESSION_LONG_ABSOLUTE = 30 * 24 * 3600  # 长会话：绝对上限 30 天
+
+
+def session_limits(remember_me: bool) -> tuple:
+    """按「是否勾选记住我」返回 (闲置上限, 绝对上限)，单位秒。
+
+    这两个值由登录流程写进 refresh_token 载荷（`idle_expire` / `absolute_expire`），
+    并由 `JWTManager.refresh_access_token` 在每次刷新时校验：
+    - 闲置上限：距上次活跃(iat)超过该值 → 拒绝刷新（防「关浏览器跑路」后被长期冒用）
+    - 绝对上限：距首次登录(session_start)超过该值 → 拒绝刷新（防无限续期）
+    """
+    if remember_me:
+        return SESSION_LONG_IDLE, SESSION_LONG_ABSOLUTE
+    return SESSION_SHORT_IDLE, SESSION_SHORT_ABSOLUTE
+
+
+def refresh_cookie_max_age(
+    idle_expire=None,
+    absolute_expire=None,
+    refresh_token_expire=None,
+    elapsed=0,
+) -> int:
+    """浏览器端 refresh_token cookie 的 max_age（秒）—— 由该 token 自身的约束推导。
+
+    为什么不写死：cookie 的存活时长若与服务端会话约束脱钩，两个方向都会出问题 ——
+    cookie 比服务端活得久，会留下一个必然被拒的「死 cookie」（用户看到「会话已过期」
+    却还以为自己登录着）；cookie 比服务端闲置上限短，会把仍然有效的会话提前踢掉。
+
+    取三个上限中的最小值，保证 cookie 恰好在服务端判定失效的那一刻前后到期：
+    - `idle_expire`：闲置上限（每次刷新后新 token 的 iat 前移，故 cookie 也必须跟着续期）
+    - `absolute_expire - elapsed`：绝对上限的**剩余**时间（首登至今已消耗的要扣掉，
+      否则刷新时会不断把 cookie 续到一个服务端早已失效的时刻）
+    - `refresh_token_expire`：refresh token 自身的 `exp` 跨度（默认 7 天），
+      防止 idle/absolute 配得比 exp 还长时 cookie 跑到 token 之后
+
+    Args:
+        idle_expire: 闲置上限（秒），None 时按短会话取默认
+        absolute_expire: 绝对上限（秒），None 时按短会话取默认
+        refresh_token_expire: refresh token 自身有效期（秒），None 表示不额外设限
+        elapsed: 本次会话自首次登录起已过去的时间（秒），用于扣减绝对上限
+
+    注意：调用方应直接传 `generate_tokens` 使用的同一组值，不要另取配置 —— 该函数
+    的价值就在于「与 token 载荷同源」，传别的数字等于重新引入一份魔数。
+    """
+    if idle_expire is None:
+        idle_expire = SESSION_SHORT_IDLE
+    if absolute_expire is None:
+        absolute_expire = SESSION_SHORT_ABSOLUTE
+
+    remaining_absolute = int(absolute_expire) - max(0, int(elapsed))
+    limits = [int(idle_expire), max(0, remaining_absolute)]
+    if refresh_token_expire is not None:
+        limits.append(int(refresh_token_expire))
+    return max(0, min(limits))
+
+
 def cookie_security_flags() -> tuple:
     """下发认证 cookie 时应使用的 (secure, samesite)。
 

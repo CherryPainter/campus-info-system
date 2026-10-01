@@ -364,6 +364,19 @@ class Config:
         cls.JWT_ACCESS_TOKEN_EXPIRE = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE", "3600"))
         # JWT Refresh Token 有效期（秒），默认 7 天
         cls.JWT_REFRESH_TOKEN_EXPIRE = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE", "604800"))
+        # JWT Refresh 闲置上限 / 绝对上限（秒），默认 3 天 / 30 天。
+        # 这两个键此前只以 `app.config.get("...", 默认值)` 的形式出现在 app/__init__.py，
+        # **并未在 Config 中声明** —— 于是 .env 里写它们完全不生效（配置层读不到，永远走代码内默认）。
+        # 现补声明，并说明其真实作用范围（避免再次误判为「全站会话时长开关」）：
+        # - 仅作为 `JWTManager.generate_tokens` 未显式传参时的兜底。
+        # - 管理端登录 / MFA 登录 / 刷新三条路径都会显式传 idle+absolute
+        #   （取自 app/utils/security.py 的 session_limits，按 remember_me 分长短会话），
+        #   故本键对它们**没有影响**。
+        # - 实际受影响的是微信小程序登录（wechat_auth_service 只显式传 idle=WECHAT_SESSION_TIMEOUT），
+        #   其绝对上限取这里的 JWT_REFRESH_ABSOLUTE_EXPIRE。
+        # 取值保持与代码内原默认一致，行为不变。
+        cls.JWT_REFRESH_IDLE_EXPIRE = int(os.getenv("JWT_REFRESH_IDLE_EXPIRE", "259200"))
+        cls.JWT_REFRESH_ABSOLUTE_EXPIRE = int(os.getenv("JWT_REFRESH_ABSOLUTE_EXPIRE", "2592000"))
         # JWT 管理员用户名（用于登录认证）
         cls.JWT_ADMIN_USERNAME = os.getenv("JWT_ADMIN_USERNAME", "admin")
         # JWT 管理员密码（为空则使用 ADMIN_TOKEN 作为初始密码）

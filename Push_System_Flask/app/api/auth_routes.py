@@ -29,7 +29,12 @@ from app.core.api_response import api_error, api_success
 from app.core.extensions import RATE_LIMITS, limiter
 from app.core.logger import get_logger
 from app.utils.auth_middleware import jwt_required
-from app.utils.security import cookie_security_flags, get_client_ip, validate_password_strength
+from app.utils.security import (
+    cookie_security_flags,
+    get_client_ip,
+    session_limits,
+    validate_password_strength,
+)
 
 # 使用统一日志系统
 logger = get_logger(__name__)
@@ -266,6 +271,61 @@ def _get_jwt_manager():
         JWTManager: JWT 管理器实例
     """
     return current_app.extensions.get("jwt_manager")
+
+
+def _set_auth_cookies(response, tokens, remember_me=False, session_id=None):
+    """统一下发三个认证 cookie（access / refresh / session_id）。
+
+    收口原因：原先登录、刷新、MFA 登录三处各自抄一遍 set_cookie，其中 refresh cookie
+    的 max_age 三处写法各不相同（登录与 MFA 恒写 `7*24*3600`，刷新写
+    `jwt_manager.refresh_token_expire`），session_id cookie 也在 MFA 路径漏掉了
+    remember_me 分支而恒写 30 天 —— 与「短会话 24 小时」的服务端设定直接矛盾。
+    现所有时长只从两个来源取：
+    - refresh cookie ← `tokens["refresh_cookie_max_age"]`（由 token 载荷同源推导）
+    - session_id cookie ← `session_limits(remember_me)[1]`（绝对上限，与服务端 Session 对齐）
+
+    Args:
+        response: Flask 响应对象（原地 set_cookie）
+        tokens: JWTManager.generate_tokens 的返回值
+        remember_me: 本次登录是否勾选「记住我」（决定 session_id cookie 时长）
+        session_id: 服务端 Session 编号，为 None 时不种该 cookie
+    """
+    # 安全标志单一来源（secure = FORCE_HTTPS 或本次请求实际为 https；samesite 固定 Lax）
+    cookie_secure, cookie_samesite = cookie_security_flags()
+
+    response.set_cookie(
+        "access_token",
+        tokens["access_token"],
+        httponly=True,  # 防止 JavaScript 访问
+        secure=cookie_secure,
+        samesite=cookie_samesite,
+        max_age=tokens["expires_in"],
+        path="/",
+    )
+
+    response.set_cookie(
+        "refresh_token",
+        tokens["refresh_token"],
+        httponly=True,
+        secure=cookie_secure,
+        samesite=cookie_samesite,
+        max_age=tokens["refresh_cookie_max_age"],
+        path="/",  # 本地开发允许所有路径
+    )
+
+    # session_id cookie - 与服务端 Session 过期对齐（勾选记住我 30 天，否则 1 天）
+    if session_id:
+        response.set_cookie(
+            "session_id",
+            session_id,
+            httponly=True,
+            secure=cookie_secure,
+            samesite=cookie_samesite,
+            max_age=session_limits(remember_me)[1],
+            path="/",
+        )
+
+    return response
 
 
 def _login_failure_response(client_ip, username, kind, user_id, user_agent):
@@ -577,10 +637,9 @@ def login():
 
     # 记住我：默认不勾选 = 短会话（服务端 24h / JWT 闲置 2h / 绝对 1d）；
     # 勾选 = 长会话（服务端 30d / JWT 闲置 7d / 绝对 30d）。
+    # 时长取值统一来自 security.session_limits，勿在本文件另写数字。
     remember_me = bool(data.get("remember_me", False))
-    idle_expire, absolute_expire = (
-        (7 * 24 * 3600, 30 * 24 * 3600) if remember_me else (2 * 3600, 1 * 24 * 3600)
-    )
+    idle_expire, absolute_expire = session_limits(remember_me)
 
     tokens = jwt_manager.generate_tokens(
         user_id=str(user.id),
@@ -629,44 +688,9 @@ def login():
         **resp_kwargs,
     )
 
-    # 设置 httpOnly cookie（防止 XSS）
-
-    # 安全标志单一来源（secure = FORCE_HTTPS 或本次请求实际为 https；samesite 固定 Lax）
-    cookie_secure, cookie_samesite = cookie_security_flags()
-
-    # access_token cookie - 1小时
-    response.set_cookie(
-        "access_token",
-        tokens["access_token"],
-        httponly=True,  # 防止 JavaScript 访问
-        secure=cookie_secure,
-        samesite=cookie_samesite,
-        max_age=tokens["expires_in"],
-        path="/",
-    )
-
-    # refresh_token cookie - 7天
-    response.set_cookie(
-        "refresh_token",
-        tokens["refresh_token"],
-        httponly=True,
-        secure=cookie_secure,
-        samesite=cookie_samesite,
-        max_age=7 * 24 * 3600,
-        path="/",  # 本地开发允许所有路径
-    )
-
-    # session_id cookie - 与 Session 过期对齐（remember_me 时 30 天）
-    if session_id:
-        response.set_cookie(
-            "session_id",
-            session_id,
-            httponly=True,
-            secure=cookie_secure,
-            samesite=cookie_samesite,
-            max_age=(30 if remember_me else 1) * 24 * 3600,
-            path="/",
-        )
+    # 设置 httpOnly cookie（access / refresh / session_id 三件套统一下发，
+    # 时长口径见 _set_auth_cookies 与 app/utils/security.py 的会话时长单一来源）
+    _set_auth_cookies(response, tokens, remember_me=remember_me, session_id=session_id)
 
     return response
 
@@ -757,11 +781,9 @@ def refresh():
         return api_error(message=message, http_status=401)
 
     new_access_token = new_tokens["access_token"]
-    new_refresh_token = new_tokens["refresh_token"]
 
     logger.info("access_token 刷新成功")
 
-    # 设置新的 access_token cookie
     # 响应体仅返回新的 access_token（前端据此更新本地存储）；
     # refresh_token 只通过下方 httpOnly cookie 轮换下发，绝不进响应体。
     response, _ = api_success(
@@ -769,28 +791,9 @@ def refresh():
         access_token=new_access_token,
     )
 
-    cookie_secure, cookie_samesite = cookie_security_flags()
-
-    response.set_cookie(
-        "access_token",
-        new_access_token,
-        httponly=True,
-        secure=cookie_secure,
-        samesite=cookie_samesite,
-        max_age=jwt_manager.access_token_expire,
-        path="/",
-    )
-
-    # 轮换 refresh_token：写入新令牌，旧的已在 refresh_access_token 内撤销
-    response.set_cookie(
-        "refresh_token",
-        new_refresh_token,
-        httponly=True,
-        secure=cookie_secure,
-        samesite=cookie_samesite,
-        max_age=jwt_manager.refresh_token_expire,
-        path="/",
-    )
+    # 刷新只轮换 access / refresh 两个 cookie；session_id 不在刷新时重新下发
+    # （它的过期时刻由登录那一刻决定，不随活跃度滑动，重新下发等于把会话悄悄续命）。
+    _set_auth_cookies(response, new_tokens)
 
     return response
 
@@ -984,7 +987,8 @@ def login_mfa():
     if not user_mfa or not user_mfa.secret:
         return api_error(message="MFA未配置", http_status=400)
 
-    if not mfa_manager.verify_mfa(user_mfa.secret, code):
+    # user_id 一并传入：MFA 验证内置重放防护，需要按用户记录已消费的 TOTP 步号（B9）
+    if not mfa_manager.verify_mfa(user_mfa.secret, code, user_id):
         logger.warning(f"MFA验证失败: user_id={user_id}")
         # 记录失败日志
         _record_login_log(int(user_id), username, client_ip, user_agent, "failed", "MFA验证码错误")
@@ -1022,12 +1026,11 @@ def login_mfa():
     # 记录成功登录日志并获取ID
     login_log_id = _record_login_log(int(user_id), username, client_ip, user_agent, "success")
 
-    # 生成 JWT token（MFA 路径同样按 remember_me 决定长短会话）
+    # 生成 JWT token（MFA 路径同样按 remember_me 决定长短会话；时长取值统一来自
+    # security.session_limits，勿在本文件另写数字）
     jwt_manager = _get_jwt_manager()
     remember_me = bool(pending_data.get("remember_me", False))
-    idle_expire, absolute_expire = (
-        (7 * 24 * 3600, 30 * 24 * 3600) if remember_me else (2 * 3600, 1 * 24 * 3600)
-    )
+    idle_expire, absolute_expire = session_limits(remember_me)
     tokens = jwt_manager.generate_tokens(
         user_id=user_id,
         username=pending_data.get("username"),
@@ -1071,40 +1074,10 @@ def login_mfa():
         access_token=tokens["access_token"],
     )
 
-    # 设置 httpOnly cookie
-    cookie_secure, cookie_samesite = cookie_security_flags()
-
-    response.set_cookie(
-        "access_token",
-        tokens["access_token"],
-        httponly=True,
-        secure=cookie_secure,
-        samesite=cookie_samesite,
-        max_age=tokens["expires_in"],
-        path="/",
-    )
-
-    response.set_cookie(
-        "refresh_token",
-        tokens["refresh_token"],
-        httponly=True,
-        secure=cookie_secure,
-        samesite=cookie_samesite,
-        max_age=7 * 24 * 3600,
-        path="/",
-    )
-
-    # session_id cookie - 30 天（与 JWT 绝对上限对齐）
-    if session_id:
-        response.set_cookie(
-            "session_id",
-            session_id,
-            httponly=True,
-            secure=cookie_secure,
-            samesite=cookie_samesite,
-            max_age=30 * 24 * 3600,
-            path="/",
-        )
+    # 设置 httpOnly cookie（与密码登录路径共用同一收口函数，避免两处口径漂移；
+    # 此处原先 refresh cookie 恒写 7 天、session_id cookie 恒写 30 天，
+    # 与「未勾选记住我 = 服务端 24 小时」直接矛盾）
+    _set_auth_cookies(response, tokens, remember_me=remember_me, session_id=session_id)
 
     return response
 
@@ -1223,8 +1196,8 @@ def mfa_verify():
         if not user_mfa or not user_mfa.secret:
             return api_error(message="请先设置 MFA", http_status=400)
 
-        # 验证代码
-        if not mfa_manager.verify_mfa(user_mfa.secret, code):
+        # 验证代码（user_id 传入以启用按用户的重放防护，B9）
+        if not mfa_manager.verify_mfa(user_mfa.secret, code, user_id):
             return api_error(message="MFA 代码无效", http_status=401)
 
         # 启用 MFA
@@ -1274,8 +1247,8 @@ def mfa_disable():
         if not user_mfa or not user_mfa.enabled:
             return api_error(message="MFA 未启用", http_status=400)
 
-        # 验证代码
-        if not mfa_manager.verify_mfa(user_mfa.secret, code):
+        # 验证代码（user_id 传入以启用按用户的重放防护，B9）
+        if not mfa_manager.verify_mfa(user_mfa.secret, code, user_id):
             return api_error(message="MFA 代码无效", http_status=401)
 
         # 禁用 MFA
