@@ -642,6 +642,7 @@ npm run dev
 | `DEBUG`       | `false`                      | 调试模式（生产环境必须为 false） |
 | `HOST`        | `0.0.0.0`                    | 监听地址                         |
 | `PORT`        | `29528`                      | 监听端口                         |
+| `MAX_CONTENT_LENGTH` | `10485760`            | 请求体上限（字节，默认 10MB）；Flask 在进入视图前就按它拒绝超大 body |
 
 ### 数据库配置
 
@@ -708,8 +709,6 @@ npm run dev
 | `JWXT_PASSWORD`            | （空）         | 教务系统密码                           |
 | `JWXT_HEADLESS`            | `true`         | 无头浏览器模式                         |
 | `JWXT_TIMEOUT`             | `180`          | 爬虫超时（秒）                         |
-| `JWXT_SAVE_LOG`            | `true`         | 是否保存爬虫日志                       |
-| `JWXT_CAPTCHA_MODE`        | `auto`         | 验证码模式（auto/manual）              |
 | `SPIDER_HEADLESS`          | `true`         | 爬虫无头模式开关                       |
 
 ### 安全与跨域配置

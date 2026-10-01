@@ -84,8 +84,6 @@ JWXT_USERNAME=<你的学号>
 JWXT_PASSWORD=<你的教务系统密码>
 JWXT_HEADLESS=true
 JWXT_TIMEOUT=180
-JWXT_SAVE_LOG=true
-JWXT_CAPTCHA_MODE=auto
 
 # ========== 企业微信 ==========
 WECOM_WEBHOOK=<你的企业微信机器人Webhook地址>

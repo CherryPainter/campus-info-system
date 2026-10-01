@@ -31,6 +31,13 @@
 - 删掉引用不存在文件的 `.env.linux` 行，并把部署步骤里的 `cp .env.linux .env` 订正为 **`cp .env.example .env`**（`.env.linux` 从未入库，照原文档执行会在此步失败）。
 - **未做**：该文档整体仍是 2026-06-25 的检查结论（跨了 9 个小版本），其中的代码行号引用（如 `config.py:122`、`__init__.py:56`）与新增环境变量未经逐条复核，本次只修上述明确错误。
 
+**全仓键集合复核（模板是否完整）**
+- 用「全仓 `os.getenv` / `os.environ` 扫描 ↔ `.env.example` 键集合」双向比对，逐项判定差异，避免「模板缺键」与「模板列了死键」两头漏。
+- **新发现两个死键**：`JWXT_SAVE_LOG`、`JWXT_CAPTCHA_MODE` —— 全仓 `.py` 零读取（`git log -S` 显示自初始提交起就未被读），且爬虫子项目的验证码模式是**硬编码** `"captcha_mode": "auto"`（`app/cqie-course-timetable/config.py:118`）。已从 `.env.example`、README、`DEPLOY_CHECKLIST.md` 与本地 `.env` 四处移除。
+- **补上 `MAX_CONTENT_LENGTH`**（模板与 README 此前都缺）：`config.py:131` 在读，默认 10MB，管理端不接管。它是「大文件上传提示是否友好」的实际开关（Flask 在进入视图前就按它拒绝请求体），值得让部署者知道。
+- **判定为「有意不列」的键（不动，记为结论）**：`COURSE_*` 5 个与 `QWEATHER_CITY_NAME` 走管理端配置页（`module_config.py:313` 起的 module_key → Config 映射即证据）；`ENV` / `FLASK_ENV` 是框架变量；`CORS_ORIGINS` 是兼容旧名（README 已注明）；`QWEATHER_SECRET` 已废弃；`WEATHER_WEBHOOK` 只有定义、无消费方；`GUNICORN_*` 属 systemd/进程级参数（由部署方式传入，不是 `.env` 的职责）；`APPLY`、`ENV_FILE_PATH` 是工具脚本与爬虫子项目的内部参数。
+- **扫描脚本的已知盲区（如实标注）**：通过**变量名常量**间接读取的键抓不到——`WEBHOOK_URL_ALLOWED_HOSTS` 正是如此（`url_guard.py:63` 定义常量、`:68` 才 `os.getenv`），在扫描结果里会误报为「没人读」。判定死键前必须再按字面量 `grep` 一次确认。
+
 **待决策（本次未改）**
 - `QWEATHER_API_HOST` 的默认值：代码是 `https://devapi.qweatherapi.com`（带 `api`），模板与 README 写 `https://devapi.qweather.com`（不带）。两者是否为同一域名的书写差异未能确认，未改。
 - `QWEATHER_LATITUDE/LONGITUDE` 是否要**让它们真正生效**：若要让「天气定位与预警坐标可分别配置」成立，需同时改 `config.py`（声明属性）与 `QWEATHER_LOCATION` 的默认值。本次按「既有注释已认定为空壳」处理为移除。
