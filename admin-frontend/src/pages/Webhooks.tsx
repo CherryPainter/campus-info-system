@@ -1,20 +1,28 @@
 /**
  * Webhook 管理页面
  *
- * 功能：
- * - 查看所有 webhook
- * - 添加/编辑/删除 webhook
- * - 测试 webhook
- * - 启用/禁用 webhook
- * - 重载适配器配置
+ * 设计要点（2026-09-30）：
+ * - 列表用 antd Table：名称 / URL / 模块 / 接收范围 / 来源 / 状态 / 测试 / 创建时间 / 操作。
+ * - 新增 / 编辑用右侧 Drawer（底部固定 取消 / 保存）。
+ * - 接收范围(scope) 候选项来自「用户与权限」体系：学生来自学生名单(rosterApi)，
+ *   宿舍来自学生宿舍枚举 adminApi.getDorms()，与该页同源。
+ * - scope 语义：「这份数据给谁」，与 webhook 地址（发到哪个群）正交。
+ * - 课表/天气/系统是全站同一份内容，没有逐人维度 —— 全局是它们的**默认行为**，
+ *   无需也不需要给用户选，因此选了这些模块时**不渲染**接收范围。
+ * - 电量含各人隐私数据（每宿舍独立电表、各学生自配 Cookie 采集），把多人数据
+ *   汇成一条发进同一个群即为隐私泄露，故**只允许「指定宿舍 / 指定学生」，不提供「全局」**。
+ * - 学生目标下拉改为**服务端关键字搜索**（防抖 300ms）：/admin/roster/students 的
+ *   page_size 硬上限 100，千人名单既会被静默截断、又卡顿，不能整表拉进下拉。
+ * - 列表「接收范围」列展示的学生姓名由后端随列表返回（scope_target_names）。
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Card,
   Button,
   Space,
   Tag,
-  Modal,
+  Table,
+  Drawer,
   Form,
   Input,
   Select,
@@ -23,46 +31,29 @@ import {
   Tooltip,
   Badge,
   Alert,
-  Descriptions,
-  Divider,
   Grid,
+  Divider,
 } from "antd";
-import ResponsiveTable from "@/components/ResponsiveTable";
+import type { ColumnsType } from "antd/es/table";
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
   ReloadOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
   SendOutlined,
-  LinkOutlined,
-  InfoCircleOutlined,
-  CheckOutlined,
-  StopOutlined,
   WarningOutlined,
+  HomeOutlined,
+  TeamOutlined,
+  GlobalOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
-import { webhookApi } from "@/api/admin";
+import { webhookApi, rosterApi, adminApi } from "@/api/admin";
+import type { Webhook } from "@/api/admin";
 import dayjs from "dayjs";
 import { WEBHOOK_TEST_STATUS_MAP } from "@/constants/statusMaps";
-import { useMessage } from "@/utils/message";
+import { useMessage, showApiError } from "@/utils/message";
 
-const { Option } = Select;
 const { TextArea } = Input;
-
-interface Webhook {
-  id: number;
-  name: string;
-  url: string;
-  modules: string;
-  module_list: string[];
-  is_enabled: boolean;
-  description?: string;
-  last_test_status?: "success" | "failed" | "pending";
-  last_test_time?: string;
-  created_at?: string;
-  updated_at?: string;
-}
 
 const MODULE_MAP: Record<string, { label: string; color: string }> = {
   all: { label: "全局", color: "gold" },
@@ -72,84 +63,335 @@ const MODULE_MAP: Record<string, { label: string; color: string }> = {
   system: { label: "系统", color: "red" },
 };
 
-// TEST_STATUS_MAP 已迁至 @/constants/statusMaps（WEBHOOK_TEST_STATUS_MAP）
+/** 接收范围展示配置 */
+const SCOPE_MAP: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+  global: { label: "全局", color: "gold", icon: <GlobalOutlined /> },
+  student: { label: "指定学生", color: "green", icon: <TeamOutlined /> },
+  dorm: { label: "指定宿舍", color: "blue", icon: <HomeOutlined /> },
+};
+
+/**
+ * 模块与「接收范围」的关系（范围自动联动的唯一依据）
+ *
+ * filter    —— 内容含逐人维度，可按学生 / 宿舍过滤后再聚合发送；
+ * broadcast —— 全站同一份内容，没有逐人维度，范围影响不了内容。
+ *
+ * 事实依据（勿凭印象改）：
+ * - `courses` 表无 user_id / 班级维度（见 Push_System_Flask/app/model/course.py），
+ *   课表是全校一份数据；天气 / 系统 payload 同为全局。
+ * - 电量按学生逐条采集（app/modules/electricity/tasks.py），
+ *   再由 app/services/webhook_push_service.py 的 send_module_report 按 scope 过滤聚合。
+ */
+const MODULE_SCOPE_KIND: Record<string, "filter" | "broadcast"> = {
+  course: "broadcast",
+  weather: "broadcast",
+  electricity: "filter",
+  system: "broadcast",
+};
+
+/** 所选模块中是否含「可按受众过滤」的模块（决定「接收范围」是否可编辑） */
+function hasFilterableModule(mods?: string[] | null): boolean {
+  // 「全部」包含电量，同样允许定向
+  return (mods || []).some((m) => m === "all" || MODULE_SCOPE_KIND[m] === "filter");
+}
+
+/**
+ * 拆分宿舍字符串，**仅供下拉分组展示**
+ *
+ * 真实数据形态（见 `admin_roster_routes.py` 导入模板与测试用例）：
+ *   `31栋512` → 楼栋 `31栋`、房号 `512`（首位 5 = 楼层）
+ *   `A栋305`  → 楼栋 `A栋`、房号 `305`（首位 3 = 楼层）
+ *
+ * 关键约束：**只用于展示分组，绝不参与写库** —— 下拉叶子项与提交值始终是
+ * `student_rosters.dorm` 的原始字符串。解析不出来就归到「未识别格式」组，
+ * 保证脏数据也能被选中，不会因为正则不匹配而丢选项或改写值。
+ */
+function parseDorm(dorm: string): { building: string; floor: string; roomNo: string } {
+  const s = (dorm || "").trim();
+  const m = s.match(/^(.*?栋)(\d+)(.*)$/);
+  if (!m) return { building: "未识别格式", floor: "", roomNo: s };
+  return {
+    building: m[1],
+    floor: m[2].charAt(0),
+    // 房号保留完整数字（含楼层位），如 `512` / `305` —— 用户要求选项里带上楼层
+    roomNo: `${m[2]}${m[3] || ""}`.trim(),
+  };
+}
 
 export default function Webhooks() {
-  const [loading, setLoading] = useState(false);
-  // 移动端断点：收缩外层 Card body padding
+  const message = useMessage();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
+
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  const [testingId, setTestingId] = useState<number | null>(null);
+
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingWebhook, setEditingWebhook] = useState<Webhook | null>(null);
   const [form] = Form.useForm();
-  const [testingId, setTestingId] = useState<number | null>(null);
-  const [reloading, setReloading] = useState(false);
-  const message = useMessage();
 
-  const fetchWebhooks = async () => {
-    setLoading(true);
+  // 范围受众可选项：
+  // - 宿舍：一次拉全（宿舍量级远小于人数），再按「楼栋 · 楼层」分组展示。
+  // - 学生：改为**服务端关键字搜索**，不预拉全量名单 —— /admin/roster/students 的
+  //   page_size 上限是 100，千人名单会被静默截断、下拉还卡（旧实现 page_size:1000 即此坑）。
+  const [studentOptions, setStudentOptions] = useState<{ value: number; label: string }[]>([]);
+  const [dorms, setDorms] = useState<string[]>([]);
+  const [dormLoading, setDormLoading] = useState(false);
+  const [studentSearching, setStudentSearching] = useState(false);
+  // 已选学生的 id->姓名 缓存：搜索结果会被替换，靠它保证已选标签始终显示姓名而非 #id
+  const [pickedStudents, setPickedStudents] = useState<Record<number, string>>({});
+  const searchTimer = useRef<number | null>(null);
+
+  /** 宿舍下拉：按「楼栋 · 楼层」分组，组内列出完整房号（叶子 value 仍是原始宿舍字符串） */
+  const dormOptionGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      { value: string; label: string; title: string; searchKey: string }[]
+    >();
+    dorms.forEach((dorm) => {
+      const { building, floor, roomNo } = parseDorm(dorm);
+      const groupKey = floor ? `${building} · ${floor}层` : building;
+      if (!groups.has(groupKey)) groups.set(groupKey, []);
+      groups.get(groupKey)!.push({
+        value: dorm,
+        // 选项显示完整房号（含楼层位，如 512），组标题再给楼栋 + 楼层便于定位
+        label: roomNo,
+        // 鼠标悬停 / 无障碍朗读给出全称
+        title: dorm,
+        // 搜「31栋 / 5层 / 512 / 12」都能命中
+        searchKey: `${dorm} ${building} ${floor ? `${floor}层` : ""} ${
+          roomNo && floor ? roomNo.slice(1) : ""
+        }`,
+      });
+    });
+    const collator = new Intl.Collator("zh-Hans-CN", { numeric: true });
+    return Array.from(groups.entries())
+      .sort((a, b) => collator.compare(a[0], b[0]))
+      .map(([label, options]) => ({
+        label,
+        options: options.sort((a, b) => collator.compare(a.label, b.label)),
+      }));
+  }, [dorms]);
+
+  // ---- 范围随模块联动 ----
+  const watchedModules = Form.useWatch<string[]>("modules", form);
+  const watchedScope = Form.useWatch<string>("scope", form);
+
+  // useWatch 在表单挂载前为 undefined，回落到当前编辑对象，避免打开抽屉时闪一下错误选项
+  const effectiveModules = watchedModules ?? editingWebhook?.module_list ?? ["course"];
+  const scopeValue = watchedScope ?? editingWebhook?.scope ?? "global";
+  // 只有勾了电量（或「全部」）才需要配置受众
+  const scopeFilterable = hasFilterableModule(effectiveModules);
+
+  /** 学生下拉 options = 搜索结果 + 已选（保证标签不丢） */
+  const studentSelectOptions = useMemo(() => {
+    const merged = new Map<number, { value: number; label: string }>();
+    studentOptions.forEach((o) => merged.set(o.value, o));
+    Object.entries(pickedStudents).forEach(([id, label]) =>
+      merged.set(Number(id), { value: Number(id), label })
+    );
+    return Array.from(merged.values());
+  }, [studentOptions, pickedStudents]);
+
+  const fetchWebhooks = useCallback(
+    async (p: number, ps: number) => {
+      setLoading(true);
+      try {
+        const res = await webhookApi.getList({ page: p, page_size: ps });
+        if (res.status === "success") {
+          setWebhooks(((res.data as Webhook[]) || []).slice());
+          setTotal((res as any).total ?? 0);
+        }
+      } catch (error) {
+        message.error(showApiError(error, "加载 webhook 列表失败"));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [message]
+  );
+
+  /** 加载宿舍枚举（一次拉全；宿舍量级远小于人数） */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setDormLoading(true);
+      try {
+        const res = await adminApi.getDorms();
+        const list = ((res as any)?.data as { dorms?: string[] } | undefined)?.dorms || [];
+        if (alive) setDorms(list);
+      } catch (error) {
+        // 静默失败：下拉留空，不影响主列表
+      } finally {
+        if (alive) setDormLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /** 学生搜索（服务端按关键字查，仅已绑定账号的可作为定向目标） */
+  const runStudentSearch = useCallback(async (keyword: string) => {
+    setStudentSearching(true);
     try {
-      const res = await webhookApi.getList();
+      const res = await rosterApi.getList({
+        keyword: keyword || undefined,
+        page: 1,
+        page_size: 50,
+      });
       if (res.status === "success" && res.data) {
-        setWebhooks(res.data as any);
+        setStudentOptions(
+          (res.data as any[])
+            .filter((s) => s.bound_user_id)
+            .map((s) => ({
+              value: s.bound_user_id as number,
+              label: `${s.real_name || s.student_number}${
+                s.class_name ? `（${s.class_name}）` : ""
+              }`,
+            }))
+        );
       }
     } catch (error) {
-      message.error("加载 webhook 列表失败");
+      // 静默失败：下拉留空
     } finally {
-      setLoading(false);
+      setStudentSearching(false);
+    }
+  }, []);
+
+  /** 输入防抖 300ms，避免逐字打请求 */
+  const handleStudentSearch = useCallback(
+    (keyword: string) => {
+      if (searchTimer.current) window.clearTimeout(searchTimer.current);
+      searchTimer.current = window.setTimeout(() => runStudentSearch(keyword), 300);
+    },
+    [runStudentSearch]
+  );
+
+  useEffect(() => {
+    fetchWebhooks(page, pageSize);
+  }, [page, pageSize, fetchWebhooks]);
+
+  // 抽屉打开时：编辑 -> 回填；新增 -> 重置为默认值（避免带出上一条数据）
+  useEffect(() => {
+    if (!isDrawerOpen) return;
+    if (editingWebhook) {
+      const mods = editingWebhook.module_list || [];
+      const filterable = hasFilterableModule(mods);
+      // 电量含各人隐私数据，**不提供「全局」**：历史遗留的 global 收敛为「指定宿舍」，
+      // 由管理员明确指定受众后才保存（否则等于把全站电量汇总进一个群）。
+      const nextScope = !filterable
+        ? "global"
+        : editingWebhook.scope === "student"
+        ? "student"
+        : "dorm";
+      form.setFieldsValue({
+        name: editingWebhook.name,
+        url: editingWebhook.url,
+        modules: mods,
+        scope: nextScope,
+        scope_target: filterable ? editingWebhook.scope_target || [] : [],
+        is_enabled: editingWebhook.is_enabled,
+        description: editingWebhook.description,
+      });
+      // 已选学生姓名由后端随列表返回（scope_target_names），保证编辑时标签显示姓名而非 #id
+      if (filterable && nextScope === "student" && editingWebhook.scope_target) {
+        const names = editingWebhook.scope_target_names || [];
+        const seed: Record<number, string> = {};
+        (editingWebhook.scope_target as (number | string)[]).forEach((v, i) => {
+          const id = Number(v);
+          if (!Number.isNaN(id)) seed[id] = names[i] || `用户${id}`;
+        });
+        setPickedStudents(seed);
+      } else {
+        setPickedStudents({});
+      }
+    } else {
+      form.resetFields();
+      setPickedStudents({});
+    }
+  }, [isDrawerOpen, editingWebhook, form]);
+
+  /** 表单联动：模块决定是否要配受众；切换受众类型时清空上一类的目标 */
+  const handleFormValuesChange = (changed: Record<string, any>) => {
+    // 切受众类型（宿舍是字符串、学生是 user_id，混用会写错库）
+    if ("scope" in changed) {
+      form.setFieldsValue({ scope_target: [] });
+      setStudentOptions([]);
+      setPickedStudents({});
+      return;
+    }
+    if ("modules" in changed) {
+      if (hasFilterableModule(changed.modules)) {
+        // 勾上电量：默认给「指定宿舍」，必须明确受众才能保存
+        if (!["student", "dorm"].includes(form.getFieldValue("scope"))) {
+          form.setFieldsValue({ scope: "dorm", scope_target: [] });
+        }
+      } else {
+        form.setFieldsValue({ scope: "global", scope_target: [] });
+        setPickedStudents({});
+      }
+    }
+    // 记住已选学生姓名（搜索结果会被替换，标签不能丢）
+    if ("scope_target" in changed && form.getFieldValue("scope") === "student") {
+      const values: (number | string)[] = Array.isArray(changed.scope_target)
+        ? changed.scope_target
+        : [];
+      setPickedStudents((prev) => {
+        const next = { ...prev };
+        values.forEach((v) => {
+          const id = Number(v);
+          if (Number.isNaN(id)) return;
+          const hit = studentOptions.find((o) => o.value === id);
+          if (hit) next[id] = hit.label;
+          else if (!next[id]) next[id] = `用户${id}`;
+        });
+        return next;
+      });
     }
   };
 
-  useEffect(() => {
-    fetchWebhooks();
-  }, []);
-
-  const handleAdd = () => {
+  const openAdd = () => {
     setEditingWebhook(null);
-    form.resetFields();
-    setIsModalOpen(true);
+    setIsDrawerOpen(true);
   };
 
-  const handleEdit = (record: Webhook) => {
+  const openEdit = (record: Webhook) => {
     setEditingWebhook(record);
-    form.setFieldsValue({
-      name: record.name,
-      url: record.url,
-      modules: record.module_list || [],
-      is_enabled: record.is_enabled,
-      description: record.description,
-    });
-    setIsModalOpen(true);
+    setIsDrawerOpen(true);
+  };
+
+  const closeDrawer = () => {
+    setIsDrawerOpen(false);
+    setEditingWebhook(null);
   };
 
   const handleSave = async (values: any) => {
     try {
-      // 将 modules 数组转换为逗号分隔的字符串
-      const data = {
+      const scope = values.scope || "global";
+      const data: any = {
         ...values,
         modules: Array.isArray(values.modules) ? values.modules.join(",") : values.modules,
+        scope,
+        scope_target: scope === "global" ? null : values.scope_target || [],
       };
 
-      if (editingWebhook) {
-        // 更新
-        const res = await webhookApi.update(editingWebhook.id, data);
-        if (res.status === "success") {
-          message.success("Webhook 更新成功");
-          setIsModalOpen(false);
-          fetchWebhooks();
-        }
-      } else {
-        // 创建
-        const res = await webhookApi.create(data);
-        if (res.status === "success") {
-          message.success("Webhook 创建成功");
-          setIsModalOpen(false);
-          fetchWebhooks();
-        }
+      const res = editingWebhook
+        ? await webhookApi.update(editingWebhook.id, data)
+        : await webhookApi.create(data);
+      if (res.status === "success") {
+        message.success(editingWebhook ? "Webhook 更新成功" : "Webhook 创建成功");
+        closeDrawer();
+        fetchWebhooks(page, pageSize);
       }
     } catch (error) {
-      message.error("保存失败");
+      // 用后端返回的具体原因（如服务端围栏拒绝「电量+全局」的提示），而不是笼统的「保存失败」
+      message.error(showApiError(error, "保存失败"));
     }
   };
 
@@ -158,10 +400,13 @@ export default function Webhooks() {
       const res = await webhookApi.delete(id);
       if (res.status === "success") {
         message.success("Webhook 已删除");
-        fetchWebhooks();
+        // 删掉当前页最后一条且不在第一页时，回退一页
+        const nextPage = webhooks.length === 1 && page > 1 ? page - 1 : page;
+        if (nextPage !== page) setPage(nextPage);
+        else fetchWebhooks(page, pageSize);
       }
     } catch (error) {
-      message.error("删除失败");
+      message.error(showApiError(error, "删除失败"));
     }
   };
 
@@ -174,9 +419,9 @@ export default function Webhooks() {
       } else {
         message.error(res.message || "测试失败");
       }
-      fetchWebhooks();
+      fetchWebhooks(page, pageSize);
     } catch (error) {
-      message.error("测试失败");
+      message.error(showApiError(error, "测试失败"));
     } finally {
       setTestingId(null);
     }
@@ -189,10 +434,10 @@ export default function Webhooks() {
       });
       if (res.status === "success") {
         message.success(record.is_enabled ? "已禁用" : "已启用");
-        fetchWebhooks();
+        fetchWebhooks(page, pageSize);
       }
     } catch (error) {
-      message.error("操作失败");
+      message.error(showApiError(error, "操作失败"));
     }
   };
 
@@ -204,23 +449,109 @@ export default function Webhooks() {
         message.success("适配器配置已重载");
       }
     } catch (error) {
-      message.error("重载失败");
+      message.error(showApiError(error, "重载失败"));
     } finally {
       setReloading(false);
     }
   };
 
-  const columns = [
+  /** 「接收范围」列：范围标签 + 目标名称摘要 */
+  const renderScope = (scope: string, record: Webhook) => {
+    const meta = SCOPE_MAP[scope] || SCOPE_MAP.global;
+    if (scope === "global" || !scope) {
+      return (
+        <Tag color={meta.color} icon={meta.icon}>
+          {meta.label}
+        </Tag>
+      );
+    }
+    const targets: (number | string)[] = record.scope_target || [];
+    // 学生范围：姓名由后端随列表返回（scope_target_names），无需前端持有全量名单；
+    // 宿舍范围：scope_target 里存的就是宿舍名本身。
+    const names =
+      scope === "student"
+        ? (record.scope_target_names || []).length
+          ? (record.scope_target_names as string[])
+          : targets.map((id) => `#${id}`)
+        : targets.map((v) => String(v));
+    const shown = names.slice(0, 2).join("、");
+    const extra = names.length > 2 ? ` 等 ${names.length} 个` : "";
+    return (
+      <Space size={4} wrap>
+        <Tag color={meta.color} icon={meta.icon}>
+          {meta.label}
+        </Tag>
+        <span style={{ fontSize: 12, color: "#555" }}>
+          {targets.length === 0 ? "(未指定)" : `${shown}${extra}`}
+        </span>
+      </Space>
+    );
+  };
+
+  /** 「测试」列 */
+  const renderTestStatus = (record: Webhook) => {
+    if (testingId === record.id) return <Badge status="processing" text="测试中" />;
+    const needsTest =
+      !record.last_test_time || dayjs(record.updated_at).isAfter(dayjs(record.last_test_time));
+    if (needsTest) {
+      return (
+        <Tooltip title="配置已更新，建议重新发送测试以确认可用性">
+          <Tag color="warning" icon={<WarningOutlined />}>
+            须测试
+          </Tag>
+        </Tooltip>
+      );
+    }
+    if (!record.last_test_status) {
+      return <span style={{ fontSize: 12, color: "#999" }}>未测试</span>;
+    }
+    const meta = WEBHOOK_TEST_STATUS_MAP[record.last_test_status];
+    const tagColor =
+      record.last_test_status === "success"
+        ? "success"
+        : record.last_test_status === "failed"
+        ? "error"
+        : "processing";
+    return (
+      <Space size={4}>
+        <Tag color={tagColor}>{meta?.text || record.last_test_status}</Tag>
+        {record.last_test_time && (
+          <span style={{ fontSize: 11, color: "#999" }}>
+            {dayjs(record.last_test_time).format("MM-DD")}
+          </span>
+        )}
+      </Space>
+    );
+  };
+
+  /** 「来源」列：系统级 / 学生自建 */
+  const renderSource = (record: Webhook) => {
+    if (!record.owner_user_id) return <Tag>系统</Tag>;
+    return (
+      <Tooltip title={`用户ID：${record.owner_user_id}`}>
+        <Tag color="purple" icon={<UserOutlined />}>
+          学生（{record.owner_name || record.owner_user_id}）
+        </Tag>
+      </Tooltip>
+    );
+  };
+
+  const columns: ColumnsType<Webhook> = [
     {
       title: "名称",
       dataIndex: "name",
       key: "name",
-      width: 140,
-      render: (text: string, record: Webhook) => (
-        <Space>
-          <span style={{ fontWeight: 500 }}>{text}</span>
-          {!record.is_enabled && <Tag color="default">禁用</Tag>}
-        </Space>
+      width: 160,
+      fixed: "left",
+      render: (_, record) => (
+        <div>
+          <div style={{ fontWeight: 600, color: "#1f1f1f" }}>{record.name}</div>
+          {record.description && (
+            <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>
+              {record.description}
+            </div>
+          )}
+        </div>
       ),
     },
     {
@@ -228,13 +559,23 @@ export default function Webhooks() {
       dataIndex: "url",
       key: "url",
       width: 200,
-      ellipsis: true,
       render: (url: string) => (
         <Tooltip title={url}>
-          <a style={{ color: "#1677ff" }}>
-            <LinkOutlined style={{ marginRight: 4 }} />
-            {url.substring(0, 40)}...
-          </a>
+          <span
+            style={{
+              display: "inline-block",
+              maxWidth: 180,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              verticalAlign: "middle",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+              fontSize: 12,
+              color: "#666",
+            }}
+          >
+            {url}
+          </span>
         </Tooltip>
       ),
     },
@@ -242,83 +583,86 @@ export default function Webhooks() {
       title: "模块",
       dataIndex: "module_list",
       key: "module_list",
-      width: 120,
-      render: (modules: string[]) => {
-        if (!modules || modules.length === 0) return <span style={{ color: "#999" }}>-</span>;
-        return (
-          <Space size="small" wrap>
-            {modules.map((m) => {
-              const meta = MODULE_MAP[m] || { label: m, color: "default" };
-              return (
-                <Tag key={m} color={meta.color}>
-                  {meta.label}
-                </Tag>
-              );
-            })}
-          </Space>
-        );
-      },
+      width: 170,
+      render: (list: string[]) => (
+        <Space size={4} wrap>
+          {(list || []).map((m) => {
+            const meta = MODULE_MAP[m] || { label: m, color: "default" };
+            return (
+              <Tag key={m} color={meta.color}>
+                {meta.label}
+              </Tag>
+            );
+          })}
+        </Space>
+      ),
+    },
+    {
+      title: "接收范围",
+      dataIndex: "scope",
+      key: "scope",
+      width: 190,
+      render: (_, record) => renderScope(record.scope, record),
+    },
+    {
+      title: "来源",
+      dataIndex: "owner_user_id",
+      key: "owner_user_id",
+      width: 130,
+      render: (_, record) => renderSource(record),
+    },
+    {
+      title: "状态",
+      dataIndex: "is_enabled",
+      key: "is_enabled",
+      width: 90,
+      render: (_, record) => (
+        <Switch
+          size="small"
+          checked={record.is_enabled}
+          onChange={() => handleToggleEnabled(record)}
+          checkedChildren="启用"
+          unCheckedChildren="禁用"
+        />
+      ),
     },
     {
       title: "测试",
-      dataIndex: "last_test_status",
-      key: "last_test_status",
-      width: 130,
-      render: (status: string, record: Webhook) => {
-        const isTesting = testingId === record.id;
-        // 配置在「上次测试之后」被改动过（或未曾测试）→ 需重新测试
-        const needsTest =
-          !record.last_test_time || dayjs(record.updated_at).isAfter(dayjs(record.last_test_time));
-        if (isTesting) {
-          return <Badge status="processing" text="测试中" />;
-        }
-        if (needsTest) {
-          return (
-            <Tooltip title="配置已更新，建议重新发送测试以确认可用性">
-              <Tag color="warning" icon={<WarningOutlined />}>
-                须测试
-              </Tag>
-            </Tooltip>
-          );
-        }
-        if (!status) return <span style={{ color: "#999" }}>-</span>;
-        const meta = WEBHOOK_TEST_STATUS_MAP[status];
-        return (
-          <div style={{ whiteSpace: "nowrap" }}>
-            <Badge status={meta.color as any} text={meta.text} />
-            {record.last_test_time && (
-              <span style={{ fontSize: 11, color: "#999", marginLeft: 4 }}>
-                {dayjs(record.last_test_time).format("MM-DD")}
-              </span>
-            )}
-          </div>
-        );
-      },
+      key: "test",
+      width: 150,
+      render: (_, record) => renderTestStatus(record),
+    },
+    {
+      title: "创建时间",
+      dataIndex: "created_at",
+      key: "created_at",
+      width: 120,
+      render: (v: string) => (v ? dayjs(v).format("YYYY-MM-DD") : "-"),
     },
     {
       title: "操作",
       key: "action",
-      width: 200,
-      render: (_: any, record: Webhook) => (
-        <Space size="small">
-          <Button
-            size="small"
-            icon={<SendOutlined />}
-            loading={testingId === record.id}
-            onClick={() => handleTest(record)}
-          >
-            测试
-          </Button>
-          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
-            编辑
-          </Button>
-          <Button
-            size="small"
-            icon={record.is_enabled ? <StopOutlined /> : <CheckOutlined />}
-            onClick={() => handleToggleEnabled(record)}
-          >
-            {record.is_enabled ? "禁用" : "启用"}
-          </Button>
+      width: 130,
+      fixed: "right",
+      render: (_, record) => (
+        <Space size={0}>
+          <Tooltip title="发送测试消息">
+            <Button
+              size="small"
+              type="text"
+              icon={<SendOutlined />}
+              loading={testingId === record.id}
+              onClick={() => handleTest(record)}
+            />
+          </Tooltip>
+          <Tooltip title="编辑">
+            <Button
+              size="small"
+              type="text"
+              icon={<EditOutlined />}
+              onClick={() => openEdit(record)}
+            />
+          </Tooltip>
           <Popconfirm
             title="确定删除此 webhook？"
             onConfirm={() => handleDelete(record.id)}
@@ -326,97 +670,110 @@ export default function Webhooks() {
             cancelText="取消"
             okButtonProps={{ danger: true }}
           >
-            <Button size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
+            <Tooltip title="删除">
+              <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
     },
   ];
 
-  const enabledCount = webhooks.filter((w) => w.is_enabled).length;
-
   return (
     <div>
-      <Card styles={{ body: { padding: isMobile ? 12 : 24 } }}>
-        {/* 工具条独立成行：避免与 PageContainer 自动生成的标题"Webhook 管理"挤在 Card title 行；
-            flex-wrap 让移动端控件不足时自然换行，不再挤压"添加 Webhook"按钮 */}
+      {/* 顶部：统计 + 操作 */}
+      <Card styles={{ body: { padding: isMobile ? 14 : 18 } }} style={{ marginBottom: 14 }}>
         <div
           style={{
             display: "flex",
             flexWrap: "wrap",
-            gap: 8,
-            justifyContent: "flex-end",
-            marginBottom: 16,
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
           }}
         >
-          <Button icon={<ReloadOutlined />} loading={reloading} onClick={handleReload}>
-            重载配置
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-            添加 Webhook
-          </Button>
+          <span style={{ fontSize: 13, color: "#888" }}>
+            共 <b style={{ color: "#1f1f1f" }}>{total}</b> 个
+          </span>
+          <Space wrap>
+            <Button icon={<ReloadOutlined />} loading={reloading} onClick={handleReload}>
+              重载配置
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
+              添加 Webhook
+            </Button>
+          </Space>
         </div>
-
-        <Alert
-          message="Webhook 配置说明"
-          description={
-            <div>
-              <p>• 一个 webhook 可以属于多个模块</p>
-              <p>
-                • <b>全局</b>：接收所有推送（四合一）
-              </p>
-              <p>
-                • <b>课表</b>：课程推送、上课提醒
-              </p>
-              <p>
-                • <b>天气</b>：天气晨报、预警通知
-              </p>
-              <p>
-                • <b>电量</b>：电量日报、低电量告警
-              </p>
-              <p>
-                • <b>系统</b>：爬虫失败、系统异常告警
-              </p>
-              <p>• 修改配置后点击"重载配置"使更改生效</p>
-            </div>
-          }
-          type="info"
-          showIcon
-          icon={<InfoCircleOutlined />}
-          style={{ marginBottom: 16 }}
-        />
-
-        <Descriptions bordered size="small" style={{ marginBottom: 16 }}>
-          <Descriptions.Item label="总数量">{webhooks.length}</Descriptions.Item>
-          <Descriptions.Item label="已启用">{enabledCount}</Descriptions.Item>
-        </Descriptions>
-
-        <ResponsiveTable
-          dataSource={webhooks}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          pagination={false}
-          scroll={{ x: 800 }}
-        />
       </Card>
 
-      <Modal
+      {/* 简要说明 */}
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 14, borderRadius: 8 }}
+        message="Webhook 地址决定消息发到哪个群；「接收范围」决定把谁的数据发过去。课表 / 天气为全站广播，系统仅全局告警——这些都是默认行为，无需配置；只有电量含各人隐私数据，必须指定宿舍或学生，不会把全站电量汇总进一个群。修改后点「重载配置」生效。"
+      />
+
+      {/* 列表 */}
+      <Table<Webhook>
+        rowKey="id"
+        columns={columns}
+        dataSource={webhooks}
+        loading={loading}
+        scroll={{ x: 1100 }}
+        pagination={{
+          current: page,
+          pageSize,
+          total,
+          showSizeChanger: true,
+          pageSizeOptions: ["10", "20", "50"],
+          showTotal: (t) => `共 ${t} 条`,
+          onChange: (p, ps) => {
+            setPage(p);
+            setPageSize(ps);
+          },
+        }}
+      />
+
+      {/* 新增 / 编辑抽屉 */}
+      <Drawer
         title={editingWebhook ? "编辑 Webhook" : "添加 Webhook"}
-        open={isModalOpen}
-        onOk={form.submit}
-        onCancel={() => setIsModalOpen(false)}
-        width={600}
+        open={isDrawerOpen}
+        onClose={closeDrawer}
+        width={isMobile ? "100%" : 560}
+        destroyOnClose
+        footer={
+          <div style={{ textAlign: "right" }}>
+            <Space>
+              <Button onClick={closeDrawer}>取消</Button>
+              <Button type="primary" onClick={() => form.submit()}>
+                保存
+              </Button>
+            </Space>
+          </div>
+        }
       >
         <Form
           form={form}
           layout="vertical"
           onFinish={handleSave}
-          initialValues={{ modules: ["course"], is_enabled: true }}
+          onValuesChange={handleFormValuesChange}
+          initialValues={{
+            modules: ["course"],
+            is_enabled: true,
+            scope: "global",
+            scope_target: [],
+          }}
         >
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
+          <Divider orientation="left" plain style={{ fontSize: 13 }}>
+            基本信息
+          </Divider>
+
+          <Form.Item
+            name="name"
+            label="名称"
+            rules={[{ required: true, message: "请输入名称" }]}
+          >
             <Input placeholder="如：班级群、测试群" />
           </Form.Item>
 
@@ -438,15 +795,104 @@ export default function Webhooks() {
             name="modules"
             label="所属模块"
             rules={[{ required: true, message: "请选择至少一个模块" }]}
+            extra="课表 / 天气 / 系统为全站广播；勾选「电量」后需在下方的接收范围里指定受众"
           >
             <Select mode="multiple" placeholder="选择此 webhook 接收哪些模块的消息">
-              <Option value="all">全局（接收所有推送）</Option>
-              <Option value="course">课表（课程推送、上课提醒）</Option>
-              <Option value="weather">天气（天气晨报、预警通知）</Option>
-              <Option value="electricity">电量（电量日报、低电量告警）</Option>
-              <Option value="system">系统（爬虫失败、系统异常）</Option>
+              <Select.Option value="all">全局（接收所有推送）</Select.Option>
+              <Select.Option value="course">课表（课程推送、上课提醒）</Select.Option>
+              <Select.Option value="weather">天气（天气晨报、预警通知）</Select.Option>
+              <Select.Option value="electricity">电量（电量日报、低电量告警）</Select.Option>
+              <Select.Option value="system">系统（爬虫失败、系统异常）</Select.Option>
             </Select>
           </Form.Item>
+
+          {/* 接收范围只在「勾了电量」时才出现：
+              课表 / 天气 / 系统是全站广播（默认行为，没有可选项）；
+              电量含各人隐私数据，必须明确受众，因此不提供「全局」。 */}
+          {scopeFilterable && (
+            <>
+              <Divider orientation="left" plain style={{ fontSize: 13 }}>
+                接收范围（电量）
+              </Divider>
+
+              <Form.Item
+                name="scope"
+                label="接收范围"
+                rules={[{ required: true, message: "请选择接收范围" }]}
+              >
+                <Select
+                  placeholder="选择把谁的电量数据发到这个群"
+                  options={[
+                    { value: "dorm", label: "指定宿舍（该宿舍已配 Cookie 的学生）" },
+                    { value: "student", label: "指定学生（仅这些学生）" },
+                  ]}
+                />
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(prev, cur) => prev.scope !== cur.scope}>
+                {({ getFieldValue }) => {
+                  const scopeVal = getFieldValue("scope");
+                  if (scopeVal === "student") {
+                    return (
+                      <Form.Item
+                        name="scope_target"
+                        label="指定学生"
+                        rules={[{ required: true, message: "请至少选择一名学生" }]}
+                        extra="输入姓名或学号搜索；仅已绑定账号的学生可作目标"
+                      >
+                        <Select
+                          mode="multiple"
+                          allowClear
+                          showSearch
+                          filterOption={false}
+                          onSearch={handleStudentSearch}
+                          loading={studentSearching}
+                          placeholder="输入姓名或学号搜索"
+                          options={studentSelectOptions}
+                          notFoundContent="输入姓名或学号搜索"
+                        />
+                      </Form.Item>
+                    );
+                  }
+                  if (scopeVal === "dorm") {
+                    return (
+                      <Form.Item
+                        name="scope_target"
+                        label="指定宿舍"
+                        rules={[{ required: true, message: "请至少选择一个宿舍" }]}
+                        extra="按「楼栋 · 楼层」分组，组内为宿舍号；可直接搜楼栋 / 楼层 / 宿舍号"
+                      >
+                        <Select
+                          mode="multiple"
+                          allowClear
+                          loading={dormLoading}
+                          placeholder="按楼栋 / 楼层 / 宿舍号搜索"
+                          options={dormOptionGroups}
+                          showSearch
+                          optionFilterProp="searchKey"
+                          // 分组里显示的是「12」，标签必须带全称，否则看不出是哪栋
+                          tagRender={({ value, closable, onClose }) => (
+                            <Tag
+                              closable={closable}
+                              onClose={onClose}
+                              style={{ marginInlineEnd: 4 }}
+                            >
+                              {String(value)}
+                            </Tag>
+                          )}
+                        />
+                      </Form.Item>
+                    );
+                  }
+                  return null;
+                }}
+              </Form.Item>
+            </>
+          )}
+
+          <Divider orientation="left" plain style={{ fontSize: 13 }}>
+            其他
+          </Divider>
 
           <Form.Item name="is_enabled" label="状态" valuePropName="checked">
             <Switch checkedChildren="启用" unCheckedChildren="禁用" />
@@ -456,7 +902,7 @@ export default function Webhooks() {
             <TextArea rows={2} placeholder="可选的描述信息" />
           </Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
     </div>
   );
 }

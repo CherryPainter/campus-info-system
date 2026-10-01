@@ -366,8 +366,17 @@ class AdapterService:
                 for module in modules:
                     webhooks = Webhook.get_webhooks_by_module(session, module)
                     if webhooks:
+                        # 仅纳入「全局」webhook：模块广播按 URL 聚合、发送时不携带受众信息，
+                        # 无法按 scope 定向；定向(scoped) webhook 交由 send_module_report 等
+                        # scope 感知路径处理，避免全局广播把不属于该受众的内容误推给定向 webhook。
+                        # 见 app/model/webhook.py 的 scope 字段与 Webhook 模型注释。
+                        global_webhooks = [
+                            w for w in webhooks if (w.scope or "global") == "global"
+                        ]
+                        if not global_webhooks:
+                            continue
                         # 去重：使用 set 去除重复的 URL
-                        urls = list({w.url for w in webhooks})
+                        urls = list({w.url for w in global_webhooks})
                         if len(urls) == 1:
                             adapter = WeComAdapter({"webhook_url": urls[0], "name": module})
                         else:
@@ -375,7 +384,7 @@ class AdapterService:
                         adapter.init()
                         self._adapters[module] = adapter
                         logger.info(
-                            f"从数据库加载 {module} 适配器: {len(urls)} 个 webhook (去重后)"
+                            f"从数据库加载 {module} 适配器: {len(urls)} 个全局 webhook (去重后，已排除定向 webhook)"
                         )
 
                 # 如果没有加载到任何配置，回退到 .env

@@ -230,6 +230,9 @@ export const adminApi = {
   /** 学生电量总览（全部学生 + 配置/低电量状态） */
   getElectricityStudents: () =>
     request.get<any, ApiResponse<ElectricityStudentsOverview>>("/admin/electricity/students"),
+  /** 宿舍枚举（去重，供 webhook 按宿舍组定向选择） */
+  getDorms: () =>
+    request.get<any, ApiResponse<{ dorms: string[] }>>("/admin/students/dorms"),
   /** 指定学生最新剩余电量 */
   getStudentElectricityRemaining: (userId: number) =>
     request.get<any, ApiResponse<StudentElectricityRemaining>>(
@@ -526,19 +529,37 @@ export interface Webhook {
   id: number;
   name: string;
   url: string;
-  webhook_type: "push" | "status" | "both";
+  /** 模块名逗号串，如 "course,electricity" */
+  modules: string;
+  /** 由 modules 解析出的模块数组，如 ["course","electricity"] */
+  module_list: string[];
+  /** 接收范围：global=全局广播；student=指定学生；dorm=指定宿舍（同宿舍=一组） */
+  scope: "global" | "student" | "dorm";
+  /** scope=student 时存 user_id 列表；scope=dorm 时存宿舍值列表（字符串）；global 为 null */
+  scope_target?: (number | string)[] | null;
   is_enabled: boolean;
   description?: string;
   last_test_status?: "success" | "failed" | "pending";
   last_test_time?: string;
   created_at?: string;
   updated_at?: string;
+  /** 归属用户ID；NULL=系统级（管理员建），非空=学生自建「第三方消息通知」 */
+  owner_user_id?: number | null;
+  /** 归属学生展示名（后端解析 nickname/real_name），系统级为 null */
+  owner_name?: string | null;
+  /** scope=student 时由后端解析出的目标姓名列表（与 scope_target 同序）；其它范围 null。
+   *  用于列表直接展示受众，避免前端一次性拉全量名单（学生数千人时下拉不可用）。 */
+  scope_target_names?: string[] | null;
 }
 
 /** Webhook 管理 API */
 export const webhookApi = {
-  /** 获取所有 webhook */
-  getList: () => request.get<any, ApiResponse<Webhook[]>>("/admin/webhooks"),
+  /** 获取 webhook 列表（支持分页） */
+  getList: (params?: { page?: number; page_size?: number; enabled_only?: boolean }) =>
+    request.get<
+      any,
+      ApiResponse<Webhook[]> & { total: number; page: number; page_size: number }
+    >("/admin/webhooks", { params }),
   /** 创建 webhook */
   create: (data: Partial<Webhook>) =>
     request.post<any, ApiResponse<Webhook>>("/admin/webhooks", data),
@@ -702,6 +723,8 @@ export interface RosterStudent {
   college: string | null;
   major: string | null;
   real_name: string | null;
+  /** 宿舍（如 A栋305）；同宿舍学生构成一个组，用于电量 webhook 按宿舍聚合推送 */
+  dorm: string | null;
   remark: string | null;
   /** 是否已生成一次性绑定码（明文仅生成时返回一次） */
   has_bind_code: boolean;
@@ -756,6 +779,7 @@ export const rosterApi = {
     class_id: number;
     student_number: string;
     real_name?: string;
+    dorm?: string;
     remark?: string;
     is_active?: boolean;
   }) => request.post<any, ApiResponse<RosterStudent>>("/admin/roster/students", data),
@@ -765,6 +789,7 @@ export const rosterApi = {
     data: {
       class_id?: number | null;
       real_name?: string;
+      dorm?: string;
       remark?: string;
       is_active?: boolean;
     }

@@ -51,10 +51,13 @@ electricity_service）与 Repository，路由层只做鉴权与编排，不复�
 """
 
 from datetime import datetime
+import ipaddress
+from urllib.parse import urlparse
 
 from flask import Blueprint, g, request
 
 from app.core.api_response import api_error, api_success
+from app.core.extensions import RATE_LIMITS, limiter
 from app.core.logger import get_logger
 from app.utils.student_auth import (
     miniapp_optional,
@@ -214,6 +217,7 @@ def bind_student():
         profile.class_name = roster.class_name
         profile.college = roster.college
         profile.major = roster.major
+        profile.dorm = roster.dorm
         # 核销一次性绑定码（同一事务，绑定成功即作废）
         roster.bind_code_hash = None
         db.commit()
@@ -1319,3 +1323,258 @@ def announcement_attachment(attachment_id):
     if not abs_path.startswith(root) or not os.path.exists(abs_path):
         return api_error(message="附件文件已丢失", http_status=404)
     return send_file(abs_path, as_attachment=True, download_name=att["file_name"])
+
+
+# ==================== 学生自建「第三方消息通知」webhook ====================
+# 学生可在小程序设置里自助添加 webhook（企业微信机器人），仅限个人相关模块
+# （course / electricity / weather）。服务端强制 scope=student + scope_target=[本人 user_id]，
+# 客户端无法指定接收范围或归属，杜绝越权与范围篡改；免审核即生效。
+
+# 学生可配置的个人相关模块白名单
+_STUDENT_WEBHOOK_MODULES = {"course", "electricity", "weather"}
+
+# 单个学生可创建的 webhook 数量上限。
+# 每条 webhook 都会收到课表/天气的广播副本（app/services/webhook_push_service.py 的
+# fanout_broadcast_webhooks 会遍历所有非全局 webhook 逐条发送），不设上限则可被滥建：
+# 出站请求数与库行数被无限放大，也会把学生自己/他人的机器人打到微信限流。
+_MAX_WEBHOOKS_PER_STUDENT = 10
+
+# 仅允许企业微信机器人域名（学生自建 webhook 的合法目标）
+_STUDENT_WEBHOOK_HOST = "qyapi.weixin.qq.com"
+
+# 内网 / 保留地址段（SSRF 防护：阻断内网探测）
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _validate_webhook_url(url: str):
+    """校验学生自建 webhook 的 URL：https + 仅企业微信机器人域名 + 非内网地址。
+
+    返回 (ok, error_message)；ok 为 False 时 error_message 直接作为接口报错文案。
+    仅作用于学生自建路由，不影响管理端系统级 webhook（管理端目标可多元化）。
+    """
+    if not url:
+        return False, "URL 不能为空"
+    if not url.startswith("https://"):
+        return False, "URL 必须以 https:// 开头"
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False, "URL 格式非法"
+    if not parsed.hostname:
+        return False, "URL 缺少主机名"
+    host = parsed.hostname.lower()
+    # 仅允许企业微信机器人域名，杜绝外部中继 / 任意站点
+    if host != _STUDENT_WEBHOOK_HOST:
+        return False, "仅支持企业微信机器人域名 qyapi.weixin.qq.com"
+    # SSRF：主机若为 IP 字面量，阻断内网 / 保留地址段
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # 是域名（非 IP），交由 DNS 解析，此处不再拦截
+        return True, None
+    for net in _PRIVATE_NETWORKS:
+        if ip in net:
+            return False, "URL 不能使用内网地址"
+    return True, None
+
+
+def _student_webhook_owned(webhook, user_id):
+    """校验 webhook 归属当前学生（owner_user_id 命中）；否则按 404 语义处理。"""
+    return webhook is not None and webhook.owner_user_id == user_id
+
+
+@miniapp_bp.route("/webhooks", methods=["GET"])
+@student_required
+def list_my_webhooks():
+    """列出本人创建的「第三方消息通知」webhook（按 owner_user_id 过滤）。"""
+    from app.core.database import get_db
+    from app.model.webhook import Webhook
+
+    user_id = int(g.current_user["user_id"])
+    session = get_db()
+    try:
+        rows = (
+            session.query(Webhook)
+            .filter(Webhook.owner_user_id == user_id)
+            .order_by(Webhook.created_at.desc())
+            .all()
+        )
+        return api_success(data=[w.to_dict() for w in rows])
+    finally:
+        session.close()
+
+
+@miniapp_bp.route("/webhooks", methods=["POST"])
+@student_required
+def create_my_webhook():
+    """创建本人 webhook（服务端强制 scope=student + scope_target=[本人]）。"""
+    from app.core.database import get_db
+    from app.model.webhook import Webhook
+
+    user_id = int(g.current_user["user_id"])
+    data = request.get_json(silent=True) or {}
+
+    name = (data.get("name") or "").strip()
+    url = (data.get("url") or "").strip()
+    if not name:
+        return api_error(message="名称不能为空", http_status=400)
+    ok, err = _validate_webhook_url(url)
+    if not ok:
+        return api_error(message=err, http_status=400)
+
+    # 模块白名单：仅 course / electricity / weather；客户端传其它模块一律裁剪
+    raw_modules = data.get("modules") or "course"
+    if isinstance(raw_modules, list):
+        raw_modules = ",".join(raw_modules)
+    module_list = [m.strip() for m in raw_modules.split(",") if m.strip()]
+    allowed = [m for m in module_list if m in _STUDENT_WEBHOOK_MODULES]
+    modules = ",".join(allowed) if allowed else "course"
+
+    session = get_db()
+    try:
+        # 围栏：限制单人所建数量，避免被滥建导致广播出站放大
+        owned = session.query(Webhook).filter(Webhook.owner_user_id == user_id).count()
+        if owned >= _MAX_WEBHOOKS_PER_STUDENT:
+            return api_error(
+                message=f"最多只能创建 {_MAX_WEBHOOKS_PER_STUDENT} 个通知，请先删除不再使用的",
+                http_status=400,
+            )
+
+        webhook = Webhook.create(
+            session=session,
+            name=name,
+            url=url,
+            modules=modules,
+            scope="student",                # 服务端强制：个人定向
+            scope_target=[user_id],         # 服务端强制：仅本人
+            description=(data.get("description") or "").strip() or None,
+            owner_user_id=user_id,          # 归属本人
+        )
+        return api_success(message="创建成功", data=webhook.to_dict(), http_status=201)
+    finally:
+        session.close()
+
+
+@miniapp_bp.route("/webhooks/<int:webhook_id>", methods=["PUT"])
+@student_required
+def update_my_webhook(webhook_id):
+    """更新本人 webhook（归属与接收范围服务端强制，客户端不可改）。"""
+    from app.core.database import get_db
+    from app.model.webhook import Webhook
+
+    user_id = int(g.current_user["user_id"])
+    data = request.get_json(silent=True) or {}
+
+    session = get_db()
+    try:
+        webhook = Webhook.get_by_id(session, webhook_id)
+        if not _student_webhook_owned(webhook, user_id):
+            return api_error(message="Webhook 不存在", http_status=404)
+
+        fields = {}
+        if "name" in data:
+            name = (data["name"] or "").strip()
+            if not name:
+                return api_error(message="名称不能为空", http_status=400)
+            fields["name"] = name
+        if "url" in data:
+            url = (data["url"] or "").strip()
+            ok, err = _validate_webhook_url(url)
+            if not ok:
+                return api_error(message=err, http_status=400)
+            fields["url"] = url
+        if "modules" in data:
+            raw = data["modules"]
+            if isinstance(raw, list):
+                raw = ",".join(raw)
+            ml = [m.strip() for m in raw.split(",") if m.strip()]
+            allowed = [m for m in ml if m in _STUDENT_WEBHOOK_MODULES]
+            fields["modules"] = ",".join(allowed) if allowed else "course"
+        if "description" in data:
+            fields["description"] = (data["description"] or "").strip() or None
+        if "is_enabled" in data:
+            fields["is_enabled"] = bool(data["is_enabled"])
+
+        # 服务端强制：归属与接收范围不可被客户端篡改
+        fields["owner_user_id"] = user_id
+        fields["scope"] = "student"
+        fields["scope_target"] = [user_id]
+
+        Webhook.update(session, webhook_id, **fields)
+        webhook = Webhook.get_by_id(session, webhook_id)
+        return api_success(message="已保存", data=webhook.to_dict())
+    finally:
+        session.close()
+
+
+@miniapp_bp.route("/webhooks/<int:webhook_id>", methods=["DELETE"])
+@student_required
+def delete_my_webhook(webhook_id):
+    """删除本人 webhook。"""
+    from app.core.database import get_db
+    from app.model.webhook import Webhook
+
+    user_id = int(g.current_user["user_id"])
+    session = get_db()
+    try:
+        webhook = Webhook.get_by_id(session, webhook_id)
+        if not _student_webhook_owned(webhook, user_id):
+            return api_error(message="Webhook 不存在", http_status=404)
+        Webhook.delete(session, webhook_id)
+        return api_success(message="已删除")
+    finally:
+        session.close()
+
+
+@miniapp_bp.route("/webhooks/<int:webhook_id>/test", methods=["POST"])
+@student_required
+@limiter.limit(RATE_LIMITS["strict"])
+def test_my_webhook(webhook_id):
+    """测试本人 webhook（发送一条示例消息）。
+
+    限流：该端点会向外部地址真实发起请求，单独设「strict」档（10 次/分钟），
+    避免被反复调用刷出站流量或把自己的机器人打到微信侧限流。
+    """
+    import requests
+
+    from app.core.database import get_db
+    from app.model.webhook import Webhook
+
+    user_id = int(g.current_user["user_id"])
+    session = get_db()
+    try:
+        webhook = Webhook.get_by_id(session, webhook_id)
+        if not _student_webhook_owned(webhook, user_id):
+            return api_error(message="Webhook 不存在", http_status=404)
+
+        test_message = {
+            "msgtype": "markdown",
+            "markdown": {
+                "content": "**测试消息**\n\n来自「第三方消息通知」自检\n时间：刚刚\n\n> 若收到说明配置正确"
+            },
+        }
+        try:
+            resp = requests.post(webhook.url, json=test_message, timeout=10)
+            try:
+                rdata = resp.json()
+            except ValueError:
+                rdata = {"raw": resp.text[:200]}
+            if resp.status_code != 200:
+                return api_error(message=f"测试失败：HTTP {resp.status_code}", data=rdata, http_status=400)
+            errcode = rdata.get("errcode")
+            if errcode is not None and errcode != 0:
+                return api_error(message=f"测试失败：{rdata.get('errmsg', '未知错误')}", data=rdata, http_status=400)
+            return api_success(message="测试消息发送成功", data={"webhook_response": rdata})
+        except Exception as e:
+            return api_error(message=f"测试异常：{str(e)}", http_status=500)
+    finally:
+        session.close()

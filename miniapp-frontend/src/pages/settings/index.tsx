@@ -96,6 +96,10 @@ export default function SettingsPage() {
     Taro.navigateTo({ url: '/pages/messages/index' });
   };
 
+  const goThirdPartyNotify = () => {
+    Taro.navigateTo({ url: '/pages/third-party-notify/index' });
+  };
+
   const toggleMaster = (value: boolean) => {
     setMasterEnabled(value);
     // 关闭总开关时同步清空 TabBar 反馈红点，避免残留
@@ -128,6 +132,10 @@ export default function SettingsPage() {
         </View>
         <View className="set-cell" onClick={goMessages}>
           <Text className="set-cell-label">我的消息</Text>
+          <IconArrow className="set-arrow" size="md" />
+        </View>
+        <View className="set-cell" onClick={goThirdPartyNotify}>
+          <Text className="set-cell-label">第三方消息通知</Text>
           <IconArrow className="set-arrow" size="md" />
         </View>
       </View>

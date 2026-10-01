@@ -88,6 +88,22 @@ class _FakeTemplate:
         return f"rendered:{template_id}"
 
 
+class _FakeMarkdownTemplate:
+    """返回 dict 形式 markdown 消息的模板假对象。
+
+    真实企业微信适配器的 template_service.render 返回的是消息 dict
+    （``{"msgtype": "markdown", "markdown": {"content": ...}}``），
+    只有这种形态才会命中 delivery_service 里的「定向 webhook 补发」分支，
+    因此补发相关用例必须用该类而不是默认的 _FakeTemplate（后者返回 str）。
+    """
+
+    def render(self, template_id, data):
+        return {
+            "msgtype": "markdown",
+            "markdown": {"content": f"rendered:{template_id}"},
+        }
+
+
 class _FakeUTS:
     def __init__(self):
         self.created = []
@@ -298,6 +314,62 @@ class TestProcessPendingTasks:
         assert ("t3", "success") in task.updates
         assert adapter_obj.sent == ["rendered:weather_daily"]
         assert uts.created, "应创建执行历史记录"
+
+    def test_fanout_called_for_weather_markdown(self, monkeypatch):
+        """天气 markdown 任务：主推送完成后，应向定向 webhook 补发同一份 markdown 内容。"""
+        task, _, _, _, _ = _install_fakes(monkeypatch, holiday_active=False)
+        monkeypatch.setattr(ds_mod, "template_service", _FakeMarkdownTemplate())
+
+        from app.services import webhook_push_service as wps_mod
+
+        calls = []
+
+        def _record_fanout(module, content):
+            calls.append((module, content))
+
+        monkeypatch.setattr(wps_mod, "fanout_broadcast_webhooks", _record_fanout)
+
+        task.pending = [
+            {"task_id": "t5", "task_type": "weather", "sub_type": "daily", "course_info": {}}
+        ]
+        ds = _new_service()
+        ds._process_pending_tasks()
+
+        assert ("t5", "success") in task.updates
+        assert calls == [("weather", "rendered:weather_daily")]
+
+    def test_fanout_failure_does_not_corrupt_success_status(self, monkeypatch):
+        """补发抛异常时，已推送成功的任务仍须为 success，不得被标成 retrying。
+
+        回归背景：补发调用位于 adapter.send() 之后、状态落库之前。若异常逃逸到外层
+        except，会把**已经发送成功**的任务标成 retrying，重试后造成重复推送。
+        补发是旁路（webhook_push_service 模块 docstring：失败静默、不影响主推送），
+        任何异常只应记 warning。
+        """
+        task, _, adapter_obj, _, uts = _install_fakes(monkeypatch, holiday_active=False)
+        monkeypatch.setattr(ds_mod, "template_service", _FakeMarkdownTemplate())
+
+        from app.services import webhook_push_service as wps_mod
+
+        calls = []
+
+        def _boom(module, content):
+            calls.append((module, content))
+            raise RuntimeError("模拟补发失败：企业微信接口 5xx")
+
+        monkeypatch.setattr(wps_mod, "fanout_broadcast_webhooks", _boom)
+
+        task.pending = [
+            {"task_id": "t6", "task_type": "weather", "sub_type": "daily", "course_info": {}}
+        ]
+        ds = _new_service()
+        ds._process_pending_tasks()  # 不应抛异常
+
+        assert calls, "应确实进入补发分支，否则本用例失去意义"
+        assert adapter_obj.sent, "主推送应已完成"
+        assert ("t6", "success") in task.updates
+        assert ("t6", "retrying") not in task.updates, "补发失败不得把已发送任务标成 retrying"
+        assert uts.created, "主推送成功仍应写入执行历史"
 
     def test_missing_adapter_marks_failed_not_throws(self, monkeypatch):
         """无对应 adapter：标记 failed，且不抛异常（fail-safe）。"""

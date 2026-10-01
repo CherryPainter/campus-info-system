@@ -1,0 +1,248 @@
+@import '../../styles/variables.scss';
+
+// 第三方消息通知：与设置页保持一致的分组卡片风格
+// 近白底 + 白卡 + 行内细线分隔，不用大标题、不用 NutUI 系统开关
+
+.tpn-page {
+  min-height: 100vh;
+  background: $background;
+  padding: $spacing-md $spacing-md calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.tpn-card {
+  background: $card-background;
+  border-radius: $radius-large;
+  box-shadow: $shadow-card;
+  margin-bottom: $spacing-md;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.tpn-card-title {
+  display: block;
+  padding: $spacing-md $spacing-lg 0;
+  font-size: $font-size-sm;
+  color: $text-tertiary;
+}
+
+// 顶部说明卡片
+.tpn-intro {
+  padding: $spacing-md $spacing-lg;
+}
+
+.tpn-intro-text {
+  display: block;
+  font-size: $font-size-sm;
+  color: $text-tertiary;
+  line-height: 1.7;
+}
+
+// 分组卡片内行
+.tpn-group {
+  padding: 0 $spacing-lg;
+}
+
+.tpn-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-md 0;
+  border-bottom: 1rpx solid $border-color;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.tpn-cell-label {
+  font-size: $font-size-md;
+  color: $text-primary;
+  flex-shrink: 0;
+  margin-right: $spacing-md;
+}
+
+.tpn-cell-label-strong {
+  font-weight: 600;
+}
+
+.tpn-cell-switch {
+  min-height: 104rpx;
+}
+
+// 输入/文本域行：标签在上，控件在下
+.tpn-cell-input,
+.tpn-cell-textarea {
+  display: block;
+  padding: $spacing-md 0;
+}
+
+.tpn-cell-input .tpn-cell-label,
+.tpn-cell-textarea .tpn-cell-label {
+  display: block;
+  margin-bottom: $spacing-sm;
+}
+
+.tpn-input,
+.tpn-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: $font-size-md;
+  color: $text-primary;
+  background: $background;
+  border-radius: $radius-medium;
+  padding: $spacing-sm $spacing-md;
+}
+
+.tpn-textarea {
+  height: 120rpx;
+}
+
+.tpn-placeholder {
+  color: $text-tertiary;
+  font-size: $font-size-md;
+}
+
+// URL 行：单行省略、等宽字体
+.tpn-cell-url {
+  width: 100%;
+  font-size: $font-size-sm;
+  color: $text-tertiary;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// 操作行
+.tpn-cell-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: $spacing-lg;
+}
+
+.tpn-action {
+  padding: $spacing-xs 0;
+}
+
+.tpn-action-text {
+  font-size: $font-size-sm;
+  color: $primary-color;
+}
+
+.tpn-action-danger .tpn-action-text {
+  color: $error;
+}
+
+// 标签
+.tpn-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-xs;
+}
+
+.tpn-tag {
+  font-size: $font-size-xs;
+  color: $primary-color;
+  background: $primary-light;
+  border-radius: $radius-small;
+  padding: 4rpx 14rpx;
+}
+
+// 模块选择 chips
+.tpn-cell-chips {
+  align-items: flex-start;
+  padding: $spacing-md 0;
+}
+
+.tpn-chips {
+  display: flex;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+}
+
+.tpn-chip {
+  padding: $spacing-xs $spacing-lg;
+  border-radius: $radius-full;
+  background: #f2f3f5;
+  border: 1rpx solid transparent;
+}
+
+.tpn-chip-active {
+  background: $primary-light;
+  border-color: $primary-color;
+}
+
+.tpn-chip-text {
+  font-size: $font-size-sm;
+  color: $text-primary;
+}
+
+.tpn-chip-active .tpn-chip-text {
+  color: $primary-color;
+}
+
+// 空态
+.tpn-empty {
+  padding: $spacing-xl $spacing-lg;
+  text-align: center;
+}
+
+.tpn-empty-text {
+  font-size: $font-size-md;
+  color: $text-secondary;
+}
+
+// 底部提示
+.tpn-foot {
+  display: block;
+  margin-top: $spacing-md;
+  font-size: $font-size-xs;
+  color: $text-tertiary;
+  line-height: 1.6;
+  text-align: center;
+}
+
+// 底部操作栏
+.tpn-actionbar {
+  display: flex;
+  gap: $spacing-md;
+  margin-top: $spacing-sm;
+}
+
+.tpn-btn {
+  flex: 1;
+  height: 88rpx;
+  border-radius: $radius-large;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tpn-btn-block {
+  flex: none;
+  width: 100%;
+  margin-top: $spacing-sm;
+}
+
+.tpn-btn-ghost {
+  background: $card-background;
+}
+
+.tpn-btn-text-ghost {
+  font-size: $font-size-md;
+  color: $text-primary;
+}
+
+.tpn-btn-primary {
+  background: $primary-color;
+}
+
+.tpn-btn-text-primary {
+  font-size: $font-size-md;
+  color: $text-inverse;
+}
+
+.tpn-btn-disabled {
+  opacity: 0.6;
+}

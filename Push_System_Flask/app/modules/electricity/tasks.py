@@ -91,6 +91,40 @@ def _iter_students_with_cookie() -> list[tuple[int, str]]:
         session.close()
 
 
+def _iter_students_with_cookie_named() -> list[tuple[int, str, str]]:
+    """
+    遍历所有配置了电表 Cookie 的学生，附带展示名
+
+    Returns:
+        [(user_id, cookie, display_name), ...]
+        display_name 取 nickname/real_name，均为空时回落为「用户{id}」。
+    """
+    from app.core.database import get_db
+    from app.model.student_profile import StudentProfile
+
+    session = get_db()
+    try:
+        rows = (
+            session.query(
+                StudentProfile.user_id,
+                StudentProfile.electricity_cookie,
+                StudentProfile.nickname,
+                StudentProfile.real_name,
+            )
+            .filter(StudentProfile.electricity_cookie.isnot(None))
+            .all()
+        )
+        result = []
+        for user_id, cookie, nickname, real_name in rows:
+            cookie = (cookie or "").strip()
+            if user_id and cookie:
+                name = (nickname or real_name or "").strip() or f"用户{user_id}"
+                result.append((user_id, cookie, name))
+        return result
+    finally:
+        session.close()
+
+
 def _send_notification(
     user_id: int,
     category: str,
@@ -438,16 +472,18 @@ def push_electricity_daily() -> None:
     pid = create_task_process("每日用电报告", "electricity", total_items=1)
     logger.info("[电量] 开始执行每日推送任务")
     try:
-        students = _iter_students_with_cookie()
+        students = _iter_students_with_cookie_named()
         if not students:
             logger.info("[电量] 无学生配置电表 Cookie，每日任务空转")
             complete_task_process(pid, "completed", "无学生配置电表 Cookie")
             return
 
         from app.modules.electricity.formatter import ElectricityFormatter
+        from app.services.webhook_push_service import send_module_report
 
         target_date = datetime.now() - timedelta(days=1)
-        for user_id, cookie in students:
+        webhook_entries: list[dict] = []
+        for user_id, cookie, display_name in students:
             success, msg = _fetch_and_save(user_id, cookie, max_pages=1)
             if not success:
                 _send_notification(
@@ -468,8 +504,26 @@ def push_electricity_daily() -> None:
                     ElectricityFormatter.format_daily(stats, remaining),
                     payload=_build_report_payload("daily", stats, remaining, stats["date"]),
                 )
+                webhook_entries.append(
+                    {
+                        "user_id": user_id,
+                        "display_name": display_name,
+                        "markdown_block": ElectricityFormatter.format_daily_markdown(
+                            stats, remaining, display_name
+                        ),
+                    }
+                )
             # 独立检查低电量
             _check_low_power_internal(user_id, remaining)
+
+        # 按 webhook 的 scope 定向聚合推送企业微信汇总报告
+        if webhook_entries:
+            sent = send_module_report(
+                "electricity",
+                webhook_entries,
+                header=f"每日用电报告汇总（{target_date.strftime('%Y-%m-%d')}）",
+            )
+            logger.info(f"[电量] 每日报告 webhook 推送 {sent} 个群组")
 
         complete_task_process(pid, "completed", "每日用电报告推送完成")
     except Exception as exc:
@@ -488,18 +542,20 @@ def push_electricity_weekly() -> None:
     pid = create_task_process("每周用电报告", "electricity", total_items=1)
     logger.info("[电量] 开始执行每周推送任务")
     try:
-        students = _iter_students_with_cookie()
+        students = _iter_students_with_cookie_named()
         if not students:
             logger.info("[电量] 无学生配置电表 Cookie，每周任务空转")
             complete_task_process(pid, "completed", "无学生配置电表 Cookie")
             return
 
         from app.modules.electricity.formatter import ElectricityFormatter
+        from app.services.webhook_push_service import send_module_report
 
         today = datetime.now()
         # 周一推送上一周，其他日子推送本周
         week_end = today - timedelta(days=1) if today.weekday() == 0 else today
-        for user_id, cookie in students:
+        webhook_entries: list[dict] = []
+        for user_id, cookie, display_name in students:
             success, msg = _fetch_and_save(user_id, cookie, max_pages=1)
             if not success:
                 _send_notification(
@@ -525,6 +581,24 @@ def push_electricity_weekly() -> None:
                         f"第 {stats['week_num']} 周（{stats['start_date']} ~ {stats['end_date']}）",
                     ),
                 )
+                webhook_entries.append(
+                    {
+                        "user_id": user_id,
+                        "display_name": display_name,
+                        "markdown_block": ElectricityFormatter.format_weekly_markdown(
+                            stats, remaining, display_name
+                        ),
+                    }
+                )
+
+        # 按 webhook 的 scope 定向聚合推送企业微信汇总报告
+        if webhook_entries:
+            sent = send_module_report(
+                "electricity",
+                webhook_entries,
+                header=f"每周用电报告汇总（第{week_end.isocalendar()[1]}周）",
+            )
+            logger.info(f"[电量] 每周报告 webhook 推送 {sent} 个群组")
 
         complete_task_process(pid, "completed", "每周用电报告推送完成")
     except Exception as exc:
@@ -543,16 +617,18 @@ def push_electricity_monthly() -> None:
     pid = create_task_process("每月用电报告", "electricity", total_items=1)
     logger.info("[电量] 开始执行每月推送任务")
     try:
-        students = _iter_students_with_cookie()
+        students = _iter_students_with_cookie_named()
         if not students:
             logger.info("[电量] 无学生配置电表 Cookie，每月任务空转")
             complete_task_process(pid, "completed", "无学生配置电表 Cookie")
             return
 
         from app.modules.electricity.formatter import ElectricityFormatter
+        from app.services.webhook_push_service import send_module_report
 
         last_month_last_day = datetime.now().replace(day=1) - timedelta(days=1)
-        for user_id, cookie in students:
+        webhook_entries: list[dict] = []
+        for user_id, cookie, display_name in students:
             success, msg = _fetch_and_save(user_id, cookie, max_pages=2)
             if not success:
                 _send_notification(
@@ -578,6 +654,24 @@ def push_electricity_monthly() -> None:
                         f"{stats['year']}年{stats['month']}月",
                     ),
                 )
+                webhook_entries.append(
+                    {
+                        "user_id": user_id,
+                        "display_name": display_name,
+                        "markdown_block": ElectricityFormatter.format_monthly_markdown(
+                            stats, remaining, display_name
+                        ),
+                    }
+                )
+
+        # 按 webhook 的 scope 定向聚合推送企业微信汇总报告
+        if webhook_entries:
+            sent = send_module_report(
+                "electricity",
+                webhook_entries,
+                header=f"每月用电报告汇总（{last_month_last_day.year}年{last_month_last_day.month}月）",
+            )
+            logger.info(f"[电量] 每月报告 webhook 推送 {sent} 个群组")
 
         complete_task_process(pid, "completed", "每月用电报告推送完成")
     except Exception as exc:

@@ -39,6 +39,8 @@ HEADER_MAP = {
     "专业": "major",
     "real_name": "real_name",
     "姓名": "real_name",
+    "dorm": "dorm",
+    "宿舍": "dorm",
     "remark": "remark",
     "备注": "remark",
 }
@@ -184,6 +186,7 @@ def export_students():
         [
             "学号",
             "姓名",
+            "宿舍",
             "学校",
             "学院",
             "专业",
@@ -201,6 +204,7 @@ def export_students():
             [
                 it.get("student_number") or "",
                 it.get("real_name") or "",
+                it.get("dorm") or "",
                 it.get("school") or "",
                 it.get("college") or "",
                 it.get("major") or "",
@@ -237,6 +241,7 @@ def create_student():
         class_id=payload.get("class_id"),
         student_number=payload.get("student_number"),
         real_name=payload.get("real_name"),
+        dorm=payload.get("dorm"),
         remark=payload.get("remark"),
         is_active=payload.get("is_active", True),
     )
@@ -260,7 +265,7 @@ def batch_import():
         return api_error(message=str(exc), http_status=400)
     except Exception as exc:
         logger.error(f"[StudentRoster] 解析上传文件失败: {exc}")
-        return api_error(message="文件解析失败，请检查格式（表头：学校,学院,专业,班级,学号,姓名,备注）", http_status=400)
+        return api_error(message="文件解析失败，请检查格式（表头：学校,学院,专业,班级,学号,姓名,宿舍,备注）", http_status=400)
     if not rows:
         return api_error(message="文件中没有有效数据（需含表头 + 数据行）", http_status=400)
     result = StudentRosterService.create_batch(rows)
@@ -278,6 +283,7 @@ def update_student(roster_id):
         real_name=payload.get("real_name"),
         remark=payload.get("remark"),
         is_active=payload.get("is_active"),
+        dorm=payload.get("dorm"),
     )
     if not row:
         status = 404 if err and "不存在" in err else 400
@@ -356,8 +362,8 @@ def list_schools():
 def download_template():
     """批量导入 CSV 模板下载（组织名须与已建节点一致）"""
     content = (
-        "学校,学院,专业,班级,学号,姓名,备注\n"
-        "重庆科创职业学院,信息与人工智能学院,计算机应用技术,zk2401,20260001,张三,\n"
+        "学校,学院,专业,班级,学号,姓名,宿舍,备注\n"
+        "重庆科创职业学院,信息与人工智能学院,计算机应用技术,zk2401,20260001,张三,A栋305,\n"
     )
     return Response(
         content.encode("utf-8-sig"),

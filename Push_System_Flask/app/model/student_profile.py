@@ -45,6 +45,7 @@ class StudentProfile(Base):
     major = Column(String(100), nullable=True, comment="专业")
     class_name = Column(String(100), nullable=True, comment="班级")
     grade = Column(String(20), nullable=True, comment="年级")
+    dorm = Column(String(100), nullable=True, comment="宿舍（如 A栋305）；同宿舍的学生构成一个组，用于电量 webhook 按宿舍聚合推送")
     phone = Column(String(20), nullable=True, comment="手机号")
     electricity_cookie = Column(String(4096), nullable=True, comment="电表爬虫Cookie（学生自行配置，仅本人可读写）")
 
@@ -67,6 +68,7 @@ class StudentProfile(Base):
             "major": self.major,
             "class_name": self.class_name,
             "grade": self.grade,
+            "dorm": self.dorm,
             "phone": self.phone,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

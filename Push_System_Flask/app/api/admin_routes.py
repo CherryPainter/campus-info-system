@@ -1080,6 +1080,34 @@ def get_electricity_students():
         session.close()
 
 
+@admin_bp.route("/students/dorms")
+@admin_required
+def get_student_dorms():
+    """
+    宿舍枚举（去重）
+
+    以**学生名单 student_rosters 的宿舍字段为准**（管理员在「用户与权限 → 学生名单」
+    维护的源头），返回已设置且非空的宿舍值列表，供 webhook 按「指定宿舍」定向时选择。
+    刻意不读 student_profiles.dorm —— 那只是绑定那一刻的同步快照，名单里新填/改动的
+    宿舍在绑定前（或绑定后补填）不会出现在那里，会导致下拉为空。
+    """
+    from app.core.database import get_db
+    from app.model.student_roster import StudentRoster
+
+    session = get_db()
+    try:
+        rows = (
+            session.query(StudentRoster.dorm)
+            .filter(StudentRoster.dorm.isnot(None), StudentRoster.dorm != "")
+            .distinct()
+            .all()
+        )
+        dorms = sorted({r[0] for r in rows if r[0]})
+        return api_success(data={"dorms": dorms})
+    finally:
+        session.close()
+
+
 @admin_bp.route("/electricity/students/<int:user_id>/remaining")
 @admin_required
 def get_student_electricity_remaining(user_id: int):

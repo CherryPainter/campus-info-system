@@ -17,6 +17,7 @@ export default defineAppConfig({
     'pages/feedback/list/index',
     'pages/feedback/detail/index',
     'pages/settings/index',
+    'pages/third-party-notify/index',
     'pages/electricity-config/index',
     'pages/messages/index',
     'pages/message-detail/index',

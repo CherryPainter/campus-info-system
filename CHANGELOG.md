@@ -6,6 +6,194 @@
 
 ## Unreleased
 
+### 安全：全系统审计 + 补齐三项服务端围栏（后端，2026-10-01）
+对**整个后端**做了分域安全审计（认证鉴权 / 注入与上传 / 数据暴露与服务端围栏），并按审计结论补掉三项围栏。完整报告见 `技术总结/安全审计-全系统-2026-10-01.md`（含 5 项 🟠、13 项 🟡 待决策清单）。
+
+**新增 `app/utils/url_guard.py`：出站 URL 安全校验（SSRF 防护）**
+- 管理端 webhook 此前**只校验 `https://` 前缀**，等于允许管理员（或被盗用的管理员令牌）把服务端当内网探针。
+- 现逐条校验：协议必须 https、禁止 URL 内嵌用户名/密码、拒绝 `localhost`/`*.local`/`*.internal`/`*.home.arpa`、IP 字面量必须是公网可路由地址（`is_global`，覆盖私网/回环/链路本地/保留/`0.0.0.0`）、**可选 DNS 解析结果校验**（防「域名指向内网」绕过）、解析失败 fail-closed。
+- 覆盖创建 / 编辑 / **测试**三处；测试端点额外对**库内历史 URL** 再校验一次（护栏上线前入库的数据可能指向内网），命中则拦下且**不发出任何请求**。
+- **逃生舱**：确有内网中转需求时用 `WEBHOOK_URL_ALLOWED_HOSTS`（逗号分隔、精确匹配）显式放行，不做隐式放宽；已写入 `.env.example`。
+- 已知残余风险：DNS Rebinding 需网络层（出站防火墙/代理白名单）解决，已在模块 docstring 写明。
+
+**限流：两个「会真实出站」的测试端点单独限流**
+- `POST /api/admin/webhooks/<id>/test` 与 `POST /api/miniapp/webhooks/<id>/test` 加 `@limiter.limit(RATE_LIMITS["strict"])`（10 次/分钟，`override_defaults=True`），避免反复调用刷出站流量、把目标机器人打到微信侧限流。
+
+**受众成员存在性校验（写入层便利围栏）**
+- `scope_target` 此前不校验存在性：填错学生 ID 或已不在名单的宿舍 → **保存成功但静默不发**，管理员难以发现。
+- 现于写入层校验：`student` 查 `users.id`、`dorm` 查 `student_rosters.dorm`（与下拉选项同源），不存在则 400 并**点名**是哪个学生/宿舍；create 与 PUT（按合并后的最终受众）都校验。
+- 与隐私围栏的区别：这是「防拼错」的便利校验，**查询异常时 fail-open**（记 warning 后跳过），不让一次数据库抖动阻断管理员保存配置。
+
+**验证**
+- 新增 `tests/test_url_guard.py`：**30 项**全过（协议/凭据/内网 IP 与域名/DNS 指向内网/DNS 失败/白名单/逃生舱精确匹配；DNS 用桩，测试离线且确定）。
+- `tests/test_webhook_scope_fence.py` 由 19 项扩到 **39 项**（新增受众存在性校验、URL 安全参数化用例、`/test` 历史内网 URL 拦截、限流）。
+- 反向验证：限流用例首次为**假阳性**（撤掉装饰器仍通过，429 来自全局默认的「10 次/秒」桶），改为请求间隔 0.25s 后重测 → 撤掉装饰器即变红、恢复即变绿。
+- 后端全量 `pytest -q` → **308 passed, 0 failed**；`py_compile` 三个文件通过；真实 DNS 分支实测（`qyapi.weixin.qq.com` 放行、内网/本机/`http://` 各自拒绝）。
+
+**审计结论（未改动，需决策）**
+- 未发现可直接利用的 SQL 注入 / 命令注入 / 反序列化 / 任意文件读 / 权限绕过；`.env` 与私钥均未入库；密码用 bcrypt、JWT 锁 HS256、token 黑名单真校验、会话固定已防、登出真失效。
+- 待决策：普通管理员可改天气 API Key（权限口径与 `config_routes` 不一致）、IP 黑名单可自锁（无「别封自己」保护）、学生可自改学院/年级/姓名、CSRF 对全部 `/api/` 豁免（靠 `SameSite=Lax` 兜底）、`cookie_secure` 依赖 `FORCE_HTTPS`；以及 13 项 🟡 加固项。
+- 按你的决定：**宿舍值不做多院校拓展**，保持单校口径。
+
+### 安全：Webhook 服务端围栏 + 一次真 bug 修复（后端 + 管理端，2026-10-01）
+本轮对本批未提交改动（webhook 范围/隐私链路、小程序自建 webhook、学生名单宿舍字段）做了安全审计，并按审计结果补了服务端围栏。完整报告见 `技术总结/安全审计-webhook范围与围栏-2026-10-01.md`。
+
+**🔴 修复 1：全局 webhook 存不进去（功能性回归，本轮引入）**
+- `app/api/webhook_routes.py` 的 `_normalize_scope_target()` 对 `scope=global` 返回 `None`，而调用方把 `None` 当作「格式错误」→ **任何 `scope=global` 的 webhook（课表/天气/系统的默认范围）创建/编辑都会返回 400「scope_target 格式错误」**。管理端默认就是全局，等于绝大多数 webhook 保存失败。
+- 修法：新增哨兵 `_INVALID_SCOPE_TARGET` 把「global（合法、忽略目标）」与「格式非法」区分开；错误文案抽为常量 `_SCOPE_TARGET_FORMAT_ERROR`。
+- 这个 bug 是**运行时验证脚本抓出来的**（用例 A3「课表+天气 + 全局 → 放行」失败）；前端 mock 截图无法发现（它只验证渲染，不走真实接口）。
+
+**🔴 修复 2：补发失败会把「已推送成功」的任务标成 retrying（本轮引入，重复推送风险）**
+- `app/services/delivery_service.py` 里课程/天气的「定向 webhook 补发」（`fanout_broadcast_webhooks`）被直接放在 `adapter.send()` 之后、状态落库之前：一旦补发抛异常，会被外层 `except` 捕获并把**已经发送成功**的任务写成 `retrying` → 重试后同一批消息**重复推送**。
+- 这直接违反 `webhook_push_service` 模块 docstring 自己声明的「失败静默、绝不影响主推送流程」（补发是旁路，站内/群机器人主通道与它相互独立）。
+- 修法：整段补发包进 `try/except`，异常只记 `WARNING`、**不改任务状态**；同时加 `isinstance(message, dict)` 判断（补发分支依赖 `message.get("msgtype")`，而适配器模板存在返回字符串的形态，原写法会直接 `AttributeError`）。
+- 触发场景是真实的：`tests/test_delivery_service.py` 原有的 2 个用例（`test_normal_message_task_succeeds` / `test_force_send_bypasses_holiday_mute`）在加入补发后立刻变红，报 `处理任务 t3 失败: 'str' object has no attribute 'get'`，正是「已发送 → 标 retrying」的现场。
+
+**🔴 新增围栏 A（写入层）：拒绝「电量（或 `all`）+ 全局」**
+- 此前只在**投递层**（`webhook_push_service.send_module_report`）拒发，写入层不拦 → 绕过前端直调 `POST/PUT /admin/webhooks` 就能把隐私越界配置**存进库**。
+- 新增 `_check_scope_conflict()`：含 `electricity`（或 `all`，与前端 `MODULE_SCOPE_KIND` 口径一致）时，`scope` 不得为 `global`，且受众不得为空（空受众会静默不发，属配置陷阱）。
+- **PUT 必须按「与库内现值合并后的最终配置」判定**：PUT 允许只传部分字段，否则只传 `{"scope": "global"}` 就能把一条含电量的记录改成越界配置。同时修了两个部分更新的语义问题：只传 `scope_target` 却按 `global` 规范化导致误报 400；换 `scope` 类型（student↔dorm）却不带新受众时，旧 `user_id` 目标会残留成「宿舍值」→ 现一律清空并要求重新指定。
+
+**🟠 新增围栏 B（小程序端）：单人 webhook 数量上限 10**
+- `app/api/miniapp_routes.py` 的 `create_my_webhook` 原先**没有任何数量限制**：每条 webhook 都会收到课表/天气的广播副本（`fanout_broadcast_webhooks` 遍历所有非全局 webhook 逐条发），可被滥建放大出站请求与库行数，也会把机器人打到微信限流。新增 `_MAX_WEBHOOKS_PER_STUDENT = 10`。
+
+**🟡 加固 / 澄清**
+- `modules` 传数组（而非逗号串）时原先 `.split(",")` 抛 `AttributeError` → 500；现显式 400 并给出正确格式示例（不做隐式兼容，避免掩盖调用方错误）。create/update 两处。
+- 管理端 `Webhooks.tsx` 的 6 处 `catch` 原先把后端原因吞成「保存失败/删除失败」等固定文案，改为项目既有约定 `showApiError(error, "…")`，使围栏的拒绝理由（如「接收范围不能为全局…」）能显示给管理员。
+
+**验证**
+- `py_compile`：`webhook_routes.py` / `miniapp_routes.py` / `webhook_push_service.py` / `model/webhook.py` / `delivery_service.py` 全部通过。
+- 新增 `技术总结/dev-scripts/verify_webhook_server_fence.py`：**28 项断言全过**。不连库、不起服务，用桩替换 `app.*` 依赖后按文件路径加载真实路由模块，在 Flask `test_request_context` 里**直接调用真实端点函数**（17 个管理端用例覆盖创建/部分更新/合并判定，11 个小程序端用例覆盖字段强制、白名单裁剪、数量上限、URL 校验）。
+- 回归 `verify_webhook_scope_guard.py`（投递层护栏）15 项断言仍全过。
+- **上述一次性脚本已沉淀为入库回归测试**（`技术总结/dev-scripts/` 不入库，真正的回归必须进 `tests/`）：
+  - 新增 `tests/test_webhook_scope_fence.py`：**19 项全过**。真实 Flask app + 真实 JWT + 真实蓝图注册，桩替换 `get_db` 与 `Webhook` 模型，通过 `test_client()` 打真实端点。覆盖：电量/`all` + 全局 → 400；`broadcast` + 全局 → 201（**专门守住上面那个「全局存不进去」的回归**）；宿舍 + 受众 → 201；空受众 → 400；`modules` 传数组 → 400 而非 500；`scope_target` 类型错 → 400；PUT 只传 `{"scope":"global"}` → 400 且库内记录不变；PUT 只把 `modules` 改成 electricity → 400；只改名保留受众 → 200；只传 `scope_target` 时按库内 scope 判定 → 200；id 不存在 → 404；学生令牌打管理端 → 403；小程序端越权/字段强制/白名单裁剪/数量上限/URL 伪装（含 `qyapi.weixin.qq.com.evil.com`）。
+  - `tests/test_delivery_service.py` 新增 2 项：①天气 markdown 任务会以 `("weather", 内容)` 调用补发；②**补发抛异常时任务仍为 `success`、不得出现 `retrying`**（守住修复 2）。同时新增 `_FakeMarkdownTemplate`（返回 dict 消息）——原 `_FakeTemplate` 返回字符串，根本进不到补发分支，这也是修复 2 此前未被测试发现的原因。
+  - **守卫有效性已反向验证**：临时把修复 2 的 `try/except` + `isinstance` 撤掉后重跑，目标用例立刻失败（`[('t6','processing'), ('t6','retrying')]`），原有 2 个用例同时复现失败；恢复后转绿。
+- 全量回归：`pytest -q` → **258 passed, 0 failed**（修复前为 `254 passed, 2 failed`）。
+- 管理端 `tsc --noEmit` exit 0；`vite build` ✓ 16.36s。
+
+**已核实无问题（未改动）**
+- 小程序 5 个 webhook 端点全部 `@student_required` + 归属校验（越权按 404），无法读写他人 webhook；创建/更新服务端强制 `scope=student` + `scope_target=[本人]` + `owner_user_id=本人`，客户端传 `global` 或他人 id 会被覆写。
+- 学生自建 URL 白名单为 `qyapi.weixin.qq.com`（精确比较，`qyapi.weixin.qq.com.evil.com` 这类后缀伪装会被拒）+ https + 内网段阻断。
+- `dorm` 不在 `PUT /student/profile` 的 `allowed_fields` 白名单内 → 学生不能自改宿舍；绑定以名单为准写入、解绑清空。
+- 电量 Markdown 只含本人（或本宿舍组）数据，无 Cookie/凭据泄漏；`_expand_dorm_user_ids` 用 ORM 参数化查询，异常 fail-closed 返回空集。
+- `webhooks.scope` 列有 DB 级 `DEFAULT 'global'`（实测本地库无空串/NULL）→ 不会被投递层护栏误拒。
+
+**未修（需产品决策，详见报告）**
+- 🟠 宿舍值无学校维度：`dorm` 是纯字符串，`_expand_dorm_user_ids` 与 `GET /admin/students/dorms` 都不按学校过滤 → 若名单含多所学校，同名宿舍（如两校都有 `A栋305`）会把不同学校的学生合进同一条消息。单校部署无影响。
+- 🟡 管理端 webhook URL 只校验 `https://` 前缀（无 SSRF 限制）；`test` 端点无独立限流；`scope_target` 成员不做存在性校验（拼错会静默不发）。
+
+### 修正：废弃范围取值 `org` 的注释残留（后端注释，无行为变更，2026-10-01）
+- 接收范围实际只有 `global / student / dorm` 三档（`WEBHOOK_SCOPES`，且管理端新建/编辑接口都做了 `scope not in WEBHOOK_SCOPES` 校验），但两处注释仍写着已废弃的 `org`，属「注释与实现不一致」的隐患：
+  - `app/model/webhook.py` 的 `scope` 列注释 `global/student/org` → `global/student/dorm`；
+  - `app/services/webhook_push_service.py` 的 `_resolve_scope_user_ids` docstring「如 org 节点下暂无绑定学生」→「如该宿舍暂无已绑定学生」。
+- 另外 `app/api/miniapp_routes.py` 建 webhook 处的注释写「模块白名单：仅 course / electricity」，与代码里的 `_STUDENT_WEBHOOK_MODULES = {course, electricity, weather}` 不符 → 补上 `weather`。
+- 校验：`py_compile` 三个文件通过；护栏验证脚本复跑 15 项断言仍全过（改动仅注释）。
+
+### 修复：电量报告的服务端隐私护栏 —— `scope=global` 直接拒绝投递（后端，2026-10-01）
+- **背景**：管理端已不提供「电量 + 全局」选项，但那是前端收敛；`POST /admin/webhooks` 直调、或库里历史遗留的 `scope=global` 电量 webhook 仍可能把**多个学生的用电数据汇总成一条**发进同一个群。用户确认「可以」，要求服务端也兜住。
+- **改动（`app/services/webhook_push_service.py` 的 `send_module_report`）**：`_resolve_scope_user_ids()` 返回 `None`（= `scope=global` 或未知 scope）时，**不再**把 `scoped` 取成全量 `entries`，而是记 `WARNING` 后 `continue` 跳过该 webhook，不发任何内容。
+  - 告警文案含 webhook 名、scope 与「请为其指定宿舍或学生；本条已跳过，未发送」，便于从日志定位。
+  - 该函数的调用方只有电量（`app/modules/electricity/tasks.py` 的日/周/月报告三处），故护栏实际生效范围=电量报告；将来若有其他逐人模块接入 `send_module_report`，自动同样受保护。
+  - 模块头部 docstring 中「`scope=global`：接收所有配置 Cookie 的学生汇总」一句已按新行为改写（原文会让读者以为 global 可用）。
+- **验证**：`py_compile` 通过；`技术总结/dev-scripts/verify_webhook_scope_guard.py`（桩替换 DB / webhook 模型，直接驱动真实函数）**15 项断言全过** —— ①`scope=global` 零投递且不调用发送通道、有拒绝告警；②未知 scope 同样被拒；③`scope=student[12]` 放行且内容只含该生；④`scope=dorm`（展开为 user 13）放行且只含该生；⑤global 与定向混排时只发定向那条；⑥模块不匹配时正常跳过、不误报「拒绝」告警。
+- **排查过的旁路（结论：不可达，未改动）**：`app/services/adapter_service.py:364-388` 会把**只含全局电量 webhook** 的适配器注册成 `_adapters["electricity"]`。理论上可通过 `delivery_service` 的 `task_type="electricity"` 分支绕过本护栏，但实测该路径**没有任何生产代码会走到**：推送任务(`push_tasks.task_type`)仅由 `push_routes.py` 以 `custom` 创建，三个手动触发端点（天气 `admin_routes.py:739`、课程 `:1248`、电量 `:917`）都走各自函数的**白名单**，没有任何入口能产生 `task_type="electricity"` 的推送任务（电量自身的定时任务走 APScheduler + `send_module_report`）。故保持现状未动，以免改动 `_load_webhooks_from_db` 的「适配器为空则回退 .env」分支语义。
+
+### 优化：宿舍受众下拉按「楼栋 · 楼层」分组（管理端，2026-10-01）
+- **背景**：用户指出「如果一栋楼有 700 个宿舍」，扁平的宿舍多选根本没法用；要求把 `31栋512` 拆成 楼栋 / 楼层 / 宿舍号（其中 `5` 代表楼层）。随后追加要求：**组内仍显示带楼层的完整宿舍号 `512`**，不要只显示层内号 `12`。
+- **宿舍值真实形态**（依据 `app/api/admin_roster_routes.py:366` 的导入模板与 `tests/test_electricity_dedup.py` 用例）：既有 `31栋512`，也有 `A栋305` —— **楼栋可以是字母**，解析不能假定纯数字。
+- **改动（`admin-frontend/src/pages/Webhooks.tsx`）**：
+  - 新增模块级 `parseDorm(dorm)`：按 `^(.*?栋)(\d+)(.*)$` 拆出 楼栋 / 楼层（房号首位）/ 完整房号；`31栋512` → `31栋` + `5`层 + `512`，`A栋305` → `A栋` + `3`层 + `305`。
+  - **关键约束**：该解析**只用于下拉分组展示，绝不参与写库** —— 选项值与提交值始终是 `student_rosters.dorm` 的原始字符串；解析不出来的一律归到「未识别格式」组，保证脏数据也能被选中、不因正则不匹配而丢项或改写值。
+  - 宿舍下拉改为分组 options：组标题 `31栋 · 5层`，**组内选项为完整宿舍号 `512`**（带上楼层位，用户明确要求）；`showSearch` + `optionFilterProp="searchKey"`，`searchKey` 同时含 全称/楼栋/楼层/层内号，因此搜「31栋」「5层」「512」「12」都能命中；叶子 `title` 设为完整宿舍串（悬停可见全称）。
+  - `tagRender` 让已选标签显示**完整宿舍串**（`31栋512`），与组内选项的简写区分开。
+- **验证**：`tsc --noEmit` exit 0；`vite build` ✓（15.43s）；无头浏览器 mock 渲染实测分组为 `31栋 · 5层 → 502/512/513`、`31栋 · 6层 → 612`、`A栋 · 3层 → 305`、`未识别格式 → 310512`；选中 `31栋502` + `A栋305` 后标签正确显示全称。
+
+### 重构：电量接收范围取消「全局」并改为服务端搜索选人（管理端 + 后端，2026-10-01）
+- **背景**：用户指出三点 —— ①不要「生效说明」这类解释块；②电量「全局」把多个人的用电数据合成一条发进同一个群，**本质是隐私泄露**；③全局本是默认行为，不该做成一个可选项，只有电量才需要指定受众；④学生上千人时下拉框根本没法选。
+- **改动（`admin-frontend/src/pages/Webhooks.tsx`）**：
+  - **删除「生效说明」区块**。
+  - **接收范围区块只在勾选「电量」（或「全部」）时才渲染**；课表 / 天气 / 系统是全站广播，属于默认行为，连选项都不给（原来那个「全局（自动）」禁选下拉一并去掉）。
+  - **电量不再提供「全局」选项**，只剩「指定宿舍 / 指定学生」，必须明确受众才能保存，从源头杜绝「全站电量汇总进一个群」。勾上电量时默认给「指定宿舍」；编辑历史遗留的「电量 + 全局」记录时自动收敛为「指定宿舍」并清空旧目标，等管理员重新指定。
+  - 切换受众类型（宿舍 ↔ 学生）时清空 `scope_target`：宿舍存字符串、学生存 user_id，混用会写错库。
+  - **学生目标下拉改为服务端关键字搜索**（`showSearch` + `filterOption={false}` + `onSearch` 防抖 300ms + `page_size: 50`）。已选项的姓名用本地缓存兜住，搜索结果被替换后标签不会退化成 `#id`。
+  - 列表「接收范围」列的学生姓名改用后端返回的 `scope_target_names`，前端不再需要持有全量名单。
+- **修复（顺带发现的旧 bug）**：旧实现 `rosterApi.getList({ page_size: 1000 })` 拉全量名单，但 `/admin/roster/students` 的 `page_size` 被硬性 `min(100, ...)` 截断（`app/api/admin_roster_routes.py:150`）→ 学生数超过 100 时，**第 101 个之后的学生在范围下拉里根本选不到**。现已改为服务端搜索，彻底绕开该限制。
+- **后端（`app/api/webhook_routes.py`）**：`GET /admin/webhooks` 增补 `scope_target_names` —— 对本页 `scope=student` 的记录按 `scope_target` 批量查 `student_profiles` 取 nickname/real_name，供列表与编辑回填展示；`dorm` 的 `scope_target` 本身就是宿舍名，无需解析。
+- **验证**：`tsc --noEmit` exit 0；`vite build` ✓（15.62s）；后端 `py_compile` 通过；无头浏览器 mock 渲染 7 项断言全过 —— ①仅课表时接收范围区块**不渲染**；②勾电量后出现且默认「指定宿舍」；③范围候选项**只有宿舍/学生、没有全局**；④宿舍下拉有数据；⑤切「指定学生」输入「张」→ 服务端返回「张三（软件2301）」；⑥编辑既有定向宿舍记录正确回填；⑦编辑历史「电量+全局」记录自动收敛为「指定宿舍」。
+- **服务端护栏**：本条最初只做 UI 层收敛；随后经用户确认，已在 `send_module_report` 补上「`scope=global` 拒绝投递」的服务端护栏，见本文件上方「修复：电量报告的服务端隐私护栏」。
+
+### 修正：电量「全局」范围的措辞误导（管理端，2026-10-01）
+- **背景**：用户看到范围选项写作「全局（所有学生汇总推送）」，追问「我的电表是针对个人和宿舍，这是要发谁的电表？」——原措辞会让人以为是「全校每个学生」，而实际口径不是。
+- **代码事实**（逐处核对）：
+  - 遍历对象是 **`student_profiles.electricity_cookie` 非空**的学生（`app/modules/electricity/tasks.py:94-125`）；
+  - 用**该学生自己的 Cookie** 爬（`tasks.py:487`），按 `user_id` 落库（`app/model/electricity.py:25`）、按 `user_id` 统计（`tasks.py:322-328`）；
+  - 投递侧 `webhook_push_service.send_module_report` 只按 `user_id` 过滤，**没有跨用户按电表去重**。
+- 结论：**电量的「全局」= 所有已在小程序配了电表 Cookie 的学生，不是全校学生**。每宿舍独立电表、由学生各自自配 Cookie 采集（`miniapp-frontend/src/pages/electricity/index.tsx:382` 注释同口径）。
+- **改动（`admin-frontend/src/pages/Webhooks.tsx`，纯文案口径，投递逻辑一行未动）**：
+  - 范围选项改为准确表述：「全局（所有已配置电表 Cookie 的学生的报告，汇总推送）」「指定学生（仅这些学生中已配 Cookie 的）」「指定宿舍（该宿舍已配 Cookie 的学生）」。
+  - 「生效说明」的电量行改为「…每人一段聚合成一条消息」，并新增两行口径：只覆盖在「小程序 → 设置 → 电表配置」配了 Cookie 的学生、无人配置则不发送；以及**去重提醒**——同一宿舍多人各自配 Cookie 时同一块表会出现多段（当前不按电表去重）。
+  - 「指定宿舍」字段说明修正：原文「同宿舍的学生聚合为一条消息，不按人头」与实际不符（实际是各出一段、同名表重复）。
+  - 页顶 Alert 与文件头注释同步为「电量数据来自各学生在小程序自己配的电表 Cookie」。
+- **验证**：`tsc --noEmit` exit 0；`vite build` ✓（15.57s）；无头浏览器 mock 截图复跑，4 项断言仍全过，范围文案按新 label 实测正确（截图脚本的 option title 同步更新）。
+- **仍待定**：同一宿舍多人配 Cookie 导致同一块表重复出段，**是否按电表去重**未改（会改变投递语义，等用户确认后再做）。
+
+### 优化：Webhook「接收范围」随所选模块自动联动，并给出「生效说明」（管理端 + 后端注释，2026-09-30）
+- **背景**：用户质疑「接收范围选『指定宿舍』有什么用，还不是得靠 webhook 链接」，说明这一栏的语义没有被表达清楚，容易被误读成「重复设置投递目标」。
+- **语义澄清**：webhook **地址**决定消息发到哪个群；**接收范围**决定「把谁的数据发过去」，两者正交、互不冲突。
+- **事实边界（决定能不能过滤）**：`courses` 表**没有任何学生 / 班级维度**（见 `app/model/course.py`），课表是全站一份数据；天气 / 系统 payload 同为全局 → 这三类模块**没有逐人维度，范围影响不了内容**。只有电量按学生逐条采集（`app/modules/electricity/tasks.py`），再由 `webhook_push_service.send_module_report` 按 scope 过滤聚合。
+- **改动（`admin-frontend/src/pages/Webhooks.tsx`）**：
+  - 新增 `MODULE_SCOPE_KIND`（`course/weather/system=broadcast`、`electricity=filter`；「全部」视为含 filter），作为范围联动的唯一依据，注释写明事实来源。
+  - 接收范围 Select **随模块自动收敛 / 解锁**：仅当勾选「电量」或「全部」时才可选「指定学生 / 指定宿舍」；否则禁用并锁定为「全局（自动）」，附 extra 说明「所选模块均为全校广播，没有逐人维度，指定范围不会改变发送内容」。打开抽屉编辑回填时同样做一次归一，避免残留无效的定向配置。
+  - 新增「生效说明」区块：按「所选模块 + 范围」把**实际会收到什么**逐条摊开（如「电量：仅所选 1 个宿舍内已绑定学生（同宿舍合并为一条）的用电报告」+「课表：全站课表广播（内容全校一致，不受范围影响）」），省去猜测。
+  - 「所属模块」加 extra 说明、「页顶 Alert」重写为地址与范围的区别。
+- **后端**：修正 `webhook_push_service.fanout_broadcast_webhooks` 的 docstring —— 原文写「course/weather/system」，但调用方 `delivery_service` 实际仅对 `course/weather` 调用；补注 **system 刻意不补发**（爬虫失败、系统异常属运维告警，不适合补发进宿舍群 / 学生自建 webhook）。**行为未变，仅修文档与实现不一致。**
+- **验证**：`tsc --noEmit` exit 0；`vite build` ✓ built；无头浏览器 mock 接口渲染核对四项断言全通过 —— ①仅勾课表 → 范围禁用且显示「全局（自动）」；②再加电量 → 范围解锁；③范围选「指定宿舍」→ 下拉出现 `31栋512` / `31栋513`；④编辑既有「指定宿舍」webhook → 正确回填且保持可编辑。
+- **有意未做**：不把范围下推到课表 / 天气 / 系统的内容过滤（数据里没有逐人维度，做不到，硬做就是编造能力）；不把 `system` 加入补发列表。
+
+### 修复：Webhook「指定宿舍」下拉为空（后端，2026-09-30）
+- **现象**：管理端 Webhook 抽屉「接收范围 → 指定宿舍」下拉恒为空（No data），即便已在「用户与权限 → 学生名单」给该学生配了宿舍（如 `31栋512`）。
+- **根因**：宿舍枚举（`GET /admin/students/dorms`）与按宿舍聚合（`webhook_push_service._expand_dorm_user_ids`）都读 `student_profiles.dorm`，而该列只在**身份绑定那一刻**从名单 `student_rosters.dorm` 同步一次；名单里新填/改动的宿舍（绑定前，或绑定后补填）不会写进 profile → 下拉为空、按宿舍定向也查不到人。
+- **改动**：两处均改为**以名单 `student_rosters.dorm` 为准** —— 枚举直接读名单去重；聚合按 学校+学号 join `student_profiles` 取已绑定 user_id。名单里改宿舍即时生效，不再依赖绑定快照。`student_profiles.dorm` 保留（仍作绑定快照写入，但 webhook 不再读它）。
+- **验证**：两文件 `py_compile` 通过；运行态（连真库看下拉是否出现已配置宿舍）待用户在环境确认。
+
+### 优化：第三方消息通知页 UI 对齐设置风格，并支持天气模块（小程序 + 后端，2026-09-30）
+- **背景**：用户截图反馈「第三方消息通知」页 UI 与其他页反差大，要求优化；同时要求把天气也加入学生可订阅模块。
+- **UI 对齐**：`miniapp-frontend/src/pages/third-party-notify/index.tsx` + `.scss` 整体重写，去掉突兀的 40rpx 页面大标题与独立表单卡片，改为与「设置」页一致的分组卡片语言：近白底 + 白卡 + 行内细线分隔、小卡标题、开关改用项目自绘 `Switch`（避免 NutUI 样式未进产物变成裸节点）。列表每张 webhook 独立成卡，含「名称+启用开关 / URL / 模块标签 / 测试·编辑·删除」四行；新增/编辑表单同样按分组卡片排布；底部按钮采用电表配置页同款左右双按钮。
+- **天气支持**：后端 `app/api/miniapp_routes.py` 的学生模块白名单 `_STUDENT_WEBHOOK_MODULES` 加入 `weather`；前端 `src/api/webhook.ts` 的 `STUDENT_WEBHOOK_MODULES` 同步加入 `{ value: 'weather', label: '天气' }`；`app/services/delivery_service.py` 在天气适配器发送成功后，按课程同模式补发 `fanout_broadcast_webhooks("weather", ...)` 到学生/宿舍定向 webhook，全局部分仍由 `adapter_service` 覆盖。
+- **说明文案**：小程序页顶部说明与底部提示同步更新为「课表 / 电量 / 天气」；明确课表与天气为全量广播副本，电量为按本人数据定向。
+- **验证**：`tsc --noEmit` exit 0；后端 `py_compile app/api/miniapp_routes.py app/services/delivery_service.py` 通过。运行态需等用户机器上占用 `dist` 的并发编译进程释放后重新 `taro build` 才能在 DevTools 里看到。
+
+### 安全：学生自建 webhook 的 URL 校验收紧（后端，2026-09-30）
+- **背景**：学生自建 webhook 原仅校验「非空 + https:// 前缀」，存在被填内网地址 / 非企业微信站点的隐患（SSRF 与滥用）。用户确认收紧紧。
+- **改动**（`app/api/miniapp_routes.py`）：新增 `_validate_webhook_url(url)`，在 `create_my_webhook` 与 `update_my_webhook` 中替换原 `startswith("https://")` 检查。校验链：①非空；②必须以 `https://` 开头；③主机名必须**等于** `qyapi.weixin.qq.com`（仅企业微信机器人域名，杜绝外部中继/任意站点）；④主机若为 IP 字面量，阻断内网/保留地址段（`10/8`、`172.16/12`、`192.168/16`、`127/8`、`169.254/16`、`::1`、`fc00::/7`、`fe80::/10`）作 SSRF 防护。返回 `(ok, error_message)` 直接作为接口 400 文案。
+- **作用范围**：仅学生自建路由（`/api/miniapp/webhooks`），**不影响**管理端系统级 webhook（管理端目标需多元化，保持原样）。前端 `handleSave` 的 https 前缀拦截保留作 UX 前置，后端报错文案经 `res.message` 透出（如「仅支持企业微信机器人域名 qyapi.weixin.qq.com」）。
+- **验证**：`py_compile app/api/miniapp_routes.py` 通过；校验逻辑逐分支核对。
+
+### 新增：学生自建「第三方消息通知」webhook（小程序可自助配置，前后端，2026-09-30）
+- **背景**：用户要求在小程序「设置」里新增「第三方消息通知」，让学生自己添加 webhook（企业微信机器人），仅个人相关模块。经确认三项产品决策：①可选模块=仅个人相关（课表 course + 电量 electricity）；②免审核即生效；③管理端同一列表 + 来源徽标区分。
+- **后端模型**（`app/model/webhook.py`）：`webhooks` 表新增 `owner_user_id`（Integer, nullable, index，注释=NULL 系统级/非空学生自建）；`to_dict` 输出该字段，`create`/`update` 的 `allowed_fields` 同步；迁移由 `init_db.py migrate` 自动补列。
+- **后端路由**（`app/api/miniapp_routes.py`，前缀 `/api/miniapp`，均 `@student_required`）：新增 `GET/POST/PUT/DELETE /webhooks` + `POST /webhooks/<id>/test`。服务端**强制** `scope="student"` + `scope_target=[本人 user_id]` + `owner_user_id=本人`，客户端传的 scope/范围/归属一律被服务端覆盖（防 IDOR 与范围篡改）；`modules` 经白名单 `{course,electricity}` 裁剪，传其它模块无效；所有读按 `owner_user_id` 过滤，删/改/测前校验归属（非本人按 404）。免审核。
+- **投递接通（让功能真能收到推送）**：
+  - 电量：本就经 `webhook_push_service.send_module_report` 按 scope 过滤（student 取本人 entry），学生 webhook 自动生效，无需改动。
+  - 课表：旧广播 `adapter_service` 仅发 `scope=global`，学生/宿舍 webhook 收不到。新增 `webhook_push_service.fanout_broadcast_webhooks(module, content)`，向**非全局**且含该模块的启用 webhook 补发广播副本；在 `app/services/delivery_service.py` 课程适配器发送成功后调用（仅 course，全局已由 adapter 覆盖故跳过避免重复）。天气/系统仍仅全局。
+- **管理端**（`app/api/webhook_routes.py` + `admin-frontend`）：`GET /admin/webhooks` 现解析 `owner_user_id` 并一次性 join `student_profiles` 得到 `owner_name`（nickname/real_name）注入每条；`Webhooks.tsx` 新增「来源」列——系统=灰 Tag，学生=紫 Tag「学生(姓名)」并 Tooltip 显示 user_id；管理员可删除学生 webhook（复用既有删除）。同时把抽屉内「非电量模块仅全局」告警改为准确表述（课表现已补发给定向 webhook，仅电量为按本人数据定向），并更新页顶说明 Alert。
+- **小程序**（`miniapp-frontend`）：新增 `src/api/webhook.ts`（listMine/createWebhook/updateWebhook/deleteWebhook/testWebhook，模块白名单常量与后端一致）；新增页面 `pages/third-party-notify`（列表卡片 + 新增/编辑表单：名称/URL/模块多选芯片/描述/启用开关/测试/删除），注册进 `app.config.ts`，并在「设置 → 服务」分组加入口（复用 `IconArrow`）。
+- **验证**：后端 5 个改动文件 `py_compile` 全通过；`admin-frontend` 与 `miniapp-frontend` 均 `tsc --noEmit` exit 0。运行态未连真库/真渲染核对（沙箱无 flask 依赖、无 MySQL、无可用小程序端口）；路由签名、字段裁剪与 scope 强制均已逐行核对代码。
+- **已知边界**：学生 webhook 的 `scope` 恒为 `student`、受众恒为本人，管理端不可改其范围；课表对定向 webhook 发的是全量广播副本（不过滤到具体人），电量为按本人数据定向——与「仅个人相关」预期一致。
+
+### 优化：Webhook 管理页补齐分页、收紧布局，并修复新增抽屉带旧数据（前后端，2026-09-30）
+- **背景**：用户截图反馈：①表格空间浪费，「操作」列被挤压、按钮折行；②数据多了没有分页、也分不清 webhook 是干啥的；③质疑一个 webhook 兼容多个模块是否合理。
+- **布局收紧**：`admin-frontend/src/pages/Webhooks.tsx` 调整列宽并启用「名称」列固定（`fixed: "left"`），操作列改为纯图标按钮 + Tooltip（测试/编辑/删除），避免文字按钮折行；名称下方展示描述（description）辅助区分用途；新增「创建时间」列。表格横向滚动由 `x:900` 扩到 `x:1100`。顶部统计只保留「共 N 个」，移除已启用计数（分页后本页计数无意义）。
+- **后端分页**：`app/model/webhook.py` 的 `get_all_webhooks()` / `get_enabled_webhooks()` 新增可选 `page`/`page_size` 参数；`app/api/webhook_routes.py` 的 `GET /admin/webhooks` 解析 `page`/`page_size` 并返回 `{data,total,page,page_size}`。不传分页参数时仍返回全部，保持 `adapter_service.py` / `webhook_push_service.py` 等既有调用兼容。
+- **前端分页**：`admin-frontend/src/api/admin.ts` 的 `webhookApi.getList` 增加分页参数；`Webhooks.tsx` 维护 `pagination` 状态，Table 启用分页并 `onChange` 调 `fetchWebhooks(page, pageSize)`。
+- **新增抽屉非空 bug 修复**：同文件新增 `useEffect` 监听 `[isDrawerOpen, editingWebhook, form]`，抽屉打开时 edit 模式显式 `setFieldsValue`、add 模式 `form.resetFields()`，避免 `initialValues` 时序或 `editingWebhook` 残留导致新增带出旧数据。
+- **多模块 + 非全局范围告警**：抽屉内新增 `shouldUpdate` 警告——当 scope 为「指定学生/宿舍」但 modules 包含课表/天气/系统/全局时，提示这些模块目前仅支持全局推送、不会按学生/宿舍定向投递；电量（electricity）单独选择时不告警。这是当前架构下的真实限制。
+- **设计缺陷与后续方向（本轮未改，需用户决策）**：
+  - 当前 `webhook.modules` 是逗号分隔多模块，`webhook.scope` 是单值作用于整条 webhook。问题是 scope 无法按模块区分：一个 webhook 若同时勾了「电量+课表」且 scope=宿舍，电量会按宿舍聚合，课表却**不会被投递**（旧广播已收窄为仅 global）。这会造成管理员预期与实际投递不一致。
+  - 可行方向：①**一 webhook 一模块**（最清晰，取消多选，迁移时把现有 multi-module 拆成多条）；②**scope 按模块配置**（`scope_per_module` JSON，最灵活但改动大）；③**维持现状 + 前端强限制**（scope≠global 时禁止选非电量模块，最简单但限制未来扩展）。
+- **验证**：后端 `py_compile` 通过；admin `tsc --noEmit` exit 0；`vite build` 成功 19.30s（仅 antd vendor 体积告警）。运行态未连真库/真渲染核对。
+
 ### 优化：消息中心顶部统计改为按状态细分（草稿/已撤回/待发送/失败），修复恒为 0 与口径错误（前端，2026-09-30）
 - **背景**：用户反馈消息中心顶部统计「非常鸡肋，一点都不细节」——看不到草稿、看不到未发布，且「待发送」永远为 0，质疑该模块意义。核对发现统计口径有多处失真。
 - **事实核对（旧实现的 bug）**：
@@ -63,6 +251,21 @@
   - 小程序**不动**（本次纯 webhook 后端 + 管理端）；`adapter_service.py` 旧广播收窄为仅 global 的字符串判断 `(w.scope or "global")=="global"` 不受 org→dorm 改名影响，无需改。
   - 全仓 grep 确认无残留 webhook `org` scope 代码（仅 `OrgUnit`/`org_unit_service` 等权限/花名册系统的合法引用，与 webhook scope 无关）。
   - **待用户本地执行（重要，三列）**：`python init_db.py migrate` 现需新增 **三列**——`webhooks.scope`(`VARCHAR(20) NOT NULL DEFAULT 'global'`) + `webhooks.scope_target`(`JSON`) + `student_profiles.dorm`(`VARCHAR(100)`)；重启后端；给学生在档案里补 `dorm` 值（经管理端/后端档案编辑，**非小程序**）；配一个 `scope=dorm`（或 student）电量 webhook 实测聚合推送。
+  - **UI 再重构：卡片列表 → 紧凑表格 + 右侧抽屉（2026-09-30 晚，用户反馈"操作太繁琐"）**：`admin-frontend/src/pages/Webhooks.tsx` 重写——①列表由「每条独立成卡」改为 antd `Table`（列：名称 / URL(截断 + hover 全显) / 模块标签 / 接收范围 / 状态(内联启停 `Switch`) / 测试状态 / 操作(测试·编辑·删除)），一行一个、信息密度高，mobile 下操作列不固定（横向滚动 `x:900`）；②编辑/新增由居中 `Modal` 改为右侧 `Drawer`（`destroyOnClose` + 表单 `initialValues` 随 `editingWebhook` 派生，**移除旧 Modal 的 `setFieldsValue` 时序坑**），底部固定「取消 / 保存」；③顶部 Alert 由 4 行 description 压成单行 `message`；④顺手修上一轮 org→dorm 残留：`Webhook.scope` 本地类型 `"org"`→`"dorm"`、`scope_target` 注释、scope tooltip「组织」→「宿舍」。验证：`tsc --noEmit` exit 0；`vite build` 成功 16.40s（仅既有 antd vendor 大 chunk 告警）。**未连真库/真渲染核对**（沙箱无 flask/MySQL、无可用口令）。
+
+### 新增：宿舍字段接入「学生身份预录名单」（前后端，2026-09-30）
+- **背景**：`webhook` 的 `scope=dorm` 已落地（同 `student_profiles.dorm` 值 = 一组），但管理端宿舍选择器为空、且 `student_profiles.dorm` 无可维护入口。用户定位根因——宿舍本就是「学生身份预录名单」的属性（名单里每个学生天然属于某宿舍），应直接加进预录模型，绑定一次性同步到 `student_profiles.dorm`；否则另搞一套宿舍来源既冗余又对不齐。裁定：「这个功能应该加入这个用户与权限中的学生身份的预载数据中，这样增加个字段就可以了」。
+- **架构（权威来源）**：`student_rosters`（预录名单）为宿舍的权威来源；小程序一次绑定成功时，`profile.dorm = roster.dorm` 一次性同步，之后 webhook 电量聚合读 `student_profiles.dorm` 无需任何改动（该路径此前已实现）。名单换宿舍 = 改预录 → 重新绑定生效。
+- **后端改动**：
+  - `app/model/student_roster.py`：`student_rosters` 表已有 `dorm VARCHAR(100)` 列 + `to_dict` 已含 `dorm`（前序 webhook 重构落下的，本次补建/确认）。
+  - `app/services/student_roster_service.py`：`create_batch()` 构造入参补 `dorm=_norm(item.get("dorm")) or None`；`update()` 签名补 `dorm=None` 且 `if dorm is not None: row.dorm = _norm(dorm) or None`；`unbind()` 清空 `profile.dorm = None`（与 school/student_number 等名单身份字段同批清零，重绑时再同步）。
+  - `app/api/admin_roster_routes.py`：`HEADER_MAP` 补 `"dorm"/"宿舍"`；`create_student` / `update_student` 透传 `dorm=payload.get("dorm")`；批量导入错误提示表头补「宿舍」；`download_template` CSV 模板列补「宿舍」（`学校,学院,专业,班级,学号,姓名,宿舍,备注`）；`export_students` CSV 导出列补「宿舍」（与导入模板对齐，支持导出再导入往返）。
+  - `app/api/miniapp_routes.py`：绑定落库处新增 `profile.dorm = roster.dorm`（identity 字段以名单冗余列为准写入，学生不可自填）。
+- **前端改动**：
+  - `admin-frontend/src/api/admin.ts`：`RosterStudent` 接口补 `dorm: string | null`；`rosterApi.create` / `update` 入参补 `dorm?`。
+  - `admin-frontend/src/pages/UserManagementRoster.tsx`：名单表格新增「宿舍」列；「添加学生」「编辑名单」弹窗均新增「宿舍（选填）」`Form.Item`；`handleCreate`/`handleEdit` 透传 `dorm`；编辑回填 `editForm.setFieldsValue({ dorm: record.dorm })`。
+- **验证**：后端 4 文件 `py_compile` 通过；管理端 `tsc --noEmit` exit 0；`vite build` 成功（20.52s，仅历史遗留 antd vendor 大 chunk 告警）。运行态未真跑（沙箱无 flask 依赖、连不上本地 MySQL）。
+- **待用户本地执行**：在 `Push_System_Flask` 部署环境跑 `python init_db.py migrate`（增量迁移会自动给 `student_rosters` 补 `dorm` 列——若该列尚未建）；重启后端；给存量名单补 `dorm`（逐条编辑 / 批量导入含「宿舍」列的 CSV / 下载模板填好后导入）；已绑定且宿舍有变的学生需重新绑定（或走管理端「解绑」重发码）以刷新 `student_profiles.dorm`。届时 `scope=dorm` 的 webhook 即可按宿舍聚合推送（user 经 `rosterApi.getList()` bound 认领后入组）。
 
 ### 修复：管理端「电量任务」补回「单次采集」入口（前端，2026-09-30）
 - **背景**：用户截图反馈管理端电量任务没有「单次爬取」。核对后端——`app/api/admin_routes.py` 的 `trigger_electricity_task` 的 `task_map` 早已支持 `fetch_electricity_data`（电量数据采集：仅入库最新电量、不推送、假期不静默），`app/modules/electricity/tasks.py:41` 也有实现（进程名「爬取电量数据」）；但前端 `Tasks.tsx` 电量分类只列了日/周/月推送、Cookie 检测、`fetch_all`（全量 50 页重爬），唯独漏了 `fetch_electricity_data`，管理员在页面上点不到单次采集。

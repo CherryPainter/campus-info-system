@@ -199,3 +199,108 @@ class ElectricityFormatter:
                 f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             ]
         )
+
+    # ───────────────────────────────────────────────────────────
+    # 企业微信 Markdown 版本（供 webhook 按 scope 聚合推送）
+    # 每个方法输出「单个学生」的报告 block；聚合发送由 webhook_push_service 负责。
+    # ───────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _student_header(display_name: str, report_label: str) -> str:
+        name = (display_name or "").strip() or "该学生"
+        return f"**{name} 的{report_label}**"
+
+    @staticmethod
+    def format_daily_markdown(stats: dict, remaining_power: dict, display_name: str = "") -> str:
+        """每日用电报告 Markdown（单学生 block）"""
+        date_str = stats.get("date", "未知")
+        total = stats.get("total_usage", 0.0)
+        meter_usage = stats.get("meter_usage", {})
+        remaining_val = remaining_power.get("default")
+        lines = [
+            ElectricityFormatter._student_header(display_name, "每日用电报告"),
+            f"统计日期: {date_str}",
+            f"- 总用电量: {total:.2f} 度",
+        ]
+        if remaining_val is not None:
+            lines.append(f"- 剩余电量: {remaining_val:.2f} 度")
+        lines.append("各电表:")
+        for meter, usage in meter_usage.items():
+            meter_name = meter.replace("电表: ", "")
+            lines.append(f"- {meter_name}: {usage:.2f} 度")
+        return "\n".join(lines)
+
+    @staticmethod
+    def format_weekly_markdown(stats: dict, remaining_power: dict, display_name: str = "") -> str:
+        """每周用电报告 Markdown（单学生 block）"""
+        week_num = stats.get("week_num", "")
+        start_date = stats.get("start_date", "")
+        end_date = stats.get("end_date", "")
+        total = stats.get("total_usage", 0.0)
+        days_count = stats.get("days_count", 0)
+        meter_usage = stats.get("meter_usage", {})
+        daily_usage = stats.get("daily_usage", {})
+        avg_daily = total / days_count if days_count > 0 else 0.0
+        remaining_val = remaining_power.get("default")
+        lines = [
+            ElectricityFormatter._student_header(display_name, "每周用电报告"),
+            f"统计周期: 第 {week_num} 周 ({start_date} ~ {end_date})",
+            f"- 总用电量: {total:.2f} 度",
+            f"- 用电天数: {days_count} 天",
+            f"- 日均用电: {avg_daily:.2f} 度",
+        ]
+        if remaining_val is not None:
+            lines.append(f"- 剩余电量: {remaining_val:.2f} 度")
+        lines.append("各电表:")
+        for meter, usage in meter_usage.items():
+            meter_name = meter.replace("电表: ", "")
+            lines.append(f"- {meter_name}: {usage:.2f} 度")
+        lines.append("每日:")
+        for date, usage in sorted(daily_usage.items()):
+            lines.append(f"- {date}: {usage:.2f} 度")
+        return "\n".join(lines)
+
+    @staticmethod
+    def format_monthly_markdown(stats: dict, remaining_power: dict, display_name: str = "") -> str:
+        """每月用电报告 Markdown（单学生 block）"""
+        year = stats.get("year", "")
+        month = stats.get("month", "")
+        total = stats.get("total_usage", 0.0)
+        days_count = stats.get("days_count", 0)
+        meter_usage = stats.get("meter_usage", {})
+        daily_usage = stats.get("daily_usage", {})
+        avg_daily = total / days_count if days_count > 0 else 0.0
+        remaining_val = remaining_power.get("default")
+        lines = [
+            ElectricityFormatter._student_header(display_name, "每月用电报告"),
+            f"统计周期: {year}年{month}月",
+            f"- 总用电量: {total:.2f} 度",
+            f"- 用电天数: {days_count} 天",
+            f"- 日均用电: {avg_daily:.2f} 度",
+        ]
+        if remaining_val is not None:
+            lines.append(f"- 剩余电量: {remaining_val:.2f} 度")
+        lines.append("各电表:")
+        for meter, usage in meter_usage.items():
+            meter_name = meter.replace("电表: ", "")
+            lines.append(f"- {meter_name}: {usage:.2f} 度")
+        lines.append("每日:")
+        for date, usage in sorted(daily_usage.items()):
+            lines.append(f"- {date}: {usage:.2f} 度")
+        return "\n".join(lines)
+
+    @staticmethod
+    def format_low_power_markdown(power_value: float, display_name: str = "") -> str:
+        """低电量告警 Markdown（单学生 block）"""
+        name = (display_name or "").strip() or "该学生"
+        if power_value <= 5:
+            level = "紧急"
+        elif power_value <= 8:
+            level = "警告"
+        else:
+            level = "提醒"
+        return (
+            f"**[{level}] 低电量提醒 - {name}**\n"
+            f"- 当前剩余电量: {power_value:.2f} 度\n"
+            "- 请尽快充值，避免断电影响生活"
+        )

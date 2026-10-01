@@ -363,6 +363,7 @@ export default function UserManagementRoster() {
         class_id: classId,
         student_number: values.student_number,
         real_name: values.real_name,
+        dorm: values.dorm,
         remark: values.remark,
       });
       if (res.status === "success") {
@@ -396,6 +397,7 @@ export default function UserManagementRoster() {
       const res = await rosterApi.update(editTarget.id, {
         class_id: classId ?? undefined,
         real_name: values.real_name,
+        dorm: values.dorm,
         remark: values.remark,
         is_active: values.is_active,
       });
@@ -645,6 +647,14 @@ export default function UserManagementRoster() {
       render: (v: string | null) => v || "-",
     },
     {
+      title: "宿舍",
+      dataIndex: "dorm",
+      key: "dorm",
+      width: 110,
+      ellipsis: true,
+      render: (v: string | null) => v || "-",
+    },
+    {
       title: "学校",
       dataIndex: "school",
       key: "school",
@@ -733,6 +743,7 @@ export default function UserManagementRoster() {
               setEditTarget(record);
               editForm.setFieldsValue({
                 real_name: record.real_name,
+                dorm: record.dorm,
                 remark: record.remark,
                 is_active: record.is_active,
               });
@@ -1096,6 +1107,9 @@ export default function UserManagementRoster() {
           <Form.Item label="姓名（选填）" name="real_name">
             <Input placeholder="请输入姓名" />
           </Form.Item>
+          <Form.Item label="宿舍（选填）" name="dorm">
+            <Input placeholder="如 A栋305，同宿舍学生将自动编组用于电量推送" />
+          </Form.Item>
           <Form.Item label="备注（选填）" name="remark">
             <Input placeholder="备注信息" />
           </Form.Item>
@@ -1132,6 +1146,9 @@ export default function UserManagementRoster() {
           </Form.Item>
           <Form.Item label="姓名（选填）" name="real_name">
             <Input placeholder="请输入姓名" />
+          </Form.Item>
+          <Form.Item label="宿舍（选填）" name="dorm">
+            <Input placeholder="如 A栋305，同宿舍学生将自动编组用于电量推送" />
           </Form.Item>
           <Form.Item label="备注（选填）" name="remark">
             <Input placeholder="备注信息" />

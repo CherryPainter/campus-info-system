@@ -98,7 +98,7 @@ class StudentRosterService:
     # ---------- 新建 / 批量 ----------
 
     @staticmethod
-    def create(class_id, student_number, real_name=None, remark=None, is_active=True):
+    def create(class_id, student_number, real_name=None, remark=None, is_active=True, dorm=None):
         """按班级节点新建名单条目（学校/学院/专业/班级名由树继承带出）。
 
         Returns:
@@ -130,6 +130,7 @@ class StudentRosterService:
                 class_name=names["class"],
                 student_number=student_number,
                 real_name=_norm(real_name) or None,
+                dorm=_norm(dorm) or None,
                 remark=_norm(remark) or None,
                 is_active=bool(is_active),
             )
@@ -210,6 +211,7 @@ class StudentRosterService:
                         class_name=names["class"],
                         student_number=student_number,
                         real_name=_norm(item.get("real_name")) or None,
+                        dorm=_norm(item.get("dorm")) or None,
                         remark=_norm(item.get("remark")) or None,
                         is_active=True,
                     )
@@ -444,7 +446,7 @@ class StudentRosterService:
             session.close()
 
     @staticmethod
-    def update(roster_id, class_id=None, real_name=None, remark=None, is_active=None):
+    def update(roster_id, class_id=None, real_name=None, remark=None, is_active=None, dorm=None):
         """
         编辑名单条目（学校/学号只读，防止破坏绑定语义）。
         class_id 换班时自动带出新的冗余路径名。
@@ -469,6 +471,8 @@ class StudentRosterService:
                 row.class_name = names["class"]
             if real_name is not None:
                 row.real_name = _norm(real_name) or None
+            if dorm is not None:
+                row.dorm = _norm(dorm) or None
             if remark is not None:
                 row.remark = _norm(remark) or None
             if is_active is not None:
@@ -535,6 +539,7 @@ class StudentRosterService:
             profile.major = None
             profile.class_name = None
             profile.grade = None
+            profile.dorm = None
             # 吊销该用户全部会话，强制重新登录以走绑定流程
             try:
                 from app.services.session_service import session_service

@@ -47,6 +47,7 @@ class StudentRoster(Base):
     college = Column(String(100), nullable=True, comment="学院（从组织树冗余带出）")
     major = Column(String(100), nullable=True, comment="专业（从组织树冗余带出）")
     real_name = Column(String(50), nullable=True, comment="姓名")
+    dorm = Column(String(100), nullable=True, comment="宿舍（如 A栋305）；同宿舍的学生构成一个组，用于电量 webhook 按宿舍聚合推送")
     remark = Column(String(200), nullable=True, comment="备注")
     bind_code_hash = Column(String(64), nullable=True, comment="一次性绑定密钥 sha256（绑定成功即清空）")
     is_active = Column(
@@ -65,6 +66,7 @@ class StudentRoster(Base):
             "college": self.college,
             "major": self.major,
             "real_name": self.real_name,
+            "dorm": self.dorm,
             "remark": self.remark,
             "has_bind_code": bool(self.bind_code_hash),
             "is_active": self.is_active,

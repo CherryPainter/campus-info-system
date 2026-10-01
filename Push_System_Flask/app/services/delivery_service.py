@@ -130,6 +130,34 @@ class DeliveryService:
                     adapter = adapter_service.get_adapter(adapter_name)
                     if adapter:
                         result = adapter.send(message)
+                        # 课程 / 天气广播补发给定向（学生/宿舍）webhook：
+                        # 全局已由 adapter 覆盖，此处仅补发非全局 webhook，
+                        # 让学生/宿舍自建的「第三方消息通知」也能收到广播副本。
+                        #
+                        # 必须整段包在 try 里：补发是**旁路**（见 webhook_push_service
+                        # 模块 docstring 的「失败静默、绝不影响主推送流程」）。此处位于
+                        # adapter.send() 之后、状态落库之前，若补发抛异常会被外层 except
+                        # 捕获并把**已经发送成功**的任务标成 retrying → 重试造成重复推送。
+                        # 因此任何补发异常都只记 warning，不改任务状态。
+                        try:
+                            if (
+                                adapter_name in ("course", "weather")
+                                and isinstance(message, dict)
+                                and message.get("msgtype") == "markdown"
+                            ):
+                                from app.services.webhook_push_service import (
+                                    fanout_broadcast_webhooks,
+                                )
+
+                                fanout_broadcast_webhooks(
+                                    adapter_name,
+                                    (message.get("markdown") or {}).get("content", ""),
+                                )
+                        except Exception as exc:
+                            logger.warning(
+                                f"[推送执行] 定向 webhook 补发失败（不影响主推送）: {exc}"
+                            )
+
                         if result.get("success"):
                             task_service.update_status(task["task_id"], "success", result)
                             self._update_push_process(

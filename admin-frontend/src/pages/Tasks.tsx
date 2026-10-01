@@ -148,6 +148,13 @@ const taskCategories = [
         priority: "low",
       },
       {
+        key: "fetch_electricity_data",
+        label: "电量单次采集",
+        desc: "爬取并保存最新电量（仅入库，不推送）",
+        icon: <ThunderboltOutlined />,
+        priority: "normal",
+      },
+      {
         key: "fetch_all",
         label: "电量全量爬取",
         desc: "全量爬取电量数据（最多50页）",
@@ -222,6 +229,7 @@ export default function Tasks() {
     push_electricity_weekly: "每周用电报告",
     push_electricity_monthly: "每月用电报告",
     check_cookie_validity: "Cookie有效性检测",
+    fetch_electricity_data: "爬取电量数据",
     fetch_all: "电量全量爬取",
     push_daily_schedule: "今日课表推送",
     push_weekly_image: "周课表图片推送",
