@@ -29,10 +29,10 @@
 ### 课表推送模块
 
 - **自动化数据采集**：基于 Playwright 无头浏览器自动登录重庆工程学院 CAS 统一认证系统，使用 Tesseract OCR 识别验证码，自动爬取教务系统课程表
-- **智能推送规则引擎**：内置 5 种推送规则（课前提醒、每日课表、下课提醒、周课表图片推送、课后确认），支持按节次自动匹配教学楼时间表（两套时间方案，覆盖 11 栋教学楼）
-- **企业微信推送**：支持 Markdown 格式消息和图片消息，6 套可配置消息模板（`{{占位符}}` 语法），模板支持热重载
+- **智能推送规则引擎**：内置 4 条推送规则（上课前提醒、每日课表、即将下课提醒、上课后确认；其中「上课后」默认关闭。周课表图片推送是独立的「每周一生成并推送」定时任务，不属于规则引擎），支持按节次自动匹配教学楼时间表（两套时间方案，覆盖 11 栋教学楼）
+- **企业微信推送**：支持 Markdown 格式消息和图片消息，5 套可配置消息模板（`{{占位符}}` 语法），模板支持热重载
 - **定时自动爬取**：可配置 Cron 表达式定时执行爬虫，支持重试机制（3 次、30 秒间隔）和超时保护（600 秒）。**注意**：定时爬取的总开关是**管理端「设置」页的 `course.spider_enabled`**（`module_configs`，代码默认 `true`），关闭后停止定时爬取与预约/立即任务的自动拾取（管理页手动触发不受影响）；调度方式见同页 `course.spider_schedule_mode`（`cron`＝每天 07:00 / 13:00，`interval`＝每 N 小时）与 `course.spider_interval_hours`。
-- **数据入库管道**：爬取数据经 `pipeline.py` 处理后由 `CourseRepository.create_batch()` 批量写入 MySQL。按 `course_code + week_day + period_idx + week_number` 去重（仅匹配未删除行），命中即更新、未命中即插入，**从不做删除**。每条记录带 `data_source`（来源标记）与 `last_verified_at`（最后校验时间）；后台手动新增/编辑的课程打 `admin` 标记，爬虫来源（`full`/`daily`）**不会覆盖或挤占**手动课（详见「课表爬虫子系统」）。注意：软删除的课程在去重查询中被忽略，下次爬虫会重新插入该时间槽——即后台"删除"仅在爬虫源也已无此课时才持久生效。
+- **数据入库管道**：爬取数据经 `pipeline.py` 处理后由 `CourseRepository.create_batch()` 批量写入 MySQL。按 `(semester_id, course_key)` 去重（仅匹配未删除行）——`course_key = md5(课程名|星期|排序节次|教室|教师)`，与周次无关（v6.19.x 起；旧口径含 `week_number`，`course_code` 已降级为展示用）。key 公式漂移时另按弱身份（课名/星期/教室/教师 + 节次）兜底匹配并纠正存储的 key，命中即更新、未命中即插入，**从不做删除**。每条记录带 `data_source`（来源标记）与 `last_verified_at`（最后校验时间）；后台手动新增/编辑的课程打 `admin` 标记，爬虫来源（`full`/`daily`）**不会覆盖或挤占**手动课（详见「课表爬虫子系统」）。注意：软删除的课程在去重查询中被忽略，下次爬虫会重新插入该时间槽——即后台"删除"仅在爬虫源也已无此课时才持久生效。
 - **课程表图片生成**：自动生成课程表 PNG 图片（DPI 250），支持背景图和按星期着色，每周一生成周课表图片推送
 - **手动管理**：支持课程的手动创建、编辑、软删除、恢复、推送开关切换，以及从爬虫 JSON 文件导入
 
@@ -42,7 +42,7 @@
 - **24 小时逐时预报**：每 60 分钟更新逐小时天气预报，含温度、降水概率、湿度变化
 - **天气预警**：每 10 分钟检查气象台预警，新预警即时推送，按严重程度排序（红 > 橙 > 黄 > 蓝）
 - **智能分析引擎**：降雨检测（大雨/普通降雨独立冷却）、高温提醒（体感温度 >= 35 度）、降温提醒（温差 >= 6 度）、预警分级推送
-- **冷却机制**：不同事件类型使用独立冷却键（大雨 4h、降雨 3h、高温 6h、降温 6h、预警 1h），冷却状态持久化到磁盘
+- **冷却 / 频控机制**：高温、降温、预警走时间冷却（各 6h / 6h / 1h，状态持久化到磁盘）；**降雨提醒已改为「分时段 + 每天每段仅一次」**（白天 6:00–22:00 等分 4 段，每段仅播报一次，不再使用时间冷却）
 - **每日晨报**：定时推送当日天气概况、温度范围、降雨概率、出行提示
 - **和风天气 API 认证**：支持 Ed25519 (EdDSA) JWT 签名认证和传统 API Key 两种模式
 - **异步刷新策略**：数据过期时先返回旧数据，后台线程异步刷新，不阻塞用户请求
@@ -204,6 +204,7 @@ flowchart TD
 | 环境变量     | python-dotenv            | 1.0.1              | .env 文件加载                    |
 | 日志         | loguru                   | 0.7.2              | 结构化日志（控制台 + 文件轮转）  |
 | 加密         | cryptography             | 44.0.0             | Ed25519 JWT 签名（和风天气认证） |
+| 正文清洗     | nh3                      | 0.3.7              | HTML 白名单清洗（公告 / 自定义推送正文；未安装时写入与读取 fail-closed） |
 | 二维码       | qrcode                   | 8.0                | MFA 设置二维码生成               |
 | 缓存/限流存储 | Redis                    | 8.0.1              | Flask-Limiter 限流计数 + 登录爆破滑动窗口；未配 REDIS_URL 时降级进程内存 |
 
@@ -216,10 +217,11 @@ flowchart TD
 | 构建工具    | Vite                        | 8.0.x   | 快速构建 + HMR           |
 | UI 组件库   | Ant Design                  | 5.29.x  | 企业级 UI                |
 | Pro 组件    | @ant-design/pro-components  | 2.7.x   | ProLayout / ProCard 等   |
-| 图表库      | ECharts + echarts-for-react | 6.1.x   | 天气/电量/任务数据可视化 |
+| 图表库      | ECharts + echarts-for-react | 6.1.x / 3.0.x | 天气/电量/任务数据可视化 |
 | 路由        | react-router-dom            | 7.16.x  | 嵌套路由 + 守卫          |
 | HTTP 客户端 | Axios                       | 1.16.x  | 拦截器 + Token 自动刷新  |
 | 日期处理    | Day.js                      | 1.11.x  | 轻量日期库               |
+| 富文本编辑器 | @wangeditor/editor          | 5.1.x   | 公告 / 自定义推送正文富文本编辑 |
 
 ---
 
@@ -242,7 +244,7 @@ Push_System_Flask/
 |   |   |                                 #   13 个端点: 服务信息/健康检查/系统状态
 |   |   |                                 #   课表查询/推送规则/任务统计/模板/爬虫
 |   |   |-- auth_routes.py                # JWT 认证 API (auth_bp -> /api/auth)
-|   |   |                                 #   10 个端点: 登录/MFA验证/刷新/登出
+|   |   |                                 #   11 个端点: 登录/MFA验证/刷新/登出/会话状态
 |   |   |                                 #   用户信息/修改密码/MFA设置验证禁用状态
 |   |   |-- admin_routes.py               # 管理后台 API (admin_bp -> /api/admin)
 |   |   |                                 #   仪表盘/天气配置与触发/电量配置与触发
@@ -264,13 +266,13 @@ Push_System_Flask/
 |   |   |                                 #   实时天气/逐时预报/预警/统计/手动触发
 |   |   |-- electricity_routes.py         # 电量模块 API (electricity_bp -> /api/electricity)
 |   |   |                                 #   剩余电量/用电记录/统计/配置/触发
-|   |   |-- holiday_routes.py             # 推送静默 API (holiday_bp -> /api/admin/holiday)
+|   |   |-- holiday_routes.py             # 推送静默 API (holiday_bp -> /api/holiday)
 |   |   |                                 #   假期模式 CRUD/状态/静默区间
 |   |   |-- ip_blacklist_routes.py        # IP 黑名单 API (ip_blacklist_bp -> /api/admin/ip-blacklist)
 |   |   |                                 #   黑名单 CRUD/安全事件列表/封禁/忽略
-|   |   |-- session_routes.py             # 会话管理 API (session_bp -> /api/admin/session)
-|   |   |                                 #   会话列表/强制下线/在线状态
-|   |   |-- task_routes.py                # 任务管理 API (task_bp -> /api/admin/tasks)
+|   |   |-- session_routes.py             # 会话管理 API (session_bp -> /api/auth)
+|   |   |                                 #   4 个端点: 我的会话列表/强制下线/全设备登出/CSRF Token
+|   |   |-- task_routes.py                # 任务管理 API (task_bp -> /api/tasks)
 |   |                                     #   任务 CRUD/触发/取消
 |   |   |-- announcement_routes.py         # 公告中心 API (announcement_bp -> /api/admin/announcements)
 |   |   |                                 #   公告 CRUD/附件/已读/收藏/置顶
@@ -305,6 +307,9 @@ Push_System_Flask/
 |   |                                     #   - flask_limiter.Limiter
 |   |   |-- bootstrap.py                  # 启动期副作用收口（建库迁移/默认配置/管理员账号/清理僵尸进程）
 |   |                                     #   - AUTO_MIGRATE_ON_START 可控
+|   |   |-- api_response.py               # 统一 API 响应封装（api_success / api_error 契约）
+|   |   |-- db_fingerprint.py             # 数据库指纹（定义码 vs 实例码漂移检测）
+|   |   |-- task_state.py                 # 统一任务状态机与任务类型常量
 |   |-- schema/                           # 数据库 Schema 管理（替代原 init_db.py）
 |   |   |-- __init__.py                    # Schema 包入口（create_all / migrate 聚合）
 |   |   |-- common.py                      # 公共建表工具
@@ -315,7 +320,7 @@ Push_System_Flask/
 |   |   |-- fingerprint.py                 # 数据库指纹漂移检测
 |   |   |-- reset.py                       # 重置（开发用）
 |   |
-|   |-- model/                            # 数据模型层（24 个模型文件 / 30+ 表）
+|   |-- model/                            # 数据模型层（25 个模型文件 / 30+ 表）
 |   |   |-- __init__.py                   # 统一导出所有模型
 |   |   |-- user.py                       # User - 用户表
 |   |   |-- user_mfa.py                   # UserMFA - MFA 配置表
@@ -339,6 +344,7 @@ Push_System_Flask/
 |   |   |-- student_profile.py             # StudentProfile - 学生身份档案（1:1 User）
 |   |   |-- wechat_account.py              # WechatAccount - 微信开放平台账号（openid/unionid）
 |   |   |-- announcement.py                # Announcement 系列 - 公告中心（公告/附件/已读/收藏）
+|   |   |-- announcement_channel.py        # AnnouncementChannel - 公告频道（小程序列表页顶部分类，管理端可配）
 |   |   |-- notification.py                # Notification - 学校日历提醒事件
 |   |   |-- user_notification.py           # UserNotification - 个人站内消息
 |   |   |-- feedback.py                    # Feedback - 意见反馈（学生→管理员）
@@ -347,14 +353,11 @@ Push_System_Flask/
 |   |   |-- course_repository.py          # 课程数据 CRUD (批量创建/去重/软删除/恢复)
 |   |   |-- electricity_repository.py     # 电量数据 CRUD (记录/剩余/容量)
 |   |   |-- weather_repository.py         # 天气数据 CRUD (实时/逐时/预警)
+|   |   |-- user_notification_repository.py  # 个人站内通知 CRUD
 |   |
-|   |-- service/                          # 业务服务层
-|   |   |-- electricity_service.py        # 电量业务 (爬取/保存/统计/低电量检测)
-|   |   |-- weather_service.py            # 天气业务 (采集/保存/过期刷新)
-|   |
-|   |-- services/                         # 课表推送服务层
+|   |-- services/                         # 业务服务层（所有 service 均在此，无单数 service/ 目录）
 |   |   |-- schedule_service.py           # 课表数据管理 (加载/转换/缓存/自动刷新)
-|   |   |-- rule_service.py               # 推送规则引擎 (5 种规则/时间窗口/优先级)
+|   |   |-- rule_service.py               # 推送规则引擎 (4 条规则/时间窗口/优先级)
 |   |   |-- task_service.py               # 推送任务管理 (幂等/去重/优先级/重试)
 |   |   |-- delivery_service.py           # 推送执行引擎 (10秒轮询/模板渲染/重试)
 |   |   |-- template_service.py           # 消息模板管理 (JSON 模板/热重载/截断保护)
@@ -362,12 +365,15 @@ Push_System_Flask/
 |   |   |                                 #   BaseAdapter -> WeComAdapter
 |   |   |                                 #   MultiWeComAdapter (多 Webhook)
 |   |   |                                 #   数据库优先加载, .env 回退
-|   |   |-- templates.json                # 6 个消息模板配置
+|   |   |-- templates.json                # 5 个消息模板配置
 |   |   |-- geo_service.py                # IP 地理解析（境外防火墙用，基于 ip2region 离线库）
 |   |   |-- ip_blacklist_service.py        # IP 黑名单 / 登录爆破滑动窗口（Redis 或内存降级）
 |   |   |-- process_service.py             # 任务进程写入（从 process_routes 下沉，统一进程状态管理）
 |   |   |-- teaching_week_service.py        # 教学周推算（基于开学日配置 + 教务系统界限，替代 course_weeks 表）
+|   |   |-- electricity_service.py        # 电量业务 (爬取/保存/统计/低电量检测)
+|   |   |-- weather_service.py            # 天气业务 (采集/保存/过期刷新)
 |   |   |-- notification_service.py         # 任务状态告警统一收口
+|   |                                     #   另有 announcement_* / session / holiday / org_unit / student_roster / wechat_auth 等服务模块（见实际目录，此处从略）
 |   |
 |   |-- modules/                          # 功能模块
 |   |   |-- weather/                      # 天气监控子模块
@@ -416,9 +422,16 @@ Push_System_Flask/
 |   |   |-- platform_utils.py             # 跨平台工具
 |   |   |                                 #   - 进程管理 (kill_process)
 |   |   |                                 #   - Python 路径检测
-|   |   |-- token.py                      # 动态 Token 管理
 |   |   |-- course_helpers.py             # 周次/学期纯函数工具（week_number 推算等）
-|   |                                     #   - 一次性/IP绑定/短时效安全 Token
+|   |   |-- signed_url.py                 # 受限资源签名 URL（反馈截图，HMAC 签名 + 过期）
+|   |   |-- anon_session.py               # 匿名会话令牌（公开浏览接口的可溯源，X-Anon-Token）
+|   |   |-- student_auth.py               # 学生角色认证装饰器 (@student_required / @student_bound_required)
+|   |   |-- csrf_protect.py               # CSRF 防护（带 Cookie 的写请求同源校验）
+|   |   |-- url_guard.py                  # 出站 URL 安全校验（SSRF 防护 + 白名单）
+|   |   |-- file_upload_security.py       # 文件上传安全（类型/大小/内容校验）
+|   |   |-- html_sanitizer.py             # 富文本正文 HTML 白名单清洗（fail-closed）
+|   |   |-- totp_replay_guard.py          # TOTP 验证码重放防护（Redis Lua）
+|   |   |-- chinese_font.py               # 中文字体解析（matplotlib 图表 / 课程图片）
 |   |
 |   |-- cqie-course-timetable/            # 课表爬虫子项目
 |       |-- main.py                       # 爬虫主程序 (整合版)
@@ -535,7 +548,8 @@ Push_System_Flask/
 |   |-- DEPLOY_CHECKLIST.md               #   部署检查清单
 |   |-- UV_DEPLOY.md                      #   uv 部署方式
 |   |-- 安全配置指南.md                    #   安全配置指南
-|   `-- 安全配置审计_2026-07-18.md         #   安全配置审计
+|   |-- 安全配置审计_2026-07-18.md         #   安全配置审计（历史快照）
+|   `-- 安全代码审查报告_v6.11.4.md        #   安全代码审查报告（历史快照）
 |-- ed25519-private.pem                   # 和风天气 Ed25519 私钥 (不入库, 用户自生成)
 |-- ed25519-public.pem                    # 和风天气 Ed25519 公钥 (不入库)
 |-- README.md                             # 本文档
@@ -744,6 +758,10 @@ npm run dev
 
 ## API 接口文档
 
+> **本节为常用端点摘录**（以管理端接口为主）。应用实际注册 **195 个路由**，其中小程序端 `/api/miniapp/*` 48 个、管理端 `/api/admin/*` 84 个，本节未逐一罗列。各组的权威端点清单见 `app/api/*_routes.py` 文件头部 docstring（路由定义在同一文件），或运行时以 `app.url_map` 为准。
+>
+> 本节**未收录**的端点组：`/api/miniapp/*`（小程序课表/天气/电量/反馈/公告/消息/绑定等）与 `/api/miniapp/auth/*`、`/api/holiday/*`（假期静默）、`/api/admin/announcements/*`（公告中心）、`/api/admin/notifications/*`、`/api/admin/ip-blacklist/*`、`/api/admin/roster/*`（学生名单）、`/api/admin/session*`、`/api/tasks/*`、`/api/admin/feedback` 与 `/api/miniapp/feedback/*`，以及静态资源 `/api/announcement-covers|images/*`、`/api/feedback-images/*`。
+
 ### 认证方式
 
 所有 API 使用 **JWT Bearer Token** 认证（健康检查等公开端点除外）。Token 通过 httpOnly Cookie 自动传递，也可手动附加到请求头：
@@ -785,6 +803,10 @@ Authorization: Bearer <access_token>
 | `/api/auth/mfa/verify`      | POST | `@jwt_required` | 验证 MFA 代码并启用                                                      |
 | `/api/auth/mfa/disable`     | POST | `@jwt_required` | 禁用 MFA（需提供当前 MFA 代码）                                          |
 | `/api/auth/mfa/status`      | GET  | `@jwt_required` | 获取 MFA 启用状态                                                        |
+| `/api/auth/session/status`  | GET  | `@jwt_required` | 当前会话状态（前端会话失效探测）                                         |
+| `/api/auth/sessions`        | GET/DELETE | `@jwt_required` | 我的会话列表 / 全设备登出                                        |
+| `/api/auth/sessions/<sid>`  | DELETE | `@jwt_required` | 指定会话强制下线                                                     |
+| `/api/auth/csrf-token`      | GET  | `@jwt_required` | 获取 CSRF Token（写操作携带）                                            |
 
 **登录请求：**
 
@@ -1046,6 +1068,8 @@ POST /api/auth/login
 | 个人中心     | `/profile`     | 所有用户 | 账户总览概览卡 / 账户资料与安全设置 / 登录记录表（含头像、修改密码/用户名、MFA 管理） |
 | 欢迎页       | `/welcome`     | 所有用户 | 普通用户默认首页                               |
 
+> **上表为常用页面摘录**。实际路由还有 `/access`（用户与权限整合页）、`/messages`（消息中心：公告列表 + `/messages/create`、`/messages/edit/:id` 编辑 + `/messages/channels` 频道管理）、`/announcements`、`/feedback`（意见反馈）、`/holiday`（推送静默）、`/blacklist`（IP 黑名单与安全事件）、`/notifications`（学校日历提醒），以及公开页 `/terms`、`/about`、`/contact`、`/privacy`、`/legal`、`/cookies`。完整清单见 `admin-frontend/src/App.tsx`。
+
 ### 前端开发
 
 ```bash
@@ -1066,7 +1090,7 @@ npm run build
 **Vite 代理配置：**
 
 - 开发模式下 `/api` 请求自动代理到 `http://localhost:29528`
-- 可通过 `VITE_API_TARGET` 环境变量覆盖代理目标
+- 代理目标写在 `vite.config.ts` 的 `server.proxy['/api'].target`（当前为 `http://localhost:29528`）；**不存在** `VITE_API_TARGET` 环境变量（改端口需直接改该文件）
 - 生产构建后需要 Nginx 反向代理
 
 ### Token 自动刷新机制
@@ -1108,10 +1132,10 @@ ServerStatusProvider 组件监听 Axios 派发的 `server-offline` / `server-onl
 ```mermaid
 flowchart TD
     D[(课表数据 MySQL)] --> SCH["ScheduleService<br/>加载/转换/缓存 · 60秒自动刷新"]
-    SCH --> RULE["RuleService<br/>每60秒检查5种推送规则<br/>时间窗口防重复"]
+    SCH --> RULE["RuleService<br/>每60秒检查4条推送规则<br/>时间窗口防重复"]
     RULE --> TASK["TaskService<br/>创建任务 · 幂等+每日去重 · 优先级排序"]
     TASK --> DELIV["DeliveryService<br/>10秒轮询待处理任务<br/>模板渲染 · 重试3次"]
-    DELIV --> TPL["TemplateService<br/>6套 Markdown 模板 · 占位符替换<br/>4096字节截断保护"]
+    DELIV --> TPL["TemplateService<br/>5套 Markdown 模板 · 占位符替换<br/>3900字节截断保护"]
     TPL --> ADP["AdapterService · 推送渠道适配"]
     ADP -->|WeComAdapter 单 Webhook| W1[企业微信 Webhook]
     ADP -->|MultiWeComAdapter 多 Webhook<br/>至少一个成功即整体成功| W2[企业微信 Webhook]
@@ -1125,15 +1149,15 @@ flowchart TD
 
 `WeatherAnalyzer`（`app/modules/weather/analyzer.py`）实现了以下检测规则：
 
-| 事件类型 | 触发条件                                | 冷却时间 | 冷却键       |
-| -------- | --------------------------------------- | -------- | ------------ |
-| 大雨提醒 | 连续 2 小时降雨概率 >= 80%              | 4 小时   | `rain_heavy` |
-| 降雨提醒 | 任意小时降雨概率 >= 70%                 | 3 小时   | `rain`       |
-| 高温提醒 | 体感温度 >= 35 度                       | 6 小时   | `high_temp`  |
-| 降温提醒 | 当前温度比 24h 最高温低 >= 6 度         | 6 小时   | `temp_drop`  |
-| 天气预警 | 收到气象台预警（红 > 橙 > 黄 > 蓝排序） | 1 小时   | `alert_{id}` |
+| 事件类型 | 触发条件                                | 频控方式                      | 冷却键 / 去重键 |
+| -------- | --------------------------------------- | ----------------------------- | --------------- |
+| 大雨提醒 | 连续 2 小时降雨概率 >= 80%              | 分时段（白天 4 段，每段一次） | `rain`（段内去重，非时间冷却） |
+| 降雨提醒 | 降雨概率 >= 70%                         | 分时段（白天 4 段，每段一次） | `rain`（同上）  |
+| 高温提醒 | 体感温度 >= 35 度                       | 时间冷却 6 小时               | `heat`          |
+| 降温提醒 | 当前温度比 24h 最高温低 >= 6 度         | 时间冷却 6 小时               | `cold`          |
+| 天气预警 | 收到气象台预警（红 > 橙 > 黄 > 蓝排序） | 时间冷却 1 小时               | `alert`         |
 
-冷却状态持久化到 `data/weather/cooldown_state.json`，不同事件类型使用独立冷却键互不影响。
+白天时段由 `RAIN_DAY_START_HOUR=6` ~ `RAIN_DAY_END_HOUR=22` 界定，等分 `RAIN_SEGMENT_COUNT=4` 段（上午/中午/下午/傍晚），每段当天仅播报一次。时间冷却状态持久化到 `data/weather/cooldown_state.json`（仅含 `heat` / `cold` / `alert` 三个键）。
 
 ### 电量告警等级
 
@@ -1189,7 +1213,7 @@ flowchart TD
 1. 从 JSON 提取有效课程行（过滤无效行）
 2. 解析星期名称 -> 数字，解析中文节次名称 -> 数字列表
 3. 直接使用爬虫处理好的 `start_time`/`end_time`（已考虑大课减 10 分钟、不同楼栋不同时间表）
-4. 通过 `CourseRepository.create_batch()` 批量入库（按 `course_code + week_day + period_idx + week_number` 去重，仅匹配未删除行；命中更新、未命中插入，不删除；爬虫来源不覆盖/挤占 `admin` 手动课）
+4. 通过 `CourseRepository.create_batch()` 批量入库（按 `(semester_id, course_key)` 去重，仅匹配未删除行；命中更新、未命中插入，不删除；爬虫来源不覆盖/挤占 `admin` 手动课）
 5. 计算并存储周次日期范围
 6. 生成课程表图片（DPI 250，支持背景图和按星期着色）
 
@@ -1270,7 +1294,7 @@ flowchart TD
 
 ### 消息模板系统
 
-系统内置 6 个消息模板（`app/services/templates.json`），使用 `{{占位符}}` 语法：
+系统内置 5 个消息模板（`app/services/templates.json`），使用 `{{占位符}}` 语法：
 
 | 模板 ID                            | 名称         | 类型     | 占位符                                                                                                    |
 | ---------------------------------- | ------------ | -------- | --------------------------------------------------------------------------------------------------------- |
@@ -1300,7 +1324,7 @@ flowchart LR
 
 ## 数据库模型
 
-系统核心数据模型如下表（共 22 个，含学生身份、组织、通知、反馈；不含审计日志、会话等辅助表）：
+系统核心数据模型如下表（含学生身份、组织、通知、反馈；不含审计日志、会话、任务队列等辅助表）。全部模型类共 **32 个 / 32 张表**，完整清单见 `app/model/__init__.py`：
 
 ### 用户与认证
 
@@ -1329,7 +1353,7 @@ flowchart LR
 | `CustomPush`   | `custom_pushes`  | 自定义推送表   | title, content, msg_type(text/image/template), push_type(immediate/scheduled/recurring), scheduled_time, cron_expression, status(pending/sent/failed/cancelled), template_id, template_params          |
 | `TaskProcess`  | `task_processes` | 任务进程表     | name, task_type(spider/weather/electricity/custom), status(running/completed/failed/cancelled), pid, progress(0-100), total_items, processed_items, message, error_message, duration, extra_data(JSON) |
 | `ModuleConfig` | `module_configs` | 模块配置表     | module, key, value, value_type(string/integer/float/boolean/json), description, is_editable, is_sensitive                                                                                              |
-| `Webhook`      | `webhooks`       | Webhook 配置表 | name, url, modules(逗号分隔), is_enabled, description, last_test_status, last_test_time                                                                                                                |
+| `Webhook`      | `webhooks`       | Webhook 配置表 | name, url, modules(逗号分隔), scope(接收范围 global/student/dorm), scope_target, owner_user_id(学生自建时的归属), is_enabled, description, last_test_status, last_test_time                                                                                                                |
 
 ### 学生身份与组织
 
@@ -1344,9 +1368,9 @@ flowchart LR
 
 | 模型                    | 表名                          | 说明             | 关键字段                                                                                  |
 | ----------------------- | ----------------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
-| `Announcement` 系列     | `announcements` 等 4 表       | 公告中心         | 公告 / 附件 / 已读 / 收藏（Announcement·AnnouncementAttachment·AnnouncementRead·AnnouncementFavorite） |
-| `Notification`          | `notifications`               | 学校日历提醒事件 | title, event_time, type, content, is_active                                              |
-| `UserNotification`      | `user_notifications`          | 个人站内消息     | user_id, title, content, is_read, link                                                   |
+| `Announcement` 系列     | `announcements` 等 5 表       | 公告中心         | 公告 / 附件 / 已读 / 收藏（Announcement·AnnouncementAttachment·AnnouncementRead·AnnouncementFavorite·AnnouncementChannel） |
+| `Notification`          | `notifications`               | 学校日历提醒事件 | title, event_date, category(exam/holiday/activity/other), remind_days, sort_order, is_active, description                                              |
+| `UserNotification`      | `user_notifications`          | 个人站内消息     | user_id, category, title, content, payload, is_read, is_viewed, cover_url, ref_type, ref_id                                                   |
 | `Feedback`              | `feedbacks`                   | 意见反馈         | type, content, contact, images, status(待处理/已回复), reply（学生→管理员反向链路）       |
 
 ---
@@ -1399,7 +1423,7 @@ sequenceDiagram
 1. **健康检查路径跳过**：`/health` 路径跳过所有安全检查
 2. **HTTP 方法验证**：只允许合法的 HTTP 方法，非法方法返回 405
 3. **请求大小限制**：最大 10MB，超过返回 413
-4. **白名单路径放行**：20+ 条合法 API 路径跳过敏感路径检查
+4. **白名单路径放行**：14 条合法 API 路径跳过敏感路径检查
 5. **敏感路径拦截**：40+ 条黑名单（覆盖文件/目录/管理面板） -> 返回 403
 6. **可疑请求拦截**：null 字节、路径遍历、.env 访问等 -> 返回 400
 7. **SQL 注入检测**：30+ 规则检测查询参数、表单、JSON 数据中的危险 SQL 语句 -> 返回 400
@@ -1419,7 +1443,7 @@ Flask-Limiter 提供 4 种限流级别，支持身份感知：
 
 - 已认证用户基于用户 ID 限流
 - 未认证用户基于 IP 限流
-- 全局默认：60 次/分钟、10 次/秒、500 次/小时
+- 全局默认：60 次/分钟、10 次/秒、3600 次/小时（见 `app/core/extensions.py` 的 `default_limits`；小时桶曾设为 500，因多页面轮询会被叠加成比分钟桶更紧的瓶颈而放宽）
 
 ### 登录安全
 
@@ -1442,7 +1466,7 @@ flowchart TD
     PWD -->|正确 + 已开MFA| OK[登录成功]
     PWD -->|错误| EVAL["evaluate_login_failure<br/>5分钟滑动窗口 · 五维度"]
 
-    EVAL --> D1["维度一 账号级 (IP,账号) ≥5<br/>→ 限流该IP 30分钟 · 不锁账号"]
+    EVAL --> D1["维度一 账号级 (IP,账号) ≥5 限流该IP 30分钟<br/>≥10 临时封禁该IP 1小时 · 不锁账号"]
     EVAL --> D2["维度二 IP跨账号 ≥3 限流 / ≥5 临时封1h<br/>(login_brute_tier2)"]
     EVAL --> D3["维度三 IP枚举 ≥8 限流<br/>(login_enum)"]
     EVAL --> D4["维度四 IP总量 ≥30 限流<br/>(login_rate_limit)"]

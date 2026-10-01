@@ -149,6 +149,32 @@
 - **`校园信息聚合与智能推送系统[前端].md`**：性质是启动期开发指南，**原则性条款（18 条 AI 编码规则）仍然有效**，但其中的技术栈 / 结构属当时规划，需对照现实——技术栈声明（Taro 3.6 / React 18 / TypeScript 5.3 / SCSS / `@nutui/nutui-react-taro` / Zustand）经核**属实**（`package.json` 逐项对上，NutUI 也确实在 `app.tsx` 与 `CourseDetail` 被引入；但按其约定 `<Icon>` 子树不可用，图标走自绘 CSS）；而页面结构与目录已大幅演进：TabBar 实际 **3 项**（首页 / 时间轴 / 我的）而非 5 项，且「时间轴」是 TabBar 第二项、实现于 `pages/schedule/index`（无独立 `pages/timeline/`；通知页实际命名 `announcement` 而非 `notification`）；`app.config.ts` 注册 **30 个页面**（顶层目录 27 个）、api **10 个**、stores **3 个**、components **18 个**（该文档第十九节列 4 个 store、第二十八节列 2 个，两处本身不一致；规划中的 `ErrorState` 未落地，实际另有 `LoadingState` / `EmptyState` 等）。Phase 1–9 均已实施完成。
 - **一处命名差异（此前已记录、此处重申）**：根规范文档写「项目名称：校园知行（暂定）」，实际代码与小程序端一致使用 **校园宜知行**。
 
+**后端主 README 全面复核（`Push_System_Flask/README.md`，2026-10-01 追加）**
+这是本项目最大的单份文档（1584 行），此前只零散改过几处。本轮对着代码与运行时实测逐章核完（含用 `create_app()` 跑 `app.url_map` 实测 195 个注册路由），共订正 **41 处**。纯文档改动，全量测试 **666 passed / 1 skipped**。
+
+**事实性错误（说错，会误导读者）**
+- **课程入库去重键过时（3 处，含文档自相矛盾）**：功能特性、数据处理管道等处仍写「按 `course_code + week_day + period_idx + week_number` 去重」。实际自 v6.19.x 起是 `(semester_id, course_key)`，`course_key = md5(课程名|星期|排序节次|教室|教师)`、与周次无关；`course_code` 已降级为展示用。而同一文档的「课表爬虫子系统」章节写的本来就是新口径 —— 即文档内部两套说法并存。三处已统一。
+- **消息模板数错（4 处）**：写「6 套 / 6 个」，`app/services/templates.json` 与 `template_service._DEFAULT_TEMPLATES` 实际都是 **5 个**。
+- **推送规则数错**：写「5 种推送规则（含周课表图片推送）」，`rule_service._init_rules` 实际 **4 条**（末条 `after_class` 默认关闭）；周课表图片推送是 scheduler 的独立任务，不是规则引擎的规则。
+- **三处蓝图 url_prefix 写错**（对照 `app/__init__.py:286-387` 的实测注册）：`session_bp` 写 `/api/admin/session` 实为 `/api/auth`；`holiday_bp` 写 `/api/admin/holiday` 实为 `/api/holiday`；`task_bp` 写 `/api/admin/tasks` 实为 `/api/tasks`。
+- **目录树列了不存在的东西**：`service/`（单数）目录**不存在**（`electricity_service.py` / `weather_service.py` 实际都在 `app/services/`）；`utils/token.py` **不存在**（替换为实际存在的 `signed_url.py`）。
+- **又一个「文档有、代码没有」的开关**：管理后台小节写「可通过 `VITE_API_TARGET` 环境变量覆盖代理目标」，但 `admin-frontend/vite.config.ts` 的代理 target 是硬编码 `http://localhost:29528`，**没有**这个环境变量。
+- **天气分析规则整表过时**：原表写「大雨冷却 4 小时 / 降雨冷却 3 小时」、冷却键 `rain_heavy` / `high_temp` / `temp_drop` / `alert_{id}`。实际 `analyzer.py` 注释明确「降雨提醒已改为『分时段 + 每天每段仅一次』，不再使用时间冷却」，冷却键只有 `heat` / `cold` / `alert` 三个。功能特性里的「冷却机制（大雨 4h、降雨 3h…）」同步订正。
+- **数据库模型章节字段错**：`Notification` 写 `event_time, type, content`，实际是 `event_date, category, remind_days, sort_order, description`；`UserNotification` 写的 `link` **不存在**（实际 `payload, ref_type, ref_id, cover_url`）；`Webhook` 漏了核心的 `scope` / `scope_target` / `owner_user_id`。
+- **模型计数与公告表数**：写「共 22 个模型」，实际 `app/model/` 有 **32 个模型类 / 32 张表**；公告系列写「等 4 表」，实际 5 表（漏 `announcement_channels`）。
+- **全局默认限流写错**：写「500 次/小时」，`app/core/extensions.py` 实为 **3600 per hour**（源码注释专门解释了从 500 放宽的原因）。
+- **安全中间件白名单条数**：写「20+ 条合法 API 路径」，`API_WHITELIST_PATHS` 实为 **14 条**。
+
+**完整性补齐（漏列 → 补上）**
+- 目录树补：`utils/` 缺 8 个、`core/` 缺 3 个、`repository/` 缺 1 个、`docs/` 缺 1 份（安全代码审查报告_v6.11.4.md）；技术栈表补 `nh3` 与 `@wangeditor/editor`，并修正 `echarts-for-react` 版本（原误与 echarts 合并写成 6.1.x，实际 3.0.x）。
+- API 章节加前置说明：实际注册 **195 个路由**（`/api/miniapp/*` 48、`/api/admin/*` 84），原章节只覆盖约三分之一且**完全没提小程序端接口**；已列出未收录的组并指明权威清单在 `*_routes.py` 的 docstring。另补齐 `/api/auth` 漏掉的 4 个端点（session/status、sessions、sessions/<id>、csrf-token），端点数 10→11。
+- 管理后台页面表加前置说明（实际路由 30+）；锁定维度表补 tier2（≥10 次 → 临时封禁 1 小时），与功能特性章节对齐。
+
+**经核无误、未改的关键项（记结论）**
+- 环境变量章节默认值**逐项对上** `config.py`（HOST / PORT / DATABASE_PASSWORD / BEFORE_CLASS_MINUTES / CRON_EXPRESSION / JWT_* / ELECTRICITY_* / MAX_CONTENT_LENGTH / FORCE_ADMIN_MFA 等全部一致）。
+- 电量三级告警（≤5 / ≤8 / ≤10、每 4 小时）与 `formatter.py` 一致；天气阈值（降雨 70% / 大雨 80% / 体感 35 / 温差 6）与 `analyzer.py` 一致；模板截断 `MAX_MARKDOWN_BYTES = 3900` 正确；登录限流 60s/5 次（`LOGIN_RATE_LIMIT` / `LOGIN_RATE_WINDOW`）正确；登录爆破五维度阈值（≥5 / ≥3 与 ≥5 / ≥8 / ≥30 / ≥5）与 `ip_blacklist_service.py` 的 `*_TIERS` 完全一致；敏感路径黑名单 45 条、SQL 规则 41 条、XSS 规则 30 条（原文「40+/30+/30+」成立）；`/api/ping` 与 `/api/health` 都在；部署指南对 `DEPLOY_LINUX.md` 的摘要（9 个 FAQ、系统要求）准确。
+- 补丁脚本 5 个存 `技术总结/dev-scripts/patch_readme_{facts,completeness,weather,models,security}_2026-10-01.py`（字节级替换 + 逐条断言命中数 + 改后换行符校验）。
+
 ### 安全：B 级剩余 5 项加固（B10 / B9 / B1 / B5 / B7，2026-10-01）
 接上条「B 级问题修复（9 项）」，完成 🟡 清单中剩余的 5 项。五项均由**仓库内回归测试**锁定，并逐项做过反向验证（撤掉修复 → 对应用例变红；还原后文件哈希与原文逐字节一致），共 **46 项**变异全部命中。全量测试 **666 passed / 1 skipped**，`ruff check` 恒 **299**（与基线一致），两端 `tsc --noEmit` 通过。
 
