@@ -25,10 +25,11 @@ import './index.scss';
  * - 「关于」跳转独立页面，聚合用户协议/隐私政策/第三方 SDK/开源声明等条款。
  *
  * 绑定态（B7）：本页不是 Tab 页，未挂 Tab 页那套 `useBindStatusWatcher`，
- * 会存在「已登录但未绑定」在此停留的窗口。而「第三方消息通知」对应的服务端接口
- * 已收紧为 `@student_bound_required`（未绑定一律 403），若放未绑定用户进入，
- * 只会看到一个永远保存失败的死胡同。故本页补挂同一 watcher，主动按项目既定口径
- * （未绑定=无效登录态，回退游客）回收，并用登录守卫挡住游客点击。
+ * 会存在「已登录但未绑定」在此停留的窗口。「服务」分组的三个入口（电表配置 /
+ * 我的消息 / 第三方消息通知）对应的服务端接口全部是 `@student_bound_required`
+ * （未绑定一律 403），若放未绑定用户进入，只会看到一个走不通的死胡同。
+ * 故本页补挂同一 watcher，主动按项目既定口径（未绑定=无效登录态，回退游客）回收，
+ * 三个入口统一走 `openBoundPage()`（登录守卫 + 引导期不进入）。
  */
 
 export default function SettingsPage() {
@@ -100,32 +101,38 @@ export default function SettingsPage() {
     Taro.navigateTo({ url: '/pages/profile-detail/index' });
   };
 
-  const goElectricityConfig = () => {
-    Taro.navigateTo({ url: '/pages/electricity-config/index' });
-  };
-
-  const goMessages = () => {
-    Taro.navigateTo({ url: '/pages/messages/index' });
-  };
-
   /**
-   * 进入「第三方消息通知」
+   * 进入「需已绑定身份」的服务端子页
    *
-   * 守卫挡游客：该功能对应的服务端接口为 `@student_bound_required`，游客/未绑定进入
-   * 只会撞 403（列表空、保存必失败）。游客给气泡提示（不自动跳登录/绑定页，
-   * 遵守「先体验后授权」合规）；未绑定的登录态由本页 `useBindStatusWatcher` 先回收为游客。
+   * 本页的服务分组三个入口（电表配置 / 我的消息 / 第三方消息通知）对应的服务端接口
+   * **全部**是 `@student_bound_required`（电表 Cookie 3 个、站内通知 5 个、自建 webhook
+   * 5 个）。游客或未绑定身份进入只会撞 403：列表为空、任何操作都失败，是个走不通的
+   * 死胡同。故统一走此函数收口，避免同一段守卫逻辑在三个入口各写一遍（必然漂移）。
+   *
+   * 两道守卫：
+   * 1) 游客 → `guard()` 只气泡提示，**不**自动跳登录页/绑定页（遵守「先体验后授权」合规，
+   *    登录入口由页面自身承担，与 `profile` 页同款范式）；
+   * 2) 绑定引导期（刚登录成功、正被引导去绑定页）→ 不进入：此时后台接口必 403，
+   *    进去只会是空白死胡同。与 `request.ts` / `home` 页的引导期护栏同源（`bindGuard.ts`）。
+   *
+   * 未绑定的登录态会先被本页 `useBindStatusWatcher()` 按项目既定口径回收为游客
+   * （未绑定 = 无效登录态），所以到达这里时「已登录」基本等价于「已绑定」。
    */
-  const goThirdPartyNotify = () => {
+  const openBoundPage = (url: string) => {
     guard(() => {
-      // 绑定引导期（刚登录、正被引导去绑定页）不进入：此时后台接口必 403，
-      // 进去只会是死胡同。与 request.ts / home 页的引导期护栏同源（bindGuard.ts）。
       if (isBindGuideActive()) {
         Taro.showToast({ title: '请先完成身份认证', icon: 'none' });
         return;
       }
-      Taro.navigateTo({ url: '/pages/third-party-notify/index' });
+      Taro.navigateTo({ url });
     });
   };
+
+  const goElectricityConfig = () => openBoundPage('/pages/electricity-config/index');
+
+  const goMessages = () => openBoundPage('/pages/messages/index');
+
+  const goThirdPartyNotify = () => openBoundPage('/pages/third-party-notify/index');
 
   const toggleMaster = (value: boolean) => {
     setMasterEnabled(value);

@@ -7,7 +7,7 @@
 ## Unreleased
 
 ### 安全：B 级剩余 5 项加固（B10 / B9 / B1 / B5 / B7，2026-10-01）
-接上条「B 级问题修复（9 项）」，完成 🟡 清单中剩余的 5 项。五项均由**仓库内回归测试**锁定，并逐项做过反向验证（撤掉修复 → 对应用例变红；还原后文件哈希与原文逐字节一致），共 **43 项**变异全部命中。全量测试 **662 passed / 1 skipped**，`ruff check` 恒 **299**（与基线一致），两端 `tsc --noEmit` 通过。
+接上条「B 级问题修复（9 项）」，完成 🟡 清单中剩余的 5 项。五项均由**仓库内回归测试**锁定，并逐项做过反向验证（撤掉修复 → 对应用例变红；还原后文件哈希与原文逐字节一致），共 **46 项**变异全部命中。全量测试 **666 passed / 1 skipped**，`ruff check` 恒 **299**（与基线一致），两端 `tsc --noEmit` 通过。
 
 **B10 会话时长收敛为单一来源（清掉三处魔数漂移 + 两个假开关）**
 - 「7 天会话时长」此前散写在 3 处、并通过 `app.config.get(..., 默认值)` 隐式读取两个**从未在 `Config` 声明**的键——`.env` 里写 `JWT_REFRESH_IDLE_EXPIRE` / `JWT_REFRESH_ABSOLUTE_EXPIRE` **零效果**（死值 / 假开关）。
@@ -41,10 +41,12 @@
 - 服务端（最终防线）：5 个路由统一 `@student_required` → `@student_bound_required`，未绑定一律 403 + `code=STUDENT_NOT_BOUND`。
 - **反向围栏（重要）**：绑定流程自身的 4 个路由（`/user/me`、`/student/bind-status`、`/student/schools`、`/student/bind`）**必须**保持 `@student_required`——若有人「顺手全部改成 bound」，未绑定用户将无法查询绑定状态、无法提交绑定，绑定流程被彻底锁死。已用源码守卫钉住，并新增一条全局守卫：**除该白名单外不得再有裸 `@student_required` 路由**。
 - 前端配对（缺了会退化为死胡同）：`miniapp-frontend/src/pages/settings/index.tsx` 补挂 `useBindStatusWatcher()`（该页**不是 Tab 页**，原本没有绑定态监察，会存在「已登录但未绑定」停留窗口），入口用 `useLoginGuard` 挡游客，并复用 `bindGuard.ts` 的 `isBindGuideActive()` 在绑定引导期不进入。
+- **同族入口一并收口**：核对后发现设置页「服务」分组的另外两个入口——**电表配置**、**我的消息**——存在同一问题（对应服务端路由**同样全部是** `student_bound_required`，已用 AST 逐一核对：电表 Cookie 3 个路由 + 站内通知 3 个路由），但此前是无条件跳转。现把守卫逻辑收口为 `openBoundPage(url)` **一处**，三个入口统一经它跳转（避免同一段守卫写三遍必然漂移）。三者的服务端路由同时纳入源码守卫，防止「前端加了守卫、服务端却放开」使守卫前提失效。
+  - 另核查的其余入口（**未改，各有上游遮盖**）：`profile` 页的两个「我的消息」入口**本就用** `guard()`；`profile` 页的「去设置（电表）」在 `!isLoggedIn ? … :` 的**已登录分支内**（游客不渲染）；电量页内的「去设置」在其上游入口已被 `guard()` 包裹。
 
 **测试**
-- 新增 5 个回归文件：`tests/test_session_lifetime_fence.py`（33）、`tests/test_totp_replay_fence.py`（30，另 1 项需真实 Redis）、`tests/test_feedback_image_sign_fence.py`（47）、`tests/test_announcement_html_sanitize_fence.py`（37）、`tests/test_miniapp_webhook_bound_fence.py`（28）。
-- 反向验证脚本 `技术总结/dev-scripts/reverse_verify_b_rest.py` 累计 43 项（B10×7 / B9×9 / B1×8 / B5×9 / B7×10），全部「撤掉修复即变红」且还原后逐字节一致。其中 B7 覆盖**接线**而非只测辅助函数：5 条路由逐条撤销、webhook 漏挂装饰器、以及「绑定流程被误改成 bound」的两条反向用例。
+- 新增 5 个回归文件：`tests/test_session_lifetime_fence.py`（33）、`tests/test_totp_replay_fence.py`（30，另 1 项需真实 Redis）、`tests/test_feedback_image_sign_fence.py`（47）、`tests/test_announcement_html_sanitize_fence.py`（37）、`tests/test_miniapp_webhook_bound_fence.py`（32）。
+- 反向验证脚本 `技术总结/dev-scripts/reverse_verify_b_rest.py` 累计 46 项（B10×7 / B9×9 / B1×8 / B5×9 / B7×13），全部「撤掉修复即变红」且还原后逐字节一致。其中 B7 覆盖**接线**而非只测辅助函数：5 条路由逐条撤销、webhook 漏挂装饰器、设置页三个入口逐入口「退回裸跳转」、以及「绑定流程被误改成 bound」「电表路由被放开」两类反向用例。
 - 顺带修掉一处**既有测试缺陷**：`test_feedback_image_sign_fence.py` 的篡改用例把签名**末位**替换为 `"0"`，而该位本来就是 `"0"` 的概率约 1/16（签名含 `exp`，随时间变化；实测 1000 个 `exp` 中命中 58 个）→ 约 6% 的运行下篡改成为空操作、用例假失败。已改为「替换首位并保证与原字符不同」。
 
 ### 安全：B 级问题修复（9 项，后端 + 管理端，2026-10-01）

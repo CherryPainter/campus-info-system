@@ -18,9 +18,14 @@
 --------------------------
 * **服务端**（最终防线）：5 个路由 `@student_required` → `@student_bound_required`，
   未绑定一律 403 + `code=STUDENT_NOT_BOUND`；
-* **前端**：`miniapp-frontend/src/pages/settings/index.tsx` 的「第三方消息通知」入口
+* **前端**：`miniapp-frontend/src/pages/settings/index.tsx` 的「服务」分组入口
   用 `useLoginGuard` 挡游客，并补挂 `useBindStatusWatcher`（该页不是 Tab 页，
   原本没有绑定态监察）——否则未绑定用户点进去只会看到死胡同。
+
+后续扩展（同日）：同一页面的另外两个服务入口「电表配置」「我的消息」与之同族
+（服务端路由同样全部是 `student_bound_required`，已逐一核对），故把守卫逻辑收口为
+`openBoundPage(url)` 一处，三个入口统一经它跳转 —— 这条「三入口必须都走守卫」
+由 `test_settings_service_entries_go_through_bound_guard` 逐入口锁定。
 
 本文件另含一条**反向围栏**（重要）：绑定流程自身的 4 个路由
 （`/user/me`、`/student/bind-status`、`/student/schools`、`/student/bind`）
@@ -407,6 +412,32 @@ def test_no_other_route_uses_bare_student_required():
     )
 
 
+# 「设置页服务分组」另外两个入口对应的服务端路由（本轮补前端守卫时逐一核过）：
+# 未绑定用户进入这两个页面同样是死胡同，故它们必须保持 bound —— 一旦被改成裸
+# student_required，前端守卫的前提就不成立（服务端不再拦，页面会露出半死状态）。
+SETTINGS_BOUND_PATHS = {
+    "/electricity/cookie",  # 电表配置页：GET / PUT
+    "/electricity/cookie/test",
+    "/notifications/messages",  # 我的消息页：列表
+    "/notifications/messages/read",
+    "/notifications/messages/viewed",
+}
+
+
+def test_settings_service_routes_require_binding():
+    """电表配置 / 我的消息 两个页面用到的路由必须挂 @student_bound_required"""
+    found = set()
+    for name, paths, names in _load_route_functions():
+        hit = {p for p in paths if p in SETTINGS_BOUND_PATHS}
+        if not hit:
+            continue
+        assert "student_bound_required" in names, f"{name} 未挂绑定校验（{hit}）"
+        assert "student_required" not in names, f"{name} 仍是裸 student_required（{hit}）"
+        found |= hit
+    missing = SETTINGS_BOUND_PATHS - found
+    assert not missing, f"路径写错或路由已改名，未找到：{missing}"
+
+
 # ==================== 二、真实 HTTP：未绑定一律 403 ====================
 
 
@@ -515,28 +546,50 @@ def test_settings_page_wires_guard_hooks():
     assert "const { guard } = useLoginGuard();" in src, "登录守卫未取用 guard"
 
 
-def _entry_body():
-    """取出 goThirdPartyNotify 函数体，避免用「全文包含」这种易被无关代码满足的断言"""
+# 「服务」分组三个入口的跳转目标（三者对应的服务端接口全部是 student_bound_required）
+BOUND_PAGE_URLS = [
+    "/pages/electricity-config/index",
+    "/pages/messages/index",
+    "/pages/third-party-notify/index",
+]
+
+
+def _open_bound_body():
+    """取出 openBoundPage 函数体
+
+    用「提取函数体」而不是「全文包含」：后者会被无关代码满足（例如注释里提一句
+    就算过）。守卫逻辑已收口到 openBoundPage 一处，三个入口都经它跳转。
+    """
     import re
 
     src = _settings_src()
-    m = re.search(r"const goThirdPartyNotify = \(\) => \{(.*?)\n  \};", src, re.S)
-    assert m, "未找到 goThirdPartyNotify 函数"
+    m = re.search(r"const openBoundPage = \(url: string\) => \{(.*?)\n  \};", src, re.S)
+    assert m, "未找到 openBoundPage（设置页受限入口的统一守卫函数）"
     return m.group(1)
 
 
-def test_settings_entry_blocked_for_guest():
-    """入口包在登录守卫里：游客点击只提示、不进入
+def test_settings_bound_entry_blocked_for_guest():
+    """统一守卫包在登录守卫里：游客点击只提示、不进入
 
-    服务端收紧后若前端不配对，未绑定/游客点「第三方消息通知」会进到死胡同；
-    这条守卫防止「前端改动被回退」造成体验回退。
+    服务端收紧后若前端不配对，未绑定/游客点这三个入口会进到死胡同
+    （列表空、任何操作都失败）；这条守卫防止「前端改动被回退」造成体验回退。
     """
-    body = _entry_body()
-    assert "guard(" in body, "入口未包在登录守卫里"
-    assert "/pages/third-party-notify/index" in body, "入口跳转目标缺失"
+    body = _open_bound_body()
+    assert "guard(" in body, "统一守卫未包在登录守卫里"
+    assert "Taro.navigateTo({ url })" in body, "统一守卫的跳转目标缺失"
 
 
-def test_settings_entry_blocked_during_bind_guide():
+def test_settings_bound_entry_blocked_during_bind_guide():
     """绑定引导期不进入（复用 bindGuard.ts）：此时业务接口必 403，进去是死胡同"""
-    body = _entry_body()
-    assert "isBindGuideActive()" in body, "入口未做绑定引导期判断"
+    body = _open_bound_body()
+    assert "isBindGuideActive()" in body, "统一守卫未做绑定引导期判断"
+
+
+@pytest.mark.parametrize("url", BOUND_PAGE_URLS)
+def test_settings_service_entries_go_through_bound_guard(url):
+    """三个服务入口都必须经 openBoundPage 跳转（不得绕过守卫裸跳）
+
+    逐入口断言，而不是只断言「函数存在」：否则新增入口时极易漏掉守卫。
+    """
+    src = _settings_src()
+    assert f"openBoundPage('{url}')" in src, f"{url} 入口未走 openBoundPage 守卫"
