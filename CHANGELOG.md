@@ -29,7 +29,7 @@
 - 版本号 v6.11.2 → **v6.20.0** 三处（头部检查结论 / `.env` 模板的 `APP_VERSION` / systemd `Description`），头部补「最近复核：2026-10-01」。
 - 旧键名 `CORS_ORIGINS` → **`ALLOWED_ORIGINS`**，并注明旧名仍兼容（`config.py:158-159` 是 `os.getenv("ALLOWED_ORIGINS") or os.getenv("CORS_ORIGINS")`）。
 - 删掉引用不存在文件的 `.env.linux` 行，并把部署步骤里的 `cp .env.linux .env` 订正为 **`cp .env.example .env`**（`.env.linux` 从未入库，照原文档执行会在此步失败）。
-- **未做**：该文档整体仍是 2026-06-25 的检查结论（跨了 9 个小版本），其中的代码行号引用（如 `config.py:122`、`__init__.py:56`）与新增环境变量未经逐条复核，本次只修上述明确错误。
+- **未做**（已于下行「部署清单全面复核」补齐）：该文档整体仍是 2026-06-25 的检查结论（跨了 9 个小版本），其中的代码行号引用（如 `config.py:122`、`__init__.py:56`）与新增环境变量未经逐条复核，本次只修上述明确错误。
 
 **全仓键集合复核（模板是否完整）**
 - 用「全仓 `os.getenv` / `os.environ` 扫描 ↔ `.env.example` 键集合」双向比对，逐项判定差异，避免「模板缺键」与「模板列了死键」两头漏。
@@ -37,6 +37,26 @@
 - **补上 `MAX_CONTENT_LENGTH`**（模板与 README 此前都缺）：`config.py:131` 在读，默认 10MB，管理端不接管。它是「大文件上传提示是否友好」的实际开关（Flask 在进入视图前就按它拒绝请求体），值得让部署者知道。
 - **判定为「有意不列」的键（不动，记为结论）**：`COURSE_*` 5 个与 `QWEATHER_CITY_NAME` 走管理端配置页（`module_config.py:313` 起的 module_key → Config 映射即证据）；`ENV` / `FLASK_ENV` 是框架变量；`CORS_ORIGINS` 是兼容旧名（README 已注明）；`QWEATHER_SECRET` 已废弃；`WEATHER_WEBHOOK` 只有定义、无消费方；`GUNICORN_*` 属 systemd/进程级参数（由部署方式传入，不是 `.env` 的职责）；`APPLY`、`ENV_FILE_PATH` 是工具脚本与爬虫子项目的内部参数。
 - **扫描脚本的已知盲区（如实标注）**：通过**变量名常量**间接读取的键抓不到——`WEBHOOK_URL_ALLOWED_HOSTS` 正是如此（`url_guard.py:63` 定义常量、`:68` 才 `os.getenv`），在扫描结果里会误报为「没人读」。判定死键前必须再按字面量 `grep` 一次确认。
+
+**部署清单全面复核（`docs/DEPLOY_CHECKLIST.md`，2026-10-01 追加）**
+把上一条标注为「未做」的逐条复核补齐。该文件整体仍是 2026-06-25 的结论（跨 9 个小版本），本轮对着代码走了一遍：
+
+- **代码行号引用全线漂移**（最容易误导排障的一类）：
+  | 原文 | 实际 | 指向 |
+  |---|---|---|
+  | `config.py:122` | `config.py:127` | `cls.PORT` |
+  | `config.py:121` | `config.py:126` | `cls.HOST` |
+  | `config.py:267` | `config.py:355` | `DATABASE_PASSWORD` 默认值 |
+  | `__init__.py:56` | `app/__init__.py:90` | CORS 注册 |
+  | `request.ts:23` / `request.ts:16` | `src/api/request.ts:26` / `:19` | 文件名还漏了 `api/` 目录 |
+  | `vite.config.ts:43` | 正确 | 仅补全为 `admin-frontend/vite.config.ts:43` |
+- **CORS 生效范围写错**：原文「`r"/*"` 全局，风险中，对所有路由生效、范围过大」；实为 `CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)`（`app/__init__.py:90`）——只对 `/api/*` 生效，且 origins 取 `ALLOWED_ORIGINS` 白名单而非通配（`config.py:157-162`）。风险等级降为「低」，并补一行「origins 取值」。
+- **`FORCE_HTTPS` 的部署建议已过时**：原文「生产环境设为 `true`，或由 Nginx 处理 HTTPS」，模板段更直接写 `FORCE_HTTPS=false` + 「如由 Nginx 处理 HTTPS 可设为 false」。但 `config.py:171-178` 的注释写明：Nginx 终结 TLS 时后端 `wsgi.url_scheme` 是 http，靠 ProxyFix 解析 `X-Forwarded-Proto` 才判为 https，**缺这个头才会 301 死循环**——而 ProxyFix 缺失问题已于 **2026-09-30** 修复（注释原话：「这正是生产 .env 一直没敢置 true 的根因」）。故 Nginx 场景同样应为 `true`，原「设 false」建议作废；模板段一并补 `APP_ENV=production`（两者需同时设：生产守卫会在「`APP_ENV=production` 且未开 `FORCE_HTTPS`」时拒绝启动）。
+- **模板段与入库模板的边界未说明**：`.env` 模板段是 2026-06-25 的快照，比 `.env.example` 少了 `MAX_CONTENT_LENGTH`、`CSRF_ALLOWED_ORIGINS`、`ENABLE_FOREIGN_IP_BLOCK`、`REGION_BLOCK_EXCEPTIONS`、`JWT_REFRESH_*`、`QWEATHER_CREDENTIAL_ID/PROJECT_ID` 等键；而第 5.3 步又让用户 `cp .env.example .env`。已在段首加说明「部署以 `.env.example` 为准，本段用于对照检查结论」，并把 5.3 的「按上方模板修改」改为按 `.env.example` 修改。
+- `APP_NAME` 由 `校园智能通知系统` 对齐为代码默认值 `校园信息聚合与智能推送系统`。
+- **模板段 41 个键逐个回代码核对，零死键**：`CLASS_NAME`/`CRON_EXPRESSION`/`DAILY_PUSH_TIME`/`BEFORE_CLASS_MINUTES`/`BEFORE_END_CLASS_MINUTES` 等均在 `config.py:225-233` 有 `os.getenv` 声明，`TESSERACT_CMD` 在 `config.py:33` 读取且无该变量时有自动探测兜底。
+
+**一处自我纠错（记录在案）**：复核中我一度判定「文档里的 `/api/ping` 端点不存在」，并据此改了 4 处为 `/api/health`。依据是检索式 `route\((['"])/(ping|health|status)` 只找到 `/api/health` 与 `/api/status`。随后用 Flask `test_client` 实测发现 **`/api/ping` 返回 200 `{"status":"ok"}`** —— 它注册在 `app/__init__.py:252` 的 `@app.route("/api/ping")`，是**全路径写法**，而我的检索式只匹配 `route("/ping"` 这种无前缀形式，因此漏掉；README 的 API 表也一直正确并列着两者（ping 轻量、health 含详情）。4 处改动已**全部回滚**，文档原样正确。教训：判断端点/路由是否存在，要么实测，要么按可能的前缀全量 grep，不能靠单一检索式下结论。
 
 **和风天气 API Host：查证并订正（2026-10-01 追加）**
 - 上一条曾把 `QWEATHER_API_HOST` 记为「待确认」。现已查证——**不是书写差异，代码里的那个域名根本不存在**：

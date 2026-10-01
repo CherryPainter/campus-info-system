@@ -1,6 +1,6 @@
 # Linux 部署检查报告与部署方案
 
-> 检查日期：2026-06-25 | 项目版本：v6.20.0 | 最近复核：2026-10-01（键名与版本已同步代码）
+> 检查日期：2026-06-25 | 项目版本：v6.20.0 | 最近复核：2026-10-01（版本、键名、代码行号引用与 CORS 说明均已逐条对齐代码）
 
 ---
 
@@ -10,10 +10,10 @@
 
 | 检查项 | 当前值 | 位置 | 风险等级 | 部署建议 |
 |--------|--------|------|----------|----------|
-| Flask 监听端口 | `29528` | config.py:122 | 无风险 | 非标准端口，安全性好，保留 |
-| Flask 绑定地址 | `0.0.0.0` | config.py:121, .env:8 | **高** | 改为 `127.0.0.1`（配合 Nginx 反向代理） |
+| Flask 监听端口 | `29528` | config.py:127 | 无风险 | 非标准端口，安全性好，保留 |
+| Flask 绑定地址 | `0.0.0.0` | config.py:126 | **高** | 改为 `127.0.0.1`（配合 Nginx 反向代理） |
 | Nginx 监听端口 | `80` / `443` | DEPLOY_LINUX.md | 无风险 | 80 跳转 443，443 提供服务 |
-| 前端开发端口 | `5173` | vite.config.ts:43 | 仅开发环境 | 生产环境不使用，Nginx 托管 dist/ |
+| 前端开发端口 | `5173` | admin-frontend/vite.config.ts:43 | 仅开发环境 | 生产环境不使用，Nginx 托管 dist/ |
 
 **核心问题**：`HOST=0.0.0.0` 会导致 Flask 直接监听所有网络接口。如果防火墙未关闭 29528 端口，外部可直接访问 Flask 绕过 Nginx，跳过所有 Nginx 层安全防护。
 
@@ -21,11 +21,12 @@
 
 | 检查项 | 当前值 | 位置 | 风险等级 | 说明 |
 |--------|--------|------|----------|------|
-| CORS 生效范围 | `r"/*"` 全局 | __init__.py:56 | 中 | 对所有路由生效，范围过大 |
-| `supports_credentials` | `True` | __init__.py:56 | 中 | 允许携带 Cookie 跨域，前端 httpOnly cookie 依赖此项 |
-| `.env` 中的 ALLOWED_ORIGINS | 仅 localhost | .env | **高** | 生产环境部署后前端域名不在白名单中，跨域请求会被拒绝（旧名 `CORS_ORIGINS` 仍兼容读取） |
-| 前端 `withCredentials` | `true` | request.ts:23 | 无风险 | 与后端 `supports_credentials=True` 对应 |
-| 前端生产 baseURL | `/api`（相对路径） | request.ts:16 | 无风险 | 同源部署时不触发跨域 |
+| CORS 生效范围 | `r"/api/*"`（仅 API 路径） | app/__init__.py:90 | 低 | `resources` 已限定 `/api/*`，静态资源路由不受影响 |
+| origins 取值 | `ALLOWED_ORIGINS` 白名单 | app/__init__.py:89-90 | 低 | 不是通配 `*`，仅放行白名单内的来源 |
+| `supports_credentials` | `True` | app/__init__.py:90 | 中 | 允许携带 Cookie 跨域，前端 httpOnly cookie 依赖此项 |
+| `.env` 中的 ALLOWED_ORIGINS | 仅 localhost | `.env.example` | **高** | 生产环境部署后前端域名不在白名单中，跨域请求会被拒绝（旧名 `CORS_ORIGINS` 仍兼容读取） |
+| 前端 `withCredentials` | `true` | src/api/request.ts:26 | 无风险 | 与后端 `supports_credentials=True` 对应 |
+| 前端生产 baseURL | `/api`（相对路径） | src/api/request.ts:19 | 无风险 | 默认 `/api`，可用 `VITE_API_BASE_URL` 覆盖；同源部署时不触发跨域 |
 
 **关键结论**：如果使用 Nginx 反向代理（前端和 API 同域名），**不会产生跨域请求**，CORS 配置不影响功能。但 `.env` 中的 `ALLOWED_ORIGINS` 仍需更新为生产域名，以防直接访问 API 端口时被拦截。
 
@@ -34,10 +35,10 @@
 | 检查项 | 当前值 | 风险等级 | 部署建议 |
 |--------|--------|----------|----------|
 | `DEBUG` | `false` | 无风险 | 保持关闭 |
-| `FORCE_HTTPS` | `false`（.env 中有此变量） | 中 | 生产环境设为 `true`，或由 Nginx 处理 HTTPS |
+| `FORCE_HTTPS` | `false` | 中 | 生产**必填 `true`**：给 cookie 加 Secure 且把 http 请求 301 跳 https。由 Nginx 终结 TLS 时同样是 `true`，前提是 Nginx 转发 `X-Forwarded-Proto`（下方 Nginx 配置已含） |
 | `AUTH_ENABLED` | `true` | 无风险 | 保持开启 |
 | 数据库 | MySQL（仅支持） | 低 | 代码仅支持 MySQL，无 SQLite 回退；`DATABASE_TYPE` 非有效环境变量，无需设置；生产务必改强 `DATABASE_PASSWORD` |
-| `DATABASE_PASSWORD` 默认值 | `123456` | **高** | config.py:267 的默认值，必须在 .env 中设置强密码 |
+| `DATABASE_PASSWORD` 默认值 | `123456` | **高** | config.py:355 的默认值，必须在 .env 中设置强密码 |
 | `JWT_ADMIN_PASSWORD` | 空（回退到 ADMIN_TOKEN） | 中 | 建议在 .env 中显式设置管理员密码 |
 | `SECRET_KEY` 自动生成 | 未设置时随机生成 | 中 | 每次重启变化导致 Token 失效，必须固定设置（v6.11.0 起：生产环境缺失即启动失败） |
 
@@ -45,13 +46,21 @@
 
 ## 二、生产环境 .env 配置模板
 
-以下为 Linux 部署专用的 `.env` 配置，**复制为 `.env` 后修改标注项**：
+以下为 Linux 部署专用的 `.env` 配置快照（检查日期 2026-06-25），**复制为 `.env` 后修改标注项**。
+
+> 部署时请以入库模板 **`.env.example`** 为准 —— 它随代码更新、键比本快照完整
+> （`MAX_CONTENT_LENGTH`、`CSRF_ALLOWED_ORIGINS`、`ENABLE_FOREIGN_IP_BLOCK`、
+> `REGION_BLOCK_EXCEPTIONS`、`JWT_REFRESH_IDLE_EXPIRE`、`JWT_REFRESH_ABSOLUTE_EXPIRE`、
+> `QWEATHER_CREDENTIAL_ID` / `QWEATHER_PROJECT_ID` 等只在该模板中）。
+> 本段用于对照下述检查结论与 `[必改]` 项。
 
 ```ini
 # ========== 应用配置 ==========
-APP_NAME=校园智能通知系统
+APP_NAME=校园信息聚合与智能推送系统
 APP_VERSION=6.20.0
 DEBUG=false
+# 填 production 即启用生产约束（当前是「生产未开 FORCE_HTTPS 拒绝启动」）
+APP_ENV=production
 HOST=127.0.0.1
 PORT=29528
 
@@ -61,8 +70,11 @@ SECRET_KEY=<替换为你的64位十六进制密钥>
 # [必改] 用 openssl rand -hex 16 生成
 ADMIN_TOKEN=<替换为你的32位十六进制令牌>
 AUTH_ENABLED=true
-# 生产环境启用 HTTPS 强制跳转（如由 Nginx 处理 HTTPS 可设为 false）
-FORCE_HTTPS=false
+# 生产必填 true：给 cookie 加 Secure，并把 http 请求 301 跳 https。
+# 由 Nginx 终结 TLS 时同样必须为 true —— Nginx 需转发 X-Forwarded-Proto（下方配置已含），
+# 后端 ProxyFix 据此把请求判为 https；缺这个头才会 301 死循环。
+# （该 ProxyFix 缺失问题已于 2026-09-30 修复，此前「设 false」的建议作废。）
+FORCE_HTTPS=true
 
 # ========== JWT 认证配置 ==========
 JWT_ADMIN_USERNAME=admin
@@ -294,7 +306,8 @@ echo "ADMIN_TOKEN=$(openssl rand -hex 16)"
 
 # 编辑配置
 nano .env
-# 按照上方模板修改所有标注 [必改] 的项
+# 按 .env.example 内的注释逐项填写（至少覆盖上述 [必改] 项：SECRET_KEY、ADMIN_TOKEN、
+# JWT_ADMIN_PASSWORD、ALLOWED_ORIGINS、QWEATHER_API_HOST）
 ```
 
 ### 5.4 创建虚拟环境并安装依赖
