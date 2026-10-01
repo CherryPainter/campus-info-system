@@ -6,8 +6,49 @@
 
 ## Unreleased
 
+### 安全：B 级剩余 5 项加固（B10 / B9 / B1 / B5 / B7，2026-10-01）
+接上条「B 级问题修复（9 项）」，完成 🟡 清单中剩余的 5 项。五项均由**仓库内回归测试**锁定，并逐项做过反向验证（撤掉修复 → 对应用例变红；还原后文件哈希与原文逐字节一致），共 **43 项**变异全部命中。全量测试 **662 passed / 1 skipped**，`ruff check` 恒 **299**（与基线一致），两端 `tsc --noEmit` 通过。
+
+**B10 会话时长收敛为单一来源（清掉三处魔数漂移 + 两个假开关）**
+- 「7 天会话时长」此前散写在 3 处、并通过 `app.config.get(..., 默认值)` 隐式读取两个**从未在 `Config` 声明**的键——`.env` 里写 `JWT_REFRESH_IDLE_EXPIRE` / `JWT_REFRESH_ABSOLUTE_EXPIRE` **零效果**（死值 / 假开关）。
+- `app/utils/security.py` 新增 `SESSION_SHORT_IDLE/SHORT_ABSOLUTE/LONG_IDLE/LONG_ABSOLUTE` 与 `session_limits(remember_me)`、`refresh_cookie_max_age(...)`（取三者最小：闲置上限 / 绝对上限**剩余** / refresh token 自身 `exp`）。
+- `generate_tokens` 随会话下发 `refresh_cookie_max_age`；`auth_routes.py` 新增 `_set_auth_cookies()` 作为三个 cookie 的**唯一下发点**（登录 / 刷新 / MFA 登录三处统一）。
+- 修正的漂移：登录与 MFA 登录的 refresh cookie 曾**恒为 7 天**（短会话/记住我区分丢失）、MFA 的 session_id cookie 曾**恒为 30 天**、刷新路径曾直接用 `refresh_token_expire` 忽略绝对上限消耗。
+- `config.py` + `.env.example` 补齐两个键的声明（值与原代码内默认一致），并注明真实作用范围：管理端三条路径均显式传参，实际只影响微信小程序登录的绝对上限。
+
+**B9 TOTP 重放加固（同一验证码 90 秒内可反复通过）**
+- `verify_mfa` 原先只验算「在窗口内」，而 `window=1` 意味 **3×30 秒**内**同一验证码可无限次重复使用**；`UserMFA` 无「已用码」字段。
+- 新增 `app/utils/totp_replay_guard.py`：以「最近消费的 step」为状态、要求**严格递增**；Redis 侧用 Lua 做原子「比较 + 写入」避免读-改-写竞态；Redis 不可用时降级为进程内内存表。
+- `TOTP.match_step(otp, window) -> int | None` 暴露命中的 step，`verify()` 语义不变；`MFAManager.verify_mfa(secret, otp, user_id)` 先取 step 再判重放，重放打 WARNING；三处调用点均传入 `user_id`。
+- **未验证边界（如实标注）**：本机 Redis 不可达，Lua 的**真实执行**行为无法本地验证（已加 `skipif` 集成用例）；Redis 降级为内存表时在多 worker 部署下只能挡住同一 worker 内的重放。
+
+**B1 反馈截图改为签名 URL 访问**
+- 反馈截图此前经公开路由裸路径对外可取（`/api/feedback-images/<file>`），任何拿到（或猜到）文件名的人无需登录即可查看——反馈常含宿舍/环境照片，属隐私面。公告图/封面按设计保持公开，本次**不动**。
+- 新增 `app/utils/signed_url.py`：`?exp=&sig=` 签名（HMAC-SHA256 over `path\n exp`），`IMAGE_SIGNED_URL_TTL` 默认 6 小时；`feedback_image()` 改为**必须验签**（扩展名白名单仍在验签之前），失败返回 403 + 明确文案。
+- 关键设计：签名只在**输出时**生成（`Feedback.to_dict()` 重新签），因此 TTL 到期不会把历史数据签成死链，**无需数据迁移**，也无需落库签名。
+- **未验证边界（如实标注）**：小程序 `<Image>` 对相对 URL 与 cookie 的行为本地无法验证；签名 URL 适用于 `<img>` 这类无法携带 `Authorization` 头的资源，浏览器会自动带 cookie。
+
+**B5 公告 / 自定义推送正文接入 HTML 白名单清洗**
+- 公告与自定义推送正文原先**原样存储与下发**，富文本里的 `<script>`、`on*` 事件属性、`javascript:` / `data:` URL 以及 `position: fixed`、`background-image: url(...)` 等样式均可注入。
+- 接入 `nh3==0.3.7`（ammonia 的 Rust 绑定；`bleach` 已停止维护未采用），新增 `app/utils/html_sanitizer.py`，对**标签 / 属性 / style 属性 / URL 协议**四项同时收紧并启用 `link_rel`。
+- **实测关键点**：不显式传 `filter_style_properties` 时，nh3 会**保留全部** style（含 `position: fixed`、`background-image: url(http://…)`）——其默认不是「安全子集」而是「不过滤」，必须显式传**集合**。
+- 四个入口统一：公告写入（`announcement_service`）、公告读取（`Announcement.to_dict`）、自定义推送写入（`push_routes`）、读取（`CustomPush.to_dict`）。读取侧也清洗，是为了兜住**存量脏数据**。
+- fail-closed：依赖缺失时抛 `HtmlSanitizerUnavailable` **拒绝**处理（写入被拒 → 管理员看到明确错误），而非放行原文；启动时打 ERROR 日志（不 fail-fast，避免整个服务起不来）。
+- **真实数据核对**（读库 5 条真实公告）：正文文本一致、5 张图片地址全部保留、`text-indent` / `text-align` 保留；`position` / `z-index` / `background-image` / `behavior` / `transform`、`script` / `iframe` / `svg` / `on*` / `javascript:` / `data:` 全部清除；0 条文本不一致或图片丢失。
+
+**B7 学生自建 webhook 收紧为「已绑定身份」才可用（服务端 + 前端配对）**
+- 5 个学生自建 webhook 路由原先只要求 `@student_required`（是学生角色即可），而 `scope_target` 定位的是**本人**课表/电量：未绑定学生没有 `student_profiles`、没有班级/宿舍归属，进去只能看到空列表且保存必失败——一个走不通的死胡同；`POST /webhooks/<id>/test` 还会真的向企业微信发起出站请求，不应让「只完成登录、身份未核验」的账号获得该能力。
+- 服务端（最终防线）：5 个路由统一 `@student_required` → `@student_bound_required`，未绑定一律 403 + `code=STUDENT_NOT_BOUND`。
+- **反向围栏（重要）**：绑定流程自身的 4 个路由（`/user/me`、`/student/bind-status`、`/student/schools`、`/student/bind`）**必须**保持 `@student_required`——若有人「顺手全部改成 bound」，未绑定用户将无法查询绑定状态、无法提交绑定，绑定流程被彻底锁死。已用源码守卫钉住，并新增一条全局守卫：**除该白名单外不得再有裸 `@student_required` 路由**。
+- 前端配对（缺了会退化为死胡同）：`miniapp-frontend/src/pages/settings/index.tsx` 补挂 `useBindStatusWatcher()`（该页**不是 Tab 页**，原本没有绑定态监察，会存在「已登录但未绑定」停留窗口），入口用 `useLoginGuard` 挡游客，并复用 `bindGuard.ts` 的 `isBindGuideActive()` 在绑定引导期不进入。
+
+**测试**
+- 新增 5 个回归文件：`tests/test_session_lifetime_fence.py`（33）、`tests/test_totp_replay_fence.py`（30，另 1 项需真实 Redis）、`tests/test_feedback_image_sign_fence.py`（47）、`tests/test_announcement_html_sanitize_fence.py`（37）、`tests/test_miniapp_webhook_bound_fence.py`（28）。
+- 反向验证脚本 `技术总结/dev-scripts/reverse_verify_b_rest.py` 累计 43 项（B10×7 / B9×9 / B1×8 / B5×9 / B7×10），全部「撤掉修复即变红」且还原后逐字节一致。其中 B7 覆盖**接线**而非只测辅助函数：5 条路由逐条撤销、webhook 漏挂装饰器、以及「绑定流程被误改成 bound」的两条反向用例。
+- 顺带修掉一处**既有测试缺陷**：`test_feedback_image_sign_fence.py` 的篡改用例把签名**末位**替换为 `"0"`，而该位本来就是 `"0"` 的概率约 1/16（签名含 `exp`，随时间变化；实测 1000 个 `exp` 中命中 58 个）→ 约 6% 的运行下篡改成为空操作、用例假失败。已改为「替换首位并保证与原字符不同」。
+
 ### 安全：B 级问题修复（9 项，后端 + 管理端，2026-10-01）
-按全系统审计的 🟡 清单（B1–B14）修复 9 项。每项均配套**反向验证过**的回归测试（撤掉修复 → 用例变红），全量测试 **487 passed / 0 failed**（本轮新增 77 项）。剩余 5 项（B1/B5/B7/B9/B10）需产品决策或依赖/表结构支持，未擅自改动，清单见 `技术总结/安全审计B-待办备忘-2026-10-01.md`。
+按全系统审计的 🟡 清单（B1–B14）修复 9 项。每项均配套**反向验证过**的回归测试（撤掉修复 → 用例变红），全量测试 **487 passed / 0 failed**（本轮新增 77 项）。剩余 5 项（B1/B5/B7/B9/B10）已于同日完成，见上一条。
 
 **B2 图片上传补内容级校验（伪造扩展名不再能落盘）**
 - 公告正文图 / 公告封面 / 反馈截图三处此前**只查扩展名**，把任意文件改名成 `.jpg` 即可落盘，随后经公开路由对外提供。

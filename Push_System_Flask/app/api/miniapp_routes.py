@@ -1325,6 +1325,15 @@ def announcement_attachment(attachment_id):
 # 学生可在小程序设置里自助添加 webhook（企业微信机器人），仅限个人相关模块
 # （course / electricity / weather）。服务端强制 scope=student + scope_target=[本人 user_id]，
 # 客户端无法指定接收范围或归属，杜绝越权与范围篡改；免审核即生效。
+#
+# 鉴权口径（B7）：本组 5 个路由统一用 @student_bound_required 而非 @student_required。
+# 理由——这组功能只对「已绑定身份」的学生有意义：scope_target 定位的是本人的课表/电量，
+# 未绑定学生没有 student_profile、没有班级/宿舍归属，能收到的数据为空；且入站即产生
+# 对外出站请求（/test 会真实 POST），不应让只完成登录、身份未核验的账号获得该能力。
+# 前端入口同步加了绑定守卫（miniapp-frontend/src/pages/settings/index.tsx），
+# 未绑定时不进入本页 → 否则会落到空白页（前端登录守卫只查登录态、不查绑定）。
+# 注意：绑定流程自身（/user/me、/student/bind-status、/student/schools、/student/bind）
+# 必须保持 @student_required，否则未绑定用户无法完成绑定。
 
 # 学生可配置的个人相关模块白名单
 _STUDENT_WEBHOOK_MODULES = {"course", "electricity", "weather"}
@@ -1373,7 +1382,7 @@ def _student_webhook_owned(webhook, user_id):
 
 
 @miniapp_bp.route("/webhooks", methods=["GET"])
-@student_required
+@student_bound_required
 def list_my_webhooks():
     """列出本人创建的「第三方消息通知」webhook（按 owner_user_id 过滤）。"""
     from app.core.database import get_db
@@ -1394,7 +1403,7 @@ def list_my_webhooks():
 
 
 @miniapp_bp.route("/webhooks", methods=["POST"])
-@student_required
+@student_bound_required
 def create_my_webhook():
     """创建本人 webhook（服务端强制 scope=student + scope_target=[本人]）。"""
     from app.core.database import get_db
@@ -1445,7 +1454,7 @@ def create_my_webhook():
 
 
 @miniapp_bp.route("/webhooks/<int:webhook_id>", methods=["PUT"])
-@student_required
+@student_bound_required
 def update_my_webhook(webhook_id):
     """更新本人 webhook（归属与接收范围服务端强制，客户端不可改）。"""
     from app.core.database import get_db
@@ -1497,7 +1506,7 @@ def update_my_webhook(webhook_id):
 
 
 @miniapp_bp.route("/webhooks/<int:webhook_id>", methods=["DELETE"])
-@student_required
+@student_bound_required
 def delete_my_webhook(webhook_id):
     """删除本人 webhook。"""
     from app.core.database import get_db
@@ -1516,7 +1525,7 @@ def delete_my_webhook(webhook_id):
 
 
 @miniapp_bp.route("/webhooks/<int:webhook_id>/test", methods=["POST"])
-@student_required
+@student_bound_required
 @limiter.limit(RATE_LIMITS["strict"])
 def test_my_webhook(webhook_id):
     """测试本人 webhook（发送一条示例消息）。

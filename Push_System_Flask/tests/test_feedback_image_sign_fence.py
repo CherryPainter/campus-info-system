@@ -123,7 +123,11 @@ def test_verify_rejects_tampered_signature():
         url = sign_path(FEEDBACK_IMAGE_PREFIX + "a.png")
         path, _, query = url.partition("?")
         params = dict(kv.split("=", 1) for kv in query.split("&"))
-        ok, reason = verify_signature(path, params["exp"], params["sig"][:-1] + "0")
+        # 篡改首位并**保证与原字符不同**：早期写成「末位替换为 "0"」，而该位本来就可能
+        # 是 "0"（签名含 exp，随时间变化）→ 约 1/16 的运行下篡改是空操作，用例假失败。
+        sig = params["sig"]
+        tampered = ("1" if sig[0] == "0" else "0") + sig[1:]
+        ok, reason = verify_signature(path, params["exp"], tampered)
         assert ok is False
         assert reason == "签名不匹配"
 

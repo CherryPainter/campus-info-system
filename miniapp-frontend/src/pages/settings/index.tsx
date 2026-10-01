@@ -12,6 +12,9 @@ import {
 import { APP_VERSION } from '@/version';
 import IconArrow from '@/components/IconArrow';
 import Switch from '@/components/Switch';
+import { useLoginGuard } from '@/hooks/useLoginGuard';
+import { useBindStatusWatcher } from '@/hooks/useBindStatusWatcher';
+import { isBindGuideActive } from '@/utils/bindGuard';
 import './index.scss';
 
 /**
@@ -20,9 +23,18 @@ import './index.scss';
  * - 「消息提醒」分组：总开关 + 电量日报/低电量/公告/反馈回复子开关，
  *   关闭后不再显示红色数字气泡，但仍可进入「我的消息」查看历史。
  * - 「关于」跳转独立页面，聚合用户协议/隐私政策/第三方 SDK/开源声明等条款。
+ *
+ * 绑定态（B7）：本页不是 Tab 页，未挂 Tab 页那套 `useBindStatusWatcher`，
+ * 会存在「已登录但未绑定」在此停留的窗口。而「第三方消息通知」对应的服务端接口
+ * 已收紧为 `@student_bound_required`（未绑定一律 403），若放未绑定用户进入，
+ * 只会看到一个永远保存失败的死胡同。故本页补挂同一 watcher，主动按项目既定口径
+ * （未绑定=无效登录态，回退游客）回收，并用登录守卫挡住游客点击。
  */
 
 export default function SettingsPage() {
+  // 主动核对绑定状态：未绑定的登录态按既定口径回退游客（与 home/profile/schedule 一致）
+  useBindStatusWatcher();
+  const { guard } = useLoginGuard();
   const { refreshToken, logout: clearAuth } = useAuthStore();
   const { setProfile } = useUserStore();
   const {
@@ -96,8 +108,23 @@ export default function SettingsPage() {
     Taro.navigateTo({ url: '/pages/messages/index' });
   };
 
+  /**
+   * 进入「第三方消息通知」
+   *
+   * 守卫挡游客：该功能对应的服务端接口为 `@student_bound_required`，游客/未绑定进入
+   * 只会撞 403（列表空、保存必失败）。游客给气泡提示（不自动跳登录/绑定页，
+   * 遵守「先体验后授权」合规）；未绑定的登录态由本页 `useBindStatusWatcher` 先回收为游客。
+   */
   const goThirdPartyNotify = () => {
-    Taro.navigateTo({ url: '/pages/third-party-notify/index' });
+    guard(() => {
+      // 绑定引导期（刚登录、正被引导去绑定页）不进入：此时后台接口必 403，
+      // 进去只会是死胡同。与 request.ts / home 页的引导期护栏同源（bindGuard.ts）。
+      if (isBindGuideActive()) {
+        Taro.showToast({ title: '请先完成身份认证', icon: 'none' });
+        return;
+      }
+      Taro.navigateTo({ url: '/pages/third-party-notify/index' });
+    });
   };
 
   const toggleMaster = (value: boolean) => {
