@@ -675,7 +675,7 @@ find logs/ -name "*.log.*" -mtime +30 -delete
 |-----------|------|
 | `.env.example` | 配置模板（入库，复制为 `.env` 后修改） |
 | `.env` | 实际配置文件（从 `.env.example` 复制修改，不入库） |
-| `requirements.txt` | Python 依赖清单（24 个固定版本包，含 Redis） |
+| `requirements.txt` | Python 依赖清单（24 个包，含 Redis；其中 23 个用 `==` 固定版本，`playwright` 为 `>=1.40.0`） |
 | `run.py` | 应用入口 |
 | `data/auth/` | JWT 密码哈希存储（自动生成） |
 | `data/weather/` | 天气冷却状态（自动生成） |

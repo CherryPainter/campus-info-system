@@ -1,7 +1,27 @@
 # 寒暑假「假期模式」草案（前后端）
 
-> 状态：草案，待评审
-> 目标版本：v6.14.0（新功能，升 minor；注意 v6.13.2 周课表修复建议先发或合并）
+> **状态：已实现（本文是立项时的设计稿，保留以记录设计取舍；实现与本文有 3 处偏离，见下方「实现现状」）。**
+
+### 实现现状（2026-10-01 核对代码后补注）
+
+功能已完整落地，落地位置：
+
+| 层 | 文件 |
+| --- | --- |
+| 模型 | `Push_System_Flask/app/model/holiday_period.py`（表 `holiday_periods`） |
+| 服务 | `Push_System_Flask/app/services/holiday_service.py` |
+| 路由 | `Push_System_Flask/app/api/holiday_routes.py`（挂 `url_prefix="/api/holiday"`，6 个端点全部 `@admin_required`，与本文 §4.3 一致） |
+| 管理端 | `admin-frontend/src/pages/HolidayMode.tsx` + `src/api/holiday.ts` + `src/components/HolidayCourseView.tsx` |
+| 回归测试 | `Push_System_Flask/tests/test_holiday_mute.py` |
+
+**与本文的偏离（3 处）**：
+
+1. **总开关的语义变了**（`holiday_service.py:68-106`）。本文 §2.2 / §3.1 把 `system.holiday_mode_enabled` 当作「假期模式的唯一总开关」，且「关掉时假期区间完全不生效」。实现中它是**独立的紧急静默开关**：开启即无条件全局静默（**不需要任何假期条目**）；而「命中启用区间就按日期自动静默」由每条假期条目**自身的 `enabled`** 决定，与总开关解耦。卡片 / 横幅展示另走 `_hit_enabled_period()`——只看条目、不看总开关（否则紧急静默关着时假期卡片就不显示了）。
+2. **第二层防护收口成了 `skip_if_active()`**（`holiday_service.py:108`）。本文 §4.2 写的是各 job 手写 `if holiday_service.is_active()[0]: return`；实现抽成 `skip_if_active(name, task_type, record=)`，`record=True` 建单条 skipped 进程记录（低频面向用户的报告），`record=False` 按天聚合进一条「假期高频静默汇总」（高频缓存刷新类 job，避免刷屏进程表）。已接入 electricity 5 处、weather 9 处；`app/tasks/executors.py` 的 `run_spider` / `check_push_rules` / `generate_weekly_course` 仍直接用 `is_active()[0]` 判断（不打记录）。
+3. **§7 两个决策点均已定案**：①自定义推送**同样静默**（方案 A）——`delivery_service.py:100-102` 拦截所有走到发送的任务，`force_send` 作为**预留豁免位**保留（注释自述「当前无来源设置，默认 False = 一律静音」，将来要切方案 B 只需前端加勾选）；②爬虫**假期跳过**（`executors.py:60-62` 命中即 return）。
+   §7 第 3 点（v6.13.2 与 v6.14.0 是否合并发布）已随版本演进失效。
+
+> 目标版本：v6.14.0（已按此发版；当前系统版本见 `config.py` 的 `APP_VERSION`）
 
 ## 1. 目标与范围
 

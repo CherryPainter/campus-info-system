@@ -90,6 +90,25 @@
 - **调用示例的签名与返回值都写错了**：原示例用 `allowed_extensions=['.jpg', ...]`（传扩展名），并从返回值取 `file['secure_filename']`。真实签名是 `validate_file_upload(file, allowed_types=None, max_size=None, check_content=True)` —— `allowed_types` 是 **MIME 集合**（`file_upload_security.py:258`），返回值就是原始 `FileStorage`（落盘名需另调 `generate_secure_filename()`，实现为 sha256 + 原扩展名）。已订正。
 - 头部版本号 `v6.11.2` → `v6.20.0`，并补「最近复核：2026-10-01」。
 
+**文档面收口：`UV_DEPLOY.md` 核对、假期模式草案状态、包数口径（2026-10-01 追加）**
+把 `docs/` 下剩余文档与根目录计划文档过了一遍，逐项判定「历史快照 / 需订正 / 正确无需改」：
+
+- **`docs/UV_DEPLOY.md` 逐条核对，结论全部正确，未改**（这是全仓唯一把生产启动写成 Gunicorn 的部署文档）：
+  - `requests==2.32.0` 的 yanked 警告**属实** —— 查 PyPI JSON API：`2.32.0` 与 `2.32.1` 均 `yanked=true`，且 `yanked_reason` 就是文档所写的 `Yanked due to conflicts with CVE-2024-35195 mitigation`；`2.32.2` 起恢复正常。
+  - `HOST=127.0.0.1`、端口 `127.0.0.1:29528`、`ExecStart=.../.venv/bin/gunicorn -c gunicorn_config.py run:app`、Nginx 透传 `X-Forwarded-Proto $scheme`、`requirements.txt` 不含 gunicorn 需补装、「`uv sync` 为进阶可选、本项目仍用 requirements.txt」—— 与代码事实逐条一致（`pyproject.toml` / `uv.lock` 确不存在）。
+  - 附带证据：它是**第三处**写 `HOST=127.0.0.1` 的地方（另两处是本机 `.env:4` 与 `gunicorn_config.py:34` 的 bind 默认值），而入库模板 `.env.example:5` 写 `0.0.0.0` —— 模板是这里的少数派，使「模板取值是否改写」更值得定，见下方待决策。
+- **`docs/HOLIDAY_MODE_DRAFT.md` 状态标注订正**：头部原写「状态：草案，待评审 / 目标版本：v6.14.0」，但该功能**已完整实现**（`app/api/holiday_routes.py` 挂 `url_prefix="/api/holiday"` 的 6 个端点全部 `@admin_required`、`app/services/holiday_service.py`、`app/model/holiday_period.py`、`tests/test_holiday_mute.py`、管理端 `pages/HolidayMode.tsx` + `api/holiday.ts` + `components/HolidayCourseView.tsx`）。已在文档头部补「实现现状」段，并写明**实现相对设计稿的 3 处演进**：
+  1. **总开关语义变了**：设计稿把 `system.holiday_mode_enabled` 当唯一总开关且「关掉则区间不生效」；实现中它是**独立的紧急静默开关**（开启即无条件全局静默、**不需要任何假期条目**），而区间静默改由每条假期条目**自身的 `enabled`** 按日期判定，二者解耦；卡片/横幅展示另走 `_hit_enabled_period()`（只看条目、不看总开关）。
+  2. 「各 job 手写 `if is_active()[0]: return`」收口成了 `skip_if_active(name, task_type, record=)`：`record=True` 建单条 skipped 进程记录，`record=False` 把高频 job 的静默**按天聚合**成一条汇总记录，不刷屏进程表。已接入 weather 9 处、electricity 5 处；`executors.py` 的 `run_spider` / `check_push_rules` / `generate_weekly_course` 仍直接用 `is_active()[0]`。
+  3. §7 两个决策点均已定案：自定义推送**同样静默**（方案 A，`force_send` 作预留豁免位保留、当前无来源设置）；爬虫**假期跳过**。
+- **包数口径订正（两处）**：`requirements.txt` 实为 **24 个包声明**（23 个用 `==` 固定 + `playwright>=1.40.0` 非固定）。`README.md:530` 目录树原写「23 个包」→ 改为 24；`DEPLOY_LINUX.md` 文件说明表上一轮我写的「24 个固定版本包」措辞不严谨（`playwright` 并非固定版本）→ 改为准确表述。
+- **判定为「历史快照，不改」**：`docs/安全代码审查报告_v6.11.4.md`（审查日期 2026-07-19）与 `docs/安全配置审计_2026-07-18.md`（头部已自述「对应版本 v6.10.2；部分结论已被 v6.11.0 安全加固覆盖，见各条标注」）—— 两者都把版本/日期写在标题或首行、自证是快照，强行改成「当前口径」反而会抹掉审计历史。
+- **未纳入本轮范围（如实标注）**：`app/cqie-course-timetable/README.md`（爬虫子项目）、`miniapp-frontend/README.md`、根 `README.md`、以及三份产品规范/计划文档（`校园信息聚合与智能推送系统[前端].md`、`通知与订阅系统开发计划书.md`、`HOLIDAY_MODE_DRAFT.md` 的正文）属**产品与规范类**，不在「配置/部署与代码事实对齐」这条线内，未逐条核对。顺带记录一处已确认的口径差：根规范文档写「项目名称：校园知行（**暂定**）」，而代码与 `miniapp-frontend/README.md` 一致用的是 **校园宜知行**（`miniapp-frontend/src/app.config.ts:69`、about 页、登录页、设置页版本行「校园宜知行 v6.20.0」）。
+
+**待决策（本次未改，新证据已补）**
+- `.env.example:5` 的 `HOST` 取值是否从 `0.0.0.0` 改为 `127.0.0.1`。支持改的证据已有 4 处：本机 `.env:4`、`gunicorn_config.py:34` 默认 bind、`UV_DEPLOY.md:104`、`DEPLOY_LINUX.md`（已订正）；反对的是「局域网真机联调需要监听所有网卡」。本次只在模板与该键的注释里写明适用前提，**未改取值**。
+- `requirements.txt` 里 `requests==2.32.0` 是 **yanked 版本**，是否直接把 pin 升到 `2.32.4`。当前状态是「`UV_DEPLOY.md` 告知读者手动升级，但另两条部署路径（`pip install -r requirements.txt`）装到的仍是 yanked 版本」—— 三条文档口径不一致。改它属依赖变更，留给用户定。
+
 ### 安全：B 级剩余 5 项加固（B10 / B9 / B1 / B5 / B7，2026-10-01）
 接上条「B 级问题修复（9 项）」，完成 🟡 清单中剩余的 5 项。五项均由**仓库内回归测试**锁定，并逐项做过反向验证（撤掉修复 → 对应用例变红；还原后文件哈希与原文逐字节一致），共 **46 项**变异全部命中。全量测试 **666 passed / 1 skipped**，`ruff check` 恒 **299**（与基线一致），两端 `tsc --noEmit` 通过。
 

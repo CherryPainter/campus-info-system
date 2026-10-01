@@ -527,7 +527,7 @@ Push_System_Flask/
 |-- .env                                  # 实际环境变量 (不入库)
 |-- .env.example                          # 环境变量模板（详见「环境变量配置」章节）
 |-- .gitignore                            # Git 忽略规则
-|-- requirements.txt                      # Python 依赖 (23 个包)
+|-- requirements.txt                      # Python 依赖 (24 个包)
 |-- run.py                                # 应用入口
 |-- init_db.py                           # 数据库初始化/迁移脚本 (自动建表 + 补列)
 |-- docs/                                # 部署与安全文档
