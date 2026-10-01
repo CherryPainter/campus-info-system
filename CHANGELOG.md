@@ -140,6 +140,15 @@
 - 入库文档中仍有 emoji，集中在：`docs/安全配置指南.md`（16× `✅`、9× `⚠️`）、`docs/UV_DEPLOY.md`（2× `⚠️`）、`docs/HOLIDAY_MODE_DRAFT.md`（1× `✓`），以及 `CHANGELOG.md`（历史条目里的 `🔒`/`🐛`/`🎨`/`✨` 与 `🔴🟠🟡` 混用；后者是既定允许的严重等级标记）。是否要按「代码与文案禁 emoji」做一次统一清理**留待确认** —— 涉及改动历史条目，diff 较大，未擅自执行。
 - 爬虫子项目目录下存在 `main.py.bak2/3/4` 等本地备份文件（**均未入库**，不影响仓库），按项目约定建议 `mv` 到 `技术总结/dev-scripts/`；另 `miniapp-frontend/` 下有 `build_err.log` / `build_out.log` 等构建日志（同样未入库）。
 
+**两份规划/规范文档补齐「实现现状」对照（2026-10-01 追加）**
+`校园信息聚合与智能推送系统[前端].md` 与 `通知与订阅系统开发计划书.md`（均在仓库根）属**规划/规范类**，正文是设计意图与约束条款，不宜按现状逐处改写。做法是**保留原文不动，只在头部追加一段「实现现状（复核于 2026-10-01）」对照**：
+
+- **`通知与订阅系统开发计划书.md`**：其 0.1 节自称「现状（已核实）」，复核后**有一处已过时**——「`NoticeCard` 组件目前是占位卡片，注释写明『后端接口尚未实现』」不成立，该组件早已完整实现（`miniapp-frontend/src/components/NoticeCard/index.tsx` 拉取 `/api/miniapp/announcements?page_size=3`，含置顶标签 / 来源部门 / 发布时间 / 跳详情 / 更多入口）。同节其余断言经核**仍准确**：`ReminderCard` 确消费 `/api/miniapp/notifications/upcoming` 与 `/all`；`wechat_accounts` 确无 access_token 列；`wechat_auth_service` 确仅做 code2Session（`WECHAT_CODE2SESSION_URL`，无 token 获取）；`delivery_service` 确只发企业微信群机器人。
+- **该计划书的三块目标，实现状态已分化**：A（公告中心）与 C（管理端整合）**已完整落地并超出原设计**——设计的四张表（`announcements` / `announcement_attachments` / `announcement_reads` / `announcement_favorites`）全部实现，另增原设计未提的 `announcement_channels`；管理端有 `Announcements.tsx` + `ChannelManage.tsx`（频道管理原设计未提，撤销了侧边栏子菜单改为「消息中心」页内 Tab）；小程序有 `pages/announcement/index` + `pages/announcement/detail`；另有原设计未提的 `app/services/announcement_push_service.py`（新用户注册 7 天内公告补推进「我的消息」站内信，走 `user_notifications` 表，**不是**微信订阅消息，与「公告纯拉取」定位不冲突）。而 B（订阅消息通道 / P3）**完全未落地**：全仓不存在 `user_subscriptions` 表、`subscribe_message_service`、`WECHAT_TPL_*` 配置，小程序端亦无 `requestSubscribeMessage` 订阅流程。
+- **实际路径与计划书设想的差异**：小程序页面是 `pages/announcement/*`（非 `pages/notice/*`）；附件上传是 `/api/admin/announcements/<id>/attachments`（复数，非 `/attachment`）；管理端另有 `/api/admin/announcements/channels` CRUD 与 `/upload-cover`。
+- **`校园信息聚合与智能推送系统[前端].md`**：性质是启动期开发指南，**原则性条款（18 条 AI 编码规则）仍然有效**，但其中的技术栈 / 结构属当时规划，需对照现实——技术栈声明（Taro 3.6 / React 18 / TypeScript 5.3 / SCSS / `@nutui/nutui-react-taro` / Zustand）经核**属实**（`package.json` 逐项对上，NutUI 也确实在 `app.tsx` 与 `CourseDetail` 被引入；但按其约定 `<Icon>` 子树不可用，图标走自绘 CSS）；而页面结构与目录已大幅演进：TabBar 实际 **3 项**（首页 / 时间轴 / 我的）而非 5 项，且「时间轴」是 TabBar 第二项、实现于 `pages/schedule/index`（无独立 `pages/timeline/`；通知页实际命名 `announcement` 而非 `notification`）；`app.config.ts` 注册 **30 个页面**（顶层目录 27 个）、api **10 个**、stores **3 个**、components **18 个**（该文档第十九节列 4 个 store、第二十八节列 2 个，两处本身不一致；规划中的 `ErrorState` 未落地，实际另有 `LoadingState` / `EmptyState` 等）。Phase 1–9 均已实施完成。
+- **一处命名差异（此前已记录、此处重申）**：根规范文档写「项目名称：校园知行（暂定）」，实际代码与小程序端一致使用 **校园宜知行**。
+
 ### 安全：B 级剩余 5 项加固（B10 / B9 / B1 / B5 / B7，2026-10-01）
 接上条「B 级问题修复（9 项）」，完成 🟡 清单中剩余的 5 项。五项均由**仓库内回归测试**锁定，并逐项做过反向验证（撤掉修复 → 对应用例变红；还原后文件哈希与原文逐字节一致），共 **46 项**变异全部命中。全量测试 **666 passed / 1 skipped**，`ruff check` 恒 **299**（与基线一致），两端 `tsc --noEmit` 通过。
 
