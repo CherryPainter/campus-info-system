@@ -4,7 +4,7 @@
 
 ---
 
-## 📖 目录
+## 目录
 
 - [项目功能](#项目功能)
 - [项目结构](#项目结构)
@@ -39,14 +39,14 @@
 ## 项目结构
 
 ```
-d:\Learn\data\tool\
+app/cqie-course-timetable/          # 本子系统根目录（BASE_DIR 由 config.py 依文件位置推导）
 ├── course_processing/          # 课程处理模块
 │   ├── process_course_data.py   # 课程数据处理核心
 │   ├── csv_to_image.py          # CSV 转图片
 │   ├── first.json               # 第一套时间配置
 │   └── second.json              # 第二套时间配置
 ├── static/                     # 静态资源
-│   └── background.png           # 课程表背景图
+│   └── background.png           # 课程表背景图（可用同名文件替换）
 ├── output/                     # 输出目录（运行时自动创建）
 │   ├── course-data/             # 课程数据
 │   │   ├── raw/                 # 原始数据
@@ -54,9 +54,13 @@ d:\Learn\data\tool\
 │   │   ├── images/              # 生成图片
 │   │   └── history/             # 历史备份
 │   └── logs/                    # 日志文件
-├── main.py                     # ⭐ 整合版入口（推荐使用）
+├── main.py                     # 整合版入口（推荐使用）
 ├── pipeline.py                 # 处理/入库模块（被 crawl_task_service 调用）
-├── config.py                   # 配置文件
+├── parser_utils.py             # 课表解析工具（节次/时间等）
+├── rebuild_course_meta.py      # 重建 course_meta.json
+├── reimport_with_teacher.py    # 带教师信息重新导入
+├── xlsx_import.py              # 从 Excel 导入课程
+├── config.py                   # 配置（**账号密码等敏感项从环境变量读取**，见「快速开始」）
 ├── logger.py                   # 日志模块
 ├── captcha.py                  # 验证码识别（备用）
 └── requirements.txt            # 依赖清单
@@ -76,21 +80,37 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
-### 2. 配置账号密码
+### 2. 配置账号密码（走环境变量，不要改进 config.py 的取值）
 
-编辑 `config.py`，填写教务系统的用户名和密码：
+`config.py` 中的账号密码是**从环境变量读取**的，不是写死在文件里的字面量：
 
 ```python
-CONFIG = {
-    'spider': {
-        'login': {
-            'username': '你的学号',
-            'password': '你的密码'
-        },
-        # ... 其他配置
-    }
+# app/cqie-course-timetable/config.py
+SPIDER_CONFIG = {
+    "login": {
+        "username": os.environ.get("JWXT_USERNAME", ""),   # 登录账号
+        "password": os.environ.get("JWXT_PASSWORD", ""),   # 登录密码
+    },
+    "headless": os.environ.get("JWXT_HEADLESS", "true").lower() == "true",
+    "timeout": int(os.environ.get("JWXT_TIMEOUT", "120")),
 }
+CLASS_NAME = os.environ.get("CLASS_NAME", "ZK2401")
 ```
+
+在本子系统目录放一个 `.env`（或由调用方通过环境变量传入；`config.py` 会额外加载
+`ENV_FILE_PATH` 指向的文件），至少写上：
+
+```ini
+JWXT_USERNAME=<学号>
+JWXT_PASSWORD=<密码>
+# 可选
+JWXT_HEADLESS=true
+JWXT_TIMEOUT=120
+CLASS_NAME=ZK2401
+COURSE_ENABLE_BACKGROUND=true
+```
+
+> 后端集成运行时，这些变量由 `Push_System_Flask/.env` 经子进程传入，**无需**在此重复配置。
 
 ### 3. 运行程序
 
@@ -129,16 +149,22 @@ python main.py
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `spider.login.username` | 教务系统用户名 | - |
-| `spider.login.password` | 教务系统密码 | - |
-| `spider.headless` | 是否无界面浏览器 | `True` |
-| `processing.raw_data_dir` | 原始数据目录 | `'output/course-data/raw'` |
-| `processing.processed_data_dir` | 处理后数据目录 | `'output/course-data/processed'` |
-| `processing.images_dir` | 图片目录 | `'output/course-data/images'` |
-| `processing.time_config` | 使用哪套时间配置 | `'first'` |
-| `images.class_name` | 班级名称 | `'ZK2401'` |
-| `images.width` | 图片宽度 | `1080` |
-| `images.height` | 图片高度 | `1920` |
+| `spider.login.username` / `.password` | 教务系统账号密码（**取自环境变量** `JWXT_USERNAME` / `JWXT_PASSWORD`） | `''` |
+| `spider.headless` | 是否无界面浏览器（环境变量 `JWXT_HEADLESS`） | `True` |
+| `spider.timeout` | 单次超时（秒，环境变量 `JWXT_TIMEOUT`） | `120` |
+| `class_name`（顶层 `CONFIG['class_name']`） | 班级名称（环境变量 `CLASS_NAME`） | `'ZK2401'` |
+| `processing.raw_data_dir` | 原始数据目录 | `<BASE_DIR>/output/course-data/raw` |
+| `processing.processed_data_dir` | 处理后数据目录 | `<BASE_DIR>/output/course-data/processed` |
+| `processing.history_dir` | 历史备份目录 | `<BASE_DIR>/output/course-data/history` |
+| `processing.first_schedule_path` / `.second_schedule_path` | 两套时间安排文件**路径**（`course_processing/first.json` / `second.json`） | 见 `config.py` |
+| `image.output_dir` | 图片输出目录（注意是 `image` 单数，不是 `processing.images_dir`） | `<BASE_DIR>/output/course-data/images` |
+| `image.fig_width` | 图片宽度（**英寸**） | `18` |
+| `image.fig_height_per_row` | 表格每行高度（**英寸**） | `0.5` |
+| `image.dpi` | 图片 DPI | `250` |
+| `image.enable_background` | 是否启用背景图（来自 `COURSE_ENABLE_BACKGROUND`） | `true` |
+| `image.filename_format` | 图片文件名格式 | `course_week{week_number}.jpg` |
+
+> 旧版本此表里的 `processing.time_config`、`processing.images_dir`、`images.width`、`images.height`、`images.class_name` 等键在代码中**并不存在**（已订正）。两套时间表是按**文件路径**加载并在解析时按教学楼匹配，没有「切换 time_config」这样的开关。
 
 ---
 
@@ -148,13 +174,18 @@ python main.py
 
 | 文件类型 | 路径 | 说明 |
 |---------|------|------|
-| 原始 HTML | `raw/course_table.html` | 从教务系统获取的原始 HTML |
-| 原始 JSON | `raw/course_table.json` | 解析后的原始课程数据 |
-| 处理后 JSON | `processed/processed_course_table_week{周数}.json` | 包含周数标注和完整课程信息 |
-| 处理后 CSV | `processed/processed_course_table_week{周数}.csv` | 用于生成图片的 CSV |
-| 课程表图片 | `images/{班级} 第{周数}周 课程表.png` | 最终生成的图片 |
+| 原始 HTML | `course-data/raw/course_table.html` | 从教务系统获取的原始 HTML |
+| 原始 JSON | `course-data/raw/course_table.json` | 解析后的原始课程数据 |
+| 全学期原始 JSON | `course-data/raw/course_table_all_weeks.json` | `--all-weeks` 全学期爬取的原始数据（供后端整学期入库） |
+| 课程元信息 | `course-data/raw/course_meta.json` | 课程元信息（可由 `rebuild_course_meta.py` 重建） |
+| 处理后 JSON | `course-data/processed/processed_course_table_week{周数}.json` | 包含周数标注和完整课程信息 |
+| 处理后 CSV | `course-data/processed/processed_course_table_week{周数}.csv` | 用于生成图片的 CSV |
+| 课程表图片 | `course-data/images/course_week{周数}.jpg` | 最终生成的图片（文件名取自 `image.filename_format`，JPEG） |
 | 日志文件 | `logs/course_spider_*.log` | 运行日志 |
-| 历史备份 | `history/` | 所有历史版本的自动备份 |
+| 历史备份 | `course-data/history/`（另有 `logs/history/`） | 所有历史版本的自动备份 |
+
+> 上述路径均相对 `output/`。图片文件名由 `IMAGE_CONFIG['filename_format']` 决定，默认
+> `course_week{week_number}.jpg`（**不是**中文名 + `.png`）。
 
 ### JSON 数据格式
 
@@ -204,11 +235,11 @@ A: 将新的背景图命名为 `background.png` 并替换 `static/` 目录下的
 
 ### Q: 生成的图片尺寸不对？
 
-A: 在 `config.py` 中修改 `images.width` 和 `images.height` 来调整图片尺寸。
+A: 在 `config.py` 的 `IMAGE_CONFIG` 中改 `fig_width`（宽度，英寸）与 `fig_height_per_row`（表格每行高度，英寸）；也可调 `dpi`。注意这两个值是**英寸**而不是像素，最终像素 = 英寸 × dpi。
 
 ### Q: 如何使用第二套时间配置？
 
-A: 在 `config.py` 中将 `processing.time_config` 改为 `'second'`。
+A: **没有 `time_config` 这样的开关**（该键在代码中不存在）。两套时间表以路径形式配置在 `PROCESSING_CONFIG` 的 `first_schedule_path` / `second_schedule_path`，解析时按教学楼匹配，二者都在用；要调整时间请直接改 `course_processing/first.json` / `second.json` 的内容。
 
 ### Q: 周日显示的是下一周的课表？
 
@@ -236,22 +267,24 @@ A: 这是教务系统的原生机制，程序会正确识别并标注周数。
 
 ---
 
-## 更新日志
+## 更新日志（本子系统早期记录）
+
+> 本节只记录本子系统独立开发期（2026-05）的早期迭代，**此后不再更新**。本子系统后续已并入主仓库持续演进（如全学期爬取 `--all-weeks`、解析周次护栏等），完整变更请查看仓库根 `CHANGELOG.md`。
 
 ### v1.1.0 (2026-05-30)
 
-- ✅ 修复：正确处理 HTML 表格 rowspan 跨节课程
-- ✅ 修复：过滤打印预览行导致的乱码数据
-- ✅ 优化：大课合并逻辑，固定按 2 节小课合并为 1 节大课
-- ✅ 修复：爬虫路径使用 Config.BASE_DIR 统一管理
+- 修复：正确处理 HTML 表格 rowspan 跨节课程
+- 修复：过滤打印预览行导致的乱码数据
+- 优化：大课合并逻辑，固定按 2 节小课合并为 1 节大课
+- 修复：爬虫路径使用 Config.BASE_DIR 统一管理
 
 ### v1.0.0 (2026-05-29)
 
-- ✅ 完成核心功能开发
-- ✅ 添加10分钟超时保护机制
-- ✅ 添加账号密码错误检测
-- ✅ 添加验证码错误检测
-- ✅ 添加资源自动清理
-- ✅ 使用相对路径，支持任意目录部署
-- ✅ 自动创建所需目录
-- ✅ 完善错误处理和日志记录
+- 完成核心功能开发
+- 添加10分钟超时保护机制
+- 添加账号密码错误检测
+- 添加验证码错误检测
+- 添加资源自动清理
+- 使用相对路径，支持任意目录部署
+- 自动创建所需目录
+- 完善错误处理和日志记录

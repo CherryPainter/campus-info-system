@@ -119,6 +119,27 @@
 - **快速开始的启动地址自相矛盾**：写「默认 `http://127.0.0.1:29528`」，但 `Config.HOST` 的代码默认是 `0.0.0.0`，且同一节的 `cp .env.example .env` 复制到的模板里也是 `HOST=0.0.0.0`。已改为「默认端口 29528（监听地址由 `.env` 的 `HOST` 决定）」。
 - 顺带核对无误、**未改**的项：版本徽标 `v6.20.0`、MIT `LICENSE` 文件存在、技术栈（管理端 React 19 + antd 5；小程序 Taro 3.6 + React 18 + Zustand；后端 Flask 3.1 + SQLAlchemy 2.0）、`cp .env.example .env` 的快速开始步骤、小程序产品名「校园宜知行」（与 `miniapp-frontend/src/app.config.ts:69` 一致）。
 
+**两端 README 复核：小程序端与爬虫子项目（2026-10-01 追加）**
+这两份 README 都还停留在各自的脚手架/独立开发期，与现状严重脱节。逐条回代码与文件系统核对后订正：
+
+- **`miniapp-frontend/README.md`**（改动最多的一份）：
+  - **环境变量节整节写错了**：原文按 `.env.development` / `.env.production` 两个文件描述，但该目录下**这两个文件都不存在**，只有单个 `.env`（gitignored）。`.env` 自身注释即写明原因——Taro 的 `taro build`（含 `--watch`）其 `NODE_ENV` 恒为 `production`，**带后缀的 env 文件不会被加载**。另补上 README 完全没提的 `TARO_APP_DEV_TOKEN`，并写明它的坑：**即使留空也必须保留这个 key**，否则 `storage.ts` 的 `process.env.TARO_APP_DEV_TOKEN` 不被 DefinePlugin 内联，产物残留运行时 `process.env.X` → 小程序没有 `process` → **启动即崩（ReferenceError）**。
+  - **目录结构严重过时**：原文只列 6 个页面（含并不存在的 `timeline/`、`notification/`、`notification-detail/`），实际 `app.config.ts` 注册 **30 个页面**、api 层 **10 个文件**（原文 6 个，且把 `notification.ts` 写成「占位：后端接口待实现」——它 v6.16.0 起已对接真实接口）、组件 **18 个**（原文写「后续 Phase 填充」）、utils 10 个（原文 4 个）、stores 3 个（原文 2 个）。已按实际重写。
+  - **「TabBar 仅文字、未配图标」是错的**：图标早已配置，且尺寸是 **96×96**（原文写 81×81）。另补充 `custom: true` 自绘 TabBar 的原因（原生不支持单 tab 角标），并特别指出**没有 `pages/timeline/` 目录**——Tab 文案叫「时间轴」而目录名是 `schedule`。
+  - **「刷新失败清空 Token 回登录页」与实现相反**：`utils/request.ts:13` 明确「降级为游客 + 只提示一次（**不强制跳转登录页**，合规要求）」。已订正并补上 `403 STUDENT_NOT_BOUND` 同样不跳转。
+  - 「Phase 1–9」分阶段清单停留在 Phase 3，已改为按代码事实陈述「当前规模」。
+- **`app/cqie-course-timetable/README.md`**（爬虫子项目）：
+  - **「编辑 `config.py` 填写账号密码」是错的做法**：`config.py:62-63` 是 `os.environ.get("JWXT_USERNAME", "")` / `JWXT_PASSWORD`（另读 `ENV_FILE_PATH`），账号密码走**环境变量**、由后端 `.env` 经子进程传入。已改写并给出变量清单。
+  - **配置说明表 4 行引用了不存在的键**：`processing.time_config`（全仓无此键，两套时间表是按**文件路径**加载、解析时按教学楼匹配，没有「切换 time_config」开关）、`processing.images_dir`（应为 `image.output_dir`，注意 `image` 单数）、`images.width` / `images.height`（应为 `image.fig_width` 18 英寸 / `image.fig_height_per_row` 0.5 英寸）、`images.class_name`（应为顶层 `CONFIG['class_name']`，来自 `CLASS_NAME` 环境变量）。FAQ 里引用同名键的两条答案一并订正。
+  - **输出文件表的图片名错**：`IMAGE_CONFIG['filename_format'] = "course_week{week_number}.jpg"`，磁盘实况即 `images/course_week13.jpg`（JPEG），原文写「`{班级} 第{周数}周 课程表.png`」；并补上 v6.20.x 全学期爬取的产物 `raw/course_table_all_weeks.json` 与 `raw/course_meta.json`。
+  - 项目结构树的根写成个人绝对路径 `d:\Learn\data\tool\`，改为本子系统目录，并补列实际存在但未提到的 `parser_utils.py` / `rebuild_course_meta.py` / `reimport_with_teacher.py` / `xlsx_import.py`。
+  - 去掉该文件里的 emoji（`📖` / `⭐` / 一批 `✅`），符合本项目「代码与文案禁 emoji」的约定。
+  - 「更新日志」止于 2026-05-30，已标注为**本子系统早期记录、此后不再更新**，完整变更指向根 `CHANGELOG.md`。
+
+**遗留观察（本次未改，供决定）**
+- 入库文档中仍有 emoji，集中在：`docs/安全配置指南.md`（16× `✅`、9× `⚠️`）、`docs/UV_DEPLOY.md`（2× `⚠️`）、`docs/HOLIDAY_MODE_DRAFT.md`（1× `✓`），以及 `CHANGELOG.md`（历史条目里的 `🔒`/`🐛`/`🎨`/`✨` 与 `🔴🟠🟡` 混用；后者是既定允许的严重等级标记）。是否要按「代码与文案禁 emoji」做一次统一清理**留待确认** —— 涉及改动历史条目，diff 较大，未擅自执行。
+- 爬虫子项目目录下存在 `main.py.bak2/3/4` 等本地备份文件（**均未入库**，不影响仓库），按项目约定建议 `mv` 到 `技术总结/dev-scripts/`；另 `miniapp-frontend/` 下有 `build_err.log` / `build_out.log` 等构建日志（同样未入库）。
+
 ### 安全：B 级剩余 5 项加固（B10 / B9 / B1 / B5 / B7，2026-10-01）
 接上条「B 级问题修复（9 项）」，完成 🟡 清单中剩余的 5 项。五项均由**仓库内回归测试**锁定，并逐项做过反向验证（撤掉修复 → 对应用例变红；还原后文件哈希与原文逐字节一致），共 **46 项**变异全部命中。全量测试 **666 passed / 1 skipped**，`ruff check` 恒 **299**（与基线一致），两端 `tsc --noEmit` 通过。
 
