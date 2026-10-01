@@ -255,6 +255,8 @@ class AnnouncementService:
     @staticmethod
     def _apply_updates(item: Announcement, data: dict):
         """按白名单套用字段更新"""
+        from app.utils.html_sanitizer import sanitize_html
+
         for key in _EDITABLE_FIELDS:
             if key not in data:
                 continue
@@ -268,6 +270,11 @@ class AnnouncementService:
                 setattr(item, key, category if category in _VALID_CATEGORIES else "notice")
             elif key == "audience_type":
                 setattr(item, key, str(value or "all").strip() or "all")
+            elif key == "content":
+                # 富文本正文写入时白名单清洗（B5）：正文由 WangEditor 产出并在管理端
+                # 以 dangerouslySetInnerHTML 预览，不清洗即构成管理员间存储型 XSS 链路。
+                # 清洗组件不可用时抛错拒绝写入（fail-closed），绝不静默存原文。
+                setattr(item, key, sanitize_html(None if value is None else str(value)))
             else:
                 setattr(item, key, None if value is None else str(value))
 

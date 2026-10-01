@@ -161,7 +161,11 @@ def create_push():
 
     title = data.get("title", "").strip()
     msg_type = data.get("msg_type", "text")
-    content = data.get("content", "").strip()
+    # 富文本正文写入时白名单清洗（B5）：与公告共用同一个编辑器与管理端预览，
+    # 不清洗则同样的存储型 XSS 链路在这里也是通的。组件不可用时抛错拒绝（fail-closed）。
+    from app.utils.html_sanitizer import sanitize_html
+
+    content = sanitize_html(data.get("content", "").strip())
     image_path = data.get("image_path", "").strip()
     template_id = data.get("template_id", "").strip()
     template_params = data.get("template_params", {})
@@ -282,7 +286,9 @@ def update_push(push_id: int):
         if "title" in data:
             push.title = data["title"].strip()
         if "content" in data:
-            push.content = data["content"].strip()
+            from app.utils.html_sanitizer import sanitize_html
+
+            push.content = sanitize_html(data["content"].strip())
         if "scheduled_time" in data and data["scheduled_time"]:
             push.scheduled_time = datetime.fromisoformat(
                 data["scheduled_time"].replace("Z", "+00:00")

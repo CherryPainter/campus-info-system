@@ -17,6 +17,10 @@ requests==2.32.0
 pandas==2.3.0
 numpy==2.2.6
 
+# 富文本正文白名单清洗（公告 / 自定义推送，见 app/utils/html_sanitizer.py）
+# ammonia 的 Rust 绑定；未安装时正文的写入与读取会 fail-closed（拒绝而非放行原文）
+nh3==0.3.7
+
 # 图片生成
 matplotlib==3.9.2
 Pillow==11.0.0

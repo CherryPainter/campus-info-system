@@ -41,10 +41,14 @@ class CustomPush(Base):
     created_by = Column(String(50), nullable=True, comment="创建人")
 
     def to_dict(self):
+        # 读取侧同样清洗（B5）：与公告共用编辑器，历史正文可能未过滤；
+        # 管理端预览用 dangerouslySetInnerHTML，不透出未清洗的正文。
+        from app.utils.html_sanitizer import sanitize_html
+
         return {
             "id": self.id,
             "title": self.title,
-            "content": self.content,
+            "content": sanitize_html(self.content) if self.content else self.content,
             "msg_type": self.msg_type,
             "image_path": self.image_path,
             "template_id": self.template_id,

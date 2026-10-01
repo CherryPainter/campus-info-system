@@ -79,6 +79,12 @@ def create_app(config_class=None):
 
     check_https_startup_guard(app)
 
+    # 富文本清洗组件（nh3）可用性检查：缺依赖时打 ERROR（不 fail-fast，
+    # 避免一个富文本依赖把天气/电量/课表等无关功能一起拖死）；实际写入/读取会 fail-closed。
+    from app.utils.html_sanitizer import check_sanitizer_startup
+
+    check_sanitizer_startup(app)
+
     # 初始化扩展
     allowed_origins = app.config.get("ALLOWED_ORIGINS")
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)

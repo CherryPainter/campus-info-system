@@ -180,7 +180,12 @@ class Announcement(Base):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
         if with_content:
-            data["content"] = self.content or ""
+            # 读取侧同样清洗（B5）：修复前入库的历史正文未经过滤，只挡写入等于把存量
+            # 脏数据继续下发给管理端预览（dangerouslySetInnerHTML）。清洗组件不可用时
+            # 抛错而非透出原文（fail-closed）。
+            from app.utils.html_sanitizer import sanitize_html
+
+            data["content"] = sanitize_html(self.content or "") or ""
         return data
 
 
