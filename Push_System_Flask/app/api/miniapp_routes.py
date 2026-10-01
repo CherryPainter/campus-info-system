@@ -51,6 +51,7 @@ electricity_service）与 Repository，路由层只做鉴权与编排，不复�
 """
 
 from datetime import datetime
+import json
 from urllib.parse import urlparse
 
 from flask import Blueprint, g, request
@@ -1348,11 +1349,13 @@ def announcement_attachment(attachment_id):
 # 学生可配置的个人相关模块白名单
 _STUDENT_WEBHOOK_MODULES = {"course", "electricity", "weather"}
 
-# 单个学生可创建的 webhook 数量上限。
+# 单个学生**自建**的 webhook 数量上限。
+# 统计口径仅 count(owner_user_id == 本人)，管理员代建的（owner_user_id 为 NULL）不计入，
+# 因此管理员给学生建的再多也不会挤占学生的自建名额。
 # 每条 webhook 都会收到课表/天气的广播副本（app/services/webhook_push_service.py 的
 # fanout_broadcast_webhooks 会遍历所有非全局 webhook 逐条发送），不设上限则可被滥建：
 # 出站请求数与库行数被无限放大，也会把学生自己/他人的机器人打到微信限流。
-_MAX_WEBHOOKS_PER_STUDENT = 10
+_MAX_WEBHOOKS_PER_STUDENT = 2
 
 # 仅允许企业微信机器人域名（学生自建 webhook 的合法目标）。
 # 这一条白名单已严格覆盖「IP 字面量指向内网」的情形（IP 字面量不可能等于该域名），
@@ -1386,24 +1389,99 @@ def _validate_webhook_url(url: str):
     return True, None
 
 
-def _student_webhook_owned(webhook, user_id):
-    """校验 webhook 归属当前学生（owner_user_id 命中）；否则按 404 语义处理。"""
-    return webhook is not None and webhook.owner_user_id == user_id
+def _student_dorm_values(user_id, session):
+    """返回当前学生所属宿舍集合（来自学生名单，经已绑定账号 join）。
+
+    用于判定 scope=dorm 的管理员 webhook 是否覆盖到该学生本身。
+    数据库异常时 fail-open 返回空集（最多让该学生少看到一条，不阻断主流程）。
+    """
+    try:
+        from sqlalchemy import and_
+
+        from app.model.student_profile import StudentProfile
+        from app.model.student_roster import StudentRoster
+
+        rows = (
+            session.query(StudentRoster.dorm)
+            .join(
+                StudentProfile,
+                and_(
+                    StudentRoster.school == StudentProfile.school,
+                    StudentRoster.student_number == StudentProfile.student_number,
+                ),
+            )
+            .filter(StudentProfile.user_id == user_id, StudentRoster.dorm.isnot(None))
+            .all()
+        )
+        return {str(r[0]).strip() for r in rows if r[0]}
+    except Exception as exc:
+        logger.warning(f"[Webhook] 学生宿舍查询失败，跳过 scope=dorm 可见性: {exc}")
+        return set()
+
+
+def _student_can_manage(webhook, user_id, session):
+    """学生能否查看/管理该 webhook（后端围栏，防 API 直调越权）。
+
+    判定口径：
+    - 本人自建（owner_user_id == 本人）：可管理；
+    - 管理员定向到本人（scope=student 且本人 user_id 命中 scope_target）：可管理；
+    - 管理员定向到本人所在宿舍（scope=dorm 且本人宿舍命中 scope_target）：可管理；
+    - 其余（超出其范围）：不可见、不可管理。
+    """
+    if webhook is None:
+        return False
+    if webhook.owner_user_id == user_id:
+        return True
+    if webhook.scope == "student":
+        try:
+            ids = {int(x) for x in (webhook.scope_target or []) if x is not None}
+        except (TypeError, ValueError):
+            return False
+        return user_id in ids
+    if webhook.scope == "dorm":
+        my_dorms = _student_dorm_values(user_id, session)
+        if not my_dorms:
+            return False
+        target_dorms = {str(x).strip() for x in (webhook.scope_target or []) if x is not None}
+        return bool(my_dorms & target_dorms)
+    return False
+
 
 
 @miniapp_bp.route("/webhooks", methods=["GET"])
 @student_bound_required
 def list_my_webhooks():
-    """列出本人创建的「第三方消息通知」webhook（按 owner_user_id 过滤）。"""
+    """列出本人可见/可管理的「第三方消息通知」webhook。
+
+    可见集 = 本人自建（owner_user_id==本人） ∪ 管理员定向到本人
+    （scope=student 且 target 命中本人） ∪ 管理员定向到本人所在宿舍
+    （scope=dorm 且 target 命中本人宿舍）。范围外（含 global、他人、其他宿舍）
+    既不可见也无权管理——该判定口径与 `_student_can_manage` 保持一致。
+    """
     from app.core.database import get_db
     from app.model.webhook import Webhook
 
     user_id = int(g.current_user["user_id"])
     session = get_db()
     try:
+        from sqlalchemy import func, or_
+
+        # 可见范围：本人自建 + 管理员定向到本人（指定学生）/ 本人在指定宿舍内
+        conditions = [
+            Webhook.owner_user_id == user_id,
+            (Webhook.scope == "student")
+            & (func.json_contains(Webhook.scope_target, json.dumps([user_id]))),
+        ]
+        my_dorms = _student_dorm_values(user_id, session)
+        for dorm in my_dorms:
+            conditions.append(
+                (Webhook.scope == "dorm")
+                & (func.json_contains(Webhook.scope_target, json.dumps(dorm)))
+            )
+
         rows = (
             session.query(Webhook)
-            .filter(Webhook.owner_user_id == user_id)
+            .filter(or_(*conditions))
             .order_by(Webhook.created_at.desc())
             .all()
         )
@@ -1466,7 +1544,12 @@ def create_my_webhook():
 @miniapp_bp.route("/webhooks/<int:webhook_id>", methods=["PUT"])
 @student_bound_required
 def update_my_webhook(webhook_id):
-    """更新本人 webhook（归属与接收范围服务端强制，客户端不可改）。"""
+    """更新本人或管理员定向给本人的 webhook。
+
+    学生自建：归属与接收范围服务端强制锁定为本人。
+    管理员代建（owner 为 NULL）：仅允许改名称 / URL / 模块 / 启停；
+    其 owner_user_id / scope / scope_target 属「是谁在用」的元数据，不允许学生篡改。
+    """
     from app.core.database import get_db
     from app.model.webhook import Webhook
 
@@ -1476,7 +1559,7 @@ def update_my_webhook(webhook_id):
     session = get_db()
     try:
         webhook = Webhook.get_by_id(session, webhook_id)
-        if not _student_webhook_owned(webhook, user_id):
+        if not _student_can_manage(webhook, user_id, session):
             return api_error(message="Webhook 不存在", http_status=404)
 
         fields = {}
@@ -1503,10 +1586,12 @@ def update_my_webhook(webhook_id):
         if "is_enabled" in data:
             fields["is_enabled"] = bool(data["is_enabled"])
 
-        # 服务端强制：归属与接收范围不可被客户端篡改
-        fields["owner_user_id"] = user_id
-        fields["scope"] = "student"
-        fields["scope_target"] = [user_id]
+        # 服务端强制：学生自建的归属与接收范围锁定为本人；管理员定向给本人的，
+        # 其 owner_user_id / scope / scope_target 属「是谁在用」的元数据，不允许学生篡改。
+        if webhook.owner_user_id == user_id:
+            fields["owner_user_id"] = user_id
+            fields["scope"] = "student"
+            fields["scope_target"] = [user_id]
 
         Webhook.update(session, webhook_id, **fields)
         webhook = Webhook.get_by_id(session, webhook_id)
@@ -1526,7 +1611,7 @@ def delete_my_webhook(webhook_id):
     session = get_db()
     try:
         webhook = Webhook.get_by_id(session, webhook_id)
-        if not _student_webhook_owned(webhook, user_id):
+        if not _student_can_manage(webhook, user_id, session):
             return api_error(message="Webhook 不存在", http_status=404)
         Webhook.delete(session, webhook_id)
         return api_success(message="已删除")
@@ -1552,7 +1637,7 @@ def test_my_webhook(webhook_id):
     session = get_db()
     try:
         webhook = Webhook.get_by_id(session, webhook_id)
-        if not _student_webhook_owned(webhook, user_id):
+        if not _student_can_manage(webhook, user_id, session):
             return api_error(message="Webhook 不存在", http_status=404)
 
         test_message = {

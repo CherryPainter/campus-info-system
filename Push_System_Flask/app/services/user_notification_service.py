@@ -7,8 +7,11 @@
 - 学生在小程序「我的消息」页查看
 """
 
+from datetime import datetime
+
 from app.core.database import get_db
 from app.core.logger import get_logger
+from app.model.user_notification import UserNotification
 from app.repository.user_notification_repository import UserNotificationRepository
 
 logger = get_logger(__name__)
@@ -70,6 +73,74 @@ class UserNotificationService:
                 session.close()
         except Exception as exc:
             logger.error(f"[UserNotification] 写入站内通知失败 user_id={user_id}: {exc}")
+            return False
+
+    @staticmethod
+    def upsert_feedback_notification(
+        user_id: int,
+        category: str,
+        title: str,
+        content: str | None = None,
+        ref_type: str | None = None,
+        ref_id: int | None = None,
+    ) -> bool:
+        """按 (user_id, ref_type, ref_id) 去重，给指定用户 upsert 一条站内通知。
+
+        专用於反馈状态通知：同一反馈只保留一条，管理员反复改状态 / 回复时，
+        不会因 user_notifications 的唯一约束被静默丢弃；而是更新为最新内容，
+        并重置 is_read / is_viewed 重新冒泡为未读 / 未看（学生端会再次看到）。
+
+        Returns:
+            bool: 是否成功
+        """
+        try:
+            session = get_db()
+            try:
+                existing = (
+                    session.query(UserNotification)
+                    .filter(
+                        UserNotification.user_id == user_id,
+                        UserNotification.ref_type == ref_type,
+                        UserNotification.ref_id == ref_id,
+                    )
+                    .first()
+                )
+                now = datetime.now()
+                if existing is not None:
+                    existing.category = category
+                    existing.title = title
+                    existing.content = content
+                    existing.is_read = False
+                    existing.is_viewed = False
+                    existing.created_at = now
+                else:
+                    session.add(
+                        UserNotification(
+                            user_id=user_id,
+                            category=category,
+                            title=title,
+                            content=content,
+                            ref_type=ref_type,
+                            ref_id=ref_id,
+                            is_read=False,
+                            is_viewed=False,
+                            created_at=now,
+                        )
+                    )
+                session.commit()
+                logger.info(
+                    f"[UserNotification] 已upsert站内通知 user_id={user_id} ref_type={ref_type} ref_id={ref_id}"
+                )
+                return True
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+        except Exception as exc:
+            logger.error(
+                f"[UserNotification] upsert站内通知失败 user_id={user_id} ref_type={ref_type} ref_id={ref_id}: {exc}"
+            )
             return False
 
     @staticmethod

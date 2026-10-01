@@ -6,6 +6,30 @@
 
 ## Unreleased
 
+### 第三方通知（webhook）：学生端可见/管理范围改造 + 自建上限收紧为 2 + 管理端放开课表/天气接收范围（2026-10-01）
+
+**后端 - 学生端可见/可管理口径改为服务端围栏（防 API 直调越权）**
+- 新增 `_student_can_manage(webhook, user_id, session)`：`owner_user_id == 本人` → 可管理；`scope=student` 且 target 命中本人 → 可管理；`scope=dorm` 且本人所在宿舍命中 target → 可管理；其余（含 global、他人、其他宿舍）→ 不可见、不可管理。
+- `list_my_webhooks` 可见集 = 本人自建 ∪ 管理员定向到本人（指定学生）/ 本人所在宿舍；基于 `func.json_contains` 做 JSON 成员判定（MySQL 专有）。
+- `update_my_webhook` / `delete_my_webhook` / `test_my_webhook` 三处越权判定统一替换为 `_student_can_manage`；**管理员代建（owner 为 NULL）仅允许改名称 / URL / 模块 / 启停**，其 `owner_user_id / scope / scope_target` 属「是谁在用」元数据，不允许学生篡改（改本人自建才强制锁回本人）。超范围一律 404（不暴露存在性）。
+
+**后端 - 学生自建上限 10 → 2**
+- `_MAX_WEBHOOKS_PER_STUDENT = 2`；统计口径只数 `owner_user_id` 非空的本人自建，**管理员代建不计入**。达上限创建返回 400。
+
+**管理端 - 放开课表 / 天气的接收范围**
+- 原仅「电量」可配接收范围，现「课表」「天气」也恢复接收范围配置（global / 指定学生 / 指定宿舍）；「电量」仍强制指定受众（不给 global，因投递链按 meter 定向）；「系统」不包含定向（系统广播仅全局，刻意不暴露定向）。
+- 抽屉 `scope` 下拉在需要指定受众的模块（电量及含电量的组合）才出现 global 选项。
+
+**小程序端 - 卡片增加来源与范围标识**
+- 管理员代建卡片在标题行追加「管理员配置」标签，并在其后追加接收范围标签（「全局」/「指定学生」/「指定宿舍」，浅蓝描边与主来源标签区分）；学生自建不显示范围（本就是本人）。
+- 「添加通知」按钮：本人自建达 2 条时置灰并文案「已达上限（最多 2 条）」。
+- `ThirdPartyWebhook` 类型 `scope` 由 `'student'` 放宽为 `'student' | 'global' | 'dorm'`，`scope_target` 由 `number[]` 放宽为 `(number | string)[]`（宿舍为字符串）。
+
+**验证**
+- 后端回归：`tests/test_miniapp_webhook_bound_fence.py` **41 passed**（含反向围栏：越权改/删/测一律 404、超范围拒绝、管理员定向给本人允许修改且元数据不变、达上限创建 400、未达上限创建 201、dorm 命中本人可见）。
+- 前端 `tsc --noEmit` 0 错（小程序）。
+- 围栏复查（2026-10-01 深夜）：5 个学生端 webhook 路由全部 `@student_bound_required` 且接 `_student_can_manage`/可见性条件；清理了被 `_student_can_manage` 取代后残留的死代码 `_student_webhook_owned`；修正 `list_my_webhooks` docstring 口径（不再只写"按 owner 过滤"）。`list_my_webhooks` 的可见性 SQL 用 MySQL 方言编译验证为 `owner=本人 OR (scope=student 且 JSON_CONTAINS 命中) OR (scope=dorm 且 JSON_CONTAINS 命中)`，AND 优先级正确；该 SQL 依赖 MySQL `JSON_CONTAINS`，与部署库（MySQL）一致。
+
 ### 小程序：详情页导航栏标题改为内容名 + 通知详情页底部留白加大（2026-10-01）
 - **通知详情**（`miniapp-frontend/src/pages/announcement/detail/index.tsx`）：接口加载成功后导航栏标题由「通知详情」改为**通知名**（微信原生导航栏超长自动省略号截断）；加载中/失败仍兜底「通知详情」。
 - **通知详情底部灰色隔断**：相关推荐拉到底时距固定操作栏（约 100rpx + 安全区）留白 120rpx → **200rpx**，且留白改用页面背景色（`$background`）填充，与「正文/相关推荐」之间的灰色隔断同色，拉到底形成完整灰色隔断区，不再是一块白。
@@ -43,7 +67,13 @@
 
 **反馈状态 → 站内通知（`feedback_routes._notify_feedback_status`）**
 - 管理员受理/处理中/完成（含回复置已解决）反馈时，给反馈归属学生写一条站内通知：`category='feedback'`、`ref_type='feedback'`、`ref_id=feedback.id`，标题「你的反馈已受理 / 处理中 / 已解决」，content 单行（`"你的反馈「{摘要}」状态更新为「{label}」{：extra}，点击查看详情。"`，原文 >30 字截断；回复摘要按 50 字截断）。
-- **旁路失败静默**（`except Exception as exc` → 只写 warning，不影响管理端主流程）；`service.create` 内部本就吞异常返回 `False`，此处再加一层兜底。
+- **修复：由"每次新建"改为"upsert"（2026-10-01 深夜）**。`user_notifications` 有唯一约束 `uq_user_notif_ref(user_id, ref_type, ref_id)`（见 `model/user_notification.py`），反馈通知固定 `ref_type='feedback'`、`ref_id=feedback.id`，于是**同一反馈只能有 1 条通知**；旧实现直接 `create`，管理员对同一反馈做第二次及以后的状态变更（resolve→reply，或反复改状态）时，新通知因唯一约束冲突被静默丢弃，学生端看不到。改为 `user_notification_service.upsert_feedback_notification`（按 `user_id+ref_type+ref_id` 去重）：同反馈只保留 1 条，反复变更时更新为最新内容并重置 `is_read/is_viewed` 重新冒泡为未读/未看（学生端会再次看到）。
+- **修复：失败可观测**。旧实现里 `service.create` 捕获异常返回 `False` 不抛出，`_notify_feedback_status` 的 `except` 永远触发不了、失败完全无日志。现 upsert 返回 `False` 时 `_notify_feedback_status` 补记一条 WARNING（`[Feedback] 反馈状态通知写入/更新失败 ...`），配合 `service` 内部 ERROR 日志，写入失败在反馈维度可查，不再静默。
+- **旁路失败静默**（`except Exception as exc` → 写 warning，不影响管理端主流程）保留：通知是旁路，绝不把管理端操作标失败。
+
+**反馈 upsert 验证（2026-10-01 深夜）**
+- 后端 `pytest -q`：**675 passed, 1 skipped, 89 warnings in 40.23s**（与改前基线一致，无回归）。
+- 针对性复现 `技术总结/dev-scripts/repro_feedback_upsert_2026-10-01.py`（纯 SQLite）：同反馈先 processing 再 resolved 两次 upsert → 库内始终 1 条、内容刷新为"已解决"且 `is_read/is_viewed` 重置（不再被唯一约束静默丢弃）；upsert 返回 `False` 时 `_notify_feedback_status` 捕获到 1 条 WARNING（失败可观测）。
 
 **验证**
 - 后端 `pytest -q`：**666 passed, 1 skipped, 89 warnings in 39.18s**（与改前基线一致，无回归）。
@@ -55,6 +85,7 @@
 - **标题文案精简（原因）**：卡片标题原为「组织架构（学校→学院→专业→班级）」，在 300px 面板里本就被 ellipsis 截断（实测 `scrollWidth 282` vs `clientWidth 180`），加入箭头后箭头会被整段裁掉（布局落在标题框之外）；故标题收为「组织架构」，层级说明移入 hover 提示，信息不丢。
 - **状态持久化**：折叠态写入 `localStorage`（key `push:roster:org-panel-expanded`），仅取值为 `"false"` 时视为折叠，缺失或读取异常一律默认展开 —— 重新进入页面不再恢复默认。
 - 空组织时的引导文案随折叠态切换（折叠时提示先点工具栏最左侧的「展开组织架构」按钮）。
+- **第三轮修订（2026-10-01 晚）**：曾将右栏平铺的一排操作按钮收纳进「其他功能」下拉，实测后用户要求改回**直接平铺**——撤销 `Dropdown`，恢复「添加学生 / 批量生成码 / 批量导入 / 导出名单 / 下载模板 / 刷新」平铺于工具行（折叠态同样平铺，行首保留「组织架构」展开入口）；展开态行尾「关闭」按钮收起左栏。验证：`tsc --noEmit` 0 错；无头浏览器 mock 自查桌面 1440×900 / 移动 390×844 双视口全过，折叠后表格仍为 **738px → 1079px**。
 - 验证：`tsc --noEmit` 0 错；`vite build` 成功。无头浏览器 mock 自查（桌面 1440×900 / 移动 390×844，展开与折叠各一）：表格容器 **738px → 1079px**（差值恰为面板 300 + gap 16 + 分隔线间距）；**点标题文字**与**点下拉箭头**分别实测均可收起；`reload` 后仍保持折叠；并实测确认标题不再截断、箭头落在标题框内可见。
 
 ## v6.21.0 (2026-10-01)

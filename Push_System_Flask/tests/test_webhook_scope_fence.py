@@ -49,6 +49,7 @@ if ROOT not in sys.path:
 
 from app.core.extensions import limiter
 from app.utils.jwt_auth import JWTManager
+from app.api.miniapp_routes import _MAX_WEBHOOKS_PER_STUDENT
 
 SECRET = "test-secret-key-0123456789abcdef0123456789abcdef"
 WECOM_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
@@ -525,7 +526,7 @@ def test_student_create_trims_modules_by_whitelist(client, student_headers):
 
 def test_student_create_capped(client, student_headers):
     """单人 webhook 数量上限：达上限拒绝（防止广播副本被滥建放大）"""
-    CTX["webhook_count"] = 10
+    CTX["webhook_count"] = _MAX_WEBHOOKS_PER_STUDENT
     resp = _student_create(client, student_headers, modules="course")
     assert resp.status_code == 400
     assert "最多只能创建" in resp.get_json()["message"]
@@ -533,7 +534,7 @@ def test_student_create_capped(client, student_headers):
 
 
 def test_student_create_below_cap_allowed(client, student_headers):
-    CTX["webhook_count"] = 9
+    CTX["webhook_count"] = _MAX_WEBHOOKS_PER_STUDENT - 1
     resp = _student_create(client, student_headers, modules="course")
     assert resp.status_code == 201
 

@@ -62,8 +62,34 @@
   margin-right: $spacing-md;
 }
 
-.tpn-cell-label-strong {
+// 标题行：名称 + 模块标签（左），开关（右）
+.tpn-cell-head {
+  min-height: 104rpx;
+}
+
+.tpn-head-left {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  flex: 1;
+  min-width: 0;
+  margin-right: $spacing-md;
+}
+
+// 名称过长时截断，右侧模块标签不被压缩
+.tpn-head-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: $font-size-md;
+  color: $text-primary;
   font-weight: 600;
+}
+
+.tpn-head-left .tpn-tag {
+  flex-shrink: 0;
 }
 
 .tpn-cell-switch {
@@ -114,10 +140,10 @@
   white-space: nowrap;
 }
 
-// 操作行
+// 操作行（位于 URL 行下方，右对齐）
 .tpn-cell-actions {
   display: flex;
-  justify-content: flex-start;
+  justify-content: flex-end;
   gap: $spacing-lg;
 }
 
@@ -134,17 +160,29 @@
   color: $error;
 }
 
-// 标签
-.tpn-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: $spacing-xs;
-}
-
+// 模块标签（列表标题行内）
 .tpn-tag {
   font-size: $font-size-xs;
   color: $primary-color;
   background: $primary-light;
+  border-radius: $radius-small;
+  padding: 4rpx 14rpx;
+}
+
+// 管理员配置标识（与模块标签区分：灰底）
+.tpn-tag-admin {
+  font-size: $font-size-xs;
+  color: #595959;
+  background: #f0f0f0;
+  border-radius: $radius-small;
+  padding: 4rpx 14rpx;
+}
+
+// 管理员代建的「接收范围」标识（浅蓝描边，与来源标签区分）
+.tpn-tag-scope {
+  font-size: $font-size-xs;
+  color: #096dd9;
+  background: #e6f7ff;
   border-radius: $radius-small;
   padding: 4rpx 14rpx;
 }

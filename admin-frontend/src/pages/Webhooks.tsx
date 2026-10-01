@@ -71,16 +71,18 @@ const SCOPE_MAP: Record<string, { label: string; color: string; icon: React.Reac
 };
 
 /**
- * 模块与「接收范围」的关系（范围自动联动的唯一依据）
+ * 模块与「接收范围」的关系
  *
- * filter    —— 内容含逐人维度，可按学生 / 宿舍过滤后再聚合发送；
- * broadcast —— 全站同一份内容，没有逐人维度，范围影响不了内容。
+ * 投递层（app/services/webhook_push_service.py）：
+ * - `send_module_report`：按 webhook 的 scope 过滤聚合电量等「逐人维度」报告；
+ * - `fanout_broadcast_webhooks`：把课表 / 天气的广播副本补发给 scope=student / dorm 的
+ *   定向 webhook（delivery_service 仅对 course/weather 调用）。
  *
- * 事实依据（勿凭印象改）：
- * - `courses` 表无 user_id / 班级维度（见 Push_System_Flask/app/model/course.py），
- *   课表是全校一份数据；天气 / 系统 payload 同为全局。
- * - 电量按学生逐条采集（app/modules/electricity/tasks.py），
- *   再由 app/services/webhook_push_service.py 的 send_module_report 按 scope 过滤聚合。
+ * 因此**除系统告警（system）外**，所有模块都允许管理员指定接收范围（指定学生 / 宿舍）；
+ * system 刻意不开放定向（delivery_service 不补发，订阅 system 的 webhook 一律走 adapter
+ * 全局广播），配置了也是无效配置，故管理端不给受众选项。
+ *
+ * 唯一「强制必须指定受众」的是电量 / 全部：含逐人隐私数据，绝不允许汇总进一个群。
  */
 const MODULE_SCOPE_KIND: Record<string, "filter" | "broadcast"> = {
   course: "broadcast",
@@ -89,10 +91,14 @@ const MODULE_SCOPE_KIND: Record<string, "filter" | "broadcast"> = {
   system: "broadcast",
 };
 
-/** 所选模块中是否含「可按受众过滤」的模块（决定「接收范围」是否可编辑） */
+/** 所选模块中除 system 外是否允许配置接收范围（决定「接收范围」区块是否出现） */
 function hasFilterableModule(mods?: string[] | null): boolean {
-  // 「全部」包含电量，同样允许定向
-  return (mods || []).some((m) => m === "all" || MODULE_SCOPE_KIND[m] === "filter");
+  return (mods || []).some((m) => m !== "system");
+}
+
+/** 是否**强制**必须指定受众：含电量（或「全部」），含逐人隐私数据，绝不允许全局。 */
+function requiresAudience(mods?: string[] | null): boolean {
+  return (mods || []).some((m) => m === "all" || m === "electricity");
 }
 
 /**
@@ -283,13 +289,15 @@ export default function Webhooks() {
     if (editingWebhook) {
       const mods = editingWebhook.module_list || [];
       const filterable = hasFilterableModule(mods);
-      // 电量含各人隐私数据，**不提供「全局」**：历史遗留的 global 收敛为「指定宿舍」，
-      // 由管理员明确指定受众后才保存（否则等于把全站电量汇总进一个群）。
-      const nextScope = !filterable
-        ? "global"
-        : editingWebhook.scope === "student"
-        ? "student"
-        : "dorm";
+      const audienceRequired = requiresAudience(mods);
+      // 不开放范围（system）：一律 global。
+      // 开放范围：尊重原记录的 scope（student / dorm / 历史 global）；
+      // 电量类（强制受众）的历史遗留 global 收敛为「指定宿舍」。
+      let nextScope: string;
+      if (!filterable) nextScope = "global";
+      else if (editingWebhook.scope === "student") nextScope = "student";
+      else if (editingWebhook.scope === "dorm") nextScope = "dorm";
+      else nextScope = audienceRequired ? "dorm" : "global";
       form.setFieldsValue({
         name: editingWebhook.name,
         url: editingWebhook.url,
@@ -328,9 +336,16 @@ export default function Webhooks() {
     }
     if ("modules" in changed) {
       if (hasFilterableModule(changed.modules)) {
-        // 勾上电量：默认给「指定宿舍」，必须明确受众才能保存
-        if (!["student", "dorm"].includes(form.getFieldValue("scope"))) {
-          form.setFieldsValue({ scope: "dorm", scope_target: [] });
+        if (requiresAudience(changed.modules)) {
+          // 含电量：强制受众，默认「指定宿舍」，不允许 global
+          if (!["student", "dorm"].includes(form.getFieldValue("scope"))) {
+            form.setFieldsValue({ scope: "dorm", scope_target: [] });
+          }
+        } else {
+          // 课表 / 天气：允许全局广播，默认 global（不强制定向）
+          if (!["global", "student", "dorm"].includes(form.getFieldValue("scope"))) {
+            form.setFieldsValue({ scope: "global", scope_target: [] });
+          }
         }
       } else {
         form.setFieldsValue({ scope: "global", scope_target: [] });
@@ -711,7 +726,7 @@ export default function Webhooks() {
         type="info"
         showIcon
         style={{ marginBottom: 14, borderRadius: 8 }}
-        message="Webhook 地址决定消息发到哪个群；「接收范围」决定把谁的数据发过去。课表 / 天气为全站广播，系统仅全局告警——这些都是默认行为，无需配置；只有电量含各人隐私数据，必须指定宿舍或学生，不会把全站电量汇总进一个群。修改后点「重载配置」生效。"
+        message="Webhook 地址决定消息发到哪个群；「接收范围」决定把消息发给谁。课表 / 天气默认全局广播，也可指定宿舍或学生；系统仅全局告警；电量含各人隐私，必须指定受众，不会把全站电量汇总进一个群。修改后点「重载配置」生效。"
       />
 
       {/* 列表 */}
@@ -795,7 +810,7 @@ export default function Webhooks() {
             name="modules"
             label="所属模块"
             rules={[{ required: true, message: "请选择至少一个模块" }]}
-            extra="课表 / 天气 / 系统为全站广播；勾选「电量」后需在下方的接收范围里指定受众"
+            extra="课表 / 天气 / 系统默认全局广播；如想只发给指定学生 / 宿舍，在下方的接收范围里指定受众。电量含逐人隐私，必须指定受众"
           >
             <Select mode="multiple" placeholder="选择此 webhook 接收哪些模块的消息">
               <Select.Option value="all">全局（接收所有推送）</Select.Option>
@@ -806,13 +821,14 @@ export default function Webhooks() {
             </Select>
           </Form.Item>
 
-          {/* 接收范围只在「勾了电量」时才出现：
-              课表 / 天气 / 系统是全站广播（默认行为，没有可选项）；
-              电量含各人隐私数据，必须明确受众，因此不提供「全局」。 */}
+          {/* 接收范围对除 system 外所有模块开放：
+              课表 / 天气允许「全局」广播或定向到指定学生 / 宿舍；
+              电量含逐人隐私，强制必须指定受众，不提供「全局」；
+              system 不开放（投递层不补发，仅全局广播）。 */}
           {scopeFilterable && (
             <>
               <Divider orientation="left" plain style={{ fontSize: 13 }}>
-                接收范围（电量）
+                接收范围
               </Divider>
 
               <Form.Item
@@ -821,8 +837,15 @@ export default function Webhooks() {
                 rules={[{ required: true, message: "请选择接收范围" }]}
               >
                 <Select
-                  placeholder="选择把谁的电量数据发到这个群"
+                  placeholder={
+                    requiresAudience(effectiveModules)
+                      ? "选择把谁的数据发到这个群"
+                      : "选择把消息发给谁（默认全局广播）"
+                  }
                   options={[
+                    ...(requiresAudience(effectiveModules)
+                      ? []
+                      : [{ value: "global", label: "全局（所有群 / 人）" }]),
                     { value: "dorm", label: "指定宿舍（该宿舍已配 Cookie 的学生）" },
                     { value: "student", label: "指定学生（仅这些学生）" },
                   ]}

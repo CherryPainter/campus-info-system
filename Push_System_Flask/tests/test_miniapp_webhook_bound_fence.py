@@ -47,6 +47,7 @@ from types import SimpleNamespace
 import jwt as _jwt
 import pytest
 from flask import Flask
+from sqlalchemy import column
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -112,41 +113,25 @@ class _Record:
         }
 
 
-class _Col:
-    """假列对象：支持 `Webhook.created_at.desc()` / `Webhook.owner_user_id == x` 这类表达式"""
-
-    def desc(self):
-        return self
-
-    def asc(self):
-        return self
-
-    def is_(self, *a, **k):
-        return self
-
-    def __eq__(self, other):
-        return self
-
-    def __ne__(self, other):
-        return self
-
-    def __hash__(self):
-        return id(self)
-
-
 class _StubWebhook:
-    """Webhook 模型桩（挂列属性：被测代码会求值 `Webhook.owner_user_id == x`）"""
+    """Webhook 模型桩。
 
-    id = _Col()
-    name = _Col()
-    url = _Col()
-    modules = _Col()
-    scope = _Col()
-    scope_target = _Col()
-    owner_user_id = _Col()
-    is_enabled = _Col()
-    description = _Col()
-    created_at = _Col()
+    列属性用真实的 `sqlalchemy.column()`，使被测代码里的
+    `Webhook.scope == "student"`、`func.json_contains(Webhook.scope_target, ...)`
+    能走原生布尔组合与 `or_()` coercion（桩不真正执行 SQL，条件真假无所谓）。
+    静态方法 get_by_id / create / update / delete 直接对接 CTX 桩状态。
+    """
+
+    id = column("id")
+    name = column("name")
+    url = column("url")
+    modules = column("modules")
+    scope = column("scope")
+    scope_target = column("scope_target")
+    owner_user_id = column("owner_user_id")
+    is_enabled = column("is_enabled")
+    description = column("description")
+    created_at = column("created_at")
 
     @staticmethod
     def get_by_id(session, webhook_id):
@@ -177,6 +162,9 @@ class _FakeQuery:
     def filter_by(self, *a, **k):
         return self
 
+    def join(self, *a, **k):
+        return self
+
     def order_by(self, *a, **k):
         return self
 
@@ -187,10 +175,20 @@ class _FakeQuery:
         return self
 
     def all(self):
+        from app.model.student_roster import StudentRoster
+
+        # 学生宿舍查询：返回测试学生所在的宿舍，使 scope=dorm 可见性可桩测。
+        # 注意：被测代码走 `session.query(StudentRoster.dorm)`（传的是 Column 对象），
+        # 不是 `session.query(StudentRoster)`（传类），故同时要识别 Column 的 class_。
+        model_cls = self._model
+        if model_cls is StudentRoster or getattr(model_cls, "class_", None) is StudentRoster:
+            # 返回元组行，使 `str(r[0])` 与原生 SQLAlchemy Row 行为一致
+            return [("31栋512",)]
         return []
 
     def count(self):
-        return 0
+        # 学生自建数量：受 CTX["owned_count"] 控制，用于上限用例
+        return CTX.get("owned_count", 0)
 
     def first(self):
         from app.model.student_profile import StudentProfile
@@ -213,7 +211,10 @@ class _FakeQuery:
                 dorm="31栋512",
                 to_dict=lambda: {"user_id": STUDENT_ID, "student_number": "20260001"},
             )
-        return CTX["record"]
+        # 其余模型（TokenBlacklist 等）一律视为未命中。原先这里默认返回
+        # CTX["record"]，会被 is_revoked 把"查黑名单"误判成"已撤销"→ 401，
+        # 必须在未知模型上返回 None。
+        return None
 
 
 class _FakeSession:
@@ -593,3 +594,125 @@ def test_settings_service_entries_go_through_bound_guard(url):
     """
     src = _settings_src()
     assert f"openBoundPage('{url}')" in src, f"{url} 入口未走 openBoundPage 守卫"
+
+
+# ==================== 六、可见性与权限边界（管理员定向 / 上限） ====================
+#
+# 本轮改造：学生端除本人自建的 webhook 外，还应能看到「管理员定向给自己」的 webhook
+# （scope=student 且 target 含本人；或 scope=dorm 且本人所在宿舍命中 target）；
+# 超出其范围的（含 global、他人、其他宿舍）既不可见也无权管理。这是权限边界，
+# 必须在服务端兜底（不能只靠前端不展示防 API 直调越权）。
+
+
+def _mk_webhook(**kw):
+    """构造一个被测 webhook 桩对象（含 owner_user_id / scope / scope_target）"""
+    return _Record(
+        id=kw.get("id", 1),
+        owner_user_id=kw.get("owner_user_id"),
+        scope=kw.get("scope", "student"),
+        scope_target=kw.get("scope_target"),
+    )
+
+
+def test_max_owned_constant_is_two():
+    """学生自建上限已收紧为 2（原 10），避免滥用出站放大"""
+    from app.api.miniapp_routes import _MAX_WEBHOOKS_PER_STUDENT
+
+    assert _MAX_WEBHOOKS_PER_STUDENT == 2
+
+
+def test_student_can_manage_owned():
+    """本人自建（owner_user_id == 本人）：可管理"""
+    from app.api.miniapp_routes import _student_can_manage
+
+    wh = _mk_webhook(owner_user_id=STUDENT_ID)
+    assert _student_can_manage(wh, STUDENT_ID, _FakeSession()) is True
+
+
+def test_student_can_manage_admin_targeted_self():
+    """管理员定向到本人（scope=student 且 target 含本人）：可管理"""
+    from app.api.miniapp_routes import _student_can_manage
+
+    wh = _mk_webhook(owner_user_id=None, scope="student", scope_target=[STUDENT_ID])
+    assert _student_can_manage(wh, STUDENT_ID, _FakeSession()) is True
+
+
+def test_student_can_manage_admin_dorm_self():
+    """管理员定向到本人所在宿舍（scope=dorm 且 target 含本人宿舍）：可管理"""
+    from app.api.miniapp_routes import _student_can_manage
+
+    wh = _mk_webhook(owner_user_id=None, scope="dorm", scope_target=["31栋512"])
+    assert _student_can_manage(wh, STUDENT_ID, _FakeSession()) is True
+
+
+def test_student_can_manage_rejects_out_of_scope():
+    """以下均不可见 / 不可管理（反向围栏）："""
+    from app.api.miniapp_routes import _student_can_manage
+
+    cases = [
+        # 他人自建
+        _mk_webhook(owner_user_id=999),
+        # 管理员定向到他人（student）
+        _mk_webhook(owner_user_id=None, scope="student", scope_target=[999]),
+        # 管理员定向到其他宿舍
+        _mk_webhook(owner_user_id=None, scope="dorm", scope_target=["A栋101"]),
+        # 全局（任何人都无法按「定向」管理，只能被动接收投递）
+        _mk_webhook(owner_user_id=None, scope="global", scope_target=None),
+    ]
+    for wh in cases:
+        assert _student_can_manage(wh, STUDENT_ID, _FakeSession()) is False, (
+            f"越权可见：{wh.owner_user_id}/{wh.scope}/{wh.scope_target}"
+        )
+
+
+def test_update_out_of_scope_rejected(client, student_headers):
+    """越权：学生改/删/测「超范围」的 webhook 一律 404（不得被直调越权）"""
+    CTX["record"] = _mk_webhook(owner_user_id=999, scope="student", scope_target=[999])
+    for method, path in [
+        ("put", "/api/miniapp/webhooks/1"),
+        ("delete", "/api/miniapp/webhooks/1"),
+        ("post", "/api/miniapp/webhooks/1/test"),
+    ]:
+        resp = _call(
+            client, student_headers, method, path,
+            **({"json": {"name": "x", "url": WECOM_URL}} if method == "put" else {}),
+        )
+        assert resp.status_code == 404, f"{method.upper()} {path} 越权应 404，实际 {resp.status_code}"
+
+
+def test_update_admin_targeted_self_allowed(client, student_headers):
+    """学生可改「管理员定向给本人」的 webhook（仅名称 / URL / 模块 / 启停，范围不变）"""
+    CTX["record"] = _mk_webhook(
+        owner_user_id=None, scope="student", scope_target=[STUDENT_ID]
+    )
+    resp = client.put(
+        "/api/miniapp/webhooks/1",
+        json={"name": "改后的名", "url": WECOM_URL, "modules": "course"},
+        headers=student_headers,
+    )
+    assert resp.status_code == 200, f"应允许修改，实际 {resp.status_code}"
+    # 服务端不把管理员代建的 scope / owner 改成学生自己
+    assert CTX["record"].scope == "student"
+    assert CTX["record"].owner_user_id is None
+
+
+def test_create_blocked_at_limit(client, student_headers):
+    """学生已自建 2 条时再创建 → 400（管理员代建不计入）"""
+    CTX["owned_count"] = 2
+    resp = client.post(
+        "/api/miniapp/webhooks",
+        json={"name": "我的群", "url": WECOM_URL, "modules": "course"},
+        headers=student_headers,
+    )
+    assert resp.status_code == 400, f"达上限应 400，实际 {resp.status_code}"
+
+
+def test_create_allowed_under_limit(client, student_headers):
+    """未满上限（含管理员代建不计）时创建成功"""
+    CTX["owned_count"] = 0
+    resp = client.post(
+        "/api/miniapp/webhooks",
+        json={"name": "我的群", "url": WECOM_URL, "modules": "course"},
+        headers=student_headers,
+    )
+    assert resp.status_code == 201, f"应创建成功，实际 {resp.status_code}"

@@ -68,9 +68,11 @@ _FEEDBACK_STATUS_LABEL = {
 
 def _notify_feedback_status(fb: Feedback, extra: str | None = None) -> None:
     """
-    反馈状态变更 → 给反馈归属学生写一条站内通知（我的消息可见，可点回反馈详情）。
+    反馈状态变更 → 给反馈归属学生写/更新一条站内通知（我的消息可见，可点回反馈详情）。
 
-    旁路调用：失败只记日志，绝不影响管理端主流程（service.create 内部已兜异常）。
+    旁路调用：失败只记日志，绝不影响管理端主流程。
+    同一反馈只保留一条通知（upsert）：反复改状态 / 回复不会因唯一约束被静默丢弃，
+    每次变更都会刷新为最新状态并重置 is_read / is_viewed 重新冒泡。
     content 保持单行（小程序消息卡片摘要取首行展示）。
     """
     try:
@@ -86,7 +88,7 @@ def _notify_feedback_status(fb: Feedback, extra: str | None = None) -> None:
         if extra:
             content += f"：{extra}"
         content += "，点击查看详情。"
-        user_notification_service.create(
+        ok = user_notification_service.upsert_feedback_notification(
             user_id=fb.user_id,
             category="feedback",
             title=title,
@@ -94,6 +96,12 @@ def _notify_feedback_status(fb: Feedback, extra: str | None = None) -> None:
             ref_type="feedback",
             ref_id=fb.id,
         )
+        if not ok:
+            # create/upsert 内部已记 ERROR；此处补一条 WARNING，让"通知没送达"
+            # 在反馈维度可查（避免因 service 吞异常而完全无感知）
+            logger.warning(
+                f"[Feedback] 反馈状态通知写入/更新失败 feedback_id={fb.id} user_id={fb.user_id}"
+            )
     except Exception as exc:  # 旁路失败静默：不把管理端操作标失败
         logger.warning(f"[Feedback] 反馈状态通知写入失败 feedback_id={fb.id}: {exc}")
 

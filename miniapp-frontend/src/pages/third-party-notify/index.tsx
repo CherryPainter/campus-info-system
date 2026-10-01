@@ -32,6 +32,21 @@ const MODULE_LABEL: Record<string, string> = {
 };
 
 /**
+ * 管理员代建 webhook 的「接收范围」文案（来源已由「管理员配置」标签表达）。
+ * 学生自建（owner_user_id 非空）不显示范围——本就是本人。
+ */
+const SCOPE_LABEL: Record<string, string> = {
+  global: '全局',
+  student: '指定学生',
+  dorm: '指定宿舍',
+};
+
+const scopeRangeLabel = (item: ThirdPartyWebhook): string | null => {
+  if (item.owner_user_id != null) return null;
+  return SCOPE_LABEL[item.scope] || null;
+};
+
+/**
  * 第三方消息通知（学生自建 webhook）
  *
  * 学生可在此自助添加企业微信机器人 webhook，仅限个人相关模块（课表 / 电量 / 天气），
@@ -209,20 +224,17 @@ export default function ThirdPartyNotifyPage() {
       <>
         {list.map((item) => (
           <View className="tpn-card tpn-group" key={item.id}>
-            <View className="tpn-cell tpn-cell-switch">
-              <Text className="tpn-cell-label tpn-cell-label-strong">{item.name}</Text>
-              <Switch
-                checked={item.is_enabled}
-                onChange={() => handleToggleEnabled(item)}
-              />
-            </View>
-            <View className="tpn-cell">
-              <Text className="tpn-cell-url" numberOfLines={1}>
-                {item.url}
-              </Text>
-            </View>
-            <View className="tpn-cell">
-              <View className="tpn-tags">
+            <View className="tpn-cell tpn-cell-head">
+              <View className="tpn-head-left">
+                <Text className="tpn-head-name">{item.name}</Text>
+                {item.owner_user_id == null && (
+                  <Text className="tpn-tag tpn-tag-admin">管理员配置</Text>
+                )}
+                {item.owner_user_id == null && scopeRangeLabel(item) && (
+                  <Text className="tpn-tag tpn-tag-scope">
+                    {scopeRangeLabel(item)}
+                  </Text>
+                )}
                 {(item.module_list && item.module_list.length
                   ? item.module_list
                   : []
@@ -232,6 +244,15 @@ export default function ThirdPartyNotifyPage() {
                   </Text>
                 ))}
               </View>
+              <Switch
+                checked={item.is_enabled}
+                onChange={() => handleToggleEnabled(item)}
+              />
+            </View>
+            <View className="tpn-cell">
+              <Text className="tpn-cell-url" numberOfLines={1}>
+                {item.url}
+              </Text>
             </View>
             <View className="tpn-cell tpn-cell-actions">
               <View
@@ -337,12 +358,16 @@ export default function ThirdPartyNotifyPage() {
     </>
   );
 
+  // 学生自建数量：owner_user_id 非空即本人自建；管理员代建的 owner 为 NULL，不计入上限
+  const ownedCount = list.filter((i) => i.owner_user_id != null).length;
+  const reachedLimit = ownedCount >= 2;
+
   return (
     <View className="tpn-page">
       <View className="tpn-card tpn-intro">
         <Text className="tpn-intro-text">
           自助添加企业微信机器人 Webhook，仅接收与你个人相关的推送（课表 / 电量 / 天气）。
-          配置即时生效，无需审核；仅本人可见与管理，接收范围固定为「仅自己」。
+          配置即时生效，无需审核；你本人创建的与「管理员配置」给你的都能在此查看与管理。
         </Text>
       </View>
 
@@ -350,10 +375,12 @@ export default function ThirdPartyNotifyPage() {
 
       {!showForm && (
         <View
-          className="tpn-btn tpn-btn-primary tpn-btn-block"
-          onClick={openAdd}
+          className={`tpn-btn tpn-btn-primary tpn-btn-block${reachedLimit ? ' tpn-btn-disabled' : ''}`}
+          onClick={reachedLimit ? undefined : openAdd}
         >
-          <Text className="tpn-btn-text-primary">添加通知</Text>
+          <Text className="tpn-btn-text-primary">
+            {reachedLimit ? '已达上限（最多 2 条）' : '添加通知'}
+          </Text>
         </View>
       )}
 
