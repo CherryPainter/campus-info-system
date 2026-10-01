@@ -640,7 +640,7 @@ npm run dev
 | `APP_VERSION` | `6.20.0`                     | 应用版本                         |
 | `APP_ENV`     | （空）                       | 环境标记，填 `production` 即启用生产约束（生产未开 `FORCE_HTTPS` 则拒绝启动） |
 | `DEBUG`       | `false`                      | 调试模式（生产环境必须为 false） |
-| `HOST`        | `0.0.0.0`                    | 监听地址                         |
+| `HOST`        | `0.0.0.0`                    | 监听地址（**仅 `run.py` 开发服务器生效**；Gunicorn 下由 `GUNICORN_BIND` 决定） |
 | `PORT`        | `29528`                      | 监听端口                         |
 | `MAX_CONTENT_LENGTH` | `10485760`            | 请求体上限（字节，默认 10MB）；Flask 在进入视图前就按它拒绝超大 body |
 
@@ -1530,8 +1530,8 @@ python run.py
 **快速部署：**
 
 ```bash
-# 1. 复制 Linux 配置模板
-cp .env.linux .env
+# 1. 复制配置模板
+cp .env.example .env
 nano .env  # 填写必要配置
 
 # 2. 安装系统依赖

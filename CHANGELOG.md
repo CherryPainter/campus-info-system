@@ -71,6 +71,25 @@
 **待决策（本次未改）**
 - `QWEATHER_LATITUDE/LONGITUDE` 是否要**让它们真正生效**：若要让「天气定位与预警坐标可分别配置」成立，需同时改 `config.py`（声明属性）与 `QWEATHER_LOCATION` 的默认值。本次按「既有注释已认定为空壳」处理为移除。
 
+**Linux 部署指南全面复核（`docs/DEPLOY_LINUX.md` + `README.md`，2026-10-01 追加）**
+此前只改过该文档的天气段，其余 645 行从未核对。本轮从头走了一遍，订正 8 类事实问题：
+
+- **两个已不存在的死步骤**：文档两处（「快速部署」与「配置环境变量」）都写 `cp .env.linux .env`，而 `.env.linux` **从未入库**（全仓共 7 处引用，上一轮只清理了 README 目录树里的 1 处）。已全部改为 `cp .env.example .env`；`README.md:1534` 那处漏改一并补齐。
+- **版本号全线过时**：文档头 / 启动成功日志 / systemd `Description` 三处的 `v6.11.2` → `v6.20.0`（与 `config.py:124`、`admin-frontend/src/version.ts:6`、`package.json:4` 三处一致）。
+- **健康检查预期值写错**：原文说 `/api/health` 应返回 `{"status": "ok"}`。实测该端点为 **`{"status": "healthy", "service": "course-push-system", ...}`**（`app/api/routes.py:51`，走 `api_bp` + `url_prefix="/api"`，无需认证）；`{"status":"ok"}` 属于**另一个**端点 `/api/ping`（`app/__init__.py:252`，全路径注册）。已在原文补一行区分说明。
+- **`HOST` 的口径写反，且漏掉关键前提**：原文 `HOST=0.0.0.0`（注释「监听所有网卡」）并据此写「Running on http://0.0.0.0:29528」。事实是 `HOST` **全仓只有 `run.py:16` 一处在读**（`app.run(host=config["HOST"], ...)`），而生产走 Gunicorn —— 监听地址由 `GUNICORN_BIND` 决定，`gunicorn_config.py:34` 默认 `127.0.0.1:29528`，且本机 `.env:4` 实际就是 `127.0.0.1`。已改为 `HOST=127.0.0.1`，并补「监听地址由哪个键决定」的说明；顺带在 `.env.example` 与 README 的 `HOST` 行补注「仅 `run.py` 开发服务器生效」（`.env.example` 的**取值保持 `0.0.0.0` 不动** —— 它对局域网真机联调有用，属行为取舍，留给用户定）。
+- **前端 API 地址的改法会破坏产物与仓库一致性**：原文指导「编辑 `admin-frontend/src/api/request.ts`，把 `baseURL` 改成后端地址」，但该文件读的是 `import.meta.env.VITE_API_BASE_URL || "/api"`（`request.ts:19`）。已改为「复制 `admin-frontend/.env.example` 为 `.env.local` 后填 `VITE_API_BASE_URL`，**改完必须重新构建**（构建时内联）」，并列出真实存在的 4 个 `VITE_*` 键（`VITE_API_BASE_URL` / `VITE_BEIAN_ICP` / `VITE_BEIAN_MPS` / `VITE_CONTACT_EMAIL`，逐一回源码验证读取点：`request.ts:19`、`components/Footer.tsx:35-36`、`pages/Contact.tsx:75`）。
+- **补上 Gunicorn 说明**：文档的 systemd unit 直接跑 `python3 run.py`，即 Flask **开发服务器**（启动日志会自报 `Do not use it in a production deployment`）。已在 unit 后补一段：本仓库内置 `gunicorn_config.py`，生产建议改用 `gunicorn -c gunicorn_config.py run:app`；并写明两个前提与一条禁忌 —— `requirements.txt` **不含 gunicorn** 需单独安装；**必须**带 `-c`（该配置 `preload_app = True` 保证 APScheduler 只由 master 启动一份）；**切勿**写成 `gunicorn -w 4 run:app`，否则每个 worker 各起一份调度器，定时任务重复执行 N 倍。
+- **依赖包数量与文件说明表**：`requirements.txt` 实为 **24** 个固定版本包（原文写 23）；文件说明表删掉 `.env.linux` 行，并把 `.env.example` 的角色讲清（入库模板，复制为 `.env`）。
+
+**安全配置指南订正（`docs/安全配置指南.md`，2026-10-01 追加）**
+该文档（459 行）有两节内容与代码**完全对不上**（不是「建议配置」，是「以代码口吻写的错误陈述」），逐条核后订正：
+
+- **「Session 配置」整节是错的**：原文称「在 `app/__init__.py` 中配置 Session」并列出 `SESSION_EXPIRE_DAYS = 7` 与 `SESSION_COOKIE_SECURE / HTTPONLY / SAMESITE` —— 这四个名字**全仓零命中**，`app/__init__.py` 里没有这些代码（本项目不使用 Flask 内置 session）。已改写为真实实现：会话落库在 `server_sessions` 表（`app/model/server_session.py` 的 `ServerSession`）；时长由 `app/utils/security.py:575-578` 的 `SESSION_SHORT/LONG_IDLE/ABSOLUTE`（2h / 1d / 7d / 30d）**单一来源**决定，经 `session_limits()` 写进 refresh_token 并由 `jwt_auth.py` 的 `JWTManager.refresh_access_token` 校验；cookie 的 `secure`/`samesite` 由 `security.py:634` 的 `cookie_security_flags()` 统一下发；过期会话由 `session_service.cleanup_expired_sessions()` 回收（另有登录时的惰性清理）。
+- **「文件上传配置选项」整节是错的**：原文列 `MAX_FILE_SIZE` / `ALLOWED_MIME_TYPES` / `FILE_SIGNATURES` —— 同样**零命中**。真实常量是 `DEFAULT_MAX_FILE_SIZE`、`DEFAULT_ALLOWED_TYPES`、`ALLOWED_IMAGE_TYPES`、`MAX_IMAGE_SIZE`、`_ALLOWED_AVATAR_MIME`、`AVATAR_MAX_SIZE`、`AVATAR_QUOTA`，以及 `get_upload_max_size()`（统一取 `Config.MAX_CONTENT_LENGTH`，避免端点自写上限定成走不到的死值）。已按真实定义重写。
+- **调用示例的签名与返回值都写错了**：原示例用 `allowed_extensions=['.jpg', ...]`（传扩展名），并从返回值取 `file['secure_filename']`。真实签名是 `validate_file_upload(file, allowed_types=None, max_size=None, check_content=True)` —— `allowed_types` 是 **MIME 集合**（`file_upload_security.py:258`），返回值就是原始 `FileStorage`（落盘名需另调 `generate_secure_filename()`，实现为 sha256 + 原扩展名）。已订正。
+- 头部版本号 `v6.11.2` → `v6.20.0`，并补「最近复核：2026-10-01」。
+
 ### 安全：B 级剩余 5 项加固（B10 / B9 / B1 / B5 / B7，2026-10-01）
 接上条「B 级问题修复（9 项）」，完成 🟡 清单中剩余的 5 项。五项均由**仓库内回归测试**锁定，并逐项做过反向验证（撤掉修复 → 对应用例变红；还原后文件哈希与原文逐字节一致），共 **46 项**变异全部命中。全量测试 **666 passed / 1 skipped**，`ruff check` 恒 **299**（与基线一致），两端 `tsc --noEmit` 通过。
 

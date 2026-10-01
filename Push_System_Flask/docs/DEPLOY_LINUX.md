@@ -1,6 +1,6 @@
 # Linux 部署指南
 
-> 校园信息聚合与智能推送系统 v6.11.2 — Linux 生产环境完整部署文档
+> 校园信息聚合与智能推送系统 v6.20.0 — Linux 生产环境完整部署文档
 
 ---
 
@@ -36,8 +36,8 @@
 git clone <your-repo> Push_System_Flask
 cd Push_System_Flask
 
-# 2. 复制 Linux 配置模板
-cp .env.linux .env
+# 2. 复制配置模板
+cp .env.example .env
 nano .env  # 编辑 .env 填写你的配置
 
 # 3. 安装系统依赖
@@ -59,7 +59,7 @@ mkdir -p data/auth data/electricity/charts data/weather logs output
 
 # 7. 启动测试
 python3 run.py
-# 看到 "校园信息聚合与智能推送系统 v6.11.2 启动完成" 表示成功
+# 看到 "校园信息聚合与智能推送系统 v6.20.0 启动完成" 表示成功
 ```
 
 ---
@@ -122,8 +122,8 @@ cd /opt/Push_System_Flask
 ### 3. 配置环境变量
 
 ```bash
-# 复制 Linux 配置模板
-cp .env.linux .env
+# 复制配置模板
+cp .env.example .env
 nano .env  # 或使用 vim .env
 ```
 
@@ -138,7 +138,8 @@ nano .env  # 或使用 vim .env
 | `WECOM_WEBHOOK` | 企业微信 Webhook | 机器人 Webhook URL |
 | `QWEATHER_API_HOST` | 和风天气 API Host（必填） | 控制台「设置」页查看，形如 `abc.def.qweatherapi.com`；旧公共域名已于 2026 年停服 |
 | `QWEATHER_CREDENTIAL_ID` / `QWEATHER_PROJECT_ID` | 和风天气 JWT 鉴权凭据 | 与控制台创建的 Ed25519 凭据配对；旧版 `QWEATHER_API_KEY` 为可选的兼容方式 |
-| `ELECTRICITY_CRAWLER_COOKIE` | 电表系统 Cookie | ~~从浏览器 DevTools 获取~~（已弃用：改由学生在小程序「设置 - 电表配置」自配，无需再配置） |
+
+> `ELECTRICITY_CRAWLER_COOKIE` **已弃用**：电表 Cookie 改由学生在小程序「设置 - 电表配置」自配（存 `student_profiles.electricity_cookie`），无需在 `.env` 中配置。
 
 **生成安全密钥：**
 
@@ -152,7 +153,7 @@ openssl rand -hex 16
 # 输出示例: f1e2d3c4b5a6...（32位十六进制字符串）
 ```
 
-**Linux 专用配置（.env.linux 已预设）：**
+**Linux 常用配置（在 `.env` 中确认）：**
 
 ```bash
 # 使用 python3 而非 python
@@ -164,9 +165,19 @@ TESSERACT_CMD=/usr/bin/tesseract
 # 生产环境关闭调试
 DEBUG=false
 
-# 监听所有网卡
-HOST=0.0.0.0
+# 仅监听本机，由 Nginx 反向代理对外（勿把 29528 直接暴露到公网）。
+# 注意：只有 run.py（开发服务器）读这个键；用 Gunicorn 时改看 GUNICORN_BIND（见下方说明）。
+HOST=127.0.0.1
 ```
+
+> **监听地址由哪个键决定？**
+>
+> - `HOST` / `PORT` **只对 `python run.py`（Flask 开发服务器）生效** ——
+>   `run.py` 中是 `app.run(host=config["HOST"], port=config["PORT"])`，全仓再无第二处读取。
+> - **生产改用 Gunicorn 后这两个键不再生效**，实际监听地址由 `GUNICORN_BIND` 决定，
+>   `gunicorn_config.py` 的默认值是 `127.0.0.1:29528`（即默认只监听本机，交由 Nginx 反代）。
+> - 无论走哪条路径，**都不要把 29528 直接暴露到公网**。若确实需要临时用 `run.py`
+>   从局域网访问（如小程序真机联调），再显式设 `HOST=0.0.0.0`。
 
 ### 4. 创建虚拟环境
 
@@ -216,15 +227,16 @@ python3 run.py
 看到以下日志表示启动成功：
 
 ```
-校园信息聚合与智能推送系统 v6.11.2 启动完成
- * Running on http://0.0.0.0:29528
+校园信息聚合与智能推送系统 v6.20.0 启动完成
+ * Running on http://127.0.0.1:29528
 ```
 
 验证健康检查：
 
 ```bash
 curl http://localhost:29528/api/health
-# 应返回 {"status": "ok", ...}
+# 应返回 {"status": "healthy", ...}
+# 轻量存活探测也可用 /api/ping，返回 {"status": "ok"}
 ```
 
 ---
@@ -237,7 +249,7 @@ curl http://localhost:29528/api/health
 
 ```ini
 [Unit]
-Description=Campus Push System v6.11.2
+Description=Campus Push System v6.20.0
 Documentation=https://github.com/your-repo/Push_System_Flask
 After=network-online.target
 Wants=network-online.target
@@ -268,6 +280,27 @@ WantedBy=multi-user.target
 ```
 
 > **注意**：如果使用 `EnvironmentFile` 加载 `.env`，确保 `.env` 中不包含 `PATH` 等系统变量冲突项。也可以不使用 `EnvironmentFile`，让应用通过 `python-dotenv` 自动加载。
+
+> **关于 `ExecStart`：开发服务器还是 Gunicorn？**
+>
+> 上面这个 unit 直接跑 `python3 run.py`，用的是 Flask 自带的**开发服务器**，启动日志会提示
+> `This is a development server. Do not use it in a production deployment.`。
+> 单机小流量或先跑通流程时可用，但它没有进程管理、并发能力也弱。
+>
+> 本仓库已内置 `gunicorn_config.py`，生产建议改用 Gunicorn：
+>
+> ```ini
+> ExecStart=/opt/Push_System_Flask/venv/bin/gunicorn -c gunicorn_config.py run:app
+> ```
+>
+> 两个前提与一条禁忌：
+>
+> - `requirements.txt` **不含 gunicorn**，需先单独安装：`venv/bin/pip install gunicorn`
+>   （见 `docs/UV_DEPLOY.md`）。
+> - **必须带 `-c gunicorn_config.py`**。该配置的 `preload_app = True` 让应用只在 master
+>   加载一次，APScheduler 调度器因此只启动一份。
+> - **切勿**写成 `gunicorn -w 4 run:app`：那样每个 worker 都会 `create_app()` 并各起一份
+>   调度器，定时任务会被重复执行 N 倍，直接把外部 API 打到限流。
 
 ### 设置目录权限
 
@@ -444,24 +477,31 @@ admin-frontend/dist/
 
 ### 配置前端 API 地址
 
-如果前端和后端不在同一域名下，需要修改 API 基础地址：
-
-编辑 `admin-frontend/src/api/request.ts`，将 `baseURL` 改为后端实际地址：
-
-```typescript
-const request = axios.create({
-    baseURL: 'https://your-domain.com/api',  // 修改为实际后端地址
-    timeout: 15000,
-});
-```
-
-然后重新构建：
+前端通过 Vite 环境变量读取部署配置，**不要改源码**（`src/api/request.ts` 读的是
+`import.meta.env.VITE_API_BASE_URL || "/api"`，改源码会让构建产物与仓库不一致）。
+`admin-frontend/.env.example` 是入库的说明文件，`.env.local` 不入库：
 
 ```bash
-npm run build
+cd admin-frontend
+cp .env.example .env.local
+nano .env.local        # 填写下面的值
+npm run build          # 改完必须重新构建：值在构建时内联进产物
 ```
 
-> 如果使用 Nginx 反向代理（如上方配置），前端和 API 在同一域名下，无需修改。
+`.env.local` 常用项（**变量名必须以 `VITE_` 开头**才会暴露给前端）：
+
+```ini
+# 后端接口基础路径。同域名部署（Nginx 反代，含上方配置）时保持 /api；
+# 前后端分域名时填完整地址，如 https://api.your-domain.com/api
+VITE_API_BASE_URL=/api
+
+# 以下留空则前端不渲染对应内容
+VITE_BEIAN_ICP=          # ICP 备案号，如 蜀ICP备2026034112号-1
+VITE_BEIAN_MPS=          # 公安联网备案号，需配合 public/gongan-badge.png
+VITE_CONTACT_EMAIL=      # 联系邮箱（「联系我们」页展示）
+```
+
+> 使用 Nginx 反向代理（如上方配置）时，前端和 API 同域名，`VITE_API_BASE_URL` 保持 `/api` 即可。
 
 ---
 
@@ -633,10 +673,9 @@ find logs/ -name "*.log.*" -mtime +30 -delete
 
 | 文件/目录 | 说明 |
 |-----------|------|
-| `.env.linux` | Linux 环境配置模板 |
-| `.env` | 实际配置文件（从 .env.linux 复制修改） |
-| `.env.example` | 完整环境变量参考（详见后端 README「环境变量配置」章节） |
-| `requirements.txt` | Python 依赖（23 个包，含 Redis） |
+| `.env.example` | 配置模板（入库，复制为 `.env` 后修改） |
+| `.env` | 实际配置文件（从 `.env.example` 复制修改，不入库） |
+| `requirements.txt` | Python 依赖清单（24 个固定版本包，含 Redis） |
 | `run.py` | 应用入口 |
 | `data/auth/` | JWT 密码哈希存储（自动生成） |
 | `data/weather/` | 天气冷却状态（自动生成） |
