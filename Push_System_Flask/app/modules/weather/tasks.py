@@ -98,7 +98,7 @@ def _make_fetcher():
     return WeatherFetcher(
         api_key=getattr(Config, "QWEATHER_API_KEY", ""),
         location=location,
-        api_host=getattr(Config, "QWEATHER_API_HOST", "https://devapi.qweatherapi.com"),
+        api_host=getattr(Config, "QWEATHER_API_HOST", ""),
         credential_id=getattr(Config, "QWEATHER_CREDENTIAL_ID", ""),
         project_id=getattr(Config, "QWEATHER_PROJECT_ID", ""),
         private_key_path=private_key_path,

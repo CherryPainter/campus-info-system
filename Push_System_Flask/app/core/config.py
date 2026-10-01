@@ -330,7 +330,9 @@ class Config:
             "QWEATHER_PRIVATE_KEY_PATH", "ed25519-private.pem"
         )  # Ed25519 私钥路径
         cls.QWEATHER_SECRET = os.getenv("QWEATHER_SECRET", "")  # 旧版 SHA-256 密钥（已废弃）
-        cls.QWEATHER_API_HOST = os.getenv("QWEATHER_API_HOST", "https://devapi.qweatherapi.com")
+        # 和风天气没有可用的公共默认域名（旧公共域名已于 2026 年停服），
+        # 必须自行配置账号专属 API Host（形如 xxx.xx.qweatherapi.com）。
+        cls.QWEATHER_API_HOST = os.getenv("QWEATHER_API_HOST", "")
         cls.QWEATHER_LOCATION = os.getenv("QWEATHER_LOCATION", "106.55,29.56")  # 默认重庆坐标
         cls.QWEATHER_CITY_NAME = os.getenv("QWEATHER_CITY_NAME", "重庆")
 

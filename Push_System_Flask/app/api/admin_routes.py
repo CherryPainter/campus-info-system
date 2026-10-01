@@ -548,9 +548,7 @@ def get_weather_config():
             "project_id_configured": bool(project_id),
             "private_key_configured": bool(private_key_path) and os.path.exists(private_key_path),
             "api_key_configured": bool(api_key),
-            "api_host": current_app.config.get(
-                "QWEATHER_API_HOST", "https://devapi.qweatherapi.com"
-            ),
+            "api_host": current_app.config.get("QWEATHER_API_HOST", ""),
             "location": current_app.config.get("QWEATHER_LOCATION", "106.55,29.56"),
             "city_name": current_app.config.get("QWEATHER_CITY_NAME", "重庆"),
             "daily_push_time": current_app.config.get("WEATHER_SCHEDULE_DAILY", "07:00"),

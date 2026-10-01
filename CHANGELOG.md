@@ -38,8 +38,17 @@
 - **判定为「有意不列」的键（不动，记为结论）**：`COURSE_*` 5 个与 `QWEATHER_CITY_NAME` 走管理端配置页（`module_config.py:313` 起的 module_key → Config 映射即证据）；`ENV` / `FLASK_ENV` 是框架变量；`CORS_ORIGINS` 是兼容旧名（README 已注明）；`QWEATHER_SECRET` 已废弃；`WEATHER_WEBHOOK` 只有定义、无消费方；`GUNICORN_*` 属 systemd/进程级参数（由部署方式传入，不是 `.env` 的职责）；`APPLY`、`ENV_FILE_PATH` 是工具脚本与爬虫子项目的内部参数。
 - **扫描脚本的已知盲区（如实标注）**：通过**变量名常量**间接读取的键抓不到——`WEBHOOK_URL_ALLOWED_HOSTS` 正是如此（`url_guard.py:63` 定义常量、`:68` 才 `os.getenv`），在扫描结果里会误报为「没人读」。判定死键前必须再按字面量 `grep` 一次确认。
 
+**和风天气 API Host：查证并订正（2026-10-01 追加）**
+- 上一条曾把 `QWEATHER_API_HOST` 记为「待确认」。现已查证——**不是书写差异，代码里的那个域名根本不存在**：
+  - `https://devapi.qweatherapi.com`（`config.py:333`、`tasks.py:101`、`admin_routes.py:552` 三处兜底值）经 DNS 实测 `getaddrinfo failed`，**域名不存在**（同后缀的 `p75khv7wkr.re.qweatherapi.com` 可正常解析，排除本机网络因素）。
+  - `https://devapi.qweather.com`（原模板 / README 值）**已停服**：实测返回 `403 {"title":"Invalid Host","detail":"An invalid or unauthorized API Host."}`；官方 2025-06-15 公告 `devapi.qweather.com` 于 **2026-01-01** 停服、`api.qweather.com` 与 `geoapi.qweather.com` 于 **2026-06-01** 停服（今天 2026-09-30，三者均已过期）。
+  - 账号专属 API Host（形如 `xxx.xx.qweatherapi.com`，控制台「设置」页查看）实测返回 `401 Unauthorized`（Host 有效、仅缺凭据）；本机 `.env` 即此形态，日志中实际请求为 `200`。
+- 结论：`QWEATHER_API_HOST` **不是「可选」，而是必填，且没有任何可用的公共默认值**。
+- 订正：`.env.example` 由「可选…默认开发版」改为「必填」并给占位符；README 环境变量表默认值列与说明列改对；`DEPLOY_CHECKLIST.md` 的 `.env` 模板段、`DEPLOY_LINUX.md` 的必填表与 401/403 排障段同步改对（排障段原先写「免费版使用 devapi，付费版使用 api」，正是 403 `Invalid Host` 的根因）。
+- 顺带把 4 处**指向不存在域名**的代码兜底值改为空串：`config.py:333`、`tasks.py:101`、`admin_routes.py:552`，以及 `fetcher.py:89` 的类默认参数（后者是**死默认值**——`tasks.py:98` 是唯一构造点且显式传参）。改为空串后，未配置时不再去解析一个假域名。
+- 顺带订正 `DEPLOY_CHECKLIST.md` 天气段与 `.env.example` 不一致的三处：`QWEATHER_LOCATION=101040100`（LocationID 会被静默回落到默认坐标）、仍在列的 `QWEATHER_LATITUDE/LONGITUDE`（上一条已判空壳）、`QWEATHER_SCHEDULE_DAILY`（漂移键名，代码只读 `WEATHER_SCHEDULE_DAILY`）。
+
 **待决策（本次未改）**
-- `QWEATHER_API_HOST` 的默认值：代码是 `https://devapi.qweatherapi.com`（带 `api`），模板与 README 写 `https://devapi.qweather.com`（不带）。两者是否为同一域名的书写差异未能确认，未改。
 - `QWEATHER_LATITUDE/LONGITUDE` 是否要**让它们真正生效**：若要让「天气定位与预警坐标可分别配置」成立，需同时改 `config.py`（声明属性）与 `QWEATHER_LOCATION` 的默认值。本次按「既有注释已认定为空壳」处理为移除。
 
 ### 安全：B 级剩余 5 项加固（B10 / B9 / B1 / B5 / B7，2026-10-01）

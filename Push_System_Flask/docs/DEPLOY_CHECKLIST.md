@@ -118,12 +118,15 @@ ELECTRICITY_SCHEDULE_MONTHLY_DAY=1
 ELECTRICITY_COOKIE_CHECK_TIME=20:00
 
 # ========== 天气模块 ==========
-QWEATHER_API_KEY=<你的和风天气API Key>
-QWEATHER_LOCATION=101040100
-QWEATHER_API_HOST=https://devapi.qweather.com
-QWEATHER_LATITUDE=29.56
-QWEATHER_LONGITUDE=106.55
-QWEATHER_SCHEDULE_DAILY=07:00
+# 可选：兼容旧版的固定 Token（与下面的 Ed25519 JWT 鉴权二选一，留空即可）
+QWEATHER_API_KEY=
+# 必填：账号专属 API Host，控制台「设置」页查看，形如 abc.def.qweatherapi.com
+# （旧公共域名 devapi.qweather.com 于 2026-01-01 停服、api.qweather.com 于 2026-06-01 停服）
+QWEATHER_API_HOST=https://your-api-host.qweatherapi.com
+# 必须写成「经度,纬度」；填 LocationID 不报错，但会被静默回落到默认重庆坐标
+QWEATHER_LOCATION=106.55,29.56
+# 注意键名是 WEATHER_ 前缀，不是 QWEATHER_
+WEATHER_SCHEDULE_DAILY=07:00
 
 # ========== 数据库（必填，仅支持 MySQL） ==========
 # 取消注释并修改为你的 MySQL 配置

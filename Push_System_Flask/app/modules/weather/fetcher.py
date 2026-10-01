@@ -86,7 +86,7 @@ class WeatherFetcher:
     def __init__(
         self,
         api_key: str = "",
-        api_host: str = "https://devapi.qweather.com",
+        api_host: str = "",
         location: str = "106.55,29.56",
         credential_id: str = "",
         project_id: str = "",
@@ -96,7 +96,7 @@ class WeatherFetcher:
 
         Args:
             api_key: 和风天气 API KEY (兼容旧版，不推荐使用)
-            api_host: API 主机地址，默认开发环境
+            api_host: 和风天气账号专属 API Host（非公共域名，控制台「设置」页查看）
             location: 查询位置，支持 LocationID 或 "lat,lon" 格式
             credential_id: 凭据 ID (kid，JWT 认证用)
             project_id: 项目 ID (sub，JWT 认证用)

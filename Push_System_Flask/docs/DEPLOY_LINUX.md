@@ -136,7 +136,8 @@ nano .env  # 或使用 vim .env
 | `JWXT_USERNAME` | 教务系统用户名 | 你的学号 |
 | `JWXT_PASSWORD` | 教务系统密码 | 你的教务系统密码 |
 | `WECOM_WEBHOOK` | 企业微信 Webhook | 机器人 Webhook URL |
-| `QWEATHER_API_KEY` | 和风天气 API Key | 免费申请：https://dev.qweather.com/ |
+| `QWEATHER_API_HOST` | 和风天气 API Host（必填） | 控制台「设置」页查看，形如 `abc.def.qweatherapi.com`；旧公共域名已于 2026 年停服 |
+| `QWEATHER_CREDENTIAL_ID` / `QWEATHER_PROJECT_ID` | 和风天气 JWT 鉴权凭据 | 与控制台创建的 Ed25519 凭据配对；旧版 `QWEATHER_API_KEY` 为可选的兼容方式 |
 | `ELECTRICITY_CRAWLER_COOKIE` | 电表系统 Cookie | ~~从浏览器 DevTools 获取~~（已弃用：改由学生在小程序「设置 - 电表配置」自配，无需再配置） |
 
 **生成安全密钥：**
@@ -550,10 +551,14 @@ echo "ADMIN_TOKEN=$(openssl rand -hex 16)" >> .env
 
 ### 7. 和风天气 API 返回 401/403
 
-- 检查 `QWEATHER_API_KEY` 是否正确
-- 检查 API Key 是否已激活
-- 免费版使用 `devapi.qweather.com`，付费版使用 `api.qweather.com`
-- 检查 `QWEATHER_LOCATION` 是否为有效的 LocationID
+- **403 `Invalid Host`**：`QWEATHER_API_HOST` 不是你的账号专属 API Host。旧公共域名
+  `devapi.qweather.com`（2026-01-01 停服）、`api.qweather.com` / `geoapi.qweather.com`
+  （2026-06-01 停服）已不再受理请求，请到控制台「设置」页
+  （https://console.qweather.com/setting）复制你自己的 API Host 替换。
+- **401 `Unauthorized`**：Host 正确但凭据无效 —— 检查 `QWEATHER_CREDENTIAL_ID` /
+  `QWEATHER_PROJECT_ID` / 私钥是否配套且有效（旧版 `QWEATHER_API_KEY` 需已激活）。
+- `QWEATHER_LOCATION` 必须是「经度,纬度」（如 `106.55,29.56`）：填 LocationID 不会报错，
+  但会被静默回落到默认重庆坐标。
 
 ### 8. 电量爬虫 Cookie 失效
 

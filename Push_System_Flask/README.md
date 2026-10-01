@@ -673,7 +673,7 @@ npm run dev
 | ------------------------- | ----------------------------- | ------------------------------------------ |
 | `QWEATHER_API_KEY`        | （空）                        | 兼容旧版的固定 Token（与 JWT 鉴权二选一）  |
 | `QWEATHER_CREDENTIAL_ID`  | （空）                        | 和风天气凭证 ID（Ed25519 JWT 认证）        |
-| `QWEATHER_API_HOST`       | `https://devapi.qweather.com` | API 域名（免费版 devapi，付费版 api）      |
+| `QWEATHER_API_HOST`       | （空）                        | **必填**：账号专属 API Host（形如 `abc.def.qweatherapi.com`，控制台设置页查看）。旧公共域名已于 2026 年停服 |
 | `QWEATHER_LOCATION`       | `106.55,29.56`                | 城市定位，必须「经度,纬度」（预警据此解析）|
 | `QWEATHER_CITY_NAME`      | `重庆`                        | 城市名称（推送消息显示用）                 |
 | `WEATHER_SCHEDULE_DAILY`  | `07:00`                       | 每日天气晨报推送时间                       |
