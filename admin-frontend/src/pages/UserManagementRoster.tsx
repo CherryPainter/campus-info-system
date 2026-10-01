@@ -47,6 +47,7 @@ import {
   DeleteOutlined,
   KeyOutlined,
   ApartmentOutlined,
+  DownOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
 } from "@ant-design/icons";
@@ -853,10 +854,20 @@ export default function UserManagementRoster() {
             <Card
           size="small"
           title={
-            <Space>
-              <ApartmentOutlined />
-              组织架构（学校→学院→专业→班级）
-            </Space>
+            // 标题整块可点：点文字或点下拉箭头都能收起左栏
+            // （面板宽 300，之前「组织架构（学校→学院→专业→班级）」会被 ellipsis 截断，
+            //  故层级说明改放 Tooltip，标题只留「组织架构」以腾出箭头的位置）
+            <Tooltip title="组织架构：学校 → 学院 → 专业 → 班级。点击可收起 / 展开">
+              <Space
+                size={6}
+                onClick={() => setOrgPanelExpanded((v) => !v)}
+                style={{ cursor: "pointer", userSelect: "none" }}
+              >
+                <ApartmentOutlined />
+                组织架构
+                <DownOutlined style={{ fontSize: 12, color: "rgba(128,128,128,0.9)" }} />
+              </Space>
+            </Tooltip>
           }
           extra={
             <Button
