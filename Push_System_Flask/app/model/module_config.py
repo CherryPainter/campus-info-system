@@ -123,7 +123,7 @@ DEFAULT_CONFIGS = [
     # ========== 天气模块配置 ==========
     # key 命名规则：module_key → 对应 Config 属性 QWEATHER_{KEY.upper()} 或 WEATHER_{KEY.upper()}
     #   weather.city_name        → QWEATHER_CITY_NAME（和风天气城市名，fetcher/前端展示均消费）
-    #   weather.location_id      → QWEATHER_LOCATION（和风天气位置，坐标"lon,lat"或 LocationID 均可，天气 API 直接消费，修改即时生效）
+    #   weather.location_id      → QWEATHER_LOCATION（和风天气位置，必须是"经度,纬度"；管理端 _validate_location 与其下游 fetcher 的 split(",") 都只按两段坐标解析，LocationID 会被判非法，故不支持）
     #   weather.schedule_daily   → WEATHER_SCHEDULE_DAILY（对应 Config.WEATHER_SCHEDULE_DAILY）
     # 说明：latitude/longitude 两项已于审计中移除——它们写入 WEATHER_LATITUDE/WEATHER_LONGITUDE，
     #       但 Config 从不读取这两个变量，且位置已由 location_id(QWEATHER_LOCATION) 完整覆盖，属空壳。

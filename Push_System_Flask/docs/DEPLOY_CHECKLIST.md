@@ -1,6 +1,6 @@
 # Linux 部署检查报告与部署方案
 
-> 检查日期：2026-06-25 | 项目版本：v6.11.2
+> 检查日期：2026-06-25 | 项目版本：v6.20.0 | 最近复核：2026-10-01（键名与版本已同步代码）
 
 ---
 
@@ -23,12 +23,11 @@
 |--------|--------|------|----------|------|
 | CORS 生效范围 | `r"/*"` 全局 | __init__.py:56 | 中 | 对所有路由生效，范围过大 |
 | `supports_credentials` | `True` | __init__.py:56 | 中 | 允许携带 Cookie 跨域，前端 httpOnly cookie 依赖此项 |
-| `.env` 中的 CORS_ORIGINS | 仅 localhost | .env:20 | **高** | 生产环境部署后前端域名不在白名单中，跨域请求会被拒绝 |
-| `.env.linux` 中的 CORS_ORIGINS | `http://your-domain.com` 占位符 | .env.linux:24 | 中 | 需替换为实际域名 |
+| `.env` 中的 ALLOWED_ORIGINS | 仅 localhost | .env | **高** | 生产环境部署后前端域名不在白名单中，跨域请求会被拒绝（旧名 `CORS_ORIGINS` 仍兼容读取） |
 | 前端 `withCredentials` | `true` | request.ts:23 | 无风险 | 与后端 `supports_credentials=True` 对应 |
 | 前端生产 baseURL | `/api`（相对路径） | request.ts:16 | 无风险 | 同源部署时不触发跨域 |
 
-**关键结论**：如果使用 Nginx 反向代理（前端和 API 同域名），**不会产生跨域请求**，CORS 配置不影响功能。但 `.env` 中的 `CORS_ORIGINS` 仍需更新为生产域名，以防直接访问 API 端口时被拦截。
+**关键结论**：如果使用 Nginx 反向代理（前端和 API 同域名），**不会产生跨域请求**，CORS 配置不影响功能。但 `.env` 中的 `ALLOWED_ORIGINS` 仍需更新为生产域名，以防直接访问 API 端口时被拦截。
 
 ### 1.3 其他安全配置
 
@@ -51,7 +50,7 @@
 ```ini
 # ========== 应用配置 ==========
 APP_NAME=校园智能通知系统
-APP_VERSION=6.11.2
+APP_VERSION=6.20.0
 DEBUG=false
 HOST=127.0.0.1
 PORT=29528
@@ -75,7 +74,7 @@ JWT_REFRESH_TOKEN_EXPIRE=604800
 # ========== CORS 配置 ==========
 # [必改] 替换为你的实际域名（多个用逗号分隔）
 # 同域名部署（Nginx 反向代理）时此项不影响功能，但仍建议正确配置
-CORS_ORIGINS=https://your-domain.com,http://localhost:5173
+ALLOWED_ORIGINS=https://your-domain.com,http://localhost:5173
 
 # ========== Python 路径 ==========
 PYTHON_PATH=python3
@@ -220,7 +219,7 @@ server {
 # /etc/systemd/system/push-system.service
 
 [Unit]
-Description=Campus Push System v6.11.2
+Description=Campus Push System v6.20.0
 After=network-online.target
 Wants=network-online.target
 
@@ -286,7 +285,7 @@ sudo apt install -y \
 cd /opt/Push_System_Flask
 
 # 复制模板
-cp .env.linux .env
+cp .env.example .env
 
 # 生成安全密钥
 echo "SECRET_KEY=$(openssl rand -hex 32)"
@@ -409,13 +408,13 @@ sudo timedatectl set-timezone Asia/Shanghai
 
 ### Q1: 部署后前端登录提示"网络错误"或"跨域被拦截"
 
-**原因**：`.env` 中 `CORS_ORIGINS` 未包含生产域名。
+**原因**：`.env` 中 `ALLOWED_ORIGINS` 未包含生产域名。
 
 **解决**：如果使用 Nginx 同域名代理（前端和 API 都在 `https://your-domain.com` 下），不应出现跨域问题。检查 Nginx 的 `/api/` 反向代理是否正确配置。
 
 如果前端和后端在不同域名，需在 `.env` 中添加前端域名：
 ```ini
-CORS_ORIGINS=https://frontend-domain.com
+ALLOWED_ORIGINS=https://frontend-domain.com
 ```
 
 ### Q2: 登录后立即跳回登录页（Cookie 未携带）

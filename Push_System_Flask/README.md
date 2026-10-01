@@ -674,8 +674,6 @@ npm run dev
 | `QWEATHER_CREDENTIAL_ID`  | （空）                        | 和风天气凭证 ID（Ed25519 JWT 认证）        |
 | `QWEATHER_API_HOST`       | `https://devapi.qweather.com` | API 域名（免费版 devapi，付费版 api）      |
 | `QWEATHER_LOCATION`       | `106.55,29.56`                | 城市定位，必须「经度,纬度」（预警据此解析）|
-| `QWEATHER_LATITUDE`       | `29.56`                       | 纬度（当前未被代码读取）                   |
-| `QWEATHER_LONGITUDE`      | `106.55`                      | 经度（当前未被代码读取）                   |
 | `QWEATHER_CITY_NAME`      | `重庆`                        | 城市名称（推送消息显示用）                 |
 | `WEATHER_SCHEDULE_DAILY`  | `07:00`                       | 每日天气晨报推送时间                       |
 
