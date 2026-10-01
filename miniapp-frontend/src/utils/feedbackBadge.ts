@@ -117,7 +117,13 @@ export function getSharedBadgeCount(): number {
   return _sharedCount;
 }
 
-/** 更新共享未读数（由 useFeedbackBadge / profile 页在刷新后调用） */
+/**
+ * 更新共享未读数（TabBar「我的」角标）
+ *
+ * 口径：消息未读总数（站内通知 + 公告），由「我的」页 / app.tsx 拉到未读数后写入。
+ * 2026-10-01 起反馈状态变更改为后端站内通知下发，反馈不再单独占用 TabBar 角标，
+ * 原先的反馈角标 hook（useFeedbackBadge）已删除。
+ */
 export function setSharedBadgeCount(n: number): void {
   _sharedCount = n;
   // 通知 CustomTabBar（框架级组件）实时更新角标

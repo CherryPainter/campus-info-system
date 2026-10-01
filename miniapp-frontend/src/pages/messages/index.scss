@@ -121,6 +121,7 @@
 
 /* 消息条目：flex 布局 = 左侧主内容（可点跳详情）+ 右侧箭头 */
 .msg-item {
+  position: relative; /* 红点绝对定位到卡片右上角的锚点 */
   display: flex;
   align-items: center;
   background: $card-background;
@@ -176,11 +177,21 @@
   padding: 4rpx 12rpx;
 }
 
+/* 未读红点：卡片右上角（原在标题左侧）。常驻挂载，已看/全部已读时渐隐缩小消失 */
 .msg-item-dot {
+  position: absolute;
+  top: 16rpx;
+  right: 16rpx;
   width: 14rpx;
   height: 14rpx;
   border-radius: 50%;
   background: $error;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+
+  &.is-off {
+    opacity: 0;
+    transform: scale(0.2);
+  }
 }
 
 .msg-item-title {

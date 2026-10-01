@@ -854,18 +854,28 @@ export default function UserManagementRoster() {
             <Card
           size="small"
           title={
-            // 标题整块可点：点文字或点下拉箭头都能收起左栏
-            // （面板宽 300，之前「组织架构（学校→学院→专业→班级）」会被 ellipsis 截断，
-            //  故层级说明改放 Tooltip，标题只留「组织架构」以腾出箭头的位置）
-            <Tooltip title="组织架构：学校 → 学院 → 专业 → 班级。点击可收起 / 展开">
-              <Space
-                size={6}
-                onClick={() => setOrgPanelExpanded((v) => !v)}
-                style={{ cursor: "pointer", userSelect: "none" }}
-              >
+            // 标题不再作为折叠触发；折叠入口只下放到右侧箭头（旋转动画）
+            <Tooltip title="组织架构：学校 → 学院 → 专业 → 班级">
+              <Space size={6}>
                 <ApartmentOutlined />
                 组织架构
-                <DownOutlined style={{ fontSize: 12, color: "rgba(128,128,128,0.9)" }} />
+                <Tooltip title={orgPanelExpanded ? "收起组织架构" : "展开组织架构"}>
+                  <span
+                    onClick={() => setOrgPanelExpanded((v) => !v)}
+                    style={{
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "0 4px",
+                      borderRadius: 2,
+                      transition: "transform 0.25s ease",
+                      // 仅旋转作为折叠状态的可见反馈（面板整体仍按上次决定的"整个收起"）
+                      transform: orgPanelExpanded ? "rotate(0deg)" : "rotate(180deg)",
+                    }}
+                  >
+                    <DownOutlined style={{ fontSize: 12, color: "rgba(128,128,128,0.9)" }} />
+                  </span>
+                </Tooltip>
               </Space>
             </Tooltip>
           }

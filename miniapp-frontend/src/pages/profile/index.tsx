@@ -13,7 +13,7 @@ import { useUserStore } from '@/stores/userStore';
 import { setTabIndex } from '@/utils/tabBarState';
 import CampusCard from '@/components/CampusCard';
 import FeedbackBadge from '@/components/FeedbackBadge';
-import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
+import { setSharedBadgeCount } from '@/utils/feedbackBadge';
 import { useLoginGuard } from '@/hooks/useLoginGuard';
 import { useNotificationSettingsStore } from '@/stores/notificationSettingsStore';
 import { useBindStatusWatcher } from '@/hooks/useBindStatusWatcher';
@@ -36,9 +36,7 @@ export default function ProfilePage() {
   const { guard } = useLoginGuard();
   // 身份状态主动监察：管理员解绑后清空身份缓存并跳绑定页（承接「解绑/收回身份」）
   useBindStatusWatcher();
-  // 反馈未读红点（已受理未查看的反馈数）
-  const { count: feedbackUnread, refresh: refreshFeedbackBadge } = useFeedbackBadge();
-  // 消息未读（站内通知 + 新公告，消息图标角标）
+  // 消息未读（站内通知 + 新公告，消息图标角标 / TabBar「我的」角标）
   const [msgUnread, setMsgUnread] = useState(0);
   // 消息提醒本地开关
   const { masterEnabled, announcement } = useNotificationSettingsStore();
@@ -102,14 +100,18 @@ export default function ProfilePage() {
 
   // 消息未读统计（站内通知 + 新公告），失败静默不影响主体
   // 若用户在设置页关闭了总开关或公告通知，则不再拉取计数、不显示红点。
+  // 同一份数值同步给 TabBar「我的」角标（消息未读是反馈状态通知等唯一提醒入口）。
   const loadMsgUnread = async () => {
     if (!masterEnabled || !announcement) {
       setMsgUnread(0);
+      setSharedBadgeCount(0);
       return;
     }
     try {
       const res = await notificationsApi.getUnreadCount();
-      setMsgUnread(res?.data?.total ?? 0);
+      const total = res?.data?.total ?? 0;
+      setMsgUnread(total);
+      setSharedBadgeCount(total);
     } catch {
       /* 静默失败 */
     }
@@ -130,7 +132,7 @@ export default function ProfilePage() {
 
   // 下拉刷新：重新拉取「我的」页全部动态数据（资料 / 电量 / 未读角标），并收尾
   usePullDownRefresh(async () => {
-    await Promise.all([loadAll(), loadMsgUnread(), refreshFeedbackBadge()]);
+    await Promise.all([loadAll(), loadMsgUnread()]);
     stopPullDownRefresh();
   });
 
@@ -158,7 +160,6 @@ export default function ProfilePage() {
     if (!isLoggedIn || isBindGuideActive()) return;
     loadAll();
     refreshElectricity();
-    refreshFeedbackBadge();
     loadMsgUnread();
   };
 
@@ -404,7 +405,6 @@ export default function ProfilePage() {
             <Text className="iconfont icon-yijianyufankui profile-item-icon" />
           </View>
           <Text className="profile-label">意见反馈</Text>
-          {isLoggedIn ? <FeedbackBadge count={feedbackUnread} /> : null}
           <IconArrow className="profile-arrow" size="md" />
         </View>
         <View

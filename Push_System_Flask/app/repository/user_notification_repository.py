@@ -95,6 +95,7 @@ class UserNotificationRepository:
         session: Session,
         user_id: int,
         unread_only: bool = False,
+        unviewed_only: bool = False,
     ) -> int:
         """
         统计某用户通知总数
@@ -102,7 +103,8 @@ class UserNotificationRepository:
         Args:
             session: 数据库会话
             user_id: 接收用户ID
-            unread_only: 仅统计未读
+            unread_only: 仅统计未读（is_read=False，外部气泡口径）
+            unviewed_only: 仅统计未看过（is_viewed=False，卡片红点口径）
 
         Returns:
             int: 通知数量
@@ -112,6 +114,8 @@ class UserNotificationRepository:
         )
         if unread_only:
             q = q.filter(UserNotification.is_read.is_(False))
+        if unviewed_only:
+            q = q.filter(UserNotification.is_viewed.is_(False))
         return q.scalar() or 0
 
     @staticmethod
@@ -142,7 +146,7 @@ class UserNotificationRepository:
     def mark_viewed(
         session: Session,
         user_id: int,
-        notification_id: int,
+        notification_id: int | None = None,
     ) -> int:
         """
         标记已看过（点进详情页细看）
@@ -153,19 +157,16 @@ class UserNotificationRepository:
         Args:
             session: 数据库会话
             user_id: 接收用户ID（防越权，必须匹配）
-            notification_id: 指定通知ID
+            notification_id: 指定通知ID；为 None 时该用户全部标记已看
+                             （「全部已读」按钮批量清卡片红点用）
 
         Returns:
             int: 受影响行数
         """
-        q = (
-            update(UserNotification)
-            .where(
-                UserNotification.user_id == user_id,
-                UserNotification.id == notification_id,
-            )
-            .values(is_viewed=True, is_read=True)
-        )
+        q = update(UserNotification).where(UserNotification.user_id == user_id)
+        if notification_id is not None:
+            q = q.where(UserNotification.id == notification_id)
+        q = q.values(is_viewed=True, is_read=True)
         result = session.execute(q)
         session.flush()
         return result.rowcount or 0

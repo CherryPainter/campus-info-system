@@ -103,6 +103,8 @@ export default function AnnouncementDetail() {
       if (d) {
         setDetail(d);
         setIsFav(d.is_favorite || false);
+        // 导航栏标题改为通知名（微信原生导航栏超长自动省略号截断）；加载中/失败保持「通知详情」兜底
+        if (d.title) Taro.setNavigationBarTitle({ title: d.title });
       }
     }).catch(() => {
       /* 静默失败 */
@@ -329,8 +331,9 @@ export default function AnnouncementDetail() {
               </View>
             )}
 
-            {/* 底部留白，避免被操作栏遮挡 */}
-            <View style={{ height: '120rpx' }} />
+            {/* 底部灰色隔断区：操作栏为 fixed（约 100rpx + 安全区），留白需明显高于栏高；
+                灰底与「正文/相关推荐」之间的隔断同色，拉到底形成完整灰色隔断 */}
+            <View className="detail-bottom-gap" />
           </ScrollView>
 
           {/* 底部操作栏 */}

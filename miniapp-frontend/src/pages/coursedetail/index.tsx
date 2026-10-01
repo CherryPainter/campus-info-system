@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { View, Text } from '@tarojs/components';
-import { useRouter, useLoad } from '@tarojs/taro';
+import Taro, { useRouter, useLoad } from '@tarojs/taro';
 
 import * as scheduleApi from '@/api/schedule';
 import type { ScheduleCourse } from '@/types/api';
@@ -125,6 +125,13 @@ export default function CourseDetailPage() {
     () => weekCourses.find((c) => c.schedule_id === currentCourseId) || null,
     [weekCourses, currentCourseId],
   );
+
+  // 导航栏标题改为课程名（微信原生导航栏超长自动省略号截断）
+  useEffect(() => {
+    if (currentCourse?.course_name) {
+      Taro.setNavigationBarTitle({ title: currentCourse.course_name });
+    }
+  }, [currentCourse?.course_name]);
 
   if (loading) return <LoadingState />;
   if (!currentCourse) return <EmptyState title="课程信息不存在" />;

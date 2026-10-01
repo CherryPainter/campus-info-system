@@ -6,6 +6,57 @@
 
 ## Unreleased
 
+### 小程序：详情页导航栏标题改为内容名 + 通知详情页底部留白加大（2026-10-01）
+- **通知详情**（`miniapp-frontend/src/pages/announcement/detail/index.tsx`）：接口加载成功后导航栏标题由「通知详情」改为**通知名**（微信原生导航栏超长自动省略号截断）；加载中/失败仍兜底「通知详情」。
+- **通知详情底部灰色隔断**：相关推荐拉到底时距固定操作栏（约 100rpx + 安全区）留白 120rpx → **200rpx**，且留白改用页面背景色（`$background`）填充，与「正文/相关推荐」之间的灰色隔断同色，拉到底形成完整灰色隔断区，不再是一块白。
+- **消息详情**（`message-detail/index.tsx`）：同样改为显示消息名（`detail.title`）。
+- **课程详情**（`coursedetail/index.tsx`）：导航栏标题改为课程名（`course_name`）。
+- **反馈详情不改**：反馈无「名字」字段（只有类型标签如「功能建议」，非唯一标题），保持「反馈详情」。
+- 验证：`tsc --noEmit` 0 错；`taro build --type weapp` 编译成功（24.87s）；产物 27/27 页面齐全，三页新逻辑均已落盘，`process.env` 残留 0。
+
+### 小程序：消息中心红点/计数/全部已读 + 反馈状态站内通知（2026-10-01）
+
+**消息列表（`pages/messages/index.tsx`）**
+- **未读红点**移到卡片右上角（绝对定位 `top:16rpx; right:16rpx`），常驻挂载，**已看走 CSS 过渡渐隐缩小**（`opacity 0.35s ease, transform 0.35s ease`，`.is-off` 状态 `opacity:0; transform:scale(.2)`）。**「全部已读」一键触发时全部红点同时渐隐**。
+- **未读计数口径修复**：原口径对的是 `is_read`（进列表即被静默清零），永远为 0；现头部「未读消息」数 = `unviewedCount + announcementUnread`（`is_viewed` 口径，与卡片红点数一致），不再出现「有红点却显示 0」的不一致。
+- **「全部已读」修好**：原 `if (totalUnread === 0) return;` 死循环去除。新实现并发调 `markAllViewed()`（批量置 `is_viewed`）与 `markRead()`（清公告），乐观更新所有卡 `is_viewed/is_read=true`，计数归零。
+- **删除卡片下悬空省略号**：原 `content` 直接渲染（多行正文第 2 行起空白，line-clamp 2 时截断符变成悬空「…」）。改为 `contentPreview(content)` = 取正文首个非空行（与标题冗余的那行），完整正文仍在详情页。
+- **反馈类站内信**：新增 `feedback` 分类标签「反馈通知」；新增 `openFeedbackNotification()` 分支，点击标记已读/已看后跳 `/pages/feedback/detail/index?id=${ref_id}`。
+
+**TabBar「我的」角标（`pages/profile/index.tsx` + `app.tsx`）**
+- 角标来源从「反馈未读数」改为**消息未读总数**（`getUnreadCount().total`），`loadMsgUnread` 拉取后 `setSharedBadgeCount(total)`，与「我的消息」行角标同源。
+- 冷启动预取也切到 `getUnreadCount()`（`app.tsx`，登录/开关守卫一致）。
+
+**「意见反馈」行去除数字气泡**：不再展示 `<FeedbackBadge>`，反馈状态变更走站内消息（见下）。
+
+**反馈提交页**（`pages/feedback/submit/index.tsx`）：顶部「我的反馈」入口去除数字气泡（避免角标来源切换时互相覆盖、保持口径一致）。
+
+**删除** `src/hooks/useFeedbackBadge.ts`（已无消费方，零外调）；`utils/feedbackBadge.ts` 注释同步更新，`setSharedBadgeCount` 保留为 TabBar 角标通道。
+
+**后端 - 两层已读模型加 unviewed 口径**
+- `user_notification_repository.count_by_user` 新增 `unviewed_only` 参数（`is_viewed = false` 过滤）。
+- `user_notification_repository.mark_viewed` `notification_id` 改可选（`None` = 全部标记已看）；单条行为不动。
+- `user_notification_service.unviewed_count(user_id)` 与 `mark_viewed(None)` 新增/放宽签名。
+- `/api/miniapp/notifications/messages` 列表返回新增 `unviewed_count`。
+- `/api/miniapp/notifications/messages/viewed` POST 改为 `id` 可选；`None` 时批量清红点，返回 `affected + unviewed_count`。
+- `/api/miniapp/notifications/unread-count` 新增 `unviewed` 字段。
+
+**反馈状态 → 站内通知（`feedback_routes._notify_feedback_status`）**
+- 管理员受理/处理中/完成（含回复置已解决）反馈时，给反馈归属学生写一条站内通知：`category='feedback'`、`ref_type='feedback'`、`ref_id=feedback.id`，标题「你的反馈已受理 / 处理中 / 已解决」，content 单行（`"你的反馈「{摘要}」状态更新为「{label}」{：extra}，点击查看详情。"`，原文 >30 字截断；回复摘要按 50 字截断）。
+- **旁路失败静默**（`except Exception as exc` → 只写 warning，不影响管理端主流程）；`service.create` 内部本就吞异常返回 `False`，此处再加一层兜底。
+
+**验证**
+- 后端 `pytest -q`：**666 passed, 1 skipped, 89 warnings in 39.18s**（与改前基线一致，无回归）。
+- 后端针对性脚本 `技术总结/dev-scripts/verify_notification_read_and_feedback_notify.py`：17 项断言全过（含 `mark_viewed(None)` SQL 形状、`count_by_user(unviewed_only=True)` WHERE 条件、服务层透传、反馈通知载荷四个维度的用户/分类/标题/单行/截断）。
+- 前端 `tsc --noEmit` 0 错；`taro build --type weapp` 编译成功（33.19s）；产物 27/27 页面齐全；`msg-item-dot{...;position:absolute;right:16rpx;top:16rpx;transition:opacity .35s ease,transform .35s ease}` 与 `.msg-item-dot.is-off` 均落盘；`feedback:badge` 事件字符串在 `common.js` 与 `custom-tab-bar/index.js` 同时存在；`process.env` 残留 0。
+
+### 管理端：学生身份页「组织架构」面板支持折叠（2026-10-01）
+- `admin-frontend/src/pages/UserManagementRoster.tsx`：左侧「组织架构」面板支持折叠，共两个入口——**卡片标题**（整块可点，文字右侧带下拉箭头，点文字或点箭头都触发）与**右侧工具栏行首的按钮**（图标随折叠/展开切换，tooltip 随之变化）。折叠后组织树 `Card` 与其后的竖向 `Divider` 一并移除，右侧名单/表格自动占满整行。
+- **标题文案精简（原因）**：卡片标题原为「组织架构（学校→学院→专业→班级）」，在 300px 面板里本就被 ellipsis 截断（实测 `scrollWidth 282` vs `clientWidth 180`），加入箭头后箭头会被整段裁掉（布局落在标题框之外）；故标题收为「组织架构」，层级说明移入 hover 提示，信息不丢。
+- **状态持久化**：折叠态写入 `localStorage`（key `push:roster:org-panel-expanded`），仅取值为 `"false"` 时视为折叠，缺失或读取异常一律默认展开 —— 重新进入页面不再恢复默认。
+- 空组织时的引导文案随折叠态切换（折叠时提示先点工具栏最左侧的「展开组织架构」按钮）。
+- 验证：`tsc --noEmit` 0 错；`vite build` 成功。无头浏览器 mock 自查（桌面 1440×900 / 移动 390×844，展开与折叠各一）：表格容器 **738px → 1079px**（差值恰为面板 300 + gap 16 + 分隔线间距）；**点标题文字**与**点下拉箭头**分别实测均可收起；`reload` 后仍保持折叠；并实测确认标题不再截断、箭头落在标题框内可见。
+
 ## v6.21.0 (2026-10-01)
 
 ### 文档/配置：`.env` 样例、README 环境变量表与部署清单对齐代码事实（2026-10-01）

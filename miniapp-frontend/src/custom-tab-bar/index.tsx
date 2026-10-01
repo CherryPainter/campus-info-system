@@ -98,7 +98,7 @@ export default function CustomTabBar() {
             src={idx === current ? tab.activeIcon : tab.icon}
             mode="aspectFit"
           />
-          {/* 「我的」tab 角标：反馈未读数 */}
+          {/* 「我的」tab 角标：消息未读总数（站内通知 + 公告；反馈状态通知也在其中） */}
           {idx === 2 && badge > 0 && (
             <View className="custom-tabbar-badge">
               <Text className="custom-tabbar-badge-text">{badge > 99 ? '99+' : badge}</Text>

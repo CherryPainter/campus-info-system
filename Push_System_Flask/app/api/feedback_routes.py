@@ -52,6 +52,51 @@ logger = get_logger(__name__)
 miniapp_bp = Blueprint("miniapp_feedback", __name__)
 admin_bp = Blueprint("admin_feedback", __name__)
 
+# 状态 → 站内通知标题（受理/处理中/完成三种流转都通知，学生端「我的消息」可见）
+_FEEDBACK_STATUS_NOTIFY = {
+    STATUS_PENDING: "你的反馈已受理",
+    STATUS_PROCESSING: "你的反馈处理中",
+    STATUS_RESOLVED: "你的反馈已解决",
+}
+# 状态 → 展示名（与模型 to_dict 的 status_label 保持一致）
+_FEEDBACK_STATUS_LABEL = {
+    STATUS_PENDING: "待处理",
+    STATUS_PROCESSING: "处理中",
+    STATUS_RESOLVED: "已解决",
+}
+
+
+def _notify_feedback_status(fb: Feedback, extra: str | None = None) -> None:
+    """
+    反馈状态变更 → 给反馈归属学生写一条站内通知（我的消息可见，可点回反馈详情）。
+
+    旁路调用：失败只记日志，绝不影响管理端主流程（service.create 内部已兜异常）。
+    content 保持单行（小程序消息卡片摘要取首行展示）。
+    """
+    try:
+        from app.services.user_notification_service import user_notification_service
+
+        title = _FEEDBACK_STATUS_NOTIFY.get(fb.status, "你的反馈状态更新")
+        label = _FEEDBACK_STATUS_LABEL.get(fb.status, fb.status)
+        # 摘要：反馈原文压成单行并截断，避免长文撑爆卡片
+        summary = " ".join((fb.content or "").split())
+        if len(summary) > 30:
+            summary = summary[:30] + "…"
+        content = f"你的反馈「{summary}」状态更新为「{label}」"
+        if extra:
+            content += f"：{extra}"
+        content += "，点击查看详情。"
+        user_notification_service.create(
+            user_id=fb.user_id,
+            category="feedback",
+            title=title,
+            content=content,
+            ref_type="feedback",
+            ref_id=fb.id,
+        )
+    except Exception as exc:  # 旁路失败静默：不把管理端操作标失败
+        logger.warning(f"[Feedback] 反馈状态通知写入失败 feedback_id={fb.id}: {exc}")
+
 # ============ 图片上传（与公告正文图片同套约定）============
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 # 图片大小上限：统一取 Config.MAX_CONTENT_LENGTH（见 get_upload_max_size），不在此硬编码
@@ -319,6 +364,8 @@ def feedback_resolve(feedback_id):
         fb.status = new_status
         db.commit()
         logger.info(f"管理员 {admin_id} 将反馈 {feedback_id} 置为 {new_status}")
+        # 状态流转通知（旁路，失败静默）：受理/处理中/完成都在「我的消息」提醒
+        _notify_feedback_status(fb)
         return api_success(data={"feedback": fb.to_dict()})
     finally:
         db.close()
@@ -350,6 +397,8 @@ def feedback_reply(feedback_id):
         fb.status = STATUS_RESOLVED
         db.commit()
         logger.info(f"管理员 {admin_id} 回复反馈 {feedback_id}")
+        # 回复通知（旁路，失败静默）：附回复摘要，学生端可点回反馈详情查看全文
+        _notify_feedback_status(fb, extra=f'{reply[:50]}{"…" if len(reply) > 50 else ""}')
         return api_success(data={"feedback": fb.to_dict()})
     finally:
         db.close()

@@ -33,7 +33,15 @@ const CATEGORY_LABEL: Record<string, string> = {
   cookie_invalid: '配置失效',
   fetch_error: '采集异常',
   announcement: '新公告',
+  feedback: '反馈通知',
 };
+
+/** 卡片摘要：取正文首个非空行（电量报告正文多行，2 行截断会出现悬空「…」，故只取首行） */
+function contentPreview(content: string | null | undefined): string {
+  if (!content) return '';
+  const firstLine = content.split('\n').map((s) => s.trim()).find(Boolean);
+  return firstLine || '';
+}
 
 /** 公告标签：置顶显示「置顶」，否则显示分类名 */
 function getAnnounceTag(item: AnnouncementItem): { text: string; isTop: boolean } {
@@ -84,15 +92,16 @@ function needTimeCapsule(items: UserNotificationItem[], i: number): boolean {
 export default function MessagesPage() {
   const [items, setItems] = useState<UserNotificationItem[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  // 未看过计数（is_viewed 口径）：与卡片红点一致，驱动头部「未读消息」数字
+  const [unviewedCount, setUnviewedCount] = useState(0);
   const [announcementUnread, setAnnouncementUnread] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const { masterEnabled } = useNotificationSettingsStore();
 
-  // 消息提醒总开关关闭时，不再显示任何未读统计与红点，但列表仍可查看历史。
-  const totalUnread = masterEnabled ? unreadCount + announcementUnread : 0;
+  // 头部「未读消息」数 = 未看过红点数 + 未读公告数（与用户看到的红点/公告块一致）
+  const totalUnread = masterEnabled ? unviewedCount + announcementUnread : 0;
 
   const loadFirst = async () => {
     setLoading(true);
@@ -101,7 +110,7 @@ export default function MessagesPage() {
       const list = res?.data?.notifications ?? [];
       setItems(list);
       setAnnouncements(res?.data?.announcements ?? []);
-      setUnreadCount(res?.data?.unread_count ?? 0);
+      setUnviewedCount(res?.data?.unviewed_count ?? 0);
       setAnnouncementUnread(res?.data?.announcement_unread ?? 0);
       // 后端不返回 total，以"本页条数 == limit"判断可能还有下一页
       setHasMore(list.length >= PAGE_SIZE);
@@ -120,7 +129,7 @@ export default function MessagesPage() {
       const more = res?.data?.notifications ?? [];
       if (more.length > 0) {
         setItems((prev) => [...prev, ...more]);
-        setUnreadCount(res?.data?.unread_count ?? 0);
+        setUnviewedCount(res?.data?.unviewed_count ?? 0);
       }
       setHasMore(more.length >= PAGE_SIZE);
     } catch {
@@ -147,15 +156,12 @@ export default function MessagesPage() {
   };
 
   /**
-   * 标记全部已读（清外部气泡，不动 is_viewed）：
-   * - 手动「全部已读」按钮调用（带 toast）
-   * - 进入列表时静默调用（清「我的」页角标，不打扰）
-   * 两层已读：这里只清 is_read（外部气泡），卡片红点（is_viewed）需点进详情才清。
+   * 静默清外部气泡（不动 is_viewed）：进入列表时调用，清「我的」页角标，不打扰。
+   * 卡片红点（is_viewed）保留，让想细看的人知道哪些还没点进详情。
    */
   const markAllReadApi = async (): Promise<void> => {
     try {
       const res = await notificationsApi.markRead();
-      setUnreadCount(res?.data?.unread_count ?? 0);
       setAnnouncementUnread(res?.data?.announcement_unread ?? 0);
       setItems((prev) => prev.map((i) => ({ ...i, is_read: true })));
       setAnnouncements([]);
@@ -164,11 +170,26 @@ export default function MessagesPage() {
     }
   };
 
-  /** 全部已读：站内通知 + 新公告一次清空（带 toast 反馈） */
+  /**
+   * 全部已读 = 快速消红点：
+   * 批量标记已看过（is_viewed，红点渐隐动画）+ 清空未读公告，一次全部清零（带 toast）。
+   */
   const markAllRead = async () => {
     if (totalUnread === 0) return;
-    await markAllReadApi();
-    Taro.showToast({ title: '已全部标记已读', icon: 'success' });
+    try {
+      const [viewedRes] = await Promise.all([
+        notificationsApi.markAllViewed(),
+        notificationsApi.markRead(),
+      ]);
+      // 乐观更新：红点走 CSS 过渡渐隐，公告块整体收起
+      setItems((prev) => prev.map((i) => ({ ...i, is_viewed: true, is_read: true })));
+      setUnviewedCount(viewedRes?.data?.unviewed_count ?? 0);
+      setAnnouncements([]);
+      setAnnouncementUnread(0);
+      Taro.showToast({ title: '已全部标记已读', icon: 'success' });
+    } catch {
+      Taro.showToast({ title: '操作失败，请重试', icon: 'none' });
+    }
   };
 
   /** 点击公告 → 详情页（自动记已读），返回时刷新 */
@@ -179,10 +200,9 @@ export default function MessagesPage() {
   /** 点击公告类站内信：标记该条已读 + 已看（清卡片红点），再跳公告详情 */
   const openAnnouncementNotification = async (item: UserNotificationItem) => {
     try {
-      const res = await notificationsApi.markRead(item.id);
-      // 乐观更新：清掉该条未读态与未读计数
+      await notificationsApi.markRead(item.id);
+      // 乐观更新：清掉该条未读态
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, is_read: true } : i)));
-      setUnreadCount(res?.data?.unread_count ?? 0);
       // 公告类通知点开的是公告详情页（非消息详情），显式标记 is_viewed 清卡片红点
       await notificationsApi.markViewed(item.id);
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, is_viewed: true } : i)));
@@ -190,6 +210,20 @@ export default function MessagesPage() {
       /* 标记失败不阻断跳转 */
     }
     goAnnouncement(item.ref_id as number);
+  };
+
+  /** 点击反馈类站内信：标记已读 + 已看（清红点），跳反馈详情页查看处理进展 */
+  const openFeedbackNotification = async (item: UserNotificationItem) => {
+    try {
+      await notificationsApi.markRead(item.id);
+      await notificationsApi.markViewed(item.id);
+      setItems((prev) =>
+        prev.map((i) => (i.id === item.id ? { ...i, is_read: true, is_viewed: true } : i)),
+      );
+    } catch {
+      /* 标记失败不阻断跳转 */
+    }
+    Taro.navigateTo({ url: `/pages/feedback/detail/index?id=${item.ref_id as number}` });
   };
 
   useLoad(async () => {
@@ -291,13 +325,20 @@ export default function MessagesPage() {
               )}
               <View
                 className={`msg-item${item.is_viewed ? ' is-seen' : ' is-unseen'}`}
-                onClick={() =>
-                  item.ref_type === 'announcement' && item.ref_id
-                    ? openAnnouncementNotification(item)
-                    : goDetail(item.id)
-                }
+                onClick={() => {
+                  if (item.ref_type === 'announcement' && item.ref_id) {
+                    openAnnouncementNotification(item);
+                  } else if (item.ref_type === 'feedback' && item.ref_id) {
+                    openFeedbackNotification(item);
+                  } else {
+                    goDetail(item.id);
+                  }
+                }}
               >
-                {masterEnabled && !item.is_viewed && <View className="msg-item-dot" />}
+                {/* 红点常驻挂载、已看走 CSS 过渡渐隐（全部已读时有消失动画） */}
+                {masterEnabled && (
+                  <View className={`msg-item-dot${item.is_viewed ? ' is-off' : ''}`} />
+                )}
                 {item.cover_url ? (
                   <Image
                     className="msg-item-cover"
@@ -310,9 +351,9 @@ export default function MessagesPage() {
                     <Text className="msg-item-cat">{categoryText(item.category)}</Text>
                   </View>
                   <Text className="msg-item-title">{item.title}</Text>
-                  {item.content ? (
-                    // 列表只放摘要（最多 2 行省略），完整正文在消息详情页看
-                    <Text className="msg-item-content">{item.content}</Text>
+                  {contentPreview(item.content) ? (
+                    // 列表只放摘要（正文首行），完整正文在消息详情页看
+                    <Text className="msg-item-content">{contentPreview(item.content)}</Text>
                   ) : null}
                 </View>
                 <IconArrow className="msg-item-arrow" size="lg" />

@@ -131,11 +131,22 @@ class UserNotificationService:
 
     @staticmethod
     def unread_count(user_id: int) -> int:
-        """查询某用户的未读通知数"""
+        """查询某用户的未读通知数（is_read 口径，外部气泡角标用）"""
         session = get_db()
         try:
             return UserNotificationRepository.count_by_user(
                 session, user_id=user_id, unread_only=True
+            )
+        finally:
+            session.close()
+
+    @staticmethod
+    def unviewed_count(user_id: int) -> int:
+        """查询某用户的未看过通知数（is_viewed 口径，消息列表卡片红点用）"""
+        session = get_db()
+        try:
+            return UserNotificationRepository.count_by_user(
+                session, user_id=user_id, unviewed_only=True
             )
         finally:
             session.close()
@@ -167,16 +178,17 @@ class UserNotificationService:
             session.close()
 
     @staticmethod
-    def mark_viewed(user_id: int, notification_id: int) -> int:
+    def mark_viewed(user_id: int, notification_id: int | None = None) -> int:
         """
-        标记某条通知已看过（点进详情页细看）
+        标记通知已看过（点进详情页细看）
 
         两层已读模型：is_read=进入列表已读（清外部气泡），is_viewed=点进详情已看（清卡片红点）。
         此处只处理 is_viewed，同时把 is_read 一并置 True（看过必然已读）。
 
         Args:
             user_id: 接收用户ID
-            notification_id: 指定通知ID
+            notification_id: 指定通知ID；None 时该用户全部标记已看
+                             （消息页「全部已读」按钮批量清红点用）
 
         Returns:
             int: 受影响行数

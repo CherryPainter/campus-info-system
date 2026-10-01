@@ -1,14 +1,12 @@
 import { useState } from 'react';
 import { View, Text, Textarea, Image } from '@tarojs/components';
-import Taro, { useLoad, useDidShow } from '@tarojs/taro';
+import Taro, { useLoad } from '@tarojs/taro';
 
 import * as feedbackApi from '@/api/feedback';
 import { API_BASE_URL } from '@/utils/request';
 import { previewImages } from '@/utils/imagePreview';
 import type { FeedbackType } from '@/types/api';
-import FeedbackBadge from '@/components/FeedbackBadge';
 import IconArrow from '@/components/IconArrow';
-import { useFeedbackBadge } from '@/hooks/useFeedbackBadge';
 import './index.scss';
 
 /**
@@ -39,17 +37,9 @@ export default function FeedbackSubmitPage() {
   const [images, setImages] = useState<string[]>([]); // 后端返回的 URL
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  // 反馈未读红点（已受理未查看的反馈数）
-  const { count: feedbackUnread, refresh: refreshFeedbackBadge } = useFeedbackBadge();
 
   useLoad(() => {
     Taro.setNavigationBarTitle({ title: '意见反馈' });
-    refreshFeedbackBadge();
-  });
-
-  // 从详情返回后刷新红点（查看一条即 -1）
-  useDidShow(() => {
-    refreshFeedbackBadge();
   });
 
   const goMyList = () => {
@@ -127,7 +117,6 @@ export default function FeedbackSubmitPage() {
       <View className="fb-topbar" onClick={goMyList}>
         <View className="fb-topbar-label">
           <Text className="fb-topbar-text">我的反馈</Text>
-          <FeedbackBadge count={feedbackUnread} />
         </View>
         <IconArrow className="fb-topbar-arrow" size="md" />
       </View>

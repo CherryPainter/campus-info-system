@@ -443,7 +443,8 @@ export interface UserNotificationListResult extends ApiSuccess {
     notifications: UserNotificationItem[];
     /** 未读公告提醒（仅首页附带，最多 5 条；翻页不重复携带） */
     announcements: AnnouncementItem[];
-    unread_count: number; // 站内通知未读
+    unread_count: number; // 站内通知未读（is_read 口径，外部气泡）
+    unviewed_count: number; // 站内通知未看过（is_viewed 口径，卡片红点数）
     announcement_unread: number; // 公告未读
     total_unread: number; // 两者之和（角标用）
     offset: number;
@@ -462,6 +463,8 @@ export interface UserNotificationReadResult extends ApiSuccess {
   data: {
     affected: number;
     unread_count: number;
+    /** 剩余未看过数（/messages/viewed 接口返回；is_viewed 口径） */
+    unviewed_count?: number;
     announcement_unread: number;
     total_unread: number;
   };
@@ -471,8 +474,9 @@ export interface UserNotificationReadResult extends ApiSuccess {
 export interface UnreadCountResult extends ApiSuccess {
   data: {
     unread: number; // 站内通知未读
+    unviewed: number; // 站内通知未看过（is_viewed 口径，卡片红点数）
     announcement_unread: number; // 公告未读
-    total: number; // 两者之和
+    total: number; // 未读 + 公告未读之和
   };
 }
 

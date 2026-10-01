@@ -195,7 +195,10 @@ export default function MessageDetailPage() {
     notificationsApi
       .getNotificationDetail(id)
       .then((res) => {
-        setDetail(res?.data?.notification || null);
+        const d = res?.data?.notification || null;
+        setDetail(d);
+        // 导航栏标题改为消息名（微信原生导航栏超长自动省略号截断）；加载中/失败保持「消息详情」兜底
+        if (d?.title) Taro.setNavigationBarTitle({ title: d.title });
       })
       .catch((e) => {
         setError((e as Error).message || '加载失败');

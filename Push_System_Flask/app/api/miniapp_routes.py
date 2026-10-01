@@ -949,9 +949,10 @@ def user_notifications_list():
         {
           "notifications": [...],        # 个人站内通知（分页）
           "announcements": [...],        # 未读公告（置顶优先，最多 5 条）
-          "unread_count": <站内通知未读数>,
+          "unread_count": <站内通知未读数（is_read 口径）>,
+          "unviewed_count": <站内通知未看过数（is_viewed 口径，卡片红点数）>,
           "announcement_unread": <公告未读数>,
-          "total_unread": <两者之和（角标用）>,
+          "total_unread": <unread_count + 公告未读（外部角标用）>,
           "offset": ...,
           "limit": ...
         }
@@ -970,6 +971,7 @@ def user_notifications_list():
         user_id, limit=limit, offset=offset, unread_only=unread_only
     )
     unread_count = user_notification_service.unread_count(user_id)
+    unviewed_count = user_notification_service.unviewed_count(user_id)
     # 未读公告提醒：仅当拉取第一页时附带（分页翻页无需重复携带）
     announcements, announcement_unread = [], 0
     if offset == 0:
@@ -983,6 +985,7 @@ def user_notifications_list():
             "notifications": notifications,
             "announcements": announcements,
             "unread_count": unread_count,
+            "unviewed_count": unviewed_count,
             "announcement_unread": announcement_unread,
             "total_unread": unread_count + announcement_unread,
             "offset": offset,
@@ -1067,7 +1070,7 @@ def user_notifications_read():
 @student_bound_required
 def user_notifications_viewed():
     """
-    标记单条个人站内通知已看过（点进详情/关联业务详情）
+    标记个人站内通知已看过（清卡片红点，单条或全部）
 
     用于「卡片右上角红点」语义：进入列表已把全部标记 is_read（清外部气泡），
     但「已读≠看过」，点进详情才清卡片红点（is_viewed）。
@@ -1075,25 +1078,29 @@ def user_notifications_viewed():
     点击后跳转的是公告详情页而非消息详情，故由本接口显式标记。
 
     请求体：
-        { "id": int }   必填，要标记已看的通知 ID
+        { "id": int }   要标记已看的通知 ID；
+                        缺省时该用户**全部**通知标记已看（「全部已读」批量清红点用）
 
     返回：
-        { "affected": <受影响条数> }
+        { "affected": <受影响条数>, "unviewed_count": <剩余未看过数> }
     """
     from app.services.user_notification_service import user_notification_service
 
     user_id = int(g.current_user["user_id"])
     data = request.get_json(silent=True) or {}
     notification_id = data.get("id")
-    if notification_id is None:
-        return api_error(message="缺少通知 ID", http_status=400)
-    try:
-        notification_id = int(notification_id)
-    except (TypeError, ValueError):
-        return api_error(message="通知 ID 无效", http_status=400)
+    if notification_id is not None:
+        try:
+            notification_id = int(notification_id)
+        except (TypeError, ValueError):
+            return api_error(message="通知 ID 无效", http_status=400)
 
     affected = user_notification_service.mark_viewed(user_id, notification_id)
-    return api_success(data={"affected": affected}, message="已标记已看")
+    unviewed_count = user_notification_service.unviewed_count(user_id)
+    return api_success(
+        data={"affected": affected, "unviewed_count": unviewed_count},
+        message="已标记已看",
+    )
 
 
 @miniapp_bp.route("/notifications/unread-count", methods=["GET"])
@@ -1104,9 +1111,10 @@ def user_notifications_unread_count():
 
     返回：
         {
-          "unread": <站内通知未读数>,
+          "unread": <站内通知未读数（is_read 口径）>,
+          "unviewed": <站内通知未看过数（is_viewed 口径，卡片红点数）>,
           "announcement_unread": <公告未读数>,
-          "total": <两者之和>
+          "total": <unread + announcement_unread>
         }
     """
     from app.services.user_notification_service import user_notification_service
@@ -1114,10 +1122,12 @@ def user_notifications_unread_count():
 
     user_id = int(g.current_user["user_id"])
     unread = user_notification_service.unread_count(user_id)
+    unviewed = user_notification_service.unviewed_count(user_id)
     announcement_unread = announcement_service.unread_count(user_id)
     return api_success(
         data={
             "unread": unread,
+            "unviewed": unviewed,
             "announcement_unread": announcement_unread,
             "total": unread + announcement_unread,
         }

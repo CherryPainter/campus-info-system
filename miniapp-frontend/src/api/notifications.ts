@@ -47,6 +47,11 @@ export function markViewed(id: number): Promise<UserNotificationReadResult> {
   return post<UserNotificationReadResult>('/api/miniapp/notifications/messages/viewed', { id });
 }
 
+/** 全部标记已看过（不传 id）：「全部已读」按钮批量清卡片红点用 */
+export function markAllViewed(): Promise<UserNotificationReadResult> {
+  return post<UserNotificationReadResult>('/api/miniapp/notifications/messages/viewed', {});
+}
+
 /** 消息未读统计（站内通知 + 公告，我的页角标用） */
 export function getUnreadCount(): Promise<UnreadCountResult> {
   return get<UnreadCountResult>('/api/miniapp/notifications/unread-count');
