@@ -1,6 +1,6 @@
 # Linux 部署检查报告与部署方案
 
-> 检查日期：2026-06-25 | 项目版本：v6.20.0 | 最近复核：2026-10-01（版本、键名、代码行号引用与 CORS 说明均已逐条对齐代码）
+> 检查日期：2026-06-25 | 项目版本：v6.21.0 | 最近复核：2026-10-01（版本、键名、代码行号引用与 CORS 说明均已逐条对齐代码）
 
 ---
 
@@ -57,7 +57,7 @@
 ```ini
 # ========== 应用配置 ==========
 APP_NAME=校园信息聚合与智能推送系统
-APP_VERSION=6.20.0
+APP_VERSION=6.21.0
 DEBUG=false
 # 填 production 即启用生产约束（当前是「生产未开 FORCE_HTTPS 拒绝启动」）
 APP_ENV=production
@@ -232,7 +232,7 @@ server {
 # /etc/systemd/system/push-system.service
 
 [Unit]
-Description=Campus Push System v6.20.0
+Description=Campus Push System v6.21.0
 After=network-online.target
 Wants=network-online.target
 
@@ -242,7 +242,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=/opt/Push_System_Flask
 Environment=PATH=/opt/Push_System_Flask/venv/bin:/usr/local/bin:/usr/bin
-ExecStart=/opt/Push_System_Flask/venv/bin/python3 run.py
+ExecStart=/opt/Push_System_Flask/venv/bin/gunicorn -c gunicorn_config.py run:app
 Restart=always
 RestartSec=5
 StandardOutput=append:/opt/Push_System_Flask/logs/service.out

@@ -5,6 +5,6 @@
  * 默认值 / admin-frontend/src/version.ts / admin-frontend/package.json / README badge）。
  * 发版时同步修改本文件 + miniapp-frontend/package.json 的 "version"。
  */
-export const APP_VERSION = "6.20.0";
+export const APP_VERSION = "6.21.0";
 
 export default APP_VERSION;

@@ -1,6 +1,6 @@
 # Linux 部署指南
 
-> 校园信息聚合与智能推送系统 v6.20.0 — Linux 生产环境完整部署文档
+> 校园信息聚合与智能推送系统 v6.21.0 — Linux 生产环境完整部署文档
 
 ---
 
@@ -59,7 +59,7 @@ mkdir -p data/auth data/electricity/charts data/weather logs output
 
 # 7. 启动测试
 python3 run.py
-# 看到 "校园信息聚合与智能推送系统 v6.20.0 启动完成" 表示成功
+# 看到 "校园信息聚合与智能推送系统 v6.21.0 启动完成" 表示成功
 ```
 
 ---
@@ -227,7 +227,7 @@ python3 run.py
 看到以下日志表示启动成功：
 
 ```
-校园信息聚合与智能推送系统 v6.20.0 启动完成
+校园信息聚合与智能推送系统 v6.21.0 启动完成
  * Running on http://127.0.0.1:29528
 ```
 
@@ -249,7 +249,7 @@ curl http://localhost:29528/api/health
 
 ```ini
 [Unit]
-Description=Campus Push System v6.20.0
+Description=Campus Push System v6.21.0
 Documentation=https://github.com/your-repo/Push_System_Flask
 After=network-online.target
 Wants=network-online.target
@@ -261,7 +261,7 @@ Group=www-data
 WorkingDirectory=/opt/Push_System_Flask
 Environment=PATH=/opt/Push_System_Flask/venv/bin:/usr/local/bin:/usr/bin
 EnvironmentFile=/opt/Push_System_Flask/.env
-ExecStart=/opt/Push_System_Flask/venv/bin/python3 run.py
+ExecStart=/opt/Push_System_Flask/venv/bin/gunicorn -c gunicorn_config.py run:app
 Restart=always
 RestartSec=5
 StandardOutput=append:/opt/Push_System_Flask/logs/service.out
@@ -281,24 +281,21 @@ WantedBy=multi-user.target
 
 > **注意**：如果使用 `EnvironmentFile` 加载 `.env`，确保 `.env` 中不包含 `PATH` 等系统变量冲突项。也可以不使用 `EnvironmentFile`，让应用通过 `python-dotenv` 自动加载。
 
-> **关于 `ExecStart`：开发服务器还是 Gunicorn？**
+> **关于 `ExecStart`：本项目生产环境一直用 Gunicorn 启动**
 >
-> 上面这个 unit 直接跑 `python3 run.py`，用的是 Flask 自带的**开发服务器**，启动日志会提示
-> `This is a development server. Do not use it in a production deployment.`。
-> 单机小流量或先跑通流程时可用，但它没有进程管理、并发能力也弱。
+> 上面的 `ExecStart` 走的是 Gunicorn（配置见仓库内 `gunicorn_config.py`），
+> **不是** `python3 run.py`。后者的 Flask 自带开发服务器启动日志会提示
+> `This is a development server. Do not use it in a production deployment.`——
+> 它没有进程管理、并发能力也弱，仅供本机联调，不要用于生产。
 >
-> 本仓库已内置 `gunicorn_config.py`，生产建议改用 Gunicorn：
->
-> ```ini
-> ExecStart=/opt/Push_System_Flask/venv/bin/gunicorn -c gunicorn_config.py run:app
-> ```
->
-> 两个前提与一条禁忌：
+> 三个前提与一条禁忌：
 >
 > - `requirements.txt` **不含 gunicorn**，需先单独安装：`venv/bin/pip install gunicorn`
 >   （见 `docs/UV_DEPLOY.md`）。
 > - **必须带 `-c gunicorn_config.py`**。该配置的 `preload_app = True` 让应用只在 master
 >   加载一次，APScheduler 调度器因此只启动一份。
+> - Gunicorn 实际监听地址由 `gunicorn_config.py` 的 `bind` 决定（默认 `127.0.0.1:29528`，
+>   可用环境变量 `GUNICORN_BIND` 覆盖）；`.env` 里的 `HOST` / `PORT` **只对 `run.py` 生效**。
 > - **切勿**写成 `gunicorn -w 4 run:app`：那样每个 worker 都会 `create_app()` 并各起一份
 >   调度器，定时任务会被重复执行 N 倍，直接把外部 API 打到限流。
 

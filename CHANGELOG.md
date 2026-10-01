@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## v6.21.0 (2026-10-01)
+
 ### 文档/配置：`.env` 样例、README 环境变量表与部署清单对齐代码事实（2026-10-01）
 起因是核查本地 `.env` 与入库模板 `.env.example` 的差异，顺带发现模板 / README / 部署检查清单的天气与跨域段落整体落后于代码。以下均为**文档、模板与注释修正**，不改运行逻辑；每处结论都回到源码验证过。改动后全量测试仍 **666 passed / 1 skipped**。
 
@@ -837,6 +839,19 @@
   - `pages/schedule/index.tsx`、`pages/home/index.tsx`：仅当 `schedule_id` 含 `#p`（即拆分段）时，跳转 URL 追加 `&periods=5,6`；
   - `pages/coursedetail/index.tsx`：解析 `periods` 参数并聚焦该段——**节次文本、上下课时间、以及底部「课程安排」区块**都按该段显示（如 `5-6节` / `14:10-15:50`），不再出现「头部 5-6、下面 5-8」的自相矛盾；未带该参数时保持原行为。
 - **验证**：`tsc --noEmit` 通过（TSC_EXIT=0）；`taro build --type weapp` 构建成功。
+
+### 发版 v6.21.0：四项待决策落地、版本号同步、小程序切线上（2026-10-01）
+把上述 2026-10-01 的整批改动正式发版为 **v6.21.0**，并落实此前挂起的四项待决策中的两项（用户 2026-10-01 拍板）。
+
+- **拍板结果**：
+  - 「`docs/DEPLOY_LINUX.md` 的 systemd unit 是否改写为 Gunicorn 启动」→ **是**（用户确认生产环境一直用 Gunicorn 启动）。`DEPLOY_LINUX.md` 与 `DEPLOY_CHECKLIST.md` 两处 unit 的 `ExecStart` 由 `.../venv/bin/python3 run.py` 改为 `.../venv/bin/gunicorn -c gunicorn_config.py run:app`；DEPLOY_LINUX 的说明段由「建议改用 Gunicorn」改为「本 unit 即 Gunicorn」，并补两点：「`.env` 的 `HOST`/`PORT` **只对 `run.py`（开发服务器）生效**，生产监听地址由 `gunicorn_config.py` 的 `bind` 决定（默认 `127.0.0.1:29528`，可用环境变量 `GUNICORN_BIND` 覆盖）」。
+  - 「`.env.example:5` 的 `HOST` 是否从 `0.0.0.0` 改为 `127.0.0.1`」→ **是**。模板取值改为 `127.0.0.1`；注释补「局域网真机联调需临时改回 `0.0.0.0`，勿在无防火墙时把 29528 暴露到公网」。
+  - 「`requirements.txt` 的 `requests==2.32.0` 是 PyPI 已 yanked 版本，是否升 pin 到 `2.32.4`」→ **否**（维持现状，不改依赖）。
+  - 「入库文档 emoji 是否统一清理」→ **否**（不做，保留现状）。
+- **版本号同步 6.20.0 → 6.21.0（12 个文件 / 19 处）**：根 `README.md`（徽标 + 当前版本）、`Push_System_Flask/README.md`（首部 + 环境变量表）、`.env.example`、本机 `.env`、`app/core/config.py` 默认值、`docs/DEPLOY_CHECKLIST.md`（3 处）、`docs/DEPLOY_LINUX.md`（4 处）、`docs/安全配置指南.md`、管理端与小程序端各自的 `package.json` 与 `src/version.ts`。脚本 `技术总结/dev-scripts/bump_version_6.21.0_2026-10-01.py`（字节级替换、逐文件断言命中次数、不动换行符）。
+- **小程序切换线上服务**：`miniapp-frontend/.env` 的 `TARO_APP_API_BASE` 由 `http://127.0.0.1:29528` 改为 **`https://yuetang.cloud`**（该文件 gitignored 不入库；Taro 编译期注入，改后必须重新 `taro build` 并重新上传小程序）。生产域名 `yuetang.cloud` 经全仓交叉核对确认（生产机文档、Nginx 骨架、多份测试与 README 一致）。
+- **顺带订正一处域名笔误**：本机 `.env` 的 `ALLOWED_ORIGINS` 原写 `https://yuetang.COM` / `https://www.yuetang.COM`（`.com`，**不是**线上实际域名 `.cloud`），已改为 `https://yuetang.cloud` / `https://www.yuetang.cloud`。
+- **说明**：本批为配置/文档 + 版本号改动，无业务逻辑变更；全量测试 **666 passed / 1 skipped**。上线推送由用户手动执行（本机当前无法访问 GitHub：出口代理返回 `CONNECT tunnel failed, response 502`）。
 
 ---
 
