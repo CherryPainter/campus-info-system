@@ -28,7 +28,6 @@ import {
   Cascader,
   Popconfirm,
   Switch,
-  Upload,
   App,
   Grid,
   Empty,
@@ -36,6 +35,7 @@ import {
   Tree,
   Typography,
   Tooltip,
+  Upload,
 } from "antd";
 import type { DataNode } from "antd/es/tree";
 import {
@@ -48,8 +48,6 @@ import {
   KeyOutlined,
   ApartmentOutlined,
   DownOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
 } from "@ant-design/icons";
 import { formatDateTime } from "@/utils/datetime";
 import ResponsiveTable from "@/components/ResponsiveTable";
@@ -585,7 +583,7 @@ export default function UserManagementRoster() {
   };
 
   /** 批量导入：校验文件类型 → 上传 → 结果弹窗（成功数 + 失败明细） */
-  const handleImport = (file: File) => {
+  const handleImport = (file: File): boolean => {
     const name = (file.name || "").toLowerCase();
     const ok = name.endsWith(".csv") || name.endsWith(".xlsx");
     if (!ok) {
@@ -624,7 +622,7 @@ export default function UserManagementRoster() {
       }
     };
     doImport();
-    return false; // 阻止 antd Upload 自动上传
+    return false; // 阻止 antd Upload 的默认上传（导入逻辑已全部在 doImport 内完成）
   };
 
   /** 导出名单 CSV（按当前筛选 school/class_id/keyword 全量导出不分页） */
@@ -854,28 +852,16 @@ export default function UserManagementRoster() {
             <Card
           size="small"
           title={
-            // 标题不再作为折叠触发；折叠入口只下放到右侧箭头（旋转动画）
+            // 整块标题可点击折叠/展开（单一点击入口，避免箭头再挂 onClick 冒泡双触发）
             <Tooltip title="组织架构：学校 → 学院 → 专业 → 班级">
-              <Space size={6}>
+              <Space
+                size={6}
+                style={{ cursor: "pointer" }}
+                onClick={() => setOrgPanelExpanded((v) => !v)}
+              >
                 <ApartmentOutlined />
                 组织架构
-                <Tooltip title={orgPanelExpanded ? "收起组织架构" : "展开组织架构"}>
-                  <span
-                    onClick={() => setOrgPanelExpanded((v) => !v)}
-                    style={{
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      padding: "0 4px",
-                      borderRadius: 2,
-                      transition: "transform 0.25s ease",
-                      // 仅旋转作为折叠状态的可见反馈（面板整体仍按上次决定的"整个收起"）
-                      transform: orgPanelExpanded ? "rotate(0deg)" : "rotate(180deg)",
-                    }}
-                  >
-                    <DownOutlined style={{ fontSize: 12, color: "rgba(128,128,128,0.9)" }} />
-                  </span>
-                </Tooltip>
+                <DownOutlined style={{ fontSize: 12, color: "rgba(128,128,128,0.9)" }} />
               </Space>
             </Tooltip>
           }
@@ -954,7 +940,8 @@ export default function UserManagementRoster() {
 
         {/* 右：名单 */}
         <div ref={rightRef} style={{ flex: 1, minWidth: 0 }}>
-          {/* 操作栏 */}
+          {/* 工具行：折叠态下左端保留「组织架构」标题作为展开入口（标题不随面板一起消失），
+              其余按钮直接平铺；展开态右端给出「关闭」收起左栏。 */}
           <div
             style={{
               display: "flex",
@@ -964,19 +951,25 @@ export default function UserManagementRoster() {
               marginBottom: 16,
             }}
           >
-            <Tooltip title={orgPanelExpanded ? "折叠组织架构" : "展开组织架构"}>
-              <Button
-                type="text"
-                icon={orgPanelExpanded ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
-                onClick={() => setOrgPanelExpanded((v) => !v)}
-              />
-            </Tooltip>
+            {!orgPanelExpanded && (
+              <Tooltip title="展开组织架构">
+                <Button
+                  type="text"
+                  icon={<ApartmentOutlined />}
+                  onClick={() => setOrgPanelExpanded(true)}
+                >
+                  组织架构
+                  <DownOutlined
+                    style={{ fontSize: 10, marginInlineStart: 2, transform: "rotate(-90deg)" }}
+                  />
+                </Button>
+              </Tooltip>
+            )}
             <Button
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => {
                 createForm.resetFields();
-                // 左侧选中班级时预填
                 if (selectedClassId) {
                   const path = classPathOfId(tree, selectedClassId);
                   createForm.setFieldsValue({ class_path: path });
@@ -1010,6 +1003,7 @@ export default function UserManagementRoster() {
             <Button icon={<ReloadOutlined />} onClick={load}>
               刷新
             </Button>
+            <span style={{ flex: 1 }} />
             <Input
               allowClear
               placeholder="搜索学号/姓名"
@@ -1021,6 +1015,11 @@ export default function UserManagementRoster() {
               style={isMobile ? { flex: "100%", minWidth: 0 } : { width: 180 }}
             />
             {classFilterTag}
+            {orgPanelExpanded && (
+              <Tooltip title="收起组织架构，把宽度让给表格">
+                <Button onClick={() => setOrgPanelExpanded(false)}>关闭</Button>
+              </Tooltip>
+            )}
           </div>
 
           <div
@@ -1036,8 +1035,8 @@ export default function UserManagementRoster() {
             {tree.length === 0 ? (
               <span>
                 {orgPanelExpanded
-                  ? "请先在「组织架构」中点击「新建学校」，逐级创建 学院 → 专业 → 班级 后，再来添加学生名单。"
-                  : "请先点击工具栏最左侧的「展开组织架构」按钮，然后新建学校并逐级创建 学院 → 专业 → 班级。"}
+                  ? "请先在左侧「组织架构」中点击「新建学校」，逐级创建 学院 → 专业 → 班级 后，再来添加学生名单。"
+                  : "请先点击工具行左端的「组织架构」展开组织树，再点击「新建学校」逐级创建 学院 → 专业 → 班级。"}
               </span>
             ) : (
               <span>
