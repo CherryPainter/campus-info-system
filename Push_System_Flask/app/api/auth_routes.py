@@ -29,7 +29,7 @@ from app.core.api_response import api_error, api_success
 from app.core.extensions import RATE_LIMITS, limiter
 from app.core.logger import get_logger
 from app.utils.auth_middleware import jwt_required
-from app.utils.security import get_client_ip
+from app.utils.security import cookie_security_flags, get_client_ip
 
 # 使用统一日志系统
 logger = get_logger(__name__)
@@ -631,12 +631,8 @@ def login():
 
     # 设置 httpOnly cookie（防止 XSS）
 
-    # 根据环境决定是否启用 secure（HTTPS 环境下启用，否则不启用）
-    is_https = current_app.config.get("FORCE_HTTPS", False)
-    # 同源部署（dev Vite 代理 / prod Nginx 反代）下 samesite=Lax 即可，且不需 Secure；
-    # 若用 "None" 则必须配 Secure，否则 Chrome 会拒绝种 cookie，导致 dev 下鉴权失效。
-    cookie_secure = is_https
-    cookie_samesite = "Lax"
+    # 安全标志单一来源（secure = FORCE_HTTPS 或本次请求实际为 https；samesite 固定 Lax）
+    cookie_secure, cookie_samesite = cookie_security_flags()
 
     # access_token cookie - 1小时
     response.set_cookie(
@@ -773,9 +769,7 @@ def refresh():
         access_token=new_access_token,
     )
 
-    is_https = current_app.config.get("FORCE_HTTPS", False)
-    cookie_secure = is_https
-    cookie_samesite = "Lax"
+    cookie_secure, cookie_samesite = cookie_security_flags()
 
     response.set_cookie(
         "access_token",
@@ -1078,9 +1072,7 @@ def login_mfa():
     )
 
     # 设置 httpOnly cookie
-    is_https = current_app.config.get("FORCE_HTTPS", False)
-    cookie_secure = is_https
-    cookie_samesite = "Lax"
+    cookie_secure, cookie_samesite = cookie_security_flags()
 
     response.set_cookie(
         "access_token",

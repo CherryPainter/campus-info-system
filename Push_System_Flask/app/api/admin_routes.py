@@ -25,10 +25,11 @@
 """
 
 import os
+import re
 import threading
 from datetime import datetime
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
 from app.core.api_response import api_error, api_success
 from app.core.logger import get_logger
@@ -596,6 +597,69 @@ def _read_weather_push_config() -> dict:
         session.close()
 
 
+_LOCATION_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
+
+
+def _current_admin_is_primary() -> bool:
+    """当前登录管理员是否为主管理员（user.is_primary）。
+
+    用于把「天气服务凭证」这类全局敏感配置的写权限收敛到主管理员。
+    任何异常（用户不存在 / 查库失败）都按 **非主管理员** 处理（fail-closed）——
+    敏感写操作宁可误拒，不可误放。
+    """
+    from app.core.database import get_db
+    from app.model.user import User
+
+    current = getattr(g, "current_user", None) or {}
+    user_id = current.get("user_id")
+    if not user_id:
+        return False
+
+    session = None
+    try:
+        session = get_db()
+        user = session.query(User).filter_by(id=int(user_id)).first()
+        return bool(user and user.is_primary)
+    except (ValueError, TypeError):
+        return False
+    except Exception as exc:  # noqa: BLE001 - 查库异常一律不放行（宁 403 不 500）
+        logger.warning(f"[权限] 主管理员校验失败，按非主管理员处理: {exc}")
+        return False
+    finally:
+        if session is not None:
+            session.close()
+
+
+def _validate_location(value) -> "str | None":
+    """校验经纬度字符串（"经度,纬度"）。返回错误文案，合法则返回 None。
+
+    值写错的后果是全校天气取不到数据（QWeather 直接报错），属于「一句话毁掉一个模块」
+    的输入，故必须在服务端挡住，不能只靠管理端输入框。
+    """
+    raw = str(value).strip()
+    match = _LOCATION_RE.match(raw)
+    if not match:
+        return "位置坐标格式不正确，应形如「经度,纬度」（例如 106.55,29.56）"
+    lng, lat = float(match.group(1)), float(match.group(2))
+    if not (-180 <= lng <= 180):
+        return f"经度超出有效范围（-180 ~ 180）：{lng}"
+    if not (-90 <= lat <= 90):
+        return f"纬度超出有效范围（-90 ~ 90）：{lat}"
+    return None
+
+
+def _validate_city_name(value) -> "str | None":
+    """校验城市名称。返回错误文案，合法则返回 None。"""
+    text = str(value).strip()
+    if not text:
+        return "城市名称不能为空"
+    if len(text) > 32:
+        return "城市名称过长（最多 32 个字符）"
+    if any(ord(ch) < 32 for ch in text):
+        return "城市名称包含非法控制字符"
+    return None
+
+
 @admin_bp.route("/weather/config", methods=["PUT"])
 @admin_required
 def update_weather_config():
@@ -606,15 +670,29 @@ def update_weather_config():
         PUT /api/admin/weather/config
         Content-Type: application/json
         {
-            "project_id": "your_project_id",     // JWT 项目 ID (可选)
-            "api_key": "new_api_key",            // API Key (可选，兼容旧版)
+            "project_id": "your_project_id",     // JWT 项目 ID (可选，仅主管理员)
+            "api_key": "new_api_key",            // API Key (可选，兼容旧版；仅主管理员)
             "location": "106.55,29.56",          // 位置坐标 (可选)
             "city_name": "重庆",                  // 城市名称 (可选)
             "daily_push_time": "07:30"            // 每日推送时间 (可选)
         }
+
+    权限：`project_id` / `api_key` 是**全校天气数据源的凭证**，改动会影响所有师生的
+    天气推送，仅**主管理员**（user.is_primary）可修改，其余管理员传了返回 403；
+    位置 / 城市 / 推送时间等展示类配置仍允许任意管理员修改，但带格式校验。
     """
     data = request.get_json(silent=True) or {}
     updates = {}
+
+    # 敏感凭证门槛：非主管理员不得替换天气服务凭证（会波及全校推送内容）
+    _sensitive_keys = [k for k in ("project_id", "api_key") if data.get(k)]
+    if _sensitive_keys and not _current_admin_is_primary():
+        logger.warning(f"[天气配置] 非主管理员尝试修改敏感凭证被拒绝: {_sensitive_keys}")
+        return api_error(
+            message="仅主管理员可修改天气服务凭证（项目 ID / API Key）",
+            denied_fields=_sensitive_keys,
+            http_status=403,
+        )
 
     # 更新项目 ID (JWT sub)
     if "project_id" in data:
@@ -634,19 +712,25 @@ def update_weather_config():
             cfg_module.Config.QWEATHER_API_KEY = new_key
             updates["api_key"] = "已更新"
 
-    # 更新位置
+    # 更新位置（格式校验：必须是 "经度,纬度"，写错会导致全校天气取不到数据）
     if "location" in data:
         new_location = data["location"]
         if new_location:
+            loc_error = _validate_location(new_location)
+            if loc_error:
+                return api_error(message=loc_error, http_status=400)
             from app.core import config as cfg_module
 
             cfg_module.Config.QWEATHER_LOCATION = new_location
             updates["location"] = new_location
 
-    # 更新城市名称
+    # 更新城市名称（长度 / 控制字符校验）
     if "city_name" in data:
         new_city = data["city_name"]
         if new_city:
+            city_error = _validate_city_name(new_city)
+            if city_error:
+                return api_error(message=city_error, http_status=400)
             from app.core import config as cfg_module
 
             cfg_module.Config.QWEATHER_CITY_NAME = new_city

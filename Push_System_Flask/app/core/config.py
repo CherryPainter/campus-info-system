@@ -165,14 +165,29 @@ class Config:
         # 是否强制管理员启用 MFA（默认开启；设为 false 可关闭，便于特殊场景）
         cls.FORCE_ADMIN_MFA = os.getenv("FORCE_ADMIN_MFA", "true").lower() == "true"
 
-        # 是否强制 HTTPS（生产走 https 时设为 true）：
+        # 是否强制 HTTPS（生产走 https 时**必须**设为 true）：
         # - 生效后 auth_routes 下发 cookie 加 Secure 标志（仅 https 传输）
         # - __init__.py 的 before_request 会把 http 请求 301 跳 https
-        # 注意：若前端经 nginx 反代且 nginx 已终结 TLS，需 nginx 转发 X-Forwarded-Proto:
-        # https 才能让 request.is_secure 正确判定（否则跳转/判 secure 会误判）。
-        # 此前该配置从未被 Config 读取，.env 里的 FORCE_HTTPS 一直失效（cookie 恒不加 Secure、
+        # 注意：生产由 Nginx 终结 TLS 时，后端 wsgi.url_scheme 是 http，靠 __init__.py
+        # 挂的 ProxyFix(x_proto=1) 解析 X-Forwarded-Proto 才让 request.is_secure 判为 https。
+        # 因此 Nginx 必须转发 `X-Forwarded-Proto: https`；缺了它，FORCE_HTTPS=true 会让
+        # force_https 恒判「非 https」→ 301 无限重定向（2026-09-30 复核发现 ProxyFix 缺失，
+        # 这正是生产 .env 一直没敢置 true 的根因）。cookie 的 Secure 另有兜底：即使漏设本
+        # 配置，只要请求真的走了 https，cookie 仍带 Secure（见 security.cookie_security_flags）。
+        # 该配置此前从未被 Config 读取，.env 里的 FORCE_HTTPS 一直失效（cookie 恒不加 Secure、
         # 跳转恒不触发）——2026-09-06 修复读取。
         cls.FORCE_HTTPS = os.getenv("FORCE_HTTPS", "false").lower() in ("1", "true", "yes", "on")
+
+        # 显式环境标记：取 production/prod 时启用生产约束（当前用于 HTTPS 启动守卫
+        # check_https_startup_guard：生产未开 FORCE_HTTPS 直接拒绝启动）。
+        # 本地/测试环境留空即可，不会被误判为生产。
+        cls.APP_ENV = (os.getenv("APP_ENV") or os.getenv("FLASK_ENV") or os.getenv("ENV") or "").strip()
+
+        # CSRF 同源校验的额外允许来源（逗号分隔），仅在「带认证 cookie 且无 Bearer 头」
+        # 的 /api/ 写请求上生效；同源（request.host_url）始终自动允许，此处用于
+        # 前端独立域名/端口的部署（如开发期 http://localhost:5173）。
+        _csrf_origins_raw = os.getenv("CSRF_ALLOWED_ORIGINS", "") or ""
+        cls.CSRF_ALLOWED_ORIGINS = [o.strip() for o in _csrf_origins_raw.split(",") if o.strip()]
 
         # 境外 IP 拦截（防火墙）：仅允许中国 IP 访问，其余请求在请求最前端直接 403 断开
         # 默认开启；REGION_BLOCK_EXCEPTIONS 为逗号分隔的例外 IP/CIDR（管理员白名单，防止误锁自己）

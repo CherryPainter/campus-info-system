@@ -264,16 +264,17 @@ def update_profile():
     请求体（全部可选，只更新传入字段）：
         {
             "campus_card_number": "校园卡号（一卡通号）",
-            "real_name": "姓名",
             "nickname": "昵称",
-            "college": "学院",
-            "major": "专业",
-            "grade": "年级",
             "phone": "手机号"
         }
 
-    注意：school / student_number / class_name 由「身份绑定」接口（POST /student/bind）
-    管理，不在此白名单内——防止绕过预录名单直接填写学号。
+    注意（名单派生的身份字段一律不可自改，防止绕过权威来源冒用身份）：
+    - school / student_number / class_name：由「身份绑定」接口（POST /student/bind）写入；
+    - college / major / grade / real_name：绑定或名单同步时以**预录名单**为准写入
+      （student_roster_service 按名单回填）。此前它们在本白名单内，学生可直接调 API
+      改成任意学院/年级/姓名，与「身份以名单为准」冲突 → 2026-10-01 移出。
+      小程序端「编辑信息」页本身只允许改昵称，学院/专业等为只读展示，故移出不影响前端。
+    传了这些字段不会报错，但会被忽略（与其它未在白名单内的字段一致）。
     """
     from app.core.database import get_db
     from app.model.student_profile import StudentProfile
@@ -283,11 +284,7 @@ def update_profile():
 
     allowed_fields = {
         "campus_card_number",
-        "real_name",
         "nickname",
-        "college",
-        "major",
-        "grade",
         "phone",
     }
     updates = {}

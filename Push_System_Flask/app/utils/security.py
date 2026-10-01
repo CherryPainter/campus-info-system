@@ -13,6 +13,7 @@
 """
 
 import ipaddress
+import os
 import re
 
 from flask import current_app, jsonify, request
@@ -531,6 +532,72 @@ def _ip_in_exceptions(ip: str, exceptions: list) -> bool:
     return False
 
 
+def ip_in_admin_whitelist(ip: str) -> bool:
+    """该 IP 是否在「管理员白名单」（REGION_BLOCK_EXCEPTIONS）内。
+
+    该配置的既定语义是「防止误锁自己」（见 config.py 注释），因此白名单内的 IP
+    永不参与 IP 黑名单拦截；手动封禁也在写入层直接拒绝（见 ip_blacklist_routes）。
+    单独抽成公开函数，供路由层与 `_check_ip_blacklist` 共用同一口径。
+    """
+    if not ip:
+        return False
+    exceptions = current_app.config.get("REGION_BLOCK_EXCEPTIONS") or []
+    return _ip_in_exceptions(ip, exceptions)
+
+
+def cookie_security_flags() -> tuple:
+    """下发认证 cookie 时应使用的 (secure, samesite)。
+
+    单一收口点：此前 auth_routes 在三处各自写 `is_https = config.get("FORCE_HTTPS")`
+    再赋给 `secure`，一旦漏改一处就会出现「同一份 cookie 两种安全等级」。
+    取值口径：
+    - `secure` = `FORCE_HTTPS` **或** 本次请求实际走了 https（`request.is_secure`）。
+      仅看配置项时，运维漏设 `FORCE_HTTPS=true`（生产经 Nginx 终结 TLS）会让 Secure
+      标志静默失效；改为与真实协议取或，只要请求确经 https，cookie 必带 Secure。
+      注意 `request.is_secure` 依赖 `ProxyFix(x_proto=1)` 解析 `X-Forwarded-Proto`
+      （见 app/__init__.py），否则 Nginx 反代下恒为 False。
+    - `samesite` 固定 Lax：同源部署（dev Vite 代理 / prod Nginx 反代）下 Lax 足够，
+      且无需 Secure；若改 None 则强制要求 Secure，否则 Chrome 会拒绝种 cookie。
+    """
+    force_https = bool(current_app.config.get("FORCE_HTTPS", False))
+    secure = force_https or bool(getattr(request, "is_secure", False))
+    return secure, "Lax"
+
+
+def check_https_startup_guard(app) -> None:
+    """启动期 HTTPS 守卫：生产环境必须开启 FORCE_HTTPS，否则拒绝启动。
+
+    背景：`FORCE_HTTPS` 同时决定 ① cookie 是否带 Secure、② http 请求是否 301 跳 https。
+    生产漏设的后果是「外网 http 明文可达 + 会话 cookie 可被明文回传」，属于不可接受的
+    事故面，故在**显式声明为生产**时直接 fail-fast，而不是打条日志继续跑。
+
+    生产判定：`APP_ENV` / `FLASK_ENV` / `ENV` 任一取值为 production/prod
+    （环境变量未声明时视为开发/测试，不阻断本地启动——本地 `.env` 就是
+    `FORCE_HTTPS=false` + `DEBUG=false`，不能用 DEBUG 反推生产）。
+    非生产但未开 FORCE_HTTPS 时打 error 级日志，便于在服务器日志里自查。
+    """
+    env_value = (
+        os.getenv("APP_ENV") or os.getenv("FLASK_ENV") or os.getenv("ENV") or ""
+    ).strip().lower()
+    is_production = env_value in ("production", "prod")
+    force_https = bool(app.config.get("FORCE_HTTPS", False))
+
+    if force_https:
+        return
+
+    if is_production:
+        raise RuntimeError(
+            "生产环境（APP_ENV/FLASK_ENV/ENV=production）必须设置 FORCE_HTTPS=true："
+            "否则认证 cookie 不带 Secure 标志，会话令牌可能经明文 http 回传。"
+            "若经 Nginx 终结 TLS，请确认 Nginx 已转发 X-Forwarded-Proto: https。"
+        )
+
+    logger.error(
+        "[安全] FORCE_HTTPS=false（当前非生产环境）。若这是线上实例，"
+        "认证 cookie 将不带 Secure 标志；请核对部署环境变量。"
+    )
+
+
 def _check_foreign_ip(client_ip: str):
     """境外 IP 拦截。
 
@@ -668,6 +735,15 @@ def _record_security_event(
 
 def _check_ip_blacklist(ip_address):
     """检查IP是否在黑名单中（失败不阻塞请求）"""
+    # 管理员白名单永不拦截：该名单语义就是「防止误锁自己」。手动封禁已在写入层拒绝，
+    # 但自动封禁（登录失败信号 / 攻击扫描 / 限流误判）仍可能把自己的 IP 写进库，
+    # 那样管理员会在登录后立刻失去整个后台（仅登录路径被豁免）。此处兜最后一道。
+    if ip_in_admin_whitelist(ip_address):
+        logger.warning(
+            "IP %s 命中管理员白名单（REGION_BLOCK_EXCEPTIONS），跳过黑名单拦截",
+            ip_address,
+        )
+        return False
     try:
         from app.core.database import get_db
         from app.services.ip_blacklist_service import IPBlacklistService

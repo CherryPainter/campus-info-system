@@ -25,8 +25,50 @@ from app.core.logger import get_logger
 from app.model.ip_blacklist import IPBlacklist
 from app.services.ip_blacklist_service import IPBlacklistService
 from app.utils.auth_middleware import admin_required
+from app.utils.security import get_client_ip, ip_in_admin_whitelist
 
 logger = get_logger(__name__)
+
+
+def _reject_unblockable_ip(ip_address: str):
+    """校验该 IP 是否允许手动封禁；返回错误文案，允许则返回 None。
+
+    三类必须拒绝（都是「封了会把自己或服务锁死」，属运维可用性事故）：
+    1. **本机/保留地址**（回环、未指定、组播、保留）：不是外部来源，封禁没有防护意义，
+       却可能打断服务自身的本地调用；
+    2. **管理员白名单** `REGION_BLOCK_EXCEPTIONS`：该名单的既定语义就是「防止误锁自己」，
+       拦截层也已对其中 IP 永久放行，写入层面再挡一道，避免出现「看着被封、实际没封」的
+       迷惑记录；
+    3. **当前请求来源 IP**：一旦命中，全局 before_request 会拦下所有 `/api/*`
+       （仅登录两个路径白名单放行）→ 管理员当场失去整个后台，甚至无法自行解封
+       （解封接口同样被拦）。这条最容易被误操作触发，必须硬拦。
+    """
+    try:
+        ip = ipaddress.ip_address(ip_address)
+    except ValueError:
+        return "无效的IP地址格式"
+
+    if ip.is_loopback or ip.is_unspecified or ip.is_multicast or ip.is_reserved:
+        return (
+            f"不能封禁本机或保留地址（{ip_address}）：这类地址不构成外部来源，"
+            "封禁没有防护意义，还可能打断服务自身的本地调用"
+        )
+
+    if ip_in_admin_whitelist(str(ip)):
+        return (
+            f"不能封禁管理员白名单内的地址（{ip_address}）："
+            "该名单配置在 REGION_BLOCK_EXCEPTIONS，用于防止误锁自己；"
+            "如确需封禁，请先从该配置中移除"
+        )
+
+    client_ip = get_client_ip()
+    if client_ip and str(ip) == str(ipaddress.ip_address(client_ip)):
+        return (
+            f"不能封禁当前请求来源 IP（{ip_address}）：封禁后所有管理接口都会被拦截，"
+            "包括本条解封接口，你将无法自行恢复"
+        )
+
+    return None
 
 # 创建蓝图
 ip_blacklist_bp = Blueprint("ip_blacklist", __name__)
@@ -92,6 +134,12 @@ def add_to_blacklist():
             ipaddress.ip_address(ip_address)
         except ValueError:
             return api_error(message="无效的IP地址格式", http_status=400)
+
+        # 自锁围栏：本机/保留地址、管理员白名单、当前请求来源 IP 一律拒绝
+        unblockable = _reject_unblockable_ip(ip_address)
+        if unblockable:
+            logger.warning(f"[IP黑名单] 拒绝封禁 {ip_address}: {unblockable}")
+            return api_error(message=unblockable, http_status=400)
 
         session = get_db()
         record = IPBlacklistService.block_ip(

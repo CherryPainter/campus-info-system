@@ -9,6 +9,7 @@ import uuid
 import redis as _redis_mod
 from flask import Flask, jsonify, redirect, request
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # 确保项目根目录在路径中
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -57,8 +58,26 @@ def create_app(config_class=None):
         print(f"配置验证失败: {e}")
         sys.exit(1)
 
+    # ========== 反向代理协议头修正（必须在注册任何 before_request 前） ==========
+    # 生产由 Nginx 终结 TLS，后端看到的是 http；只有让 werkzeug 解析 X-Forwarded-Proto，
+    # request.is_secure 才能正确判定为 https。否则会出现两个真实故障：
+    #   ① FORCE_HTTPS=true 时 force_https 恒判「非 https」→ 301 无限重定向循环；
+    #   ② Cookie 的 Secure 标志拿不到正确依据（见 security.cookie_security_flags）。
+    # 只启用 x_proto，**刻意不启用 x_for / x_host**：
+    #   - x_for 会把 X-Forwarded-For 直接当作 remote_addr，等于无条件信任该头；而当前
+    #     get_client_ip() 只在 TCP 对端为内网时才采信 XFF，多一道门槛，不应被削弱；
+    #   - x_host 会采信 X-Forwarded-Host，影响 redirect / CORS 判定，本项目无需。
+    # 安全性前提：本服务只监听回环（HOST=127.0.0.1 / Gunicorn bind 127.0.0.1），外部无法
+    # 直连伪造该头；若哪天直接对外暴露端口，该前提失效，应改由真实 TLS 判定。
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_for=0, x_host=0)
+
     # 初始化日志
     setup_logger(app)
+
+    # HTTPS 启动守卫：生产环境未开 FORCE_HTTPS 直接 fail-fast（见函数 docstring）
+    from app.utils.security import check_https_startup_guard
+
+    check_https_startup_guard(app)
 
     # 初始化扩展
     allowed_origins = app.config.get("ALLOWED_ORIGINS")

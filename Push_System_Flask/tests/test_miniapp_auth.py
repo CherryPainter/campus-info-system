@@ -280,17 +280,22 @@ def test_profile_get_and_update_own_only(client, db_session):
     body = _login(client).get_json()
     user_id = body["user"]["id"]
     headers = {"Authorization": f"Bearer {body['access_token']}"}
-    _bind_student(db_session, user_id)
+    profile = _bind_student(db_session, user_id)
+    # 名单派生字段（real_name/college/major/grade）以预录名单为准，先写入一个「名单值」
+    profile.real_name = "名单姓名"
+    profile.college = "名单学院"
+    db_session.commit()
 
     resp = client.get("/api/miniapp/student/profile", headers=headers)
     assert resp.status_code == 200
     assert resp.get_json()["profile"]["user_id"] == user_id
 
-    # 更新本人资料；顺带尝试传 user_id=999（IDOR 尝试，应被字段白名单过滤）
+    # 更新本人资料；顺带尝试传 user_id=999 / role（IDOR 尝试，应被字段白名单过滤）
     resp = client.put(
         "/api/miniapp/student/profile",
         json={
             "real_name": "张三",
+            "college": "伪造学院",
             "phone": "13800000000",
             "user_id": 999,
             "role": "admin",
@@ -299,8 +304,11 @@ def test_profile_get_and_update_own_only(client, db_session):
     )
     assert resp.status_code == 200
     profile = db_session.query(StudentProfile).filter_by(user_id=user_id).one()
-    assert profile.real_name == "张三"
     assert profile.user_id == user_id  # user_id 不可被客户端篡改
+    assert profile.phone == "13800000000"  # 白名单字段正常写入
+    # 名单派生字段不可自改（A 级修复项 A2）：以名单为准，PUT 传入值被忽略
+    assert profile.real_name == "名单姓名"
+    assert profile.college == "名单学院"
 
     # 身份字段（学号/班级/学校）已移出 PUT 白名单：绑定后不可再改，防绕过名单
     resp = client.put(

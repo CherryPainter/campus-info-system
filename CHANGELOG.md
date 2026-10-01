@@ -6,6 +6,42 @@
 
 ## Unreleased
 
+### 安全：A 级问题修复（5 项，后端，2026-10-01）
+按全系统审计的待决策清单，修复 5 项 🟠（A1–A5）。五项均已配套**反向验证过**的回归测试（撤掉修复 → 用例变红），全量测试 **410 passed / 0 failed**（本轮新增 102 项）。详情见 `技术总结/安全审计-全系统-2026-10-01.md` 的 §1-B 与 §5。
+
+**A1 IP 黑名单「自锁」围栏（可用性事故）**
+- 手动封禁此前只校验 IP 格式，因此可以把①本机/保留地址、②管理员白名单、③**当前请求来源 IP** 写进黑名单；而黑名单命中后全局 `before_request` 会拦下**所有 `/api/*`**（仅登录路径豁免）→ 后台当场全部 403，连解封接口一起被拦，无法自助恢复。
+- 新增 `_reject_unblockable_ip()`（`app/api/ip_blacklist_routes.py`）在该三类上一律 400 + warning；抽出公开 `ip_in_admin_whitelist()`（`app/utils/security.py`）供路由层与拦截层共用同一口径。
+- 另在 `_check_ip_blacklist()` 加白名单**兜底短路**：自动封禁（登录失败信号 / 攻击扫描 / 限流误判）仍可能把管理员 IP 写进库，命中白名单时直接放行、连库都不查。
+
+**A2 小程序「编辑资料」禁止自改名单派生字段**
+- `PUT /api/miniapp/student/profile` 的字段白名单含 `college`/`major`/`grade`/`real_name`，与「身份以预录名单为准」冲突——学生直接调 API 即可把自己改成任意学院/年级/姓名，影响按学院/年级做的过滤与统计。
+- `allowed_fields` 由 7 项收到 3 项（`campus_card_number`/`nickname`/`phone`）；四个名单派生字段移出（传入不报错但被忽略）。小程序「编辑信息」页本就只允许改昵称、其余为只读展示，前端无需改动。
+
+**A3 天气服务凭证收敛到主管理员 + 输入校验**
+- `PUT /api/admin/weather/config` 此前任何管理员都能改 `api_key`/`project_id`（**全校天气数据源凭证**，且直接写入进程内 `Config`），与「普通管理员不掌握全局凭证」口径不一致；`location`/`city_name` 无格式校验，写错即让全校天气取不到数据。
+- 新增 `_current_admin_is_primary()`：非主管理员改这两个键 → 403 且不落配置；**查库异常按非主管理员处理（fail-closed）**，且 `get_db()` 纳入 try（DB 不可达时返回 403 而非 500）。
+- `location` 校验「经度,纬度」格式与范围（±180 / ±90）、`city_name` 校验长度与控制字符；`daily_push_time` 等日常运维字段仍开放给普通管理员（不误伤）。
+
+**A4 CSRF：豁免口径由「路径前缀」改为「凭证形态」+ cookie 写请求走同源校验**
+- 原先 `CSRF_EXEMPT_PREFIXES = ["/api/"]` 把整个 `/api/` **无条件**豁免，理由写的是「API 用 JWT」——前提不成立：`_extract_token` / `get_identity_key` 都是「Authorization 头 → 退 `access_token` cookie」，登录/刷新还会种 httpOnly cookie。同一端点既能被 Bearer 调、也能被 Cookie 调，而 Cookie 由浏览器自动附加。
+- 现仅在①显式带 `Authorization: Bearer`（浏览器不会自动补该头），或②完全不带任何认证 cookie（`access_token`/`refresh_token`/`session_id`，无环境凭证可被冒用）时豁免；带 cookie 又无 Bearer 的状态更改请求改走**同源校验**（Origin 优先、退 Referer；两者皆无视为非浏览器客户端放行——小程序/脚本不会被第三方页面触发，放行以免打断匿名提交流程）。
+- 认证流程端点（`/api/auth/login|login/mfa|refresh|logout`、`/api/miniapp/auth/*`）按**精确路径**豁免：换号/重登时浏览器可能残留上一段会话 cookie，按 cookie 口径要求同源会拦住正常换号。
+- 新增配置 `CSRF_ALLOWED_ORIGINS`（逗号分隔）用于前端与 API 不同源的部署；同源（`request.host_url`）始终自动允许。
+- **未采用**「双提交 token」方案：小程序匿名流程（如反馈提交）不带 cookie 也无 token 可自证，强行要求会直接打断它。
+
+**A5 cookie `Secure` 不再只依赖手工开关；修掉「一开 `FORCE_HTTPS` 就 301 死循环」**
+- 复核时发现 `ProxyFix` **此前未挂载**，而 `FORCE_HTTPS=true` 的跳转与 cookie 判定都依赖 `request.is_secure`（须解析 `X-Forwarded-Proto`）。Nginx 终止 TLS 时 `wsgi.url_scheme` 是 http → `is_secure` 恒 False → `force_https` 把每个请求 301 到自己，形成**无限重定向**。这正是生产 `.env` 一直没敢置 `true` 的真实原因（`技术总结/H-部署与运维/H1` 早有记录，此前只当「部署配置没跟上」）。
+- `app/__init__.py` 挂 `ProxyFix(x_proto=1)`，**刻意不开 `x_for`/`x_host`**：`x_for` 会把 `X-Forwarded-For` 无条件当作 `remote_addr`，而 `get_client_ip()` 目前只在内网对端时才采信 XFF，多一道门槛不该被削弱。
+- 新增 `cookie_security_flags()`（`app/utils/security.py`）单点收口 `(secure, samesite)`：`secure = FORCE_HTTPS 或 request.is_secure`——即使漏设开关，只要请求真的经 https，cookie 仍带 `Secure`；三处 `set_cookie` 共用（此前同一份 cookie 有三处各自判定，漏改一处即不一致）。
+- 新增 `check_https_startup_guard()`：`APP_ENV`/`FLASK_ENV`/`ENV` 为 `production|prod` 且未开 `FORCE_HTTPS` 时**拒绝启动**；非生产打 error 日志（**不按 `DEBUG=false` 反推生产**，因为本地 `.env` 就是 `FORCE_HTTPS=false` + `DEBUG=false`）。
+- `.env.example` 补 `APP_ENV`、`FORCE_HTTPS`（含「Nginx 必须转发 `X-Forwarded-Proto`」的说明）、`ENABLE_FOREIGN_IP_BLOCK`、`REGION_BLOCK_EXCEPTIONS`、`CSRF_ALLOWED_ORIGINS`；`config.py` 里「转发 `X-Forwarded-Proto` 即可让 `is_secure` 正确」的过期注释一并订正（不挂 ProxyFix 时该头根本不被读取）。
+
+**测试**
+- 新增 `tests/test_ip_blacklist_selflock.py`（18）、`tests/test_miniapp_profile_fence.py`（7）、`tests/test_admin_weather_config_fence.py`（33）、`tests/test_csrf_fence.py`（21）、`tests/test_https_cookie_fence.py`（23）；`tests/test_miniapp_auth.py` 的 `test_profile_get_and_update_own_only` 按 A2 新口径重写。
+- 反向验证：A1 摘守卫 → 4 项红；A2 把 `college` 放回白名单 → 2 项红；A4 改回「整体豁免」→ 7 项红；A5 移除 `ProxyFix` 接线 + `secure` 回退 → 各 1 项红（含**子进程取证** `create_app` 的 `wsgi_app` 确为 `ProxyFix`）。全部恢复后 `diff` 为空、复跑全绿。
+- `ruff check` 未引入新问题（`HEAD` 版 4 处 I001 → 现值 2 处，剩余两处为既有且未触碰）。
+
 ### 安全：全系统审计 + 补齐三项服务端围栏（后端，2026-10-01）
 对**整个后端**做了分域安全审计（认证鉴权 / 注入与上传 / 数据暴露与服务端围栏），并按审计结论补掉三项围栏。完整报告见 `技术总结/安全审计-全系统-2026-10-01.md`（含 5 项 🟠、13 项 🟡 待决策清单）。
 
@@ -32,7 +68,7 @@
 
 **审计结论（未改动，需决策）**
 - 未发现可直接利用的 SQL 注入 / 命令注入 / 反序列化 / 任意文件读 / 权限绕过；`.env` 与私钥均未入库；密码用 bcrypt、JWT 锁 HS256、token 黑名单真校验、会话固定已防、登出真失效。
-- 待决策：普通管理员可改天气 API Key（权限口径与 `config_routes` 不一致）、IP 黑名单可自锁（无「别封自己」保护）、学生可自改学院/年级/姓名、CSRF 对全部 `/api/` 豁免（靠 `SameSite=Lax` 兜底）、`cookie_secure` 依赖 `FORCE_HTTPS`；以及 13 项 🟡 加固项。
+- 当时待决策、**已在本文档上方「安全：A 级问题修复」中全部修掉**：普通管理员可改天气 API Key（A3）、IP 黑名单可自锁（A1）、学生可自改学院/年级/姓名（A2）、CSRF 对全部 `/api/` 豁免（A4）、`cookie_secure` 依赖 `FORCE_HTTPS`（A5）。剩余 13 项 🟡 加固项仍待排期。
 - 按你的决定：**宿舍值不做多院校拓展**，保持单校口径。
 
 ### 安全：Webhook 服务端围栏 + 一次真 bug 修复（后端 + 管理端，2026-10-01）
