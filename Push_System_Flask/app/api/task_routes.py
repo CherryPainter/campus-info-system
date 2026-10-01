@@ -16,7 +16,7 @@ from app.core.database import get_db
 from app.core.logger import get_logger
 from app.model.scheduled_crawl_task import ScheduledCrawlTask
 from app.model.task_process import TaskProcess
-from app.utils.auth_middleware import jwt_required
+from app.utils.auth_middleware import admin_required
 
 logger = get_logger(__name__)
 
@@ -24,9 +24,12 @@ task_bp = Blueprint("task", __name__, url_prefix="/tasks")
 
 
 @task_bp.route("/<int:task_id>", methods=["GET"])
-@jwt_required
+@admin_required
 def get_task(task_id: int):
     """查询任务状态（统一入口）。
+
+    权限：`@admin_required`——本接口暴露后台任务（含爬取预约计划的执行态与错误信息），
+    此前仅 `jwt_required`，学生令牌也能读；两端前端当前都没有调用方，收紧无副作用。
 
     Query 参数：
         type: 'process'（默认，查 task_processes）| 'crawl'（查 scheduled_crawl_tasks）

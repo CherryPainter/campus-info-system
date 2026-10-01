@@ -6,6 +6,49 @@
 
 ## Unreleased
 
+### 安全：B 级问题修复（9 项，后端 + 管理端，2026-10-01）
+按全系统审计的 🟡 清单（B1–B14）修复 9 项。每项均配套**反向验证过**的回归测试（撤掉修复 → 用例变红），全量测试 **487 passed / 0 failed**（本轮新增 77 项）。剩余 5 项（B1/B5/B7/B9/B10）需产品决策或依赖/表结构支持，未擅自改动，清单见 `技术总结/安全审计B-待办备忘-2026-10-01.md`。
+
+**B2 图片上传补内容级校验（伪造扩展名不再能落盘）**
+- 公告正文图 / 公告封面 / 反馈截图三处此前**只查扩展名**，把任意文件改名成 `.jpg` 即可落盘，随后经公开路由对外提供。
+- 新增 `validate_image_upload_content()`（`app/utils/file_upload_security.py`）：`validate_file_type`（装了 `python-magic` 时做真实 magic bytes 判定）+ `validate_file_content`（PIL `Image.verify()` 验证确实是可解析图片）。本机 `python-magic` **未安装**，故 PIL 这一步是当前唯一可靠的内容校验，必须执行。
+
+**B6 上传大小上限单一来源（清掉一个走不到的死值）**
+- 端点级上限原为硬编码 `IMAGE_MAX_SIZE = 20MB` / `MAX_ATTACHMENT_SIZE = 20MB`，而 `Config.MAX_CONTENT_LENGTH` 是 10MB。Flask 在**进入视图之前**就按 `MAX_CONTENT_LENGTH` 拒绝超大请求体（裸 413），故 20MB 这个值**永远走不到**——用户传 12MB 图片只看到莫名 413，而非「图片过大」的友好提示。
+- 新增 `get_upload_max_size()`（取 `current_app.config["MAX_CONTENT_LENGTH"]`，无上下文时兜底 10MB），三个上传端点与名单导入统一改用；硬编码常量删除并留下说明注释。
+
+**B3 4 个管理面端点由「任意登录」收紧为「仅管理员」**
+- 逐一 grep 消费方后确认：`GET /api/course/crawl-tasks`、`GET /api/course/crawl-tasks/<id>`、`GET /api/admin/processes/running`、`GET /api/tasks/<id>` 此前均只挂 `@jwt_required`，即**任意学生令牌**都能读到全校爬取预约计划、后台进程运行态（进程名/任务类型/进度）、任务执行态与错误信息。
+- 四者一律改 `@admin_required`。其中 `/api/tasks/<id>` 两端前端**都没有调用方**，其余三者仅 admin-frontend 调用，故对现有页面零影响（已写入各端点 docstring 备查）。
+
+**B4 课程导入路径白名单（去掉一处任意文件读取）**
+- `POST /api/course/import` 曾把客户端传来的 `file_path` 直接交给 `open()`——管理员令牌（或被盗用的令牌）可读服务器任意文件。
+- 现限定「爬虫产出目录 `cqie-course-timetable/output/course-data/` 内的 `.json`」，`os.path.realpath()` 归一化后再比对目录前缀（同时挡住 `..` 反穿），非 `.json` 与目录外路径均 400 + warning。
+
+**B8 新密码最小长度收敛为单一来源（6 → 8）**
+- 「设置新密码」的服务端校验原在**三处各写魔数 `6`**（管理员自助改密、管理员建号、管理员重置）；分散写法的必然结果是改一处漏一处，出现「前端放行、服务端 400」的割裂体验。
+- 收敛为 `MIN_PASSWORD_LENGTH = 8` + `validate_password_strength()`（`app/utils/security.py`）单一来源，三处调用点统一，并同步修正管理端三处提示（`Profile.tsx`、`UserManagement.tsx` 六→八）。校园场景不引入大小写/符号复杂度要求（学生初始密码易忘），如需加严只改该函数即全站生效。
+
+**B11 服务信息端点不再自述攻击面**
+- `GET /api/` 原返回一份含 7 条管理端路径的 `endpoints` 清单，等于给扫描器一份目录，而两端前端均无消费方。现移除该字段。
+- `version` 与 `your_ip` 经权衡**刻意保留**：前者是部署后核对版本的实际手段，后者是配置 `REGION_BLOCK_EXCEPTIONS` 管理员白名单时的自助查询入口（返回的也只是请求方自己的 IP），删掉会打断既有运维流程。
+
+**B12 名单导入补后缀白名单与大小上限**
+- `_parse_upload_file` 原为 `if .xlsx ... else 当作 CSV`，**没有任何后缀白名单**：`.zip` / `.exe` / `.txt` 等都会被丢进 CSV 解析器；同时没有大小上限，直接 `read()` 整个请求体进内存。
+- 现限定 `.csv` / `.xlsx`（与「模板下载 / 导出」产出的格式一致，大小写不敏感），大小取 `get_upload_max_size()` 与其它上传端点同口径；被拒时 400 并把原因透传给前端。
+
+**B13 示例配置不再给出可照抄的弱口令**
+- `.env.example` 原写 `DATABASE_PASSWORD=123456`。示例文件的用途是「告诉你要配哪些变量」，写成具体弱口令后最省事的做法就是原样复制进生产。现留空并注明「留空即用代码内默认值，生产必须显式填写强密码」。本项只约束示例文件，不约束本地 `.env`。
+
+**B14 删除学生 webhook 校验里的死代码**
+- `_validate_webhook_url` 原在「https + 仅 `qyapi.weixin.qq.com`」之后，还跟着一段「拒绝内网 IP / 私有网段」的分支，并为此维护 `_PRIVATE_NETWORKS` 与 `import ipaddress`。但主机名白名单是**等值判断**，任何 IP 字面量都不可能等于该域名——那段分支永远走不到，是纯死代码。
+- 删掉后拦截能力不变（回归测试逐条锁定 127.0.0.1 / 10.x / 192.168.x / 172.16.x / 169.254.169.254 / localhost / 外部域名 / 后缀伪装域名均仍被拒）。
+
+**测试**
+- 新增 `tests/test_password_strength_fence.py`（13）、`tests/test_roster_import_fence.py`（16）、`tests/test_upload_security_fence.py`（15）、`tests/test_admin_surface_fence.py`（13）、`tests/test_repo_hygiene_fence.py`（20）。
+- 反向验证：11 项变更逐个撤销修复（B2/B6/B3/B4/B8×2/B11/B12×2/B13/B14）→ 对应用例全部变红，还原后文件哈希与原文逐字节一致，复跑全绿。脚本见 `技术总结/dev-scripts/reverse_verify_b.py`。
+- `ruff check` 数量 `HEAD` 298 → 现值 297（无新增，顺手消掉 1 处既有 I001）；`admin-frontend` `tsc --noEmit` 通过。
+
 ### 安全：A 级问题修复（5 项，后端，2026-10-01）
 按全系统审计的待决策清单，修复 5 项 🟠（A1–A5）。五项均已配套**反向验证过**的回归测试（撤掉修复 → 用例变红），全量测试 **410 passed / 0 failed**（本轮新增 102 项）。详情见 `技术总结/安全审计-全系统-2026-10-01.md` 的 §1-B 与 §5。
 

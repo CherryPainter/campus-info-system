@@ -783,7 +783,7 @@ export default function Profile() {
           <Form.Item label="当前密码" name="old_password" rules={[{ required: true, message: "请输入当前密码" }]}>
             <Input.Password placeholder="请输入当前密码" />
           </Form.Item>
-          <Form.Item label="新密码" name="new_password" rules={[{ required: true, message: "请输入新密码" }, { min: 6, message: "密码长度至少6位" }]}>
+          <Form.Item label="新密码" name="new_password" rules={[{ required: true, message: "请输入新密码" }, { min: 8, message: "密码长度不能少于8位" }]}>
             <Input.Password placeholder="请输入新密码" />
           </Form.Item>
           <Form.Item label="确认新密码" name="confirm_password" rules={[{ required: true, message: "请再次输入新密码" }]}>

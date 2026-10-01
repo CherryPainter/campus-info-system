@@ -41,8 +41,10 @@ from app.utils.student_auth import student_bound_required
 from app.utils.file_upload_security import (
     FileUploadError,
     generate_secure_filename,
+    get_upload_max_size,
     validate_filename,
     validate_file_size,
+    validate_image_upload_content,
 )
 
 logger = get_logger(__name__)
@@ -52,7 +54,7 @@ admin_bp = Blueprint("admin_feedback", __name__)
 
 # ============ 图片上传（与公告正文图片同套约定）============
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-IMAGE_MAX_SIZE = 20 * 1024 * 1024
+# 图片大小上限：统一取 Config.MAX_CONTENT_LENGTH（见 get_upload_max_size），不在此硬编码
 IMAGE_SUBDIR = "feedback-images"
 
 
@@ -175,7 +177,8 @@ def feedback_upload():
         ext = os.path.splitext(original_name)[1].lower()
         if ext not in IMAGE_EXTS:
             return jsonify({"errno": 1, "message": f"不支持的图片类型: {ext}"}), 400
-        validate_file_size(file, IMAGE_MAX_SIZE)
+        validate_file_size(file, get_upload_max_size())
+        validate_image_upload_content(file)  # 内容级：magic bytes（可用时）+ PIL 完整性
         stored_name = generate_secure_filename(file, original_name)
     except FileUploadError as e:
         return jsonify({"errno": 1, "message": str(e)}), 400

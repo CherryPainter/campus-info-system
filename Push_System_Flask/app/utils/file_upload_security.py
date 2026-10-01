@@ -68,6 +68,32 @@ AVATAR_MAX_SIZE = 2 * 1024 * 1024  # 2MB
 AVATAR_QUOTA = 3
 AVATAR_QUOTA_DAYS = 365
 
+# `MAX_CONTENT_LENGTH` 缺省值，仅在无应用上下文时兜底（与 Config 默认保持一致）
+_DEFAULT_UPLOAD_MAX_SIZE = 10 * 1024 * 1024
+
+
+def get_upload_max_size(default=None):
+    """端点级上传上限：**统一取** `Config.MAX_CONTENT_LENGTH`（请求体硬上限）。
+
+    为什么必须同源：Flask 在**进入视图之前**就按 `MAX_CONTENT_LENGTH` 拒绝超大请求体，
+    返回的是不带说明的 413。若端点自己写的上限比它大，那个值就是**永远走不到的死值**，
+    用户只会看到莫名的 413 而不是「图片过大」的友好提示。
+    本仓库曾出现两处漂移（Config 10MB vs 端点 20MB），故收口成单一来源。
+
+    Args:
+        default: 无应用上下文时的兜底值（字节），缺省 10MB。
+    """
+    fallback = _DEFAULT_UPLOAD_MAX_SIZE if default is None else default
+    try:
+        from flask import current_app, has_app_context
+
+        if not has_app_context():
+            return fallback
+        configured = current_app.config.get("MAX_CONTENT_LENGTH")
+        return int(configured) if configured else fallback
+    except (ImportError, TypeError, ValueError):
+        return fallback
+
 
 def validate_filename(filename):
     """
@@ -267,6 +293,29 @@ def validate_file_upload(file, allowed_types=None, max_size=None, check_content=
     logger.info(f"[文件上传] 文件验证通过: {filename} -> {secure_filename}, MIME: {mime_type}")
 
     return file
+
+
+def validate_image_upload_content(file, allowed_types=None):
+    """图片上传的**内容级**校验（补在「扩展名 + 大小」之后的第二道）。
+
+    仅查扩展名挡不住「非图片文件改名 .jpg 落盘」。这里两步都走：
+    1. `validate_file_type`：装了 python-magic 时做真实 magic bytes 判定（未装则回退扩展名）；
+    2. `validate_file_content`：用 PIL `Image.verify()` 验证**确实是可解析的图片**——
+       这一步不依赖 python-magic，是本仓库当前唯一可靠的内容校验，必须执行。
+
+    Args:
+        file: FileStorage
+        allowed_types: 允许的 MIME 集合，缺省 `ALLOWED_IMAGE_TYPES`
+
+    Returns:
+        检测到的 MIME 类型
+
+    Raises:
+        FileUploadError: 类型不允许或内容不是有效图片
+    """
+    mime_type = validate_file_type(file, allowed_types or ALLOWED_IMAGE_TYPES)
+    validate_file_content(file, mime_type)
+    return mime_type
 
 
 def validate_avatar_data_uri(raw, max_size=AVATAR_MAX_SIZE):

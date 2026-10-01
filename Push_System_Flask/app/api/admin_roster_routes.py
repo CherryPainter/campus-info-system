@@ -20,10 +20,14 @@ from app.core.logger import get_logger
 from app.services.org_unit_service import OrgUnitService
 from app.services.student_roster_service import StudentRosterService
 from app.utils.auth_middleware import admin_required
+from app.utils.file_upload_security import get_upload_max_size
 
 logger = get_logger(__name__)
 
 admin_roster_bp = Blueprint("admin_roster", __name__)
+
+# 名单文件后缀白名单：模板下载与导出也只产出这两种格式，保持一致
+ALLOWED_UPLOAD_EXTS = (".csv", ".xlsx")
 
 # 批量导入表头：兼容中英文列名（班级定位用名称路径，组织须先建好）
 HEADER_MAP = {
@@ -51,9 +55,20 @@ def _parse_upload_file(file_storage):
     解析上传的名单文件（.csv / .xlsx），返回 list[dict]。
     表头：学校, 学院, 专业, 班级, 学号[, 姓名, 备注]（姓名/备注可缺省；
     学院/专业/班级须与已建组织节点名称一致，用于定位班级）。
+
+    入口先做两道围栏：后缀白名单 + 大小上限（取 Config.MAX_CONTENT_LENGTH，
+    与其它上传端点同一口径）。此前是 `if .xlsx ... else 当作 CSV`，
+    任意后缀（.zip/.exe/.txt）都会被丢进 CSV 解析器，等于让上传者自行挑选解析路径。
     """
     filename = (file_storage.filename or "").lower()
+    if not filename.endswith(ALLOWED_UPLOAD_EXTS):
+        raise ValueError("仅支持 .csv 或 .xlsx 格式的名单文件")
+
     raw = file_storage.read()
+    max_size = get_upload_max_size()
+    if len(raw) > max_size:
+        raise ValueError(f"文件大小不能超过 {max_size / (1024 * 1024):.1f}MB")
+
     if filename.endswith(".xlsx"):
         import openpyxl
 

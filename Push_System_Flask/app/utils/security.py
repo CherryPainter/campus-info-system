@@ -545,6 +545,27 @@ def ip_in_admin_whitelist(ip: str) -> bool:
     return _ip_in_exceptions(ip, exceptions)
 
 
+# 新密码最小长度（单一来源）。
+# 此前三处各写魔数 `6`：auth_routes 自助改密、admin_user_routes 建号 / 重置密码。
+# 分散写法的必然结果是「改一处漏一处」，出现前端放行、服务端 400 的割裂体验；
+# 前端提示文案也必须与本常量保持一致（admin-frontend Profile.tsx / UserManagement.tsx）。
+MIN_PASSWORD_LENGTH = 8
+
+
+def validate_password_strength(password) -> "str | None":
+    """校验新密码强度；合法返回 None，否则返回可直接展示给用户的中文错误文案。
+
+    这是**服务端唯一口径**：前端校验可被直接调 API 绕过，故所有「设置新密码」的
+    入口都必须过这里。当前只约束长度（校园场景不引入大小写/符号的复杂度要求，
+    否则学生初始密码易忘），如需加复杂度只改本函数即可全站生效。
+    """
+    if password is None or not str(password):
+        return "密码不能为空"
+    if len(str(password)) < MIN_PASSWORD_LENGTH:
+        return f"密码长度不能少于{MIN_PASSWORD_LENGTH}位"
+    return None
+
+
 def cookie_security_flags() -> tuple:
     """下发认证 cookie 时应使用的 (secure, samesite)。
 

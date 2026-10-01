@@ -20,7 +20,7 @@ from app.core.logger import get_logger
 from app.core.task_state import TaskStatus
 from app.model.task_process import TaskProcess
 from app.services import unified_task_service as uts
-from app.utils.auth_middleware import admin_required, jwt_required
+from app.utils.auth_middleware import admin_required
 
 logger = get_logger(__name__)
 
@@ -172,9 +172,14 @@ def get_dynamic_rules():
 
 
 @process_bp.route("/running", methods=["GET"])
-@jwt_required
+@admin_required
 def get_running_processes():
-    """获取运行中的进程（所有已登录用户均可访问，用于前端轮询任务状态）"""
+    """获取运行中的进程（管理端轮询任务状态用）。
+
+    权限：`@admin_required`——此前仅 `jwt_required`，任何已登录**学生**令牌都能读到
+    后台运行态（进程名/任务类型/进度），属信息泄露；消费方只有 admin-frontend
+    （`admin-frontend/src/api/admin.ts`），收紧不影响任何现有页面。
+    """
     session = get_db()
     try:
         processes = uts.get_running()

@@ -31,20 +31,20 @@ api_bp = Blueprint("api", __name__)
 
 @api_bp.route("/")
 def index():
-    """服务信息（公开）"""
+    """服务信息（公开）。
+
+    刻意**不再返回端点清单**：那是一份攻击面自述（7 条管理端路径），而两端前端都没有
+    消费方，属纯粹的指纹暴露面（原样保留在 B 级加固项 B11 里）。
+
+    保留 `version` 与 `your_ip` 是经过权衡的：`version` 是部署后核对版本的实际手段，
+    `your_ip` 是配置 `REGION_BLOCK_EXCEPTIONS` 管理员白名单时的自助查询入口（返回的
+    也只是请求方自己的 IP），删掉会打断既有运维流程。若需彻底移除版本号，请连同
+    `/api/health` 一并决定。
+    """
     return api_success(
         message="Course Push System API",
         your_ip=get_client_ip(),
         version=current_app.config["APP_VERSION"],
-        endpoints={
-            "health": "/api/health",
-            "auth_login": "POST /api/auth/login",
-            "trigger": "POST /api/trigger",
-            "status": "/api/status",
-            "schedules": "/api/schedules",
-            "rules": "/api/rules",
-            "tasks": "/api/tasks",
-        },
     )
 
 

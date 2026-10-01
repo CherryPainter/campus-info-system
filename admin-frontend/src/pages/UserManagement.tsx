@@ -598,7 +598,7 @@ export default function UserManagement() {
             name="password"
             rules={[
               { required: true, message: "请输入密码" },
-              { min: 6, message: "密码长度至少6个字符" },
+              { min: 8, message: "密码长度不能少于8位" },
             ]}
           >
             <Input.Password placeholder="请输入密码" />
@@ -716,7 +716,7 @@ export default function UserManagement() {
             name="password"
             rules={[
               { required: true, message: "请输入新密码" },
-              { min: 6, message: "密码长度至少6个字符" },
+              { min: 8, message: "密码长度不能少于8位" },
             ]}
           >
             <Input.Password placeholder="请输入新密码" />

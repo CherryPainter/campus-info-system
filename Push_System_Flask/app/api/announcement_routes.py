@@ -32,8 +32,10 @@ from app.utils.auth_middleware import admin_required
 from app.utils.file_upload_security import (
     FileUploadError,
     generate_secure_filename,
+    get_upload_max_size,
     validate_filename,
     validate_file_size,
+    validate_image_upload_content,
 )
 import re
 
@@ -81,8 +83,9 @@ ALLOWED_ATTACHMENT_EXTS = {
     ".gif",
     ".webp",
 }
-# 附件大小上限 20MB
-MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024
+# 附件大小上限：统一取 Config.MAX_CONTENT_LENGTH（见 file_upload_security.get_upload_max_size）。
+# 曾在此硬编码 20MB，而 Config.MAX_CONTENT_LENGTH 是 10MB —— Flask 在进视图前就按 10MB 拒绝
+# 请求体，20MB 是永远走不到的死值，用户只会看到无说明的 413。
 # 附件存储子目录（相对 output/）
 ATTACHMENT_SUBDIR = "announcements"
 
@@ -284,7 +287,8 @@ def delete_channel_admin(channel_id):
 
 # 富文本编辑器正文图片（WangEditor v5）专用：与公告附件分离存储
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-IMAGE_MAX_SIZE = 20 * 1024 * 1024
+# 图片大小上限：统一取 Config.MAX_CONTENT_LENGTH（见 file_upload_security.get_upload_max_size），
+# 不再在此硬编码（历史上写 20MB 与 Config 的 10MB 漂移，20MB 为不可达死值）。
 IMAGE_SUBDIR = "announcement-images"
 
 
@@ -317,7 +321,8 @@ def upload_editor_image():
         ext = os.path.splitext(original_name)[1].lower()
         if ext not in IMAGE_EXTS:
             return jsonify({"errno": 1, "message": f"不支持的图片类型: {ext}"}), 400
-        validate_file_size(file, IMAGE_MAX_SIZE)
+        validate_file_size(file, get_upload_max_size())
+        validate_image_upload_content(file)  # 内容级：magic bytes（可用时）+ PIL 完整性
         stored_name = generate_secure_filename(file, original_name)
     except FileUploadError as e:
         return jsonify({"errno": 1, "message": str(e)}), 400
@@ -384,7 +389,8 @@ def upload_cover():
         ext = os.path.splitext(original_name)[1].lower()
         if ext not in IMAGE_EXTS:
             return api_error(message=f"不支持的图片类型: {ext}", http_status=400)
-        validate_file_size(file, IMAGE_MAX_SIZE)
+        validate_file_size(file, get_upload_max_size())
+        validate_image_upload_content(file)  # 内容级：magic bytes（可用时）+ PIL 完整性
         stored_name = generate_secure_filename(file, original_name)
     except FileUploadError as e:
         return api_error(message=str(e), http_status=400)
@@ -424,7 +430,8 @@ def upload_cover():
 def upload_attachment(announcement_id):
     """上传附件（multipart/form-data，字段名 file）
 
-    安全策略：扩展名白名单 + 20MB 上限 + sha256 重命名落盘（不使用用户提供的文件名做路径）。
+    安全策略：扩展名白名单 + 大小上限（取 MAX_CONTENT_LENGTH）+ sha256 重命名落盘
+    （不使用用户提供的文件名做路径）。
     """
     file = request.files.get("file")
     if not file or not file.filename:
@@ -435,7 +442,7 @@ def upload_attachment(announcement_id):
         ext = os.path.splitext(original_name)[1].lower()
         if ext not in ALLOWED_ATTACHMENT_EXTS:
             return api_error(message=f"不支持的附件类型: {ext}", http_status=400)
-        validate_file_size(file, MAX_ATTACHMENT_SIZE)
+        validate_file_size(file, get_upload_max_size())
         stored_name = generate_secure_filename(file, original_name)
     except FileUploadError as e:
         return api_error(message=str(e), http_status=400)

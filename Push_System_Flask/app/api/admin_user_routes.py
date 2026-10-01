@@ -13,7 +13,7 @@ from flask import Blueprint, g, request
 from app.core.api_response import api_error, api_success
 from app.core.logger import get_logger
 from app.utils.auth_middleware import admin_required, jwt_required
-from app.utils.security import get_client_ip
+from app.utils.security import get_client_ip, validate_password_strength
 from app.utils.file_upload_security import (
     AVATAR_QUOTA,
     AVATAR_QUOTA_DAYS,
@@ -392,8 +392,9 @@ def create_user():
     if len(username) < 3 or len(username) > 50:
         return api_error(message="用户名长度应在3-50个字符之间", http_status=400)
 
-    if len(password) < 6:
-        return api_error(message="密码长度至少6个字符", http_status=400)
+    pwd_error = validate_password_strength(password)
+    if pwd_error:
+        return api_error(message=pwd_error, http_status=400)
 
     if role not in ["user", "admin"]:
         return api_error(message="角色只能是user或admin", http_status=400)
@@ -626,8 +627,9 @@ def reset_user_password(user_id):
     data = request.get_json(silent=True) or {}
     new_password = data.get("password", "")
 
-    if not new_password or len(new_password) < 6:
-        return api_error(message="密码长度至少6个字符", http_status=400)
+    pwd_error = validate_password_strength(new_password)
+    if pwd_error:
+        return api_error(message=pwd_error, http_status=400)
 
     from app.core.database import get_db
     from app.model.user import User

@@ -663,6 +663,23 @@ def import_courses():
             "processed",
             "processed_course_table.json",
         )
+    else:
+        # 路径白名单：只允许读爬虫产物目录内的 .json，避免管理员（或被盗用的管理令牌）
+        # 借 file_path 读服务器任意文件（原先把客户端字符串直接丢给 open()）。
+        allowed_root = os.path.realpath(
+            os.path.join(
+                os.path.dirname(__file__), "..", "cqie-course-timetable", "output", "course-data"
+            )
+        )
+        requested = os.path.realpath(str(data_file))
+        if os.path.splitext(requested)[1].lower() != ".json":
+            return api_error(message="只允许导入 .json 课程数据文件", http_status=400)
+        if requested != allowed_root and not requested.startswith(allowed_root + os.sep):
+            logger.warning(f"[课程导入] 拒绝目录外路径: {requested}")
+            return api_error(
+                message="课程数据文件必须位于爬虫产出目录 output/course-data/ 内", http_status=400
+            )
+        data_file = requested
 
     if not os.path.exists(data_file):
         return api_error(message="课程数据文件不存在", http_status=404)
@@ -1002,9 +1019,13 @@ def create_crawl_task():
 
 
 @course_bp.route("/crawl-tasks", methods=["GET"])
-@jwt_required
+@admin_required
 def list_crawl_tasks():
-    """获取爬取预约任务列表（供进程管理模块展示与增删改查）"""
+    """获取爬取预约任务列表（供管理端进程管理模块展示与增删改查）。
+
+    权限：`@admin_required`——此前仅 `jwt_required`，学生令牌可读到全校爬取计划详情；
+    消费方只有 admin-frontend（`admin-frontend/src/api/course.ts`）。
+    """
     try:
         session = get_db()
         try:
@@ -1044,9 +1065,9 @@ def list_crawl_tasks():
 
 
 @course_bp.route("/crawl-tasks/<int:task_id>", methods=["GET"])
-@jwt_required
+@admin_required
 def get_crawl_task(task_id):
-    """获取单个爬取预约任务详情"""
+    """获取单个爬取预约任务详情（管理端专用，理由同 list_crawl_tasks）。"""
     try:
         session = get_db()
         try:

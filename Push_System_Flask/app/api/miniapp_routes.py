@@ -51,7 +51,6 @@ electricity_service）与 Repository，路由层只做鉴权与编排，不复�
 """
 
 from datetime import datetime
-import ipaddress
 from urllib.parse import urlparse
 
 from flask import Blueprint, g, request
@@ -1336,27 +1335,18 @@ _STUDENT_WEBHOOK_MODULES = {"course", "electricity", "weather"}
 # 出站请求数与库行数被无限放大，也会把学生自己/他人的机器人打到微信限流。
 _MAX_WEBHOOKS_PER_STUDENT = 10
 
-# 仅允许企业微信机器人域名（学生自建 webhook 的合法目标）
+# 仅允许企业微信机器人域名（学生自建 webhook 的合法目标）。
+# 这一条白名单已严格覆盖「IP 字面量指向内网」的情形（IP 字面量不可能等于该域名），
+# 故原先附在后面的「IP 字面量查内网段」分支是**不可达死代码**，已于 B 级加固项 B14 删除。
 _STUDENT_WEBHOOK_HOST = "qyapi.weixin.qq.com"
-
-# 内网 / 保留地址段（SSRF 防护：阻断内网探测）
-_PRIVATE_NETWORKS = [
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fc00::/7"),
-    ipaddress.ip_network("fe80::/10"),
-]
 
 
 def _validate_webhook_url(url: str):
-    """校验学生自建 webhook 的 URL：https + 仅企业微信机器人域名 + 非内网地址。
+    """校验学生自建 webhook 的 URL：https + 仅企业微信机器人域名。
 
     返回 (ok, error_message)；ok 为 False 时 error_message 直接作为接口报错文案。
-    仅作用于学生自建路由，不影响管理端系统级 webhook（管理端目标可多元化）。
+    仅作用于学生自建路由，不影响管理端系统级 webhook（管理端目标可多元化，
+    通用出站校验见 `app/utils/url_guard.py`：协议/凭据/内网域名/内网 IP/DNS 解析）。
     """
     if not url:
         return False, "URL 不能为空"
@@ -1369,18 +1359,11 @@ def _validate_webhook_url(url: str):
     if not parsed.hostname:
         return False, "URL 缺少主机名"
     host = parsed.hostname.lower()
-    # 仅允许企业微信机器人域名，杜绝外部中继 / 任意站点
+    # 仅允许企业微信机器人域名，杜绝外部中继 / 任意站点。
+    # 该白名单同时覆盖了 SSRF 场景：任何 IP 字面量（含 127.0.0.1、10.x.x.x）都不可能
+    # 等于这个域名，故无需再单独拦内网网段（B14 删掉的正是那段死代码）。
     if host != _STUDENT_WEBHOOK_HOST:
         return False, "仅支持企业微信机器人域名 qyapi.weixin.qq.com"
-    # SSRF：主机若为 IP 字面量，阻断内网 / 保留地址段
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        # 是域名（非 IP），交由 DNS 解析，此处不再拦截
-        return True, None
-    for net in _PRIVATE_NETWORKS:
-        if ip in net:
-            return False, "URL 不能使用内网地址"
     return True, None
 
 

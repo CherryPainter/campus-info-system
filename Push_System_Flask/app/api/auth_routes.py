@@ -29,7 +29,7 @@ from app.core.api_response import api_error, api_success
 from app.core.extensions import RATE_LIMITS, limiter
 from app.core.logger import get_logger
 from app.utils.auth_middleware import jwt_required
-from app.utils.security import cookie_security_flags, get_client_ip
+from app.utils.security import cookie_security_flags, get_client_ip, validate_password_strength
 
 # 使用统一日志系统
 logger = get_logger(__name__)
@@ -1350,8 +1350,9 @@ def change_password():
     if not old_password or not new_password:
         return api_error(message="请提供旧密码和新密码", http_status=400)
 
-    if len(new_password) < 6:
-        return api_error(message="新密码长度不能少于6位", http_status=400)
+    pwd_error = validate_password_strength(new_password)
+    if pwd_error:
+        return api_error(message=pwd_error, http_status=400)
 
     session = get_db()
     try:
