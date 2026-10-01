@@ -172,16 +172,37 @@ def announcement_image(name):
     return send_from_directory(root, name)
 
 
-# ==================== 反馈截图（公开访问）====================
+# ==================== 反馈截图（需签名）====================
 @api_bp.route("/feedback-images/<path:name>")
 def feedback_image(name):
-    """反馈截图（公开，学生端 / 管理端均可加载）
+    """反馈截图（需签名访问）
 
-    安全：扩展名白名单 + send_from_directory 自带路径穿越防护。
+    安全（B1）：反馈截图属于「仅提交者与管理员应可见」的内容，此前是完全公开的
+    无鉴权路由 —— URL 一经泄漏（转发、浏览器历史、代理日志、Referer）即可被任何人在
+    任何时间取走，且服务端无法撤销。现要求 `?exp=&sig=`（HMAC 签名，见
+    app/utils/signed_url.py），过期或签名不符一律 403。
+
+    为什么用签名而不是鉴权：`<img>` 标签无法携带 Authorization 头，改鉴权需要两端都换成
+    blob 拉取，且小程序 `<Image>` 的 cookie 行为本地无法验证。签名 URL 是图片类资源在
+    「不可携带凭证」约束下的标准解法。
+
+    扩展名白名单 + send_from_directory 的路径穿越防护保持原样。
     """
+    from app.utils.signed_url import verify_signature
+
     ext = os.path.splitext(name)[1].lower()
     if ext not in _IMAGE_EXTS:
         return api_error(message="非法图片路径", http_status=400)
+
+    # 签名基准 = 不带 query 的规范路径，避免把签名参数本身卷进验签字符串
+    canonical = f"/api/feedback-images/{name}"
+    ok, reason = verify_signature(
+        canonical, request.args.get("exp"), request.args.get("sig")
+    )
+    if not ok:
+        logger.warning(f"反馈截图签名校验失败（{reason}）: name={name}")
+        return api_error(message="图片链接无效或已过期，请刷新页面重试", http_status=403)
+
     root = os.path.abspath(os.path.join(Config.OUTPUT_DIR, "feedback-images"))
     return send_from_directory(root, name)
 

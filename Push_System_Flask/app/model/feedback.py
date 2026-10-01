@@ -70,8 +70,15 @@ class Feedback(Base):
 
         Args:
             with_reply: 是否包含管理员回复（列表项可省略以减重）
+
+        截图 URL（B1）：库里的值可能是历史形态（裸文件名 / 相对路径 / 已带过期签名的
+        完整 URL），此处一律归一化为**当前有效**的签名 URL 再输出 —— 签名只在输出时生成，
+        所以 TTL 到期后重新拉一次列表就拿到新签名，不会把图片签成死链。
+        归一化的唯一入口是 `signed_feedback_image_url`，勿在此另写拼接逻辑。
         """
         import json
+
+        from app.utils.signed_url import signed_feedback_image_url
 
         images = []
         if self.images:
@@ -79,6 +86,8 @@ class Feedback(Base):
                 images = json.loads(self.images)
             except (json.JSONDecodeError, TypeError):
                 images = []
+        # 非列表（历史脏数据）按空处理，与改动前的行为一致
+        images = [signed_feedback_image_url(u) for u in images] if isinstance(images, list) else []
 
         data = {
             "id": self.id,

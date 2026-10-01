@@ -167,7 +167,8 @@ def feedback_upload():
     """反馈截图上传（WangEditor v5 约定返回格式）
 
     multipart/form-data，字段名 file，存 output/feedback-images/。
-    返回 {"errno":0,"data":{"url":"/api/feedback-images/<name>",...}}
+    返回 {"errno":0,"data":{"url":"/api/feedback-images/<name>?exp=..&sig=..",...}}
+    （url 带签名，见 app/utils/signed_url.py；路由不再接受未签名请求）
     """
     file = request.files.get("file")
     if not file or not file.filename:
@@ -207,7 +208,12 @@ def feedback_upload():
     except Exception as e:
         logger.warning(f"反馈截图 EXIF 校正失败（保留原图）: {stored_name} - {e}")
 
-    url = f"/api/feedback-images/{stored_name}"
+    # 返回带签名的 URL（B1）：编辑器需要立刻预览，而路由已不再接受未签名请求。
+    # 注意库里的值只是「当时的签名」，读接口输出时会用 to_dict 重新签一份，
+    # 所以这里的 TTL 到期不会导致历史反馈里的图片打不开。
+    from app.utils.signed_url import sign_path
+
+    url = sign_path(f"/api/feedback-images/{stored_name}")
     logger.info(f"反馈截图已上传: {stored_name}")
     return jsonify({"errno": 0, "data": {"url": url, "alt": original_name, "href": ""}})
 

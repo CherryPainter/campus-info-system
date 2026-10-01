@@ -384,6 +384,15 @@ class Config:
         # JWT 认证数据存储目录
         cls.JWT_AUTH_DATA_DIR = os.path.join(cls.BASE_DIR, "data", "auth")
 
+        # ============================================================
+        # 受限图片签名 URL（B1）
+        # ============================================================
+        # 反馈截图路由要求 ?exp=&sig= 签名（HMAC-SHA256，密钥取 SECRET_KEY）。
+        # 有效期单位秒，默认 21600（6 小时）：管理端/小程序每次拉列表或详情都会重新签名，
+        # 所以这个值只决定「一张已渲染的图片最多能撑多久」，不影响历史反馈的可读性。
+        # 勿设成 0 或负数（会签出即刻过期的链接）。
+        cls.IMAGE_SIGNED_URL_TTL = int(os.getenv("IMAGE_SIGNED_URL_TTL", "21600"))
+
     @classmethod
     def get_wecom_webhooks(cls) -> list:
         """获取所有企业微信推送 webhook 地址列表"""
