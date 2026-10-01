@@ -1,6 +1,6 @@
 # 校园信息聚合与智能推送系统
 
-> **v6.19.0** | Flask 3.1 + React 19 + TypeScript + Vite + Ant Design 5
+> **v6.20.0** | Flask 3.1 + React 19 + TypeScript + Vite + Ant Design 5
 >
 > 集成课表自动爬取与推送、天气监控与预警、宿舍电量管理三大核心模块，通过企业微信 Webhook 实现消息推送，提供 React + Ant Design Pro 管理后台。
 
@@ -526,7 +526,6 @@ Push_System_Flask/
 |
 |-- .env                                  # 实际环境变量 (不入库)
 |-- .env.example                          # 环境变量模板（详见「环境变量配置」章节）
-|-- .env.linux                            # Linux 生产环境模板
 |-- .gitignore                            # Git 忽略规则
 |-- requirements.txt                      # Python 依赖 (23 个包)
 |-- run.py                                # 应用入口
@@ -638,7 +637,8 @@ npm run dev
 | 变量          | 默认值                       | 说明                             |
 | ------------- | ---------------------------- | -------------------------------- |
 | `APP_NAME`    | `校园信息聚合与智能推送系统` | 应用名称                         |
-| `APP_VERSION` | `6.19.0`                     | 应用版本                         |
+| `APP_VERSION` | `6.20.0`                     | 应用版本                         |
+| `APP_ENV`     | （空）                       | 环境标记，填 `production` 即启用生产约束（生产未开 `FORCE_HTTPS` 则拒绝启动） |
 | `DEBUG`       | `false`                      | 调试模式（生产环境必须为 false） |
 | `HOST`        | `0.0.0.0`                    | 监听地址                         |
 | `PORT`        | `29528`                      | 监听端口                         |
@@ -663,19 +663,21 @@ npm run dev
 | `JWT_ADMIN_PASSWORD`       | （空）   | 管理后台登录密码，为空则使用 `ADMIN_TOKEN` |
 | `JWT_ACCESS_TOKEN_EXPIRE`  | `3600`   | Access Token 有效期（秒），默认 1 小时     |
 | `JWT_REFRESH_TOKEN_EXPIRE` | `604800` | Refresh Token 有效期（秒），默认 7 天      |
+| `JWT_REFRESH_IDLE_EXPIRE`  | `259200` | Refresh Token 闲置上限（秒）。**仅微信小程序登录生效**，管理端登录会显式传入自己的分档时长 |
+| `JWT_REFRESH_ABSOLUTE_EXPIRE` | `2592000` | Refresh Token 绝对上限（秒）。**仅微信小程序登录生效** |
 
 ### 天气模块配置
 
-| 变量                      | 默认值                        | 说明                                      |
-| ------------------------- | ----------------------------- | ----------------------------------------- |
-| `QWEATHER_API_KEY`        | （空）                        | 和风天气 API Key（免费版认证）            |
-| `QWEATHER_CREDENTIAL_ID`  | （空）                        | 和风天气凭证 ID（Ed25519 认证，付费版）   |
-| `QWEATHER_API_HOST`       | `https://devapi.qweather.com` | API 域名（免费版 devapi，付费版 api）     |
-| `QWEATHER_LOCATION`       | `101040100`                   | 城市 LocationID（可在和风天气控制台查询） |
-| `QWEATHER_LATITUDE`       | `29.56`                       | 纬度（预警 API 使用）                     |
-| `QWEATHER_LONGITUDE`      | `106.55`                      | 经度（预警 API 使用）                     |
-| `QWEATHER_CITY_NAME`      | `重庆`                        | 城市名称（推送消息显示用）                |
-| `QWEATHER_SCHEDULE_DAILY` | `07:00`                       | 每日天气晨报推送时间                      |
+| 变量                      | 默认值                        | 说明                                       |
+| ------------------------- | ----------------------------- | ------------------------------------------ |
+| `QWEATHER_API_KEY`        | （空）                        | 兼容旧版的固定 Token（与 JWT 鉴权二选一）  |
+| `QWEATHER_CREDENTIAL_ID`  | （空）                        | 和风天气凭证 ID（Ed25519 JWT 认证）        |
+| `QWEATHER_API_HOST`       | `https://devapi.qweather.com` | API 域名（免费版 devapi，付费版 api）      |
+| `QWEATHER_LOCATION`       | `106.55,29.56`                | 城市定位，必须「经度,纬度」（预警据此解析）|
+| `QWEATHER_LATITUDE`       | `29.56`                       | 纬度（当前未被代码读取）                   |
+| `QWEATHER_LONGITUDE`      | `106.55`                      | 经度（当前未被代码读取）                   |
+| `QWEATHER_CITY_NAME`      | `重庆`                        | 城市名称（推送消息显示用）                 |
+| `WEATHER_SCHEDULE_DAILY`  | `07:00`                       | 每日天气晨报推送时间                       |
 
 ### 电量模块配置
 
@@ -685,7 +687,7 @@ npm run dev
 | -------------------------------------- | ------------------- | --------------------------------- |
 | `ELECTRICITY_CRAWLER_COOKIE`           | （空）              | ~~电表系统 Cookie~~（已弃用）     |
 | `ELECTRICITY_CRAWLER_BASE_URL`         | `http://dk.cqie.cn` | 电表系统 URL                      |
-| `ELECTRICITY_CRAWLER_MAX_PAGES`        | `2`                 | 每次爬取最大页数                  |
+| `ELECTRICITY_CRAWLER_MAX_PAGES`        | `50`                | 每次爬取最大页数                  |
 | `ELECTRICITY_LOW_POWER_THRESHOLD`      | `10.0`              | 低电量告警阈值（度）              |
 | `ELECTRICITY_LOW_POWER_INTERVAL_HOURS` | `4.0`               | 低电量告警最小间隔（小时）        |
 | `ELECTRICITY_SCHEDULE_DAILY`           | `00:30`             | 每日用电报告推送时间              |
@@ -717,11 +719,15 @@ npm run dev
 | 变量              | 默认值                                         | 说明                                                                     |
 | ----------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
 | `AUTH_ENABLED`    | `true`                                         | 是否启用认证                                                             |
+| `FORCE_HTTPS`     | `false`                                        | 强制 HTTPS 跳转；生产应置 `true`。需前置代理传 `X-Forwarded-Proto`，否则会 301 死循环 |
 | `ALLOWED_ORIGINS` | `http://localhost:29528,http://localhost:5173` | 允许的跨域域名（逗号分隔；生产务必改为真实域名，兼容旧名 `CORS_ORIGINS`） |
+| `CSRF_ALLOWED_ORIGINS` | （空）                                     | CSRF 同源校验的额外允许来源（逗号分隔）。仅对「带认证 cookie 且未带 `Authorization` 头」的 `/api/` 写请求生效 |
 | `FORCE_ADMIN_MFA` | `true`                                         | 强制管理员启用多因素认证(MFA)；首次引导（系统内尚无任何 MFA 用户）时放行 |
 | `REDIS_URL`       | （空）                                         | 限流计数与登录爆破滑动窗口的存储；为空则使用进程内内存（仅单机/开发，多 worker 或重启会丢失限流状态） |
 | `ENABLE_FOREIGN_IP_BLOCK` | `true`                              | 境外 IP 防火墙开关；开启后仅允许中国 IP 访问（含登录入口），命中境外返回 403 |
 | `REGION_BLOCK_EXCEPTIONS` | （空）                              | 例外 IP/CIDR 白名单（逗号分隔），命中的 IP 不受境外拦截限制（防自锁，如管理出口或 VPN） |
+| `WEBHOOK_URL_ALLOWED_HOSTS` | （空）                            | 出站 URL 白名单（逗号分隔，精确匹配主机名）。用于放行指向内网中转服务的 webhook，绕过 SSRF 校验 |
+| `IMAGE_SIGNED_URL_TTL` | `21600`                                   | 反馈截图的签名 URL 有效期（秒，默认 6 小时）                             |
 
 ### 企业微信配置
 
@@ -777,7 +783,7 @@ Authorization: Bearer <access_token>
 | `/api/auth/refresh`         | POST | 无              | 用 refresh_token 换新 access_token                                       |
 | `/api/auth/logout`          | POST | `@jwt_required` | 撤销当前 Token，记录登出时间，清除 Cookie                                |
 | `/api/auth/me`              | GET  | `@jwt_required` | 获取当前登录用户信息                                                     |
-| `/api/auth/change-password` | POST | `@jwt_required` | 修改密码（需验证旧密码，新密码最少 6 位）                                |
+| `/api/auth/change-password` | POST | `@jwt_required` | 修改密码（需验证旧密码，新密码最少 8 位）                                |
 | `/api/auth/mfa/setup`       | POST | `@jwt_required` | 设置 MFA（生成密钥 + provisioning URI + 二维码 Base64）                  |
 | `/api/auth/mfa/verify`      | POST | `@jwt_required` | 验证 MFA 代码并启用                                                      |
 | `/api/auth/mfa/disable`     | POST | `@jwt_required` | 禁用 MFA（需提供当前 MFA 代码）                                          |
@@ -1422,7 +1428,7 @@ Flask-Limiter 提供 4 种限流级别，支持身份感知：
 
 - **智能限流**：登录接口严格限流 10 次/分钟，基于用户身份（已认证用户）或 IP（未认证用户）
 - **完整登录日志审计**：记录每次登录/登出的 IP、User-Agent、成功/失败原因
-- **密码修改验证**：修改密码需验证旧密码，新密码最少 6 位
+- **密码修改验证**：修改密码需验证旧密码，新密码最少 8 位
 - **安全 Cookie**：Token 通过 httpOnly + Secure + SameSite=Lax Cookie 传递，防止 XSS 窃取
 
 ### 安全响应头

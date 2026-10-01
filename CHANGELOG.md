@@ -6,6 +6,27 @@
 
 ## Unreleased
 
+### 文档/配置：`.env` 样例与 README 环境变量表对齐代码事实（2026-10-01）
+起因是核查本地 `.env` 与入库模板 `.env.example` 的差异，顺带发现模板与 README 的天气段整体落后于代码。以下均为**文档与模板修正**，不改运行代码；每处结论都回到源码验证过。改动后全量测试仍 **666 passed / 1 skipped**。
+
+**本地 `.env`（不入库）**
+- 补齐「模板有、本地缺」的 7 个键：`APP_ENV`、`FORCE_HTTPS`、`CSRF_ALLOWED_ORIGINS`、`IMAGE_SIGNED_URL_TTL`、`JWT_REFRESH_IDLE_EXPIRE`、`JWT_REFRESH_ABSOLUTE_EXPIRE`、`WEBHOOK_URL_ALLOWED_HOSTS`（取值与模板一致）。其中 `APP_ENV` 本地**必须留空**——填 `production` 会触发「生产未开 `FORCE_HTTPS` 拒绝启动」。
+- `WEBHOOK_URL_ALLOWED_HOSTS` 的生效链做了**实测闭环**：该键不经 `Config`，由 `app/utils/url_guard.py:63` 直读 `os.environ`，而 `.env` 由 `app/core/config.py:18` 的模块级 `load_dotenv` 装载。实测「写入测试值 → 隔离进程读出并解析」通过（含大小写归一与空项剔除），并断言改前/改后 `.env` 的 sha256 逐字节一致。
+- 清理 3 个**死键**（写进 `.env` 零效果）：`SYSTEM_HOLIDAY_MODE_FORCE`（全仓 `.py` 无任何引用）、`DATABASE_TYPE`（`config.py:349` 硬编码 `"mysql"`，从不读环境变量）、`QWEATHER_SECRET`（`config.py:332` 注释即「旧版 SHA-256 密钥（已废弃）」）。
+- 键名订正：`QWEATHER_SCHEDULE_DAILY` → `WEATHER_SCHEDULE_DAILY`。代码只读后者（`config.py:338`），原先配了不生效——只因默认值同为 `07:00`，改了别的值才会暴露。
+
+**`.env.example` / README**
+- `QWEATHER_API_KEY` 由「**必填**」改为「可选（兼容旧版）」：`app/modules/weather/fetcher.py:118-122` 的 `_get_jwt_token()` 是「JWT 三件套齐备则走 JWT，否则回退用本键当固定 Bearer Token」，两者**二选一**，留空也能跑。
+- `QWEATHER_LOCATION` 由「LocationID（默认 101040100）」订正为「**必须**写 `经度,纬度`（默认 `106.55,29.56`）」：`fetcher.py:216-225` 的 `fetch_alert`（以及 `fetch_air_quality`）是对 `location` 做 `split(",")` 取前两段当经纬度，填 LocationID 会解析不出而**静默回落**到重庆坐标。
+- `QWEATHER_LATITUDE` / `QWEATHER_LONGITUDE` 标注为「**当前未被代码读取**」：`config.py` 未声明这两个属性，而 `QWEATHER_LOCATION` 有非空默认值，使 `tasks.py:86-90` 里「用经纬度拼 location」的回退分支不可达；预警坐标实际来自 `QWEATHER_LOCATION`。
+- README 环境变量表补齐 7 个缺失键（`APP_ENV` / `FORCE_HTTPS` / `CSRF_ALLOWED_ORIGINS` / `WEBHOOK_URL_ALLOWED_HOSTS` / `IMAGE_SIGNED_URL_TTL` / `JWT_REFRESH_IDLE_EXPIRE` / `JWT_REFRESH_ABSOLUTE_EXPIRE`），并订正 `APP_VERSION`（6.19.0→6.20.0）、`ELECTRICITY_CRAWLER_MAX_PAGES`（2→50）、`WEATHER_SCHEDULE_DAILY` 键名；目录树删掉并不存在的 `.env.linux`。
+- README 顺带订正两处与代码不符的文案：`/api/auth/change-password` 与安全小节里的「新密码最少 6 位」改为 **8 位**（`app/utils/security.py:552` 的 `MIN_PASSWORD_LENGTH = 8`）；首部版本号 6.19.0 → 6.20.0。（同文件里的「TOTP 6 位码」是正确的，未动。）
+
+**待决策（本次未改）**
+- `QWEATHER_LATITUDE/LONGITUDE` 的根因在代码侧（`Config` 未声明却用 `getattr` 读取，且 `QWEATHER_LOCATION` 有默认值使回退分支不可达）。修法有「在 `config.py` 声明两个属性」与「从模板与 `.env` 移除」两种，属行为取舍，留待确认。
+- `QWEATHER_API_HOST` 的默认值：代码是 `https://devapi.qweatherapi.com`（带 `api`），模板与 README 写 `https://devapi.qweather.com`（不带）。两者是否为同一域名的书写差异未能确认，未改。
+- `docs/DEPLOY_CHECKLIST.md` 整体过时：仍标 v6.11.2（`:3`/`:54`/`:223`）、引用旧键名 `CORS_ORIGINS`（`:26`/`:27`/`:78`/`:412`），且 `:289` 的 `cp .env.linux .env` 是**死步骤**（该文件不存在、也从未入库）。
+
 ### 安全：B 级剩余 5 项加固（B10 / B9 / B1 / B5 / B7，2026-10-01）
 接上条「B 级问题修复（9 项）」，完成 🟡 清单中剩余的 5 项。五项均由**仓库内回归测试**锁定，并逐项做过反向验证（撤掉修复 → 对应用例变红；还原后文件哈希与原文逐字节一致），共 **46 项**变异全部命中。全量测试 **666 passed / 1 skipped**，`ruff check` 恒 **299**（与基线一致），两端 `tsc --noEmit` 通过。
 
