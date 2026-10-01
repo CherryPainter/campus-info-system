@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { View, Text, Image } from '@tarojs/components';
-import Taro, { useLoad, useDidShow } from '@tarojs/taro';
+import Taro, { useLoad, useDidShow, usePullDownRefresh, stopPullDownRefresh } from '@tarojs/taro';
 
 import * as electricityApi from '@/api/electricity';
 import * as userApi from '@/api/user';
@@ -126,6 +126,12 @@ export default function ProfilePage() {
     // 游客态：保留完整 UI（"先体验后授权"），数据用占位、受限功能点击气泡提示，
     // 登录入口为头像区点击 / 宿舍用电卡片「去登录」按钮
     refreshPrivate();
+  });
+
+  // 下拉刷新：重新拉取「我的」页全部动态数据（资料 / 电量 / 未读角标），并收尾
+  usePullDownRefresh(async () => {
+    await Promise.all([loadAll(), loadMsgUnread(), refreshFeedbackBadge()]);
+    stopPullDownRefresh();
   });
 
   // 电量轻量刷新（后台触发，成功后更新展示值；更新时间显示"访问这一刻"）
