@@ -109,6 +109,16 @@
 - `.env.example:5` 的 `HOST` 取值是否从 `0.0.0.0` 改为 `127.0.0.1`。支持改的证据已有 4 处：本机 `.env:4`、`gunicorn_config.py:34` 默认 bind、`UV_DEPLOY.md:104`、`DEPLOY_LINUX.md`（已订正）；反对的是「局域网真机联调需要监听所有网卡」。本次只在模板与该键的注释里写明适用前提，**未改取值**。
 - `requirements.txt` 里 `requests==2.32.0` 是 **yanked 版本**，是否直接把 pin 升到 `2.32.4`。当前状态是「`UV_DEPLOY.md` 告知读者手动升级，但另两条部署路径（`pip install -r requirements.txt`）装到的仍是 yanked 版本」—— 三条文档口径不一致。改它属依赖变更，留给用户定。
 
+**根 README 复核：一处「不存在的环境变量」与四处陈旧计数（2026-10-01 追加）**
+根 `README.md` 是公开仓库首页（仓库 `private: false`），其声明对外。逐条回代码核对后订正 5 处：
+
+- **`COURSE_SPIDER_SCHEDULE_ENABLED` 在代码中不存在**（本轮最严重的一处）。根 `README.md:35`、`Push_System_Flask/README.md:34` 与 `:1164` 三处都写「定时爬取受环境变量总闸 `COURSE_SPIDER_SCHEDULE_ENABLED` 控制，默认 `false`（关闭）」—— 但该键在 HEAD 的 `app/` 下 `git grep` **零命中**。溯源：它由 `3b38a55`（2026-09-10，随 v6.18.0）加入，随后被 `4008699`（2026-09-17，随 v6.19.0）从 `config.py` / `scheduler.py` / `crawl_task_service.py` **删除**，而**同一个提交**却把这三处 README 说明加了进去。真实口径：总开关是管理端「设置」页的 `course.spider_enabled`（`config_svc.get("course","spider_enabled",True)`，`app/tasks/scheduler.py:57`），`DEFAULT_CONFIGS` 默认值 `"true"`（`app/model/module_config.py:350`），**即定时爬取默认开启**，与文档写的「默认关闭」正好相反。三处已改写为真实机制，并在 **v6.18.0 那节补了「后续变更」追记**（该次回退当时未写入 CHANGELOG）。
+- **`参考/` 链接在 GitHub 上是失效链接**：根 README 的「文档」节给出 `[参考/](参考/)`，但 `参考/` **未纳入版本控制**（`git ls-files 参考/` 为 0 个文件），公开仓库里该目录不存在。已改为文字说明「本地资料、未纳入版本控制、仓库中不存在该目录」。
+- **项目结构的计数全部陈旧**：`app/api/` 由 15 个蓝图（实为 **22**，逐文件列出确认，`app/cqie-course-timetable/` 内无蓝图）、`app/model/` 由「16 个模型文件 / 20+ 表」（实为 **25** 个模型文件、去重 `__tablename__` 共 **32** 张表）。
+- **根 `docs/` 被写成「占位」**：实际目录内有 `docs/HOLIDAY_MODE_DRAFT.md`，说明已改为「产品设计草案与计划（后端专题文档见 `Push_System_Flask/docs/`）」。
+- **快速开始的启动地址自相矛盾**：写「默认 `http://127.0.0.1:29528`」，但 `Config.HOST` 的代码默认是 `0.0.0.0`，且同一节的 `cp .env.example .env` 复制到的模板里也是 `HOST=0.0.0.0`。已改为「默认端口 29528（监听地址由 `.env` 的 `HOST` 决定）」。
+- 顺带核对无误、**未改**的项：版本徽标 `v6.20.0`、MIT `LICENSE` 文件存在、技术栈（管理端 React 19 + antd 5；小程序 Taro 3.6 + React 18 + Zustand；后端 Flask 3.1 + SQLAlchemy 2.0）、`cp .env.example .env` 的快速开始步骤、小程序产品名「校园宜知行」（与 `miniapp-frontend/src/app.config.ts:69` 一致）。
+
 ### 安全：B 级剩余 5 项加固（B10 / B9 / B1 / B5 / B7，2026-10-01）
 接上条「B 级问题修复（9 项）」，完成 🟡 清单中剩余的 5 项。五项均由**仓库内回归测试**锁定，并逐项做过反向验证（撤掉修复 → 对应用例变红；还原后文件哈希与原文逐字节一致），共 **46 项**变异全部命中。全量测试 **666 passed / 1 skipped**，`ruff check` 恒 **299**（与基线一致），两端 `tsc --noEmit` 通过。
 
@@ -1045,6 +1055,20 @@
   - `tasks/scheduler.py`：`start_scheduler` / `reload_scheduler` 均以 `(spider_enabled and spider_schedule_enabled)` 决定是否注册爬虫定时任务，并区分跳过原因日志。
 - **恢复方式**：`.env` 设置 `COURSE_SPIDER_SCHEDULE_ENABLED=true` 后重启服务。
 - **验证**：`py_compile` 四文件全部通过；`is_spider_schedule_enabled` 定义（`config.py:25`）与使用点（`crawl_task_service.py` / `scheduler.py`）齐备；当前 `.env` 未设置该变量 → 取默认 `false`，定时爬取处于停用态（未启动服务实测调度器行为，仅静态核查）。
+
+> **【后续变更｜本段方案已整体回退，2026-09-17 起生效】（2026-10-01 追记）**
+> 本节的环境变量总闸方案已在提交 `4008699`（2026-09-17，随 **v6.19.0** 发布）中整体移除：
+> `core/config.py` 的 `is_spider_schedule_enabled()` 被删除，`scheduler.py` / `crawl_task_service.py`
+> 中「`spider_enabled and spider_schedule_enabled`」的双重门控还原为单一 `spider_enabled`，
+> 且 `module_config.py` 的 `spider_enabled` 默认值由 `false` **改回 `true`**、描述改写为
+> 「课表爬虫总开关：关闭后停止定时爬取与预约/立即任务的自动拾取（管理页手动触发不受影响）」。
+>
+> 因此：**上面「恢复方式」一行提到的 `COURSE_SPIDER_SCHEDULE_ENABLED` 现在不存在**
+> （在 HEAD 的 `app/` 下 `git grep` 零命中），设它不会有任何效果；当前唯一开关是管理端
+> 「设置」页的 `course.spider_enabled`（见下方 v6.19.0 的「系统设置『课程』面板加入课表爬虫总开关」）。
+> 该次回退在当时**未写入 CHANGELOG**（`4008699` 的提交信息自述「本次未补其 CHANGELOG 明细」），
+> 故本节保留为历史记录，并在此补记结论。另：`README.md`（根）与 `Push_System_Flask/README.md`
+> 曾据本节写成「受环境变量总闸控制」，属误述，已于同批订正。
 
 ### 清理：删除废弃的 `profile-edit` 页（小程序端，2026-09-10）
 - **背景**：`miniapp-frontend/src/pages/profile-edit/` 自 2026-09-07 个人资料页改为「原地编辑」（`profile-detail`）后**已无入口且从未在 `app.config.ts` 注册**——小程序内不可达，属遗留死代码（排查「联系方式」文案时被它误导过一次）。

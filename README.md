@@ -32,7 +32,7 @@
 
 ## 功能特性
 
-- 课程自动获取 —— 定时抓取教务系统课表（爬虫为可替换模块；定时抓取可通过环境变量 `COURSE_SPIDER_SCHEDULE_ENABLED` 开关控制，当前默认关闭），按教学周推算「当前周次」，课前自动提醒
+- 课程自动获取 —— 定时抓取教务系统课表（爬虫为可替换模块；定时爬取的总开关是管理端「设置」页的 `course.spider_enabled`，代码默认开启，关闭后停止定时爬取与预约/立即任务的自动拾取、管理页手动触发不受影响），按教学周推算「当前周次」，课前自动提醒
 - 天气查询 —— 对接和风天气，实时 / 逐时天气 + 气象预警推送
 - 宿舍电量 —— 电量采集、余额查询、低电量提醒
 - 企业微信推送 —— 课程 / 天气 / 电量 / 自定义通知统一经群机器人推送
@@ -89,7 +89,7 @@ playwright install chromium          # 爬虫用无头浏览器
 
 cp .env.example .env                 # 编辑数据库、密钥等（见下）
 python init_db.py                    # 初始化数据库（自动建表）
-python run.py                        # 启动，默认 http://127.0.0.1:29528
+python run.py                        # 启动，默认端口 29528（监听地址由 .env 的 HOST 决定）
 ```
 
 ### 前端
@@ -134,8 +134,8 @@ push_system/
 ├── admin-frontend/        管理前台（React 19 + Vite + Ant Design 5）
 ├── miniapp-frontend/      学生端微信小程序「校园宜知行」（Taro 3 + React + TypeScript）
 ├── Push_System_Flask/     后端（Flask + 爬虫子系统）
-│   ├── app/api/           接口路由（15 个蓝图）
-│   ├── app/model/         数据模型（16 个模型文件 / 20+ 表）
+│   ├── app/api/           接口路由（22 个蓝图）
+│   ├── app/model/         数据模型（25 个模型文件 / 32 张表）
 │   ├── app/repository/    数据访问层（CRUD 封装）
 │   ├── app/services/      业务服务层（课表推送流水线 + IP 黑名单等）
 │   ├── app/modules/       可插拔模块（weather / electricity）
@@ -144,7 +144,7 @@ push_system/
 │   ├── app/core/          核心基础（配置 / 数据库 / 日志 / 扩展）
 │   ├── app/cqie-course-timetable/  课表爬虫子项目（可替换模块）
 │   └── docs/              后端部署与安全文档（DEPLOY_LINUX / 安全配置指南等）
-├── docs/                  （见 Push_System_Flask/docs/，根目录此文件为占位）
+├── docs/                  产品设计草案与计划（后端专题文档见 Push_System_Flask/docs/）
 └── README.md              本文件
 ```
 
@@ -158,7 +158,7 @@ push_system/
 
 - 后端详细技术文档 —— 后端分层架构、推送流水线、JWT 双 Token 认证、课表爬虫端到端、消息模板分发、登录安全信号感知（均含 mermaid 图）、数据入库管道与手动课保护等：[Push_System_Flask/README.md](Push_System_Flask/README.md)
 - 后端部署与安全文档 —— DEPLOY_LINUX / DEPLOY_CHECKLIST / 安全配置指南 / 安全配置审计 等：[Push_System_Flask/docs/](Push_System_Flask/docs/)
-- 参考文档（设计 / 验证，不纳入版本控制）—— 课表爬虫爬取与解析设计、课程表结构设计、爬取验证报告：[参考/](参考/)
+- 参考文档（本地设计 / 验证资料，**未纳入版本控制**，因此仓库中不存在该目录）—— 课表爬虫爬取与解析设计、课程表结构设计、爬取验证报告
 - 小程序端技术文档 —— Taro 工程结构、环境变量、开发 / 生产构建与发布：[miniapp-frontend/README.md](miniapp-frontend/README.md)
 - 变更记录 CHANGELOG —— 版本迭代与功能变更（单一真相源）：[CHANGELOG.md](CHANGELOG.md)
 
