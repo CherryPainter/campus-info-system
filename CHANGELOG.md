@@ -76,6 +76,26 @@
 - **验证**：`python -m py_compile` 对全部改动文件（model / repository / service / capacity_manager / tasks / 三个路由 / 回填脚本）通过；回填脚本未对生产库执行（部署后手动运行，见脚本头部用法）。
 - **修复（2026-10-09 晚）**：`electricity_service.py` / `capacity_manager.py` 的 `get_electricity_service` / `get_capacity_manager` 工厂把**模块级函数** `student_key_of_user` 误当作 `ElectricityRepository` 的**类方法**调用（`ElectricityRepository.student_key_of_user(db, user_id)`），部署后所有电量接口 500（`AttributeError`，py_compile 无法捕获）。已统一改为模块级调用 `student_key_of_user(db, user_id)`，与 `admin_routes.py` / `electricity_routes.py` 既有用法一致；两文件 `py_compile` 通过、全仓已无类方法式误调用。
 
+### 后端 · 个人数据归属维度统一重构：由「微信账号 user_id」改为「学生身份 student_key」（2026-10-09）
+- **背景**：上文电量重构已验证「学生身份」才是数据归属的正确维度（换 appid / 换微信号不丢历史）。本项把**全部个人数据**统一收口到同一维度——反馈（`feedbacks`）、站内通知（`user_notifications`）、公告收藏/已读（`announcement_favorites` / `announcement_reads`）、头像与昵称（`student_profiles`）——与电量一致，彻底杜绝「换绑身份 / 换小程序 appid / 重绑生成新 user_id」导致的历史孤儿数据。这些表上的 `user_id` 一律降级为**审计列**（记录写入时的微信账号，不参与读写过滤，保留以便回滚）。
+- **收口模块（单一事实来源）**（`app/repository/identity_keys.py`，新建）：把分散在电量重构里的 `make_student_key` / `student_key_of_user` 提升为全局唯一收口，消除各模块各写一套口径漂移；`electricity_repository` 改为从本模块导入并继续以原路径导出（调用方 `admin_routes` / `electricity_routes` / `capacity_manager` / `electricity_service` 无需改动）。提供三个函数：
+  - `make_student_key(school, number)`：`(学校, 学号) -> "学校|学号"`，任一为空返回 `None`（未绑定身份）。
+  - `student_key_of_user(session, user_id)`：由 user_id 反查其当前绑定身份的 student_key，优先取 `student_profiles.student_key` 权威列，缺省回退 `(school, student_number)` 拼装。
+  - `scope_filter(model_cls, user_id, student_key)`：读路径统一过滤——`student_key` 非空时按 `student_key` 归属 + `student_key IS NULL AND user_id=用户` 兜底（兼容历史孤立行 / 未绑定身份）；为空时退化为按 `user_id` 审计列。
+- **模型层**：`app/model/feedback.py`、`app/model/user_notification.py`、`app/model/announcement.py`（`AnnouncementFavorite` / `AnnouncementRead` 两表）各新增 `student_key VARCHAR(255) NULL INDEX`；`app/model/student_profile.py` 新增 `student_key VARCHAR(255) NULL INDEX` 与 `avatar Text`（存放学生维度头像，换号不丢）。`user_id` 注释统一改为「审计列」。
+- **仓库层**（`app/repository/user_notification_repository.py`）：`create` 末尾新增 `student_key: str|None=None`（None 时内部 `student_key_of_user` 反解），写入同时回填 `student_key`+`user_id`；`list_by_user` / `count_by_user` / `mark_read` / `mark_viewed` / `get_by_id` 全部新增 `student_key` 形参、内部反解后用 `scope_filter(...)` 替换原 `user_id==user_id` 过滤。
+- **服务层**：
+  - `app/services/user_notification_service.py`：`upsert_feedback_notification` 由 `student_key_of_user` 反解 sk 后写入 `student_key`；`get_notification` 改用 `scope_filter(UserNotification, user_id, sk)`。
+  - `app/services/announcement_service.py`：`detail_for_user` / `toggle_favorite` / `unread_count` / `mark_read` / `mark_all_read` / `list_for_user` 各自内 `sk = student_key_of_user(db, user_id)`，全部 `AnnouncementFavorite` / `AnnouncementRead` 的读过滤改为 `scope_filter(...)`，写时补 `student_key=sk`。
+- **路由层**：
+  - `app/api/feedback_routes.py`：`feedback_create` 写 `Feedback(user_id=..., student_key=sk)`；`feedback_mine` / `feedback_detail_mine` 读改用 `scope_filter(Feedback, user_id, sk)`。
+  - `app/api/miniapp_routes.py`：`update_avatar` 改为写 `student_profiles.avatar`（按 `student_key` 维度，优先取 key 维度档案，换号不丢），并镜像到 `users.avatar` 兼容仍从登录态读头像的客户端；`POST /student/bind` 绑定/换绑时补写 `existing.student_key = make_student_key(roster.school, roster.student_number)`。
+- **头像语义收口**：头像改为「学生维度展示」——存 `student_profiles.avatar`，由 `student_key` 归属，同一学生换微信号/换 appid 头像不变；多 profile（换号残留）按 `student_key` coalesce 合并非空头像/昵称（只填空、不覆盖），并镜像到 `users.avatar`。
+- **Schema 自动迁移**：`student_key`（4 表）+ `student_profiles.student_key` + `student_profiles.avatar` 均由启动期 `cmd_migrate(quiet=True)` 对比模型自动补建，生产重启即生效，零停机。
+- **历史数据回填脚本**（一次性，双副本同内容）：`Push_System_Flask/tool/backfill_personal_data_student_key.py` 与 `技术总结/dev-scripts/backfill_personal_data_student_key.py`——前置校验 `REQUIRED_COLUMNS`（四表 + `student_profiles.student_key/avatar` 列必须存在，否则提示先部署重启触发 auto-migrate）；遍历四表 `student_key IS NULL 且 user_id IS NOT NULL` 行按 `{user_id: student_key}` 反解映射回填；补全 `student_profiles.student_key`；按 `student_key` coalesce 合并非空头像/昵称并镜像到 `users.avatar`；`student_key IS NULL 且 user_id IS NULL` 保持 NULL；不可解析的 user_id 收集列表、可用 `--map user_id,student_key.csv` 补充后重跑。默认演练（只统计不写库），`--apply` 实际回填；幂等、可回滚（仅写归属列，user_id 审计列保留）。
+- **验证**：`python -m py_compile` 对全部改动文件（新建 `identity_keys` + 4 个 model + `user_notification_repository` + `user_notification_service` + `announcement_service` + `feedback_routes` + `miniapp_routes`）及回填脚本通过；沙箱缺 `redis` 运行时依赖，未做全量 `import app` 运行期验证，改用逐文件 Grep 核对所有 `identity_keys` 导入与 `student_key` / `scope_filter` 使用点齐全。**回填脚本未对生产库执行**，待部署后手动运行（见脚本头部用法）。
+- **部署步骤（用户自推）**：① `git commit` 提交全部改动；② 用户 push 到生产；③ 生产重启触发 auto-migrate 自动加列；④ 运行 `python Push_System_Flask/tool/backfill_personal_data_student_key.py`（先演练看统计、再 `--apply` 回填历史数据）。
+
 ### 小程序 · 电量详情页新增「解绑 / 换绑」功能（2026-10-09）
 - **电量详情页入口**：电表名右侧编辑图标（`.elec-edit-icon`）接上点击，弹操作面板，提供三项——换绑电表接入信息（跳配置页重新粘贴）、解绑电表接入信息、换绑学生身份。
 - **解绑接口**：新增 `POST /api/miniapp/electricity/cookie/unbind`——仅清空 `student_profiles.electricity_cookie` 以停止采集；电量历史（`electricity_records` / `remaining` / `total_capacity` 均按学生身份 `student_key` 归属、与 Cookie 无关）全部保留，重新配置后接续采集。前端二次确认弹窗明确"历史数据保留"。

@@ -12,6 +12,7 @@ from datetime import datetime
 from app.core.database import get_db
 from app.core.logger import get_logger
 from app.model.user_notification import UserNotification
+from app.repository.identity_keys import student_key_of_user
 from app.repository.user_notification_repository import UserNotificationRepository
 
 logger = get_logger(__name__)
@@ -95,6 +96,7 @@ class UserNotificationService:
         """
         try:
             session = get_db()
+            sk = student_key_of_user(session, user_id)
             try:
                 existing = (
                     session.query(UserNotification)
@@ -113,10 +115,12 @@ class UserNotificationService:
                     existing.is_read = False
                     existing.is_viewed = False
                     existing.created_at = now
+                    existing.student_key = sk
                 else:
                     session.add(
                         UserNotification(
                             user_id=user_id,
+                            student_key=sk,
                             category=category,
                             title=title,
                             content=content,
@@ -185,14 +189,16 @@ class UserNotificationService:
             Optional[Dict]: 通知 dict；不存在或不属于该用户时返回 None
         """
         from app.model.user_notification import UserNotification
+        from app.repository.identity_keys import scope_filter, student_key_of_user
 
         session = get_db()
         try:
+            sk = student_key_of_user(session, user_id)
             record = (
                 session.query(UserNotification)
                 .filter(
                     UserNotification.id == notification_id,
-                    UserNotification.user_id == user_id,
+                    scope_filter(UserNotification, user_id, sk),
                 )
                 .first()
             )

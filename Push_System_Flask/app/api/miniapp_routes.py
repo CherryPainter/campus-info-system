@@ -213,8 +213,11 @@ def bind_student():
             db.add(existing)
 
         # 身份字段全部以名单（组织树冗余列）为准写入，学生不可自填/篡改
+        from app.repository.identity_keys import make_student_key
+
         existing.school = roster.school
         existing.student_number = roster.student_number
+        existing.student_key = make_student_key(roster.school, roster.student_number)
         existing.class_name = roster.class_name
         existing.college = roster.college
         existing.major = roster.major
@@ -324,7 +327,11 @@ def update_profile():
 @student_bound_required
 def update_avatar():
     """
-    更新当前学生用户头像（data URI 形式，复用管理端头像校验，无修改次数配额）
+    更新当前学生头像（data URI 形式，复用管理端头像校验，无修改次数配额）。
+
+    头像归属维度改为「学生身份（student_key）」：写入 student_profiles.avatar，
+    换微信号（换 appid / 重绑）不丢头像。为兼容仍从登录态读取 users.avatar 的客户端，
+    同步镜像到 users.avatar。
 
     请求体：
         {"avatar": "data:image/jpeg;base64,..."}
@@ -334,6 +341,8 @@ def update_avatar():
     """
     from app.core.database import get_db
     from app.model.user import User
+    from app.model.student_profile import StudentProfile
+    from app.repository.identity_keys import student_key_of_user
     from app.utils.file_upload_security import FileUploadError, validate_avatar_data_uri
 
     user_id = int(g.current_user["user_id"])
@@ -346,14 +355,27 @@ def update_avatar():
 
     db = get_db()
     try:
+        profile = db.query(StudentProfile).filter_by(user_id=user_id).first()
+        # 已绑定身份：以 student_key 维度的档案为准（换号不丢头像）
+        sk = student_key_of_user(db, user_id)
+        if sk:
+            by_key = db.query(StudentProfile).filter_by(student_key=sk).first()
+            if by_key is not None and (profile is None or by_key.id != profile.id):
+                profile = by_key
+        if profile is None:
+            profile = StudentProfile(user_id=user_id)
+            db.add(profile)
+        profile.avatar = validated
+
+        # 镜像到 users.avatar，兼容仍从登录态读取头像的客户端
         user = db.query(User).filter_by(id=user_id).first()
-        if not user:
-            return api_error(message="用户不存在", http_status=404)
-        user.avatar = validated
+        if user:
+            user.avatar = validated
+
         db.commit()
-        db.refresh(user)
-        logger.info(f"学生头像已更新: user_id={user_id}")
-        return api_success(user=user.to_dict())
+        db.refresh(profile)
+        logger.info(f"学生头像已更新: user_id={user_id} student_key={sk}")
+        return api_success(profile=profile.to_dict())
     finally:
         db.close()
 

@@ -13,6 +13,7 @@ from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 
 from app.model.user_notification import UserNotification
+from app.repository.identity_keys import scope_filter, student_key_of_user
 
 
 class UserNotificationRepository:
@@ -29,6 +30,7 @@ class UserNotificationRepository:
         ref_type: str | None = None,
         ref_id: int | None = None,
         payload: dict | None = None,
+        student_key: str | None = None,
     ) -> UserNotification:
         """
         创建一条站内通知
@@ -48,8 +50,11 @@ class UserNotificationRepository:
         Returns:
             UserNotification: 创建的通知对象
         """
+        if student_key is None:
+            student_key = student_key_of_user(session, user_id)
         notification = UserNotification(
             user_id=user_id,
+            student_key=student_key,
             category=category,
             title=title,
             content=content,
@@ -68,6 +73,7 @@ class UserNotificationRepository:
     def list_by_user(
         session: Session,
         user_id: int,
+        student_key: str | None = None,
         limit: int = 50,
         offset: int = 0,
         unread_only: bool = False,
@@ -85,7 +91,11 @@ class UserNotificationRepository:
         Returns:
             List[UserNotification]: 通知列表
         """
-        q = session.query(UserNotification).filter(UserNotification.user_id == user_id)
+        if student_key is None:
+            student_key = student_key_of_user(session, user_id)
+        q = session.query(UserNotification).filter(
+            scope_filter(UserNotification, user_id, student_key)
+        )
         if unread_only:
             q = q.filter(UserNotification.is_read.is_(False))
         return q.order_by(UserNotification.created_at.desc()).offset(offset).limit(limit).all()
@@ -94,6 +104,7 @@ class UserNotificationRepository:
     def count_by_user(
         session: Session,
         user_id: int,
+        student_key: str | None = None,
         unread_only: bool = False,
         unviewed_only: bool = False,
     ) -> int:
@@ -109,8 +120,10 @@ class UserNotificationRepository:
         Returns:
             int: 通知数量
         """
+        if student_key is None:
+            student_key = student_key_of_user(session, user_id)
         q = session.query(func.count(UserNotification.id)).filter(
-            UserNotification.user_id == user_id
+            scope_filter(UserNotification, user_id, student_key)
         )
         if unread_only:
             q = q.filter(UserNotification.is_read.is_(False))
@@ -122,6 +135,7 @@ class UserNotificationRepository:
     def mark_read(
         session: Session,
         user_id: int,
+        student_key: str | None = None,
         notification_id: int | None = None,
     ) -> int:
         """
@@ -135,7 +149,9 @@ class UserNotificationRepository:
         Returns:
             int: 受影响行数
         """
-        q = update(UserNotification).where(UserNotification.user_id == user_id)
+        if student_key is None:
+            student_key = student_key_of_user(session, user_id)
+        q = update(UserNotification).where(scope_filter(UserNotification, user_id, student_key))
         if notification_id is not None:
             q = q.where(UserNotification.id == notification_id)
         result = session.execute(q.values(is_read=True))
@@ -146,6 +162,7 @@ class UserNotificationRepository:
     def mark_viewed(
         session: Session,
         user_id: int,
+        student_key: str | None = None,
         notification_id: int | None = None,
     ) -> int:
         """
@@ -156,14 +173,16 @@ class UserNotificationRepository:
 
         Args:
             session: 数据库会话
-            user_id: 接收用户ID（防越权，必须匹配）
+            user_id: 接收        用户ID（防越权，必须匹配）
             notification_id: 指定通知ID；为 None 时该用户全部标记已看
                              （「全部已读」按钮批量清卡片红点用）
 
         Returns:
             int: 受影响行数
         """
-        q = update(UserNotification).where(UserNotification.user_id == user_id)
+        if student_key is None:
+            student_key = student_key_of_user(session, user_id)
+        q = update(UserNotification).where(scope_filter(UserNotification, user_id, student_key))
         if notification_id is not None:
             q = q.where(UserNotification.id == notification_id)
         q = q.values(is_viewed=True, is_read=True)
@@ -176,13 +195,16 @@ class UserNotificationRepository:
         session: Session,
         user_id: int,
         notification_id: int,
+        student_key: str | None = None,
     ) -> UserNotification | None:
-        """按 ID 查询指定用户的单条通知（防越权：必须同时匹配 user_id）"""
+        """按 ID 查询指定用户的单条通知（防越权：按 student_key 归属 + user_id 兜底）"""
+        if student_key is None:
+            student_key = student_key_of_user(session, user_id)
         return (
             session.query(UserNotification)
             .filter(
                 UserNotification.id == notification_id,
-                UserNotification.user_id == user_id,
+                scope_filter(UserNotification, user_id, student_key),
             )
             .first()
         )

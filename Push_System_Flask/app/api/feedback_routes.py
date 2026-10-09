@@ -38,6 +38,7 @@ from app.model.feedback import (
 )
 from app.utils.auth_middleware import admin_required
 from app.utils.student_auth import student_bound_required
+from app.repository.identity_keys import scope_filter, student_key_of_user
 from app.utils.file_upload_security import (
     FileUploadError,
     generate_secure_filename,
@@ -152,8 +153,10 @@ def feedback_create():
 
     db = get_db()
     try:
+        sk = student_key_of_user(db, user_id)
         fb = Feedback(
             user_id=user_id,
+            student_key=sk,
             type=ftype,
             content=content,
             contact=contact or None,
@@ -183,7 +186,8 @@ def feedback_mine():
 
     db = get_db()
     try:
-        query = db.query(Feedback).filter(Feedback.user_id == user_id)
+        sk = student_key_of_user(db, user_id)
+        query = db.query(Feedback).filter(scope_filter(Feedback, user_id, sk))
         total = query.count()
         rows = (
             query.order_by(desc(Feedback.created_at))
@@ -204,8 +208,9 @@ def feedback_detail_mine(feedback_id):
     user_id = int(g_user_id())
     db = get_db()
     try:
+        sk = student_key_of_user(db, user_id)
         fb = db.query(Feedback).filter(
-            Feedback.id == feedback_id, Feedback.user_id == user_id
+            Feedback.id == feedback_id, scope_filter(Feedback, user_id, sk)
         ).first()
         if not fb:
             return api_error(message="反馈不存在", http_status=404)

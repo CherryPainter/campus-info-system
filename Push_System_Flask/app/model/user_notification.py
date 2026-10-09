@@ -37,8 +37,9 @@ class UserNotification(Base):
         ForeignKey("users.id"),
         nullable=False,
         index=True,
-        comment="接收用户ID",
+        comment="接收用户ID（审计列）",
     )
+    student_key = Column(String(255), nullable=True, index=True, comment="学生身份键（学校|学号），数据归属维度")
     category = Column(String(50), nullable=False, index=True, comment="通知类型")
     title = Column(String(200), nullable=False, comment="通知标题")
     content = Column(Text, nullable=True, comment="通知内容（纯文本，换行分隔）")

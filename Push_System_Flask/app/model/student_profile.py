@@ -38,9 +38,11 @@ class StudentProfile(Base):
     )
     student_number = Column(String(30), nullable=True, index=True, comment="学号（身份绑定成功后写入，不随资料编辑修改）")
     school = Column(String(50), nullable=True, comment="学校名称（身份绑定成功后写入）")
+    student_key = Column(String(255), nullable=True, index=True, comment="学生身份键（学校|学号），数据归属维度")
     campus_card_number = Column(String(30), nullable=True, comment="校园卡号（一卡通号，与学号不同，用于校园卡卡片展示）")
     real_name = Column(String(50), nullable=True, comment="真实姓名")
     nickname = Column(String(50), nullable=True, comment="昵称（展示名，优先于真实姓名）")
+    avatar = Column(Text, nullable=True, comment="头像URL或Base64（学生维度，换微信号不丢；原 users.avatar 迁此）")
     college = Column(String(100), nullable=True, comment="学院")
     major = Column(String(100), nullable=True, comment="专业")
     class_name = Column(String(100), nullable=True, comment="班级")
@@ -64,6 +66,7 @@ class StudentProfile(Base):
             "campus_card_number": self.campus_card_number,
             "real_name": self.real_name,
             "nickname": self.nickname,
+            "avatar": self.avatar,
             "college": self.college,
             "major": self.major,
             "class_name": self.class_name,

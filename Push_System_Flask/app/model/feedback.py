@@ -43,7 +43,8 @@ class Feedback(Base):
     __tablename__ = "feedbacks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, nullable=False, index=True, comment="提交用户 id（学生）")
+    user_id = Column(Integer, nullable=False, index=True, comment="提交用户 id（学生，审计列）")
+    student_key = Column(String(255), nullable=True, index=True, comment="学生身份键（学校|学号），数据归属维度")
     type = Column(
         String(20),
         nullable=False,

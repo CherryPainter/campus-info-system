@@ -32,6 +32,7 @@ from app.model.announcement import (
 )
 from app.model.announcement_channel import AnnouncementChannel
 from app.model.custom_push import CustomPush
+from app.repository.identity_keys import scope_filter, student_key_of_user
 
 logger = get_logger(__name__)
 
@@ -569,6 +570,7 @@ class AnnouncementService:
         page_size = max(1, min(int(page_size or 20), 50))
         db = get_db()
         try:
+            sk = student_key_of_user(db, user_id)
             query = db.query(Announcement).filter(self._visible_filter())
             if category and category != "all":
                 query = query.filter(Announcement.category == category)
@@ -587,7 +589,7 @@ class AnnouncementService:
                 fav_ids = {
                     f.announcement_id
                     for f in db.query(AnnouncementFavorite.announcement_id)
-                    .filter(AnnouncementFavorite.user_id == user_id)
+                    .filter(scope_filter(AnnouncementFavorite, user_id, sk))
                     .all()
                 }
                 if not fav_ids:
@@ -597,7 +599,7 @@ class AnnouncementService:
             read_ids = {
                 r.announcement_id
                 for r in db.query(AnnouncementRead.announcement_id)
-                .filter(AnnouncementRead.user_id == user_id)
+                .filter(scope_filter(AnnouncementRead, user_id, sk))
                 .all()
             }
             if only_unread and read_ids:
@@ -622,7 +624,7 @@ class AnnouncementService:
                     f.announcement_id
                     for f in db.query(AnnouncementFavorite.announcement_id)
                     .filter(
-                        AnnouncementFavorite.user_id == user_id,
+                        scope_filter(AnnouncementFavorite, user_id, sk),
                         AnnouncementFavorite.announcement_id.in_(ids),
                     )
                     .all()
@@ -817,6 +819,9 @@ class AnnouncementService:
                 return None
 
             data = item.to_dict(with_content=True)
+
+            sk = student_key_of_user(db, user_id)
+
             data["attachments"] = _with_download_url(
                 [
                     a.to_dict()
@@ -855,7 +860,7 @@ class AnnouncementService:
             data["is_favorite"] = (
                 db.query(AnnouncementFavorite)
                 .filter(
-                    AnnouncementFavorite.user_id == user_id,
+                    scope_filter(AnnouncementFavorite, user_id, sk),
                     AnnouncementFavorite.announcement_id == announcement_id,
                 )
                 .first()
@@ -865,14 +870,16 @@ class AnnouncementService:
             already_read = (
                 db.query(AnnouncementRead)
                 .filter(
-                    AnnouncementRead.user_id == user_id,
+                    scope_filter(AnnouncementRead, user_id, sk),
                     AnnouncementRead.announcement_id == announcement_id,
                 )
                 .first()
             )
             if mark_read and not already_read:
                 db.add(
-                    AnnouncementRead(announcement_id=announcement_id, user_id=user_id)
+                    AnnouncementRead(
+                        announcement_id=announcement_id, user_id=user_id, student_key=sk
+                    )
                 )
                 item.view_count = (item.view_count or 0) + 1
                 db.commit()
@@ -894,10 +901,11 @@ class AnnouncementService:
             )
             if not item:
                 return None
+            sk = student_key_of_user(db, user_id)
             row = (
                 db.query(AnnouncementFavorite)
                 .filter(
-                    AnnouncementFavorite.user_id == user_id,
+                    scope_filter(AnnouncementFavorite, user_id, sk),
                     AnnouncementFavorite.announcement_id == announcement_id,
                 )
                 .first()
@@ -906,7 +914,11 @@ class AnnouncementService:
                 db.delete(row)
                 db.commit()
                 return False
-            db.add(AnnouncementFavorite(announcement_id=announcement_id, user_id=user_id))
+            db.add(
+                AnnouncementFavorite(
+                    announcement_id=announcement_id, user_id=user_id, student_key=sk
+                )
+            )
             db.commit()
             return True
         finally:
@@ -918,10 +930,11 @@ class AnnouncementService:
             return 0
         db = get_db()
         try:
+            sk = student_key_of_user(db, user_id)
             read_ids = [
                 r.announcement_id
                 for r in db.query(AnnouncementRead.announcement_id)
-                .filter(AnnouncementRead.user_id == user_id)
+                .filter(scope_filter(AnnouncementRead, user_id, sk))
                 .all()
             ]
             query = db.query(Announcement).filter(self._visible_filter())
@@ -935,17 +948,22 @@ class AnnouncementService:
         """显式标记已读（详情页底部「标记已读」按钮）"""
         db = get_db()
         try:
+            sk = student_key_of_user(db, user_id)
             exists = (
                 db.query(AnnouncementRead)
                 .filter(
-                    AnnouncementRead.user_id == user_id,
+                    scope_filter(AnnouncementRead, user_id, sk),
                     AnnouncementRead.announcement_id == announcement_id,
                 )
                 .first()
             )
             if exists:
                 return True
-            db.add(AnnouncementRead(announcement_id=announcement_id, user_id=user_id))
+            db.add(
+                AnnouncementRead(
+                    announcement_id=announcement_id, user_id=user_id, student_key=sk
+                )
+            )
             db.commit()
             return True
         finally:
@@ -955,6 +973,7 @@ class AnnouncementService:
         """把当前对用户可见的公告全部标记已读（消息页「全部已读」联动）"""
         db = get_db()
         try:
+            sk = student_key_of_user(db, user_id)
             rows = (
                 db.query(Announcement.id)
                 .filter(self._visible_filter())
@@ -967,14 +986,18 @@ class AnnouncementService:
                 r.announcement_id
                 for r in db.query(AnnouncementRead.announcement_id)
                 .filter(
-                    AnnouncementRead.user_id == user_id,
+                    scope_filter(AnnouncementRead, user_id, sk),
                     AnnouncementRead.announcement_id.in_(visible_ids),
                 )
                 .all()
             }
             pending = [aid for aid in visible_ids if aid not in read_ids]
             for aid in pending:
-                db.add(AnnouncementRead(announcement_id=aid, user_id=user_id))
+                db.add(
+                    AnnouncementRead(
+                        announcement_id=aid, user_id=user_id, student_key=sk
+                    )
+                )
             if pending:
                 db.commit()
             return len(pending)

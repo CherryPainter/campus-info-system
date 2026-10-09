@@ -27,40 +27,8 @@ from sqlalchemy.orm import Session
 from app.model.electricity import ElectricityRecord, ElectricityRemaining, ElectricityTotalCapacity
 
 
-# ------------------------------------------------------------------
-# 身份键辅助
-# ------------------------------------------------------------------
-
-
-def make_student_key(school: str | None, student_number: str | None) -> str | None:
-    """
-    由 (学校, 学号) 构造学生身份键。
-
-    NULL 规则：学校或学号任一为空都返回 None（未绑定身份），
-    此时数据不归属任何具体身份（仅全局视图可见）。
-    """
-    if not school or not student_number:
-        return None
-    return f"{school}|{student_number}"
-
-
-def student_key_of_user(session: Session, user_id: int) -> str | None:
-    """
-    由 user_id 反查其当前绑定身份的学生身份键（student_key）。
-
-    用于采集/读取入口拿到 JWT 的 user_id 时，反解为数据归属维度。
-    无资料 / 未绑定身份时返回 None。
-    """
-    from app.model.student_profile import StudentProfile
-
-    row = (
-        session.query(StudentProfile.school, StudentProfile.student_number)
-        .filter(StudentProfile.user_id == user_id)
-        .first()
-    )
-    if not row:
-        return None
-    return make_student_key(row.school, row.student_number)
+# 身份键辅助（收口到 app.repository.identity_keys，避免各模块各写一套口径）
+from app.repository.identity_keys import make_student_key, student_key_of_user
 
 
 class ElectricityRepository:

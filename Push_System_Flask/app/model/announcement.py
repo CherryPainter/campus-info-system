@@ -238,7 +238,8 @@ class AnnouncementRead(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     announcement_id = Column(Integer, nullable=False, index=True, comment="公告 ID")
-    user_id = Column(Integer, nullable=False, index=True, comment="用户 ID")
+    user_id = Column(Integer, nullable=False, index=True, comment="用户 ID（审计列）")
+    student_key = Column(String(255), nullable=True, index=True, comment="学生身份键（学校|学号），数据归属维度")
     read_at = Column(DateTime, default=datetime.now, comment="首次阅读时间")
 
 
@@ -252,5 +253,6 @@ class AnnouncementFavorite(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     announcement_id = Column(Integer, nullable=False, index=True, comment="公告 ID")
-    user_id = Column(Integer, nullable=False, index=True, comment="用户 ID")
+    user_id = Column(Integer, nullable=False, index=True, comment="用户 ID（审计列）")
+    student_key = Column(String(255), nullable=True, index=True, comment="学生身份键（学校|学号），数据归属维度")
     created_at = Column(DateTime, default=datetime.now, comment="收藏时间")
