@@ -161,6 +161,13 @@ export const courseApi = {
   /** 删除课程（硬删除，从数据库中完全删除） */
   delete: (id: number) => request.delete<any, ApiResponse>(`/course/${id}`),
 
+  /** 批量硬删除课程（ids: 课程 id 数组） */
+  batchDelete: (ids: number[]) =>
+    request.post<any, ApiResponse>(`/course/batch-delete`, { ids }),
+
+  /** 硬删除全库所有课程（所有学期，含软删行，不可恢复） */
+  deleteAll: () => request.delete<any, ApiResponse>(`/course/all`),
+
   /** 切换推送提醒状态 */
   togglePush: (id: number, enabled: boolean) =>
     request.post<any, ApiResponse>(`/course/${id}/toggle-push`, { push_enabled: enabled }),

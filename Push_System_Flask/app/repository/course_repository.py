@@ -100,9 +100,16 @@ def get_current_semester_id() -> int:
             pass
     # 候选学期：course_meta.json 当前学期 或 按日期推导学期
     candidate = derive_current_semester()["semester_id"]
-    # 兜底：若候选学期在库中没有任何课程（典型场景：处于寒暑假空档期，
-    # 推导出的新学期尚未爬取），则回退到库里实际存有课表数据的学期，
+    # 兜底（带开课门槛）：若候选学期在库中没有任何课程且**尚未开课**（寒暑假
+    # 空档期，推导出的新学期还没到开学日），回退到库里实际存有课表数据的学期，
     # 避免小程序/网页端显示空白或错误（假）数据。
+    #
+    # 门槛（2026-10-09）：候选学期已开课（今天 >= 其第1周周一）时**禁止翻转**。
+    # 此前无门槛的行数兜底会把「当前学期」变成随行数漂移的钟摆：管理员在列表
+    # 删光当前学期课程 → 立刻翻转成"行数最多的历史学期"并被当成 current，
+    # 造成管理端/小程序越界显示上学期数据、上学期课被标"正在上课"；
+    # 重爬后又翻回来，列表数据来回跳。学期已开课时候选没课只可能是数据被清空，
+    # 此时返回空课表才是正确行为。
     try:
         from app.core.database import get_db
         from sqlalchemy import text
@@ -117,15 +124,37 @@ def get_current_semester_id() -> int:
             ).fetchall()
             if rows:
                 best_id, best_count = rows[0].semester_id, rows[0].c
-                # 仅当候选学期确实无课、且库中存在有课的学期时才替换
+                # 仅当候选学期确实无课、且库中存在有课的学期时才考虑替换
                 has_candidate = any(r.semester_id == candidate and r.c > 0 for r in rows)
                 if not has_candidate and best_count > 0:
-                    return int(best_id)
+                    if _candidate_term_not_started(candidate):
+                        return int(best_id)
         finally:
             session.close()
     except Exception:
         pass
     return candidate
+
+
+def _candidate_term_not_started(candidate: int) -> bool:
+    """候选学期是否尚未开课（今天早于其第1周周一）。
+
+    开学日来自 teaching_week_service（配置 system.semester_start_date 或按
+    term 推算）；取不到开学日时一律视为「已开课」（fail toward 不翻转，
+    宁可显示空课表也不把历史学期当成当前学期）。
+    """
+    try:
+        from datetime import date as _date, timedelta as _timedelta
+
+        from app.services.teaching_week_service import get_semester_start_date
+
+        start = get_semester_start_date(candidate)
+        if not start:
+            return False
+        week1_monday = start - _timedelta(days=start.isoweekday() - 1)
+        return _date.today() < week1_monday
+    except Exception:
+        return False
 
 
 def semester_info_from_id(semester_id: int) -> dict[str, Any]:

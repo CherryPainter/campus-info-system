@@ -6,6 +6,40 @@
 
 ## Unreleased
 
+### 课表三处 bug 修复 + 课程删除能力增强（2026-10-09）
+**一、三处越界/误标 bug 根因修复**
+- **管理端删除当前学期后冒出历史学期数据 / 列表来回跳（学期翻钟摆）**（`app/repository/course_repository.py`）：`get_current_semester_id()` 原本在候选学期库内无课时，无门槛地回退到「行数最多的学期」并当成当前学期，导致删光当前学期课程后立刻翻转成历史学期、重爬后翻回，列表数据反复横跳。新增 `_candidate_term_not_started(candidate)` 门槛：候选学期**已开课**（今天 ≥ 其第 1 周周一）时**禁止翻转**，只有寒暑假空档期（候选尚未开课）才允许回退到库内存量学期；学期已开课却无课只可能是被清空，此时返回空课表才是正确行为。
+- **查看历史周却被标「正在上课」**（`app/api/course_routes.py`）：`get_timetable()` 原只按星期几 + 时间判定「正在上课」，未校验所选周 = 真实教学周。新增 `mark_live` 门槛：仅当「本学期 + 所选周 = 真实当前教学周」才计算正在上课，其余一律 `is_ongoing=False`。
+- **全量爬取解析出逐节重复碎片**（`app/cqie-course-timetable/course_processing/process_course_data.py`）：`merge_consecutive_courses()` 原按「排序后列表相邻」判断连续，当同一槽位被两门课分周占用（异课交错）时合并链被隔断，产生逐节碎片。重写为**按课程身份分组**（键 = 星期+课名+教师+楼栋+教室+weeks），组内解析每条目真实覆盖节次后按节次连续性切 run 再合并，合并名用首/末真实节数构造，避免旧写法拼出超解析范围的节名。
+- **前端删除级联错配**（`admin-frontend/src/pages/Course.tsx`）：`handleDelete` 原按 `week_number`（入库**批次标记**，注释见 `app/api/course_routes.py:176`「只是数据导入时的标记」）等值匹配级联，同源课程分批次入库会漏删/错删。改为按「同学期 + 课名 + 星期 + 教室 + 教师(空值兼容) + 周次有交集」限定在本学期内匹配（配套新增模块级 `fieldsMatch` / `weeksOverlap` 辅助函数）。新增 `course_key` 因把节次哈希进身份、同源碎片节次不同会导致 key 不同，故不作为级联键。
+
+**二、课程删除能力增强（硬删口径）**
+- 课程删除本就走硬删（`app/api/course_routes.py` 的 `DELETE /course/<id>` 为 `session.delete()`，非软删）；用户确认课程数据可由爬虫重爬、不珍贵，统一采用硬删口径。
+- **后端新增两个硬删端点**（`app/api/course_routes.py`，均 `@admin_required`，写日志并刷新课表缓存）：
+  - `DELETE /course/all`：物理删除全库**所有学期**课程（含软删行），用于「删除所有课程」；删光后由上述开课门槛保证显示空课表而非翻转历史学期。
+  - `POST /course/batch-delete`：请求体 `{"ids":[...]}` 批量物理删除，供列表多选批量删除调用。
+- **前端课程管理列表加复选框批量删除**（`admin-frontend/src/pages/Course.tsx`、`admin-frontend/src/api/course.ts`）：列表 `Table` 加 `rowSelection`；选中后出现「批量删除（N）」红色按钮（`Popconfirm` 二次确认），调 `courseApi.batchDelete`；新增 `selectedRowKeys` 状态与 `handleBatchDelete`。`courseApi` 新增 `batchDelete` / `deleteAll`。
+- **任务管理页「课程任务」分类新增「删除所有课程（硬删）」卡片**（`admin-frontend/src/pages/Tasks.tsx`）：红色危险样式卡片 + `Modal.confirm` 强确认（提示"物理删除全库所有学期、不可恢复"）后调 `courseApi.deleteAll`；`priorityConfig` 新增 `danger` 配色。
+
+**三、存量碎片清洗（一次性，已执行）**
+- 用现成修复包 `ops/course-data-repair-kit/cleanup_courses.py`（整表备份 `courses_bak_<时间戳>` + 按节次连续性合并 + 软删 + 重算 `course_key` + admin 行保护）合并库内 12 条碎片为 5 条（软删 7 条）。
+- 按用户决定，随后物理清除库内全部 80 条软删残留行（含本次 7 条 + 历史 73 条）；现 `courses` 表仅 9 条有效数据，与列表视图截图表一致。软删残留清理为一次性 SQL，无回滚（用户确认硬删口径）。
+
+**验证**：后端 `py_compile` 对 `course_routes.py` 通过；前端 `tsc --noEmit` 0 错（Course.tsx / Tasks.tsx / course.ts）。
+
+### 管理端 · 电量与学生身份页修复与优化（2026-10-09）
+- **电量详情页日期列丢失修复**（`admin-frontend/src/pages/Electricity.tsx`、`admin-frontend/src/api/admin.ts`）：后端 `ElectricityRecord.to_dict()` 返回的字段名为 `time`，前端原类型与表格均错误使用 `record_time`，导致日期列为空。已把类型和列定义改为 `time`，列表 key 同步修正。
+- **学生总览新增电表 Cookie 解绑/换绑**（`admin-frontend/src/pages/Electricity.tsx`）：操作列在已配置学生显示「换绑」「解绑」；未配置学生显示「配置 Cookie」；新增弹窗可直接编辑 Cookie，留空保存即解绑。
+- **后端新增管理端 Cookie 操作接口**（`app/api/admin_routes.py`）：`GET /api/admin/electricity/students/<id>/cookie` 读取 Cookie；`PUT /api/admin/electricity/students/<id>/cookie` 更新或清空（解绑）。仅管理员可用，修改写入 `student_profiles.electricity_cookie`。
+- **学生身份页表格挤压优化**（`admin-frontend/src/pages/UserManagementRoster.tsx`）：收紧各列宽度（学号/学校/学院/专业/班级/备注/绑定状态/创建时间/操作均下调），操作列按钮文案缩短，整体减少左侧面板展开时的挤压。
+- **学生身份编辑弹窗显示电表 Cookie**（`admin-frontend/src/pages/UserManagementRoster.tsx`）：对已绑定用户的学生，编辑弹窗内展示其电表 Cookie、更新时间，并提供「保存 Cookie」「解绑」按钮，与学生总览共用同一后端接口。
+- **UI 优化（第二轮反馈）**
+  - 学生身份编辑弹窗的电表 Cookie 区域去掉特殊绿色背景框，改为与普通表单项一致的 `Form.Item` + `Divider` 分隔。
+  - 学生身份表格操作列由 5 个平铺按钮改为：发码、编辑、删除图标按钮 +「更多」下拉（停用/启用、解绑身份），显著减少视觉拥挤。
+  - 学生身份编辑弹窗宽度扩到 720，基本信息（学号/班级/姓名/宿舍/备注/启用状态）改为两列 `Row/Col` 布局，高度减半，避免在 15 寸屏出现滚动条。
+- **用电记录增加筛选查询**（`admin-frontend/src/pages/Electricity.tsx`、`Push_System_Flask/app/api/admin_routes.py`、`app/services/electricity_service.py`）：表格上方增加日期范围选择、电表名精确筛选、重置按钮；后端接口扩展 `start_date`/`end_date`/`meter_filter`，服务层 `get_usage_records` / `count_usage_records` 支持自定义时间范围。
+- **验证**：后端 `py_compile` 通过；前端 `tsc --noEmit` 0 错；`npm run build` 成功。
+
 ### 后端 · 电量数据归属维度重构：由「微信账号 user_id」改为「学生身份 student_key」（2026-10-09）
 - **背景**：电量三表原按 `user_id`（微信账号）归属，该设计在「换绑身份 / 换小程序 appid」场景下极其脆弱——一次生产真实事件暴露了问题：用户因更换小程序 appid 导致微信 `openid` 变化，旧身份在小程序内失效；用户解绑并重新绑定后系统按新 `openid` 新建了 `user_id=14`（身份 `cqie|2024006444`），而旧账号 `user_id=4`（昵称"萝卜白菜"）名下的历史电量数据（三表共 828+345+1 行）因 `user_id` 归属关系随账号变化而**失联成孤儿数据**（数据仅失联、未被删除）。根因：电量历史绑在「微信账号」而非「学生身份」上，只要换 appid / 换微信账号就会丢历史。决策：电量数据应绑定在「学生身份」而非「微信账号」上，换绑身份 / 换 appid 后历史自动接续可见。
 - **模型层**（`app/model/electricity.py`）：`electricity_records` / `electricity_remaining` / `electricity_total_capacity` 三表各新增 `student_key VARCHAR(255) NULL INDEX`（取值 `学校|学号`，NULL=历史全局数据/未绑定身份）；`user_id` 降级为**审计列**（记录写入时的微信账号，不参与读写过滤，便于回滚）。

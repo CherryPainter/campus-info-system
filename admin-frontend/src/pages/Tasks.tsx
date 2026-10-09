@@ -18,10 +18,12 @@ import {
   WarningOutlined,
   CheckCircleOutlined,
   SunOutlined,
+  DeleteOutlined,
 } from "@ant-design/icons";
 import { adminApi, processApi, type SpiderStatus, type TaskProcess } from "@/api/admin";
 import { electricityApi } from "@/api/electricity";
 import { holidayApi, type HolidayStatus } from "@/api/holiday";
+import { courseApi } from "@/api/course";
 import CrawlScheduler from "./CrawlScheduler";
 import { useIntervalPolling } from "@/hooks/useIntervalPolling";
 import { POLL_SLOW, POLL_FAST } from "@/hooks/pollIntervals";
@@ -65,6 +67,13 @@ const taskCategories = [
         desc: "发送周课表图片",
         icon: <BookOutlined />,
         priority: "normal",
+      },
+      {
+        key: "delete_all_courses",
+        label: "删除所有课程（硬删）",
+        desc: "物理清空全库所有学期课程数据",
+        icon: <DeleteOutlined />,
+        priority: "danger",
       },
     ],
   },
@@ -170,6 +179,7 @@ const priorityConfig = {
   high: { color: "#ff4d4f", bg: "#fff2f0", text: "高" },
   normal: { color: "#1890ff", bg: "#e6f7ff", text: "中" },
   low: { color: "#52c41a", bg: "#f6ffed", text: "低" },
+  danger: { color: "#ff4d4f", bg: "#fff1f0", text: "危险" },
 };
 
 // 假期静默期间会被后端拦截、需禁用「立即执行」的任务 key 集合。
@@ -196,7 +206,7 @@ const HOLIDAY_SKIPPED_KEYS = new Set<string>([
 ]);
 
 export default function Tasks() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   // 移动端断点：用于收缩双层 Card 的 body padding，避免手机上左右留白过大
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
@@ -216,6 +226,8 @@ export default function Tasks() {
   // 假期模式状态：active 时对应触发按钮会被后端静默拦截，前端同步禁用并提示
   const [holidayStatus, setHolidayStatus] = useState<HolidayStatus | null>(null);
   const [reportedKeys, setReportedKeys] = useState<Set<string>>(new Set());
+  // 删除所有课程（硬删）执行态
+  const [purging, setPurging] = useState(false);
   const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // 任务 key → 后端 TaskProcess 进程名（与 tasks.py / scheduler.py 中 create_task_process 的 name 严格对应）
@@ -390,8 +402,93 @@ export default function Tasks() {
     }
   };
 
+  // 硬删全库所有课程（所有学期，含软删行，不可恢复）
+  const handlePurgeAllCourses = () => {
+    modal.confirm({
+      title: "删除所有课程（硬删）",
+      content: (
+        <span>
+          将<strong>物理删除全库所有学期的课程数据</strong>（含已软删的行），操作不可恢复。
+          课程可由爬虫重爬恢复，但当前所有手动录入与爬取结果会立即清空。
+        </span>
+      ),
+      okText: "确认硬删",
+      okButtonProps: { danger: true },
+      cancelText: "取消",
+      onOk: async () => {
+        setPurging(true);
+        try {
+          const res = await courseApi.deleteAll();
+          if (res.status === "success") {
+            message.success(res.message || "已硬删全部课程");
+          } else {
+            message.error(res.message || "删除失败");
+          }
+        } catch (error: any) {
+          console.error("删除所有课程失败:", error);
+          message.error(
+            error?.response?.data?.message || error?.message || "网络错误，删除失败"
+          );
+        } finally {
+          setPurging(false);
+        }
+      },
+    });
+  };
+
   // 渲染任务卡片（统一样式）
   const renderTaskCard = (task: (typeof taskCategories)[0]["tasks"][0], module: string) => {
+    // 危险操作：删除所有课程（硬删）—— 红色卡片 + 强确认，单列于「课程任务」下，
+    // 不归入普通「立即执行」任务（点击弹 modal.confirm 二次确认，再调后端硬删全库）。
+    if (task.key === "delete_all_courses") {
+      return (
+        <Card
+          hoverable
+          style={{
+            borderRadius: 12,
+            border: "1px solid #ffccc7",
+            background: "#fff5f5",
+            boxShadow: "0 2px 8px rgba(255,77,79,0.12)",
+          }}
+          styles={{ body: { padding: isMobile ? 8 : 16 } }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                backgroundColor: "#fff1f0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <span style={{ fontSize: 20, color: "#ff4d4f" }}>{task.icon}</span>
+            </div>
+            <div style={{ flex: 1 }}>
+              <Title level={5} style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+                {task.label}
+              </Title>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {task.desc}
+              </Text>
+            </div>
+          </div>
+          <Button
+            danger
+            icon={<DeleteOutlined />}
+            block
+            size="small"
+            loading={purging}
+            onClick={handlePurgeAllCourses}
+          >
+            执行硬删
+          </Button>
+        </Card>
+      );
+    }
+
     const priority = priorityConfig[task.priority as keyof typeof priorityConfig];
     const isRunning = isBackendRunning(task.key);
     const proc = processStatus[task.key];

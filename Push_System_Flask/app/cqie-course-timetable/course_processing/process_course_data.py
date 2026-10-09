@@ -192,6 +192,9 @@ class CourseProcessor:
         "十二": 12,
     }
 
+    # 阿拉伯数字 -> 中文数字（合并连续节次时反向构造节次名用）
+    NUM_CN = {v: k for k, v in CN_NUM.items()}
+
     def _period_name_to_idx_periods(self, period_name):
         """
         从节次名反算起始节次序号与节次列表。
@@ -636,68 +639,92 @@ class CourseProcessor:
         - 每两节小课合并为一节大课（如第1-2节、第3-4节）
         - 大课连堂时（如1-4节同一门课）进一步合并为一个大时间段
         - 时间直接使用课表规定的时间，不做“提前10分钟下课”之类的调整
+
+        2026-10-09 重写合并策略（根治节次碎片）：
+        旧实现按「排序后列表相邻」判断两节是否连续——当同一槽位被两门课分周
+        占用（如周三第1-2节：A课占第6周、B课占其余周）时，排序后异课交错把
+        同一门课的邻节隔断，合并链断裂，课程被逐节拆成碎片（入库后表现为
+        同一门课同周次出现 [1]/[2,3,4]/[5]/[6]/[7,8] 多条记录）。
+        改为按「课程身份」分组（星期+课名+教师+楼栋+教室+weeks），组内按
+        period_idx 排序后合并连续节次，异课交错不再影响合并。
         """
-        # 按星期和节次排序
-        self.processed_courses.sort(key=lambda x: (x["week_day"], x["period_idx"]))
-
-        i = 0
-        while i < len(self.processed_courses):
-            # 尝试向后查找所有连续相同的课程
-            current_course = self.processed_courses[i]
-            merge_count = 1  # 至少包含当前课程自身
-            j = i + 1
-
-            while j < len(self.processed_courses):
-                next_course = self.processed_courses[j]
-                # 判断是否为连续且相同的课程
-                is_consecutive = (
-                    current_course["week_day"] == next_course["week_day"]
-                    and current_course["course_name"] == next_course["course_name"]
-                    and current_course["teacher"] == next_course["teacher"]
-                    and current_course["building"] == next_course["building"]
-                    and current_course["classroom"] == next_course["classroom"]
-                    and current_course["weeks"] == next_course["weeks"]
-                    and self.processed_courses[j - 1]["period_idx"] + 1 == next_course["period_idx"]
-                )
-                if not is_consecutive:
-                    break
-                merge_count += 1
-                j += 1
-
-            # 构建合并后的课程
-            merged_course = current_course.copy()
-            last_course = self.processed_courses[i + merge_count - 1]
-            merged_course["end_time"] = last_course["end_time"]
-
-            # 构建节次名称（如"第一、二节"或"第一至四节"）
-            first_num = current_course["period_name"][1:-1]
-            if merge_count == 2:
-                last_num = last_course["period_name"][1:-1]
-                merged_course["period_name"] = f"第{first_num}、{last_num}节"
-            elif merge_count > 2:
-                last_num = last_course["period_name"][1:-1]
-                merged_course["period_name"] = f"第{first_num}至{last_num}节"
-            # merge_count == 1 时保持原名
-
-            # 依据最终节次名重新计算权威的 period_idx 与 periods
-            # （不再依赖 process_courses 里的行号，避免表头行导致的 +1 偏移）
-            mp_idx, mp_periods = self._period_name_to_idx_periods(merged_course["period_name"])
-            merged_course["period_idx"] = mp_idx
-            merged_course["periods"] = mp_periods
-
-            # 计算日期
-            merged_course["date"] = self._calculate_date(
-                merged_course["week_day"], merged_course["week_number"]
+        groups: dict[tuple, list] = {}
+        for course in self.processed_courses:
+            key = (
+                course["week_day"],
+                course["course_name"],
+                course["teacher"],
+                course["building"],
+                course["classroom"],
+                course["weeks"],
             )
+            groups.setdefault(key, []).append(course)
 
-            # 注：不再对下课时间做“提前10分钟”之类的调整，直接使用课表规定的时间
-            # （用户要求：通知只推课表规定的时间，不要沿用什么减10分钟）
+        for items in groups.values():
+            items.sort(key=lambda x: x["period_idx"])
+            # 每条目的真实节次覆盖（如"第七、八节"覆盖 [7,8]，而非只有 period_idx=7）
+            covered = [
+                (item, self._period_name_to_idx_periods(item["period_name"])[1])
+                for item in items
+            ]
+            covered = [(item, ps) for item, ps in covered if ps]
+            # 组内切出连续 run：条目最小节次 == 当前 run 最大节次+1 时并入
+            runs: list[list[tuple]] = []
+            run: list[tuple] = []
+            run_max = -999
+            for item, ps in covered:
+                p_min = min(ps)
+                if run and p_min == run_max + 1:
+                    run.append((item, ps))
+                else:
+                    if run:
+                        runs.append(run)
+                    run = [(item, ps)]
+                run_max = max(run_max, max(ps))
+            if run:
+                runs.append(run)
 
-            # 添加合并后的课程
-            self.final_courses.append(merged_course)
+            for run in runs:
+                first_course = run[0][0]
+                last_course = run[-1][0]
+                merge_count = len(run)
+                all_periods = sorted({p for _, ps in run for p in ps})
 
-            # 跳过已合并的课程
-            i += merge_count
+                merged_course = first_course.copy()
+                merged_course["end_time"] = last_course["end_time"]
+
+                # 构建节次名称：直接用 run 覆盖的首/末节节数反向构造
+                # （第X、Y节 / 第X至Y节）。不沿用原 period_name 的文字片段——
+                # 末段若本身是"第七、八节"这类合并名，拼出"第五至七、八节"
+                # 会超出 _period_name_to_idx_periods 的解析范围。
+                if merge_count >= 2 or (all_periods and all_periods[0] != all_periods[-1]):
+                    first_idx = all_periods[0]
+                    last_idx = all_periods[-1]
+                    first_cn = self.NUM_CN.get(first_idx, str(first_idx))
+                    last_cn = self.NUM_CN.get(last_idx, str(last_idx))
+                    span = last_idx - first_idx + 1
+                    sep = "、" if (merge_count == 2 and span == 2) else "至"
+                    merged_course["period_name"] = f"第{first_cn}{sep}{last_cn}节"
+                # 单节（merge_count==1 且覆盖单节）时保持原名
+
+                # 依据最终节次名重新计算权威的 period_idx 与 periods
+                # （不再依赖 process_courses 里的行号，避免表头行导致的 +1 偏移）
+                mp_idx, mp_periods = self._period_name_to_idx_periods(
+                    merged_course["period_name"]
+                )
+                merged_course["period_idx"] = mp_idx
+                merged_course["periods"] = mp_periods
+
+                # 计算日期
+                merged_course["date"] = self._calculate_date(
+                    merged_course["week_day"], merged_course["week_number"]
+                )
+
+                # 注：不再对下课时间做“提前10分钟”之类的调整，直接使用课表规定的时间
+                # （用户要求：通知只推课表规定的时间，不要沿用什么减10分钟）
+
+                # 添加合并后的课程
+                self.final_courses.append(merged_course)
 
         # 按星期顺序和节次排序
         week_order = {

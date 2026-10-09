@@ -211,6 +211,15 @@ def get_timetable():
             current_status["is_ongoing"] = False
 
         # 标记正在上课的课程
+        # 门槛（2026-10-09）：仅当「本学期 + 所选周 = 真实当前教学周」才计算
+        # 正在上课。此前只看星期几+时间，查看本学期历史周（或开学日推算的
+        # 非教学周）时，同星期的下午课也会被误标"正在上课"。
+        try:
+            real_current_week = get_current_week_number()
+        except Exception:
+            real_current_week = 0
+        mark_live = is_current_semester and bool(real_current_week) and week_number == real_current_week
+
         courses_with_status = []
         has_current_course = False
 
@@ -218,8 +227,8 @@ def get_timetable():
             course_dict = c.to_dict()
             is_current_course = False
 
-            # 仅本学期才计算"正在上课"实时状态；查看历史学期时不展示该高亮
-            if is_current_semester and c.week_day == current_week_day:
+            # 仅"本学期的真实当前教学周"才计算"正在上课"实时状态
+            if mark_live and c.week_day == current_week_day:
                 # 根据课程所在的楼栋选择时间表
                 building = course_dict.get("building", "")
                 schedule = get_schedule_by_building(building)
@@ -610,6 +619,58 @@ def delete_course(course_id: int):
 
         logger.info(f"[课程] 硬删除课程: {course_name}")
         return api_success(message="课程已删除")
+    finally:
+        session.close()
+
+
+@course_bp.route("/all", methods=["DELETE"])
+@admin_required
+def delete_all_courses():
+    """硬删除全库所有课程（所有学期，含软删行，物理 DELETE，不可恢复）
+
+    课程数据可由爬虫随时重爬，不视为珍贵数据；管理端「任务管理」页
+    「删除所有课程（硬删）」卡片调用此端点。行数兜底翻转已有开课门槛
+    （course_repository._candidate_term_not_started），删光后显示空课表，
+    不会把历史学期当成当前学期。
+    """
+    session = get_db()
+    try:
+        total = session.query(Course).count()
+        session.query(Course).delete(synchronize_session=False)
+        session.commit()
+        _reload_schedule_cache()
+
+        logger.warning(f"[课程] 已硬删全库所有课程（共 {total} 条，含软删行）")
+        return api_success(message=f"已硬删全部课程（{total} 条）")
+    finally:
+        session.close()
+
+
+@course_bp.route("/batch-delete", methods=["POST"])
+@admin_required
+def batch_delete_courses():
+    """批量硬删除课程（物理 DELETE）
+
+    请求体：{"ids": [1, 2, 3]}；课程管理列表页复选框多选后调用。
+    """
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get("ids") or []
+    ids = sorted({int(i) for i in raw_ids if str(i).strip().isdigit()})
+    if not ids:
+        return api_error(message="未提供要删除的课程 ID", http_status=400)
+
+    session = get_db()
+    try:
+        deleted = (
+            session.query(Course)
+            .filter(Course.id.in_(ids))
+            .delete(synchronize_session=False)
+        )
+        session.commit()
+        _reload_schedule_cache()
+
+        logger.info(f"[课程] 批量硬删除 {deleted} 条课程（ids={ids[:50]}）")
+        return api_success(message=f"已删除 {deleted} 条课程")
     finally:
         session.close()
 

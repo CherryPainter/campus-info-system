@@ -78,6 +78,55 @@ function normalizePeriodName(name: string): string {
 }
 
 /**
+ * 字段软匹配：两个字段都非空时严格要求相等；任一为空则视为匹配。
+ * 解决后端教师/教室字段部分为空导致同门课无法识别为同一课程的问题。
+ */
+function fieldsMatch(a: any, b: any): boolean {
+  const aEmpty = a === null || a === undefined || a === "";
+  const bEmpty = b === null || b === undefined || b === "";
+  return aEmpty || bEmpty || a === b;
+}
+
+/** 将 weeks 字段（数组 / "1-16" / "1,3,5" / "2-4 7-9 11-13" 字符串）解析为周次集合 */
+function parseWeeksToSet(w: any): Set<number> | null {
+  if (w === null || w === undefined || w === "") return null;
+  const out = new Set<number>();
+  if (Array.isArray(w)) {
+    for (const v of w) {
+      const n = Number(v);
+      if (Number.isInteger(n)) out.add(n);
+    }
+  } else if (typeof w === "string") {
+    const tokens = w.split(/[\s,]+/).filter(Boolean);
+    for (const tk of tokens) {
+      const range = tk.match(/^(\d+)-(\d+)$/);
+      if (range) {
+        const a = parseInt(range[1], 10);
+        const b = parseInt(range[2], 10);
+        if (!Number.isNaN(a) && !Number.isNaN(b) && a <= b) {
+          for (let i = a; i <= b; i++) out.add(i);
+        }
+      } else if (/^\d+$/.test(tk)) {
+        out.add(parseInt(tk, 10));
+      }
+    }
+  }
+  return out.size ? out : null;
+}
+
+/**
+ * 周次是否有交集：任一缺失 → 返回 true（不据此排除，避免漏删）；
+ * 两者都有 → 任一周次重叠即视为同课程。
+ */
+function weeksOverlap(a: any, b: any): boolean {
+  const sa = parseWeeksToSet(a);
+  const sb = parseWeeksToSet(b);
+  if (!sa || !sb) return true;
+  for (const w of sa) if (sb.has(w)) return true;
+  return false;
+}
+
+/**
  * 按 course_weeks 真实日期区间计算某周某天的表头日期（MM-DD），保证与后端一致。
  * 优先用后端 available_weeks 中该周的 start_date 推算；缺数据时回退到写死的学期开学日。
  */
@@ -161,6 +210,7 @@ export default function Course() {
   const [currentWeek, setCurrentWeek] = useState<number | undefined>(undefined);
   const [isPolling, setIsPolling] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]); // 列表复选框选中项
   const [spiderRunning, setSpiderRunning] = useState(false); // 爬虫是否正在运行
   const [spiderMessage, setSpiderMessage] = useState(""); // 爬虫状态提示
   const [pushEnabled, setPushEnabled] = useState(true); // 新增：本地状态管理推送开关
@@ -619,14 +669,20 @@ export default function Course() {
       // 去重（通过 id）
       const uniqueCourses = Array.from(new Map(allCourses.map((c) => [c.id, c])).values());
 
-      // 筛选出同一天、同一课程名、同一教室的其他记录（排除当前已删除的）
+      // 筛选出「同一门课」的其他记录并级联删除。
+      // 课程身份 = 同学期 + 同星期 + 同课名 + 同教室 + 同教师(空值兼容) + 周次有交集。
+      // 注意：不再按 week_number（入库批次标记）匹配——同源课程分批次入库时
+      // week_number 不同会导致漏删/错删；学期已由数据源（getList/getTimetable
+      // 已按 semester_id 过滤）限定，此处再加 semester_id 双保险。
       const sameCourses = uniqueCourses.filter(
         (c) =>
           c.id !== course.id &&
+          (c.semester_id ?? -1) === (course.semester_id ?? -1) &&
           c.week_day === course.week_day &&
           c.course_name === course.course_name &&
-          c.classroom === course.classroom &&
-          (c.week_number ?? -1) === (course.week_number ?? -1)
+          fieldsMatch(c.classroom, course.classroom) &&
+          fieldsMatch(c.teacher, course.teacher) &&
+          weeksOverlap(c.weeks, course.weeks)
       );
 
       for (const c of sameCourses) {
@@ -639,6 +695,29 @@ export default function Course() {
     } catch (error) {
       console.error("删除失败:", error);
       message.error("删除失败");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  /** 批量硬删除选中的课程（精确按 id，不级联） */
+  const handleBatchDelete = async () => {
+    if (selectedRowKeys.length === 0) return;
+    const ids = selectedRowKeys.map((k) => Number(k));
+    try {
+      setIsDeleting(true);
+      const res = await courseApi.batchDelete(ids);
+      if (res.status === "success") {
+        message.success(`已删除 ${ids.length} 条课程`);
+      } else {
+        message.error(res.message || "批量删除失败");
+      }
+      setSelectedRowKeys([]);
+      fetchTimetable(selectedWeek);
+      fetchCourses(selectedWeek);
+    } catch (error: any) {
+      console.error("批量删除失败:", error);
+      message.error(error?.response?.data?.message || error?.message || "批量删除失败");
     } finally {
       setIsDeleting(false);
     }
@@ -1477,6 +1556,26 @@ export default function Course() {
         >
           刷新
         </Button>
+        {isAdmin && (
+          <Popconfirm
+            title={`确定批量硬删选中的 ${selectedRowKeys.length} 条课程？`}
+            description="硬删不可恢复，课程可由爬虫重爬恢复。"
+            okText="删除"
+            okButtonProps={{ danger: true }}
+            cancelText="取消"
+            disabled={selectedRowKeys.length === 0 || isDeleting}
+            onConfirm={handleBatchDelete}
+          >
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              disabled={selectedRowKeys.length === 0 || isPolling}
+              loading={isDeleting}
+            >
+              批量删除{selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : ""}
+            </Button>
+          </Popconfirm>
+        )}
       </>
     );
 
@@ -1719,6 +1818,11 @@ export default function Course() {
             dataSource={courses}
             columns={columns}
             rowKey="id"
+            rowSelection={{
+              selectedRowKeys,
+              onChange: (keys) => setSelectedRowKeys(keys),
+              preserveSelectedRowKeys: true,
+            }}
             scroll={isMobile ? undefined : { x: isAdmin ? 850 : 700 }}
           />
         )}
