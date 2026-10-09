@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import type { ChangeEvent } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import type { ChangeEvent, KeyboardEvent } from "react";
 
 interface OtpInputProps {
   value: string;
@@ -7,6 +7,13 @@ interface OtpInputProps {
   length?: number;
   disabled?: boolean;
   autoFocus?: boolean;
+  /** 在输入框内按下回车时触发（用于「输完直接提交」） */
+  onEnter?: () => void;
+}
+
+export interface OtpInputHandle {
+  /** 聚焦到输入框（如验证码校验失败后重新聚焦） */
+  focus: () => void;
 }
 
 /**
@@ -23,15 +30,18 @@ interface OtpInputProps {
  * 单输入框天然没有这些问题：退格就是删末尾字符，长按可连续删，焦点全程不变。
  *
  * 额外收益：`autoComplete="one-time-code"` 让 iOS 支持从短信/密码管理器一键填入验证码。
+ *
+ * 调用方共 4 处，全部共用本组件（MFA 设置/禁用 2 处、管理端设置页 1 处、登录页两步验证 1 处）。
  */
-export default function OtpInput({
-  value,
-  onChange,
-  length = 6,
-  disabled = false,
-  autoFocus = false,
-}: OtpInputProps) {
+const OtpInput = forwardRef<OtpInputHandle, OtpInputProps>(function OtpInput(
+  { value, onChange, length = 6, disabled = false, autoFocus = false, onEnter },
+  ref,
+) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => inputRef.current?.focus(),
+  }), []);
 
   useEffect(() => {
     if (!autoFocus) return;
@@ -42,6 +52,11 @@ export default function OtpInput({
   /** 过滤非数字并按长度截断：粘贴一整串也能正确填入 */
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     onChange(e.target.value.replace(/\D/g, "").slice(0, length));
+  };
+
+  /** 回车提交（是否允许提交由调用方判断，组件不掺业务） */
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") onEnter?.();
   };
 
   /** 点格子任意位置都聚焦到那唯一的 input（它盖在上面，本身就是点击目标） */
@@ -72,6 +87,7 @@ export default function OtpInput({
         className="otp-native"
         value={value}
         onChange={handleChange}
+        onKeyDown={handleKeyDown}
         disabled={disabled}
         maxLength={length}
         inputMode="numeric"
@@ -80,4 +96,6 @@ export default function OtpInput({
       />
     </div>
   );
-}
+});
+
+export default OtpInput;

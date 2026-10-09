@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+### 管理端：登录页两步验证码漏改 —— 4 处输入口全部收敛到 OtpInput（2026-10-09）
+- 上一轮改 MFA 验证码时只覆盖了个人中心（设置/禁用）与管理端设置页共 3 处，**登录页「两步验证」弹窗漏改**，仍是旧的「6 个真实 input + 自动跳格」——用户在登录验证时依然踩到退格停当前格、清空要点 12 次、长按只删一个、反复弹软键盘。
+- `Login.tsx` 改用共用 `OtpInput`；为此给组件补两个能力：`onEnter`（输完 6 位回车直接提交，Enter 判定收在组件内）与 `forwardRef` 暴露 `focus()`（校验失败后重新聚焦），替换原先散落的 `inputRefs` 数组与手写跳格/退格/粘贴逻辑（净删约 55 行）。
+- 现状：管理端 4 处验证码输入（Profile 设置、Profile 禁用、Settings、Login）全部共用同一组件；产物中 `otp-native`/`otp-cell`/`one-time-code` 各只存在一份定义。
+- 新增防回归守卫 `src/components/common/__tests__/otp-input-consistency.test.ts`（AST 扫描，非 grep）：① 全站不得出现 JSX `maxLength={1}`；② 任何出现「验证码」字样的页面/组件必须引用 OtpInput；③ OtpInput 至少被 3 个文件实际使用。**已做反向验证**：注入含 `maxLength={1}` 的探针文件后两条断言均变红并精确报出 `pages/__fence_probe.tsx:3`，移除后恢复全绿。
+- 验证：`tsc --noEmit` 0 错；`vitest run` **14/14 通过**（新增 3 条守卫）；`npm run build` 成功（36.99s）；产物 `maxLength` 取值仅 50/100/200/300/500，无 `maxLength:1`。
+
 ### 天气页图标：深色背景版由「整体白化」改为「仅灰色部件转白」（2026-10-09）
 - 反馈：整体填白后太阳失去辨识度，需求是"只把乌云（灰色）转成白色"，太阳的橙色单独保留。
 - `gen_weather_icons.py` 深色背景版生成规则改为**按 HSV 饱和度选择性白化**：低饱和像素（云/雾/雪的灰蓝，饱和度 0.06~0.17）转纯白；高饱和的彩色部件原样保留（太阳橙 #FFB300、雨滴蓝 #29B6F6、闪电黄 #FFCA28 均在 0.8+）。效果：sun 全橙、sun-cloud 橙日白云、cloud/fog 全白、rain 白云蓝雨、thunder 白云黄电。

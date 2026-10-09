@@ -17,6 +17,7 @@ import { useUser } from "@/contexts/UserContext";
 import { tokenStorage } from "@/utils/token";
 import request from "@/api/request";
 import Footer from "@/components/Footer";
+import OtpInput, { type OtpInputHandle } from "@/components/common/OtpInput";
 import { APP_VERSION } from "@/version";
 
 // 导入5张背景图
@@ -65,8 +66,8 @@ export default function Login() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
   const [form] = Form.useForm();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const inputRefs = useRef<any[]>([]);
+  // 两步验证码输入框（单输入框实现，聚焦用于校验失败后重新定位）
+  const otpRef = useRef<OtpInputHandle>(null);
 
   // 随机选择一张背景图（组件挂载时只执行一次）
   const randomBg = useRandomBackground();
@@ -194,14 +195,14 @@ export default function Login() {
         message.error(errMsg);
         // 清除输入框
         setMfaCode("");
-        setTimeout(() => inputRefs.current[0]?.focus(), 100);
+        setTimeout(() => otpRef.current?.focus(), 100);
       }
     } catch (error: any) {
       const errorMsg = error.response?.data?.message || "验证失败，请重试";
       message.error(errorMsg);
       // 清除输入框
       setMfaCode("");
-      setTimeout(() => inputRefs.current[0]?.focus(), 100);
+      setTimeout(() => otpRef.current?.focus(), 100);
     } finally {
       setMfaLoading(false);
     }
@@ -212,8 +213,9 @@ export default function Login() {
     setMfaCode(cleanValue);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && mfaCode.length === 6) {
+  /** 验证码输完 6 位后回车直接提交（Enter 判定在 OtpInput 内部完成） */
+  const handleOtpEnter = () => {
+    if (mfaCode.length === 6) {
       handleMfaSubmit();
     }
   };
@@ -344,15 +346,10 @@ export default function Login() {
         open={mfaVisible}
         onCancel={() => setMfaVisible(false)}
         afterOpenChange={(open) => {
+          // 弹窗打开后确保聚焦到验证码输入框（autoFocus 之外再兜一次底，
+          // 覆盖 Modal 动画期间首次 focus 被吞掉的情况）
           if (open) {
-            // 弹窗打开后确保聚焦第一个输入框
-            setTimeout(() => {
-              const firstInput = inputRefs.current[0];
-              if (firstInput) {
-                firstInput.focus();
-                firstInput.select();
-              }
-            }, 300);
+            setTimeout(() => otpRef.current?.focus(), 300);
           }
         }}
         footer={null}
@@ -383,67 +380,15 @@ export default function Login() {
             请打开您的身份验证器应用，输入6位验证码
           </Paragraph>
 
-          {/* 验证码输入框 */}
+          {/* 验证码输入框：与 MFA 设置/禁用弹窗共用同一个组件（单输入框实现） */}
           <Space direction="vertical" size="middle" style={{ width: "100%", marginBottom: 8 }}>
-            <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
-              {[0, 1, 2, 3, 4, 5].map((index) => (
-                <Input
-                  key={index}
-                  ref={(el) => {
-                    inputRefs.current[index] = el;
-                  }}
-                  value={mfaCode[index] || ""}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, "");
-                    if (!val) return;
-
-                    const newCode = mfaCode.split("");
-                    newCode[index] = val[val.length - 1];
-                    setMfaCode(newCode.join(""));
-
-                    // 跳到下一个输入框
-                    if (index < 5) {
-                      setTimeout(() => {
-                        inputRefs.current[index + 1]?.focus();
-                      }, 10);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Backspace") {
-                      if (mfaCode[index]) {
-                        const newCode = mfaCode.split("");
-                        newCode[index] = "";
-                        setMfaCode(newCode.join(""));
-                      } else if (index > 0) {
-                        setTimeout(() => {
-                          inputRefs.current[index - 1]?.focus();
-                        }, 10);
-                      }
-                    }
-                    if (e.key === "Enter") {
-                      handleKeyDown(e);
-                    }
-                  }}
-                  onPaste={(e) => {
-                    e.preventDefault();
-                    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-                    if (pasted) {
-                      setMfaCode(pasted);
-                    }
-                  }}
-                  maxLength={1}
-                  size="large"
-                  style={{
-                    width: 44,
-                    height: 48,
-                    textAlign: "center",
-                    fontSize: 20,
-                    fontWeight: 500,
-                    borderRadius: 4,
-                  }}
-                />
-              ))}
-            </div>
+            <OtpInput
+              ref={otpRef}
+              value={mfaCode}
+              onChange={handleCodeChange}
+              autoFocus
+              onEnter={handleOtpEnter}
+            />
 
             {/* 提示信息 */}
             <div
