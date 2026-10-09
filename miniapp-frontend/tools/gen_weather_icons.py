@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """生成小程序天气图标 PNG（替代 emoji，跨设备渲染一致）。
 输出到 src/assets/weather/，文件名为天气图标键（sun/cloud/...）。
+同时输出白色版到 src/assets/weather/white/（深色背景专用，天气页渐变底）。
 用 Pillow 绘制，256 绘制后降采样到 128 抗锯齿。
 """
 import math
@@ -9,7 +10,9 @@ import os
 from PIL import Image, ImageDraw
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "src", "assets", "weather")
+OUT_WHITE = os.path.join(OUT, "white")
 os.makedirs(OUT, exist_ok=True)
+os.makedirs(OUT_WHITE, exist_ok=True)
 
 S = 256  # 绘制分辨率（2x），最终降采样到 128
 
@@ -77,7 +80,12 @@ def fog_lines(draw, cx, top, color):
 def save(img, name):
     img = img.resize((128, 128), Image.LANCZOS)
     img.save(os.path.join(OUT, f"{name}.png"))
-    print(f"  -> {name}.png")
+    # 白色版：用彩色图的 alpha 通道当形状蒙版，整体填纯白（深色背景专用）。
+    # 这样两套图标形状严格一致，只差颜色；运行时直接引用，无需再在端上做白化合成。
+    white = Image.new("RGBA", img.size, (255, 255, 255, 0))
+    white.putalpha(img.getchannel("A"))
+    white.save(os.path.join(OUT_WHITE, f"{name}.png"))
+    print(f"  -> {name}.png (+ white)")
 
 
 # 调色板

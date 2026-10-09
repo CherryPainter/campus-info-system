@@ -7,6 +7,16 @@ import snowIcon from '@/assets/weather/snow.png';
 import thunderIcon from '@/assets/weather/thunder.png';
 import fogIcon from '@/assets/weather/fog.png';
 
+// 白色版（深色背景专用）：与彩色版同形状、纯白填充，由 tools/gen_weather_icons.py 一并生成
+import sunWhite from '@/assets/weather/white/sun.png';
+import sunCloudWhite from '@/assets/weather/white/sun-cloud.png';
+import cloudWhite from '@/assets/weather/white/cloud.png';
+import rainWhite from '@/assets/weather/white/rain.png';
+import heavyRainWhite from '@/assets/weather/white/heavy-rain.png';
+import snowWhite from '@/assets/weather/white/snow.png';
+import thunderWhite from '@/assets/weather/white/thunder.png';
+import fogWhite from '@/assets/weather/white/fog.png';
+
 export type WeatherIconKey =
   | 'sun'
   | 'sun-cloud'
@@ -26,6 +36,18 @@ const ICONS: Record<WeatherIconKey, string> = {
   snow: snowIcon,
   thunder: thunderIcon,
   fog: fogIcon,
+};
+
+/** 白色版图标：天气页（深色渐变背景）专用，直接引用预白化 PNG */
+const WHITE_ICONS: Record<WeatherIconKey, string> = {
+  sun: sunWhite,
+  'sun-cloud': sunCloudWhite,
+  cloud: cloudWhite,
+  rain: rainWhite,
+  'heavy-rain': heavyRainWhite,
+  snow: snowWhite,
+  thunder: thunderWhite,
+  fog: fogWhite,
 };
 
 /**
@@ -49,4 +71,17 @@ export function textToIconKey(text?: string | null): WeatherIconKey {
  */
 export function getWeatherIconSrc(text?: string | null): string {
   return ICONS[textToIconKey(text)];
+}
+
+/**
+ * 白色版图标资源（深色背景专用，如天气页渐变底）。
+ *
+ * 为什么不做「运行时白化」：小程序 Canvas 2D 对 `ctx.filter` 支持不完整，部分机型/
+ * 基础库会静默忽略；离屏 canvas 合成（source-in 填白）也依赖 `createOffscreenCanvas`
+ * 可用性，属不确定路径。改为直接使用预生成的纯白 PNG，等价于把白化前置到构建期，
+ * 结果与设备、基础库彻底无关。
+ * 彩色版仍供浅色背景（首页天气小卡）使用，见 getWeatherIconSrc。
+ */
+export function getWeatherIconSrcWhite(text?: string | null): string {
+  return WHITE_ICONS[textToIconKey(text)];
 }

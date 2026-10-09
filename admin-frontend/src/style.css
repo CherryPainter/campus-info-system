@@ -234,3 +234,66 @@
 .ant-pro-grid-content {
   overflow-x: clip !important;
 }
+
+/* ========== 数字验证码输入框（MFA 设置/禁用弹窗） ==========
+ * 结构见 components/common/OtpInput.tsx：一个透明 input 覆盖在整排展示格上。
+ * 展示格只负责显示与高亮，输入/删除/长按连删都由那个唯一的 input 承担。
+ */
+.otp-input {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.otp-cell {
+  width: 44px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font-size: 20px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.88);
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+/* 当前待输入格：与 antd Input 聚焦态保持一致 */
+.otp-cell.is-active {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1);
+}
+
+.otp-input.is-disabled .otp-cell {
+  color: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.04);
+  cursor: not-allowed;
+}
+
+/*
+ * 真实输入框：铺满整排格子但完全透明，光标效果交给 .otp-cell.is-active。
+ * - 用 opacity 而不是 visibility/display，元素仍可点击聚焦；
+ * - font-size 保持 16px：移动端小于 16px 会触发浏览器自动放大页面；
+ * - caret-color 透明，避免在透明层上闪一个看不见位置的光标。
+ */
+.otp-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+  opacity: 0;
+  cursor: text;
+}

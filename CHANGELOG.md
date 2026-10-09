@@ -6,6 +6,27 @@
 
 ## Unreleased
 
+### 三处 UI 缺陷修复：管理端 MFA 验证码输入 + 小程序天气图标白化 + 设置页开关（2026-10-09）
+
+**管理端 · MFA 验证码框改为「单输入框」实现**（`components/common/OtpInput.tsx`、`src/style.css`）
+- 旧实现是 6 个真实 `<input>` + 自动跳格，带来三个问题：退格时焦点停在当前格（当前格有值要先删它、再按一次才回上一格，填满 6 位时清空要点 12 次）；每格 `maxLength=1`，长按退格也只删一个字符；每删一格都要切焦点，移动端浏览器会在焦点切换时反复弹软键盘。
+- 新实现：底层一个透明 `<input>` 覆盖在整排展示格上（`opacity:0`、`font-size:16px` 防移动端自动放大），6 个格子只负责显示与高亮（`.otp-cell.is-active`）。退格即删末尾字符、长按可连删、焦点全程不变（不再反复弹键盘）；`autoComplete="one-time-code"` 让 iOS 可从短信/密码管理器一键填入。三处调用（`Profile.tsx` 设置/禁用 MFA、`Settings.tsx`）共用同一组件。
+
+**小程序 · 天气页图标统一纯白**（`pages/weather/*`、`utils/weatherIcons.ts`、`tools/gen_weather_icons.py`）
+- 现象：天气页为深色渐变底，时间轴与 7 天列表的图标保持原色（太阳橙、云与雨灰蓝），在深色背景上"糊成一片、看不清"。
+- 旧方案不可靠：时间轴用 `ctx.filter='brightness(0) invert(1)'`（小程序 Canvas 2D 对 filter 支持不完整，部分机型/基础库静默忽略）；7 天列表用 wxss `filter`（同样不保证生效）；其间还引入过基于 `createOffscreenCanvas` 的运行时合成白化，仍属设备相关路径。
+- 改为**构建期白化**：`tools/gen_weather_icons.py` 生成彩色图标时，用其 alpha 通道作形状蒙版，同步输出一套纯白 PNG 到 `src/assets/weather/white/`；`weatherIcons.ts` 新增 `getWeatherIconSrcWhite()`；天气页时间轴与 7 天列表均改用它，运行时不再做任何白化。首页天气小卡是浅色底，继续用彩色版 `getWeatherIconSrc()`。
+- 移除 `whitenIcon` / `drawWhiteIcon` / `ICON_WHITEN_SIZE` 及 `pages/weather/index.scss` 里的 `filter: brightness(0) invert(1)`。
+
+**小程序 · 设置页开关（`components/Switch/index.scss`）**
+- 该开关是项目自绘 `app-switch`（NutUI 全量 style 未随 Taro 打进产物，直接用 NutUI Switch 只会渲染无样式裸节点，这正是"白色圆点不在胶囊里"的成因）。本次未改其样式，复核几何正确并重新构建落盘。
+
+**构建与验证（2026-10-09）**
+- 小程序：`tsc --noEmit` 0 错；`taro build --type weapp` 编译成功（18.33s）；产物 27/27 页面齐全、入口文件齐；`dist/common.wxss` 含 `.app-switch`（4 处）与 `.app-switch-knob`（2 处），声明为 `88×48rpx` 胶囊 + `40×40rpx` 圆点 `top/left:4rpx`；`dist/pages/weather/index.wxss` 已无 `brightness`、`index.js` 已无 `whitenIcon`/`ICON_WHITEN_SIZE`；解码 `dist/common.js` 内联图标共 16 张 = 8 彩色 + 8 纯白（白色版非透明像素 100% 为 `(255,255,255)`）；`process.env` 残留 0。
+- 管理端：`npm run build`（tsc + vite）成功（14.48s）；产物 `index-*.js` 含 `otp-native/otp-input/otp-cell`，`index-*.css` 含 `.otp-*` 样式。
+- 开关几何实测（无头 Chrome，375px 视口按 1rpx=0.5px 复现）：20×20 圆点在 44×24 胶囊内上下间距各 2.00px（垂直居中），水平为关闭态左 2/右 22、开启态左 22/右 2 的标准停靠。
+- 说明：以上源码修复此前已存在于工作区但**从未重新构建**，用户看到的仍是旧产物（旧 NutUI 开关裸节点 / 旧 `ctx.filter` 白化 / 旧 6 格验证码），本次一并构建落盘。
+
 ## v6.21.0 (2026-10-01)
 
 ### 第三方通知（webhook）：学生端可见/管理范围改造 + 自建上限收紧为 2 + 管理端放开课表/天气接收范围（2026-10-01）

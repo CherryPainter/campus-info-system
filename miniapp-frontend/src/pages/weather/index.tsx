@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Canvas, Image } from '@tarojs/components';
 import { useLoad, getWindowInfo, stopPullDownRefresh, usePullDownRefresh } from '@tarojs/taro';
 import Taro from '@tarojs/taro';
 
-import { getWeatherIconSrc } from '@/utils/weatherIcons';
+import { getWeatherIconSrcWhite } from '@/utils/weatherIcons';
 import * as weatherApi from '@/api/weather';
 import type {
   WeatherNow,
@@ -732,25 +732,18 @@ export default function WeatherPage() {
       const isActive = i === idx;
       const isEmphasized = isNow || isActive;   // 需要强调的点（图标同步放大）
 
-      // 天气图标 PNG（替代 emoji，避免不同设备渲染不一致）
+      // 天气图标：直接使用预生成的纯白 PNG（深色背景专用），不做运行时白化。
       // 注意：Canvas 2D 的 drawImage 只接受 Image/Canvas 对象，直接把 base64/路径字符串传入会
       // 抛 parameter error，导致下方时间文字绘制被中断（表现为"时间轴文字消失"）。
       // 因此这里懒加载本地 PNG → Image 对象后再绘制：未就绪时先跳过图标，绝不影响时间文字。
       const iconSize = isEmphasized ? 36 : 30;   // 强调点 36px，普通点 30px（同步文字放大）
       {
-        const src = getWeatherIconSrc(h.text);
+        const src = getWeatherIconSrcWhite(h.text);
         const cached = iconCacheRef.current[src];
         if (cached === 'loading' || cached === 'error') {
           // 加载中/加载失败：本次先跳过图标（不抛异常，时间文字照常画）
         } else if (cached) {
-          const iconX = px - iconSize / 2;
-          const iconY = timeY;
-          // 白色化：用 filter 的 brightness(0) invert(1) 把图标变成纯白
-          // save/restore 保证不影响后续绘制
-          ctx.save();
-          ctx.filter = 'brightness(0) invert(1)';
-          ctx.drawImage(cached, iconX, iconY, iconSize, iconSize);
-          ctx.restore();
+          ctx.drawImage(cached, px - iconSize / 2, timeY, iconSize, iconSize);
         } else {
           // 首次遇到：标记 loading 并异步加载；onload 成功后补一次重绘把图标画上
           iconCacheRef.current[src] = 'loading';
@@ -1142,7 +1135,7 @@ export default function WeatherPage() {
               <Text className="daily-week">{getWeekdayLabel(d.fx_date, i)}</Text>
               {/* 中间：图标 + 右上角降水概率角标 */}
               <View className="daily-icon-wrap">
-                <Image className="daily-icon-img" src={getWeatherIconSrc(d.text_day)} mode="aspectFit" />
+                <Image className="daily-icon-img" src={getWeatherIconSrcWhite(d.text_day)} mode="aspectFit" />
                 {d.pop != null && Number(d.pop) >= 10 && (
                   <Text className="daily-pop-badge">{Math.round(Number(d.pop))}%</Text>
                 )}
