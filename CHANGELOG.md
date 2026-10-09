@@ -7,7 +7,7 @@
 ## Unreleased
 
 ### 后端 · 电量数据归属维度重构：由「微信账号 user_id」改为「学生身份 student_key」（2026-10-09）
-- **背景**：换绑学生身份 / 换小程序 appid 会让 openid 变化、新建 user_id，原按 `user_id` 归属的电量历史被打成孤儿数据、换绑后查不到。决策：电量数据应绑定在「学生」而非「微信账号」上。
+- **背景**：电量三表原按 `user_id`（微信账号）归属，该设计在「换绑身份 / 换小程序 appid」场景下极其脆弱——一次生产真实事件暴露了问题：用户因更换小程序 appid 导致微信 `openid` 变化，旧身份在小程序内失效；用户解绑并重新绑定后系统按新 `openid` 新建了 `user_id=14`（身份 `cqie|2024006444`），而旧账号 `user_id=4`（昵称"萝卜白菜"）名下的历史电量数据（三表共 828+345+1 行）因 `user_id` 归属关系随账号变化而**失联成孤儿数据**（数据仅失联、未被删除）。根因：电量历史绑在「微信账号」而非「学生身份」上，只要换 appid / 换微信账号就会丢历史。决策：电量数据应绑定在「学生身份」而非「微信账号」上，换绑身份 / 换 appid 后历史自动接续可见。
 - **模型层**（`app/model/electricity.py`）：`electricity_records` / `electricity_remaining` / `electricity_total_capacity` 三表各新增 `student_key VARCHAR(255) NULL INDEX`（取值 `学校|学号`，NULL=历史全局数据/未绑定身份）；`user_id` 降级为**审计列**（记录写入时的微信账号，不参与读写过滤，便于回滚）。
 - **仓库层**（`app/repository/electricity_repository.py`）：新增 `make_student_key(school, number)` 与 `student_key_of_user(session, user_id)`（由 user_id 反查当前绑定身份键）；全部读方法统一按 `student_key` 过滤（`student_key is not None → = ?`，为 None → `IS NULL`，兼容旧全局视图语义）；写方法同时回填 `student_key`（逻辑归属）+ `user_id`（审计）；批量去重与保留行同步回填两列；去重分组键由 `(user_id, date, meter)` 改为 `(student_key, date, meter)`。
 - **服务层**（`app/services/electricity_service.py` + `app/modules/electricity/capacity_manager.py`）：主归属维度由 `self._user_id` 改为 `self._student_key`；全部业务方法对仓库调用改用 `student_key=self._student_key`；两级缓存键由 `(user_id, meter)` 改为 `(student_key, meter)`（冷却状态按身份独立）；两个工厂 `get_electricity_service` / `get_capacity_manager` 在只传 `user_id` 时内部反解为 `student_key` 再走缓存。

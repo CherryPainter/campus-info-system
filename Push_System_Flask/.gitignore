@@ -88,3 +88,8 @@ app/cqie-course-timetable/course_table.json
 data/electricity/*.json
 # 天气采集冷却状态（点文件）
 data/weather/.cooldown_state
+
+# -------------------- 运维 / 一次性脚本（部署辅助，不入库） --------------------
+# 回填等一次性脚本的生产部署副本：源在 技术总结/dev-scripts/（已被根 .gitignore 忽略），
+# 此处的 tool/ 仅作生产机同步落点，不进版本库。
+tool/
