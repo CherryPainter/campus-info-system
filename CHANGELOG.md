@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+### 天气页图标：深色背景版由「整体白化」改为「仅灰色部件转白」（2026-10-09）
+- 反馈：整体填白后太阳失去辨识度，需求是"只把乌云（灰色）转成白色"，太阳的橙色单独保留。
+- `gen_weather_icons.py` 深色背景版生成规则改为**按 HSV 饱和度选择性白化**：低饱和像素（云/雾/雪的灰蓝，饱和度 0.06~0.17）转纯白；高饱和的彩色部件原样保留（太阳橙 #FFB300、雨滴蓝 #29B6F6、闪电黄 #FFCA28 均在 0.8+）。效果：sun 全橙、sun-cloud 橙日白云、cloud/fog 全白、rain 白云蓝雨、thunder 白云黄电。
+- 目录 `src/assets/weather/white/` → **`on-dark/`**（原名与内容不符），`getWeatherIconSrcWhite()` → **`getWeatherIconSrcOnDark()`**（`weatherIcons.ts` 导出与天气页两处调用同步改名）。
+- 验证：`tsc --noEmit` 0 错；`taro build --type weapp` 成功，27/27 页面齐全；解码产物 `dist/common.js` 内联 16 图，on-dark 版 sun 主色仍为 `(255,179,0)` 橙、cloud/fog 100% 纯白、rain/thunder 保留蓝雨滴/黄闪电；`process.env` 残留 0。对比图见 `技术总结/天气图标深色背景版对比.png`。
+
 ### 三处 UI 缺陷修复：管理端 MFA 验证码输入 + 小程序天气图标白化 + 设置页开关（2026-10-09）
 
 **管理端 · MFA 验证码框改为「单输入框」实现**（`components/common/OtpInput.tsx`、`src/style.css`）

@@ -377,8 +377,9 @@
     width: 48rpx;
     height: 48rpx;
     display: block;
-    // 深色背景上的白色图标由 weatherIcons 提供预白化 PNG（getWeatherIconSrcWhite），
-    // 这里不再用 CSS filter 白化：小程序 wxss 的 filter 在部分基础库/机型上不生效。
+    // 深色背景上的图标由 weatherIcons 提供预生成资源（getWeatherIconSrcOnDark）：
+    // 灰色云/雾转白、太阳与闪电保留原色。这里不再用 CSS filter 白化——
+    // 小程序 wxss 的 filter 在部分基础库/机型上不生效，且会连带把太阳也变白。
   }
 
   // 降水概率角标（图标右上角）

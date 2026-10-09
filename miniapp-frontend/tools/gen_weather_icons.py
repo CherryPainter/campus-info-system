@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """生成小程序天气图标 PNG（替代 emoji，跨设备渲染一致）。
 输出到 src/assets/weather/，文件名为天气图标键（sun/cloud/...）。
-同时输出白色版到 src/assets/weather/white/（深色背景专用，天气页渐变底）。
+同时输出深色背景版到 src/assets/weather/on-dark/（天气页渐变底）。
 用 Pillow 绘制，256 绘制后降采样到 128 抗锯齿。
 """
 import math
@@ -10,9 +10,9 @@ import os
 from PIL import Image, ImageDraw
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "src", "assets", "weather")
-OUT_WHITE = os.path.join(OUT, "white")
+OUT_DARK = os.path.join(OUT, "on-dark")
 os.makedirs(OUT, exist_ok=True)
-os.makedirs(OUT_WHITE, exist_ok=True)
+os.makedirs(OUT_DARK, exist_ok=True)
 
 S = 256  # 绘制分辨率（2x），最终降采样到 128
 
@@ -77,15 +77,33 @@ def fog_lines(draw, cx, top, color):
         draw.line([cx - 8, y, cx + 78, y], fill=color, width=12, joint="curve")
 
 
+def to_dark_variant(img):
+    """深色背景版：只把「灰色系」像素转纯白，保留彩色部件。
+
+    判据用 HSV 饱和度（而不是把整张图填白）：云/雾/雪的灰蓝饱和度约 0.06~0.17，
+    而太阳橙 #FFB300、雨滴蓝 #29B6F6、闪电黄 #FFCA28 都在 0.8 以上，天然可分离。
+    为什么不整体填白：太阳/闪电填白后在深色底上失去辨识度，而灰色云在深色底上
+    本来就会"融为一体"—— 所以只白化后者（贴近 iOS 天气的分层做法）。
+    """
+    out = img.copy()
+    px = out.load()
+    for y in range(out.height):
+        for x in range(out.width):
+            r, g, b, a = px[x, y]
+            if a == 0:
+                continue
+            mx, mn = max(r, g, b), min(r, g, b)
+            sat = 0.0 if mx == 0 else (mx - mn) / mx
+            if sat < 0.25:  # 低饱和 = 灰色系 → 纯白（保留原 alpha，维持抗锯齿边缘）
+                px[x, y] = (255, 255, 255, a)
+    return out
+
+
 def save(img, name):
     img = img.resize((128, 128), Image.LANCZOS)
     img.save(os.path.join(OUT, f"{name}.png"))
-    # 白色版：用彩色图的 alpha 通道当形状蒙版，整体填纯白（深色背景专用）。
-    # 这样两套图标形状严格一致，只差颜色；运行时直接引用，无需再在端上做白化合成。
-    white = Image.new("RGBA", img.size, (255, 255, 255, 0))
-    white.putalpha(img.getchannel("A"))
-    white.save(os.path.join(OUT_WHITE, f"{name}.png"))
-    print(f"  -> {name}.png (+ white)")
+    to_dark_variant(img).save(os.path.join(OUT_DARK, f"{name}.png"))
+    print(f"  -> {name}.png (+ on-dark)")
 
 
 # 调色板

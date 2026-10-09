@@ -7,15 +7,16 @@ import snowIcon from '@/assets/weather/snow.png';
 import thunderIcon from '@/assets/weather/thunder.png';
 import fogIcon from '@/assets/weather/fog.png';
 
-// 白色版（深色背景专用）：与彩色版同形状、纯白填充，由 tools/gen_weather_icons.py 一并生成
-import sunWhite from '@/assets/weather/white/sun.png';
-import sunCloudWhite from '@/assets/weather/white/sun-cloud.png';
-import cloudWhite from '@/assets/weather/white/cloud.png';
-import rainWhite from '@/assets/weather/white/rain.png';
-import heavyRainWhite from '@/assets/weather/white/heavy-rain.png';
-import snowWhite from '@/assets/weather/white/snow.png';
-import thunderWhite from '@/assets/weather/white/thunder.png';
-import fogWhite from '@/assets/weather/white/fog.png';
+// 深色背景版（天气页渐变底用）：灰色部件转白、彩色部件（太阳橙/雨滴蓝/闪电黄）保留，
+// 由 tools/gen_weather_icons.py 与彩色版一并生成
+import sunOnDark from '@/assets/weather/on-dark/sun.png';
+import sunCloudOnDark from '@/assets/weather/on-dark/sun-cloud.png';
+import cloudOnDark from '@/assets/weather/on-dark/cloud.png';
+import rainOnDark from '@/assets/weather/on-dark/rain.png';
+import heavyRainOnDark from '@/assets/weather/on-dark/heavy-rain.png';
+import snowOnDark from '@/assets/weather/on-dark/snow.png';
+import thunderOnDark from '@/assets/weather/on-dark/thunder.png';
+import fogOnDark from '@/assets/weather/on-dark/fog.png';
 
 export type WeatherIconKey =
   | 'sun'
@@ -38,16 +39,16 @@ const ICONS: Record<WeatherIconKey, string> = {
   fog: fogIcon,
 };
 
-/** 白色版图标：天气页（深色渐变背景）专用，直接引用预白化 PNG */
-const WHITE_ICONS: Record<WeatherIconKey, string> = {
-  sun: sunWhite,
-  'sun-cloud': sunCloudWhite,
-  cloud: cloudWhite,
-  rain: rainWhite,
-  'heavy-rain': heavyRainWhite,
-  snow: snowWhite,
-  thunder: thunderWhite,
-  fog: fogWhite,
+/** 深色背景版图标：天气页（深色渐变背景）专用，直接引用预生成 PNG（规则见 gen_weather_icons.py） */
+const ON_DARK_ICONS: Record<WeatherIconKey, string> = {
+  sun: sunOnDark,
+  'sun-cloud': sunCloudOnDark,
+  cloud: cloudOnDark,
+  rain: rainOnDark,
+  'heavy-rain': heavyRainOnDark,
+  snow: snowOnDark,
+  thunder: thunderOnDark,
+  fog: fogOnDark,
 };
 
 /**
@@ -74,14 +75,18 @@ export function getWeatherIconSrc(text?: string | null): string {
 }
 
 /**
- * 白色版图标资源（深色背景专用，如天气页渐变底）。
+ * 深色背景版图标资源（天气页渐变底专用）。
+ *
+ * 与彩色版的差别：**只把灰色部件（云/雾/雪）转成纯白**，彩色部件原样保留
+ * —— 太阳仍是橙色 #FFB300、雨滴仍是蓝色 #29B6F6、闪电仍是黄色 #FFCA28。
+ * 灰色云在深色底上会"融为一体"（用户反馈的原话），而太阳/闪电若一并填白则失去
+ * 辨识度，所以只白化前者（贴近 iOS 天气的分层做法）。判定用 HSV 饱和度，见生成脚本。
  *
  * 为什么不做「运行时白化」：小程序 Canvas 2D 对 `ctx.filter` 支持不完整，部分机型/
- * 基础库会静默忽略；离屏 canvas 合成（source-in 填白）也依赖 `createOffscreenCanvas`
- * 可用性，属不确定路径。改为直接使用预生成的纯白 PNG，等价于把白化前置到构建期，
- * 结果与设备、基础库彻底无关。
+ * 基础库会静默忽略；离屏 canvas 合成也依赖 `createOffscreenCanvas` 可用性，属不确定
+ * 路径。改为直接使用构建期预生成的 PNG，结果与设备、基础库彻底无关。
  * 彩色版仍供浅色背景（首页天气小卡）使用，见 getWeatherIconSrc。
  */
-export function getWeatherIconSrcWhite(text?: string | null): string {
-  return WHITE_ICONS[textToIconKey(text)];
+export function getWeatherIconSrcOnDark(text?: string | null): string {
+  return ON_DARK_ICONS[textToIconKey(text)];
 }
