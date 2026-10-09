@@ -13,7 +13,8 @@
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -42,7 +43,7 @@ class StudentProfile(Base):
     campus_card_number = Column(String(30), nullable=True, comment="校园卡号（一卡通号，与学号不同，用于校园卡卡片展示）")
     real_name = Column(String(50), nullable=True, comment="真实姓名")
     nickname = Column(String(50), nullable=True, comment="昵称（展示名，优先于真实姓名）")
-    avatar = Column(Text, nullable=True, comment="头像URL或Base64（学生维度，换微信号不丢；原 users.avatar 迁此）")
+    avatar = Column(MEDIUMTEXT, nullable=True, comment="头像URL或Base64（学生维度，换微信号不丢；原 users.avatar 迁此）")
     college = Column(String(100), nullable=True, comment="学院")
     major = Column(String(100), nullable=True, comment="专业")
     class_name = Column(String(100), nullable=True, comment="班级")

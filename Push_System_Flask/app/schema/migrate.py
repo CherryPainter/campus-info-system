@@ -258,6 +258,7 @@ def _column_type_to_sql(col_type) -> str:
     处理标准类型和自定义类型（如 JSONEncodedList）
     """
     from sqlalchemy import types as sa_types
+    from sqlalchemy.dialects import mysql as mysql_types
 
     # ── 处理 TypeDecorator（自定义类型，如 JSONEncodedList） ──
     if hasattr(col_type, 'impl') and hasattr(col_type, 'load_dialect_impl'):
@@ -266,6 +267,12 @@ def _column_type_to_sql(col_type) -> str:
 
     # ── 标准类型处理 ──
     # 注意检查顺序：先检查子类（更具体的类型），再检查父类
+    # MySQL 大文本类型（MEDIUMTEXT/LONGTEXT 是 Text 的子类，必须先于 Text 判断，
+    # 否则会被 isinstance(..., Text) 误判为 TEXT，而 TEXT 仅 64KB，存不下 base64 头像）
+    if isinstance(col_type, mysql_types.MEDIUMTEXT):
+        return 'MEDIUMTEXT'
+    if isinstance(col_type, mysql_types.LONGTEXT):
+        return 'LONGTEXT'
     if isinstance(col_type, sa_types.Text):
         return 'TEXT'
     elif isinstance(col_type, sa_types.JSON):
