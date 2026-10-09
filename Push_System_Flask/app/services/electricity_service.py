@@ -942,11 +942,14 @@ def get_electricity_service(
     """
     # 若只给了 user_id，反解为 student_key（数据归属维度）
     if student_key is None and user_id is not None:
-        from app.repository.electricity_repository import ElectricityRepository
+        from app.repository.electricity_repository import (
+            ElectricityRepository,
+            student_key_of_user,
+        )
 
         db = get_db()
         try:
-            student_key = ElectricityRepository.student_key_of_user(db, user_id)
+            student_key = student_key_of_user(db, user_id)
         finally:
             db.close()
 

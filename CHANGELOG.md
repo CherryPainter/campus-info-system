@@ -74,6 +74,7 @@
 - **Schema 自动迁移**：`student_key` 列由启动期 `cmd_migrate(quiet=True)` 对比模型自动补建，生产重启即生效，无需手写 ALTER、零停机。
 - **孤儿数据回填脚本**（一次性）：`技术总结/dev-scripts/backfill_electricity_student_key.py`——遍历三表中 `student_key IS NULL 且 user_id IS NOT NULL` 的行，由 `student_profits` 反查 `(school, student_number)` 回填 `student_key`（旧 Profile 因身份相同自动并入同一键）；不可从库内恢复身份的 user_id 收集列表、可用 `--map user_id,student_key.csv` 补充后重跑；`student_key IS NULL 且 user_id IS NULL` 的历史全局数据保持 NULL。默认演练（只统计不写库），`--apply` 实际回填；幂等、可回滚（仅写 student_key，user_id 审计列保留）。
 - **验证**：`python -m py_compile` 对全部改动文件（model / repository / service / capacity_manager / tasks / 三个路由 / 回填脚本）通过；回填脚本未对生产库执行（部署后手动运行，见脚本头部用法）。
+- **修复（2026-10-09 晚）**：`electricity_service.py` / `capacity_manager.py` 的 `get_electricity_service` / `get_capacity_manager` 工厂把**模块级函数** `student_key_of_user` 误当作 `ElectricityRepository` 的**类方法**调用（`ElectricityRepository.student_key_of_user(db, user_id)`），部署后所有电量接口 500（`AttributeError`，py_compile 无法捕获）。已统一改为模块级调用 `student_key_of_user(db, user_id)`，与 `admin_routes.py` / `electricity_routes.py` 既有用法一致；两文件 `py_compile` 通过、全仓已无类方法式误调用。
 
 ### 小程序 · 电量详情页新增「解绑 / 换绑」功能（2026-10-09）
 - **电量详情页入口**：电表名右侧编辑图标（`.elec-edit-icon`）接上点击，弹操作面板，提供三项——换绑电表接入信息（跳配置页重新粘贴）、解绑电表接入信息、换绑学生身份。
