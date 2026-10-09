@@ -17,8 +17,23 @@ import time
 from datetime import datetime, timedelta
 
 from app.core.logger import get_logger
+from app.repository.electricity_repository import make_student_key
 
 logger = get_logger(__name__)
+
+
+def _student_key_for(session, user_id: int) -> str | None:
+    """由 user_id 反查当前绑定身份的学生身份键（school|student_number）。"""
+    from app.model.student_profile import StudentProfile
+
+    row = (
+        session.query(StudentProfile.school, StudentProfile.student_number)
+        .filter(StudentProfile.user_id == user_id)
+        .first()
+    )
+    if not row:
+        return None
+    return make_student_key(row.school, row.student_number)
 
 
 # ------------------------------------------------------------------
@@ -52,8 +67,8 @@ def fetch_electricity_data() -> None:
 
     success_count = 0
     fail_msgs = []
-    for user_id, cookie in students:
-        success, msg = _fetch_and_save(user_id, cookie)
+    for user_id, cookie, student_key in students:
+        success, msg = _fetch_and_save(user_id, cookie, student_key=student_key)
         if success:
             success_count += 1
         else:
@@ -77,15 +92,21 @@ def _iter_students_with_cookie() -> list[tuple[int, str]]:
     session = get_db()
     try:
         rows = (
-            session.query(StudentProfile.user_id, StudentProfile.electricity_cookie)
+            session.query(
+                StudentProfile.user_id,
+                StudentProfile.electricity_cookie,
+                StudentProfile.school,
+                StudentProfile.student_number,
+            )
             .filter(StudentProfile.electricity_cookie.isnot(None))
             .all()
         )
         result = []
-        for user_id, cookie in rows:
+        for user_id, cookie, school, student_number in rows:
             cookie = (cookie or "").strip()
             if user_id and cookie:
-                result.append((user_id, cookie))
+                key = make_student_key(school, student_number)
+                result.append((user_id, cookie, key))
         return result
     finally:
         session.close()
@@ -110,16 +131,19 @@ def _iter_students_with_cookie_named() -> list[tuple[int, str, str]]:
                 StudentProfile.electricity_cookie,
                 StudentProfile.nickname,
                 StudentProfile.real_name,
+                StudentProfile.school,
+                StudentProfile.student_number,
             )
             .filter(StudentProfile.electricity_cookie.isnot(None))
             .all()
         )
         result = []
-        for user_id, cookie, nickname, real_name in rows:
+        for user_id, cookie, nickname, real_name, school, student_number in rows:
             cookie = (cookie or "").strip()
             if user_id and cookie:
                 name = (nickname or real_name or "").strip() or f"用户{user_id}"
-                result.append((user_id, cookie, name))
+                key = make_student_key(school, student_number)
+                result.append((user_id, cookie, name, key))
         return result
     finally:
         session.close()
@@ -204,30 +228,38 @@ def _build_report_payload(
 
 
 def _is_first_fetch(user_id: int) -> bool:
-    """判断该用户是否为首次爬取（该用户无任何用电记录）"""
+    """判断该学生身份是否为首次爬取（无任何用电记录）"""
     from app.core.database import get_db
     from app.model.electricity import ElectricityRecord
 
     session = get_db()
     try:
-        count = session.query(ElectricityRecord).filter(
-            ElectricityRecord.user_id == user_id
-        ).count()
+        key = _student_key_for(session, user_id)
+        q = session.query(ElectricityRecord)
+        if key is not None:
+            q = q.filter(ElectricityRecord.student_key == key)
+        else:
+            q = q.filter(ElectricityRecord.user_id == user_id)
+        count = q.count()
         return count == 0
     finally:
         session.close()
 
 
 def _has_data(user_id: int) -> bool:
-    """检查该用户是否有用电记录"""
+    """检查该学生身份是否有用电记录"""
     from app.core.database import get_db
     from app.model.electricity import ElectricityRecord
 
     session = get_db()
     try:
-        count = session.query(ElectricityRecord).filter(
-            ElectricityRecord.user_id == user_id
-        ).count()
+        key = _student_key_for(session, user_id)
+        q = session.query(ElectricityRecord)
+        if key is not None:
+            q = q.filter(ElectricityRecord.student_key == key)
+        else:
+            q = q.filter(ElectricityRecord.user_id == user_id)
+        count = q.count()
         return count > 0
     finally:
         session.close()
@@ -258,6 +290,7 @@ def lazy_fetch_for_user(user_id: int) -> bool:
     try:
         profile = db.query(StudentProfile).filter_by(user_id=user_id).first()
         cookie = (profile.electricity_cookie or "").strip() if profile else ""
+        student_key = _student_key_for(db, user_id)
     finally:
         db.close()
     if not cookie:
@@ -270,29 +303,41 @@ def lazy_fetch_for_user(user_id: int) -> bool:
         return False
     _lazy_fetch_cooldown[user_id] = now
     logger.info(f"[电量] 用户 {user_id} 首次进入电量页，后台触发全量采集")
-    threading.Thread(target=_fetch_and_save, args=(user_id, cookie), daemon=True).start()
+    threading.Thread(
+        target=_fetch_and_save, args=(user_id, cookie), kwargs={"student_key": student_key}, daemon=True
+    ).start()
     return True
 
 
-def _fetch_and_save(user_id: int, cookie: str, max_pages: int | None = None) -> tuple:
+def _fetch_and_save(user_id: int, cookie: str, max_pages: int | None = None, student_key: str | None = None) -> tuple:
     """
-    按用户爬取最新数据并保存到数据库
+    按学生身份爬取最新数据并保存到数据库
 
     爬取策略：
-    - 该用户首次爬取：全量爬取（最多50页）
+    - 该身份首次爬取：全量爬取（最多50页）
     - 日常爬取：只爬1页，获取最新数据，避免给服务器造成压力
 
     Args:
-        user_id: 归属用户ID
+        user_id: 审计列：写入数据的微信账号ID
         cookie: 该用户的电表爬虫 Cookie
         max_pages: 指定爬取页数，None 则自动判断
+        student_key: 归属学生身份键（学校|学号），None 时由 user_id 反解
 
     Returns:
         (success: bool, message: str)
     """
     from app.services.electricity_service import get_electricity_service
 
-    service = get_electricity_service(user_id=user_id, cookie=cookie)
+    if student_key is None:
+        from app.core.database import get_db
+
+        db = get_db()
+        try:
+            student_key = _student_key_for(db, user_id)
+        finally:
+            db.close()
+
+    service = get_electricity_service(user_id=user_id, cookie=cookie, student_key=student_key)
 
     if max_pages is None:
         max_pages = 1 if _has_data(user_id) else None
@@ -315,6 +360,7 @@ def _build_daily_stats(user_id: int, target_date: datetime) -> dict | None:
 
     session = get_db()
     try:
+        key = _student_key_for(session, user_id)
         query_start = (target_date + timedelta(days=1)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -324,7 +370,7 @@ def _build_daily_stats(user_id: int, target_date: datetime) -> dict | None:
             start_time=query_start,
             end_time=query_end,
             limit=10000,
-            user_id=user_id,
+            student_key=key,
         )
         total = 0.0
         meter_usage: dict[str, float] = {}
@@ -363,7 +409,7 @@ def _build_weekly_stats(user_id: int, week_end: datetime) -> dict | None:
             start_time=query_start,
             end_time=query_end,
             limit=100000,
-            user_id=user_id,
+            student_key=_student_key_for(session, user_id),
         )
         total = 0.0
         meter_usage: dict[str, float] = {}
@@ -415,7 +461,7 @@ def _build_monthly_stats(user_id: int, last_month_last_day: datetime) -> dict | 
             start_time=query_start,
             end_time=query_end,
             limit=100000,
-            user_id=user_id,
+            student_key=_student_key_for(session, user_id),
         )
         total = 0.0
         meter_usage: dict[str, float] = {}
@@ -442,14 +488,15 @@ def _build_monthly_stats(user_id: int, last_month_last_day: datetime) -> dict | 
 
 
 def _get_remaining(user_id: int) -> dict:
-    """按用户获取最新剩余电量 {'default': float}，无数据返回 {}"""
+    """按学生身份获取最新剩余电量 {'default': float}，无数据返回 {}"""
     from app.core.database import get_db
     from app.repository.electricity_repository import ElectricityRepository
 
     session = get_db()
     try:
+        key = _student_key_for(session, user_id)
         record = ElectricityRepository.get_latest_remaining(
-            session, "default", user_id=user_id
+            session, "default", student_key=key
         )
         return {"default": record.remaining} if record else {}
     finally:
@@ -483,8 +530,8 @@ def push_electricity_daily() -> None:
 
         target_date = datetime.now() - timedelta(days=1)
         webhook_entries: list[dict] = []
-        for user_id, cookie, display_name in students:
-            success, msg = _fetch_and_save(user_id, cookie, max_pages=1)
+        for user_id, cookie, display_name, student_key in students:
+            success, msg = _fetch_and_save(user_id, cookie, max_pages=1, student_key=student_key)
             if not success:
                 _send_notification(
                     user_id,
@@ -555,8 +602,8 @@ def push_electricity_weekly() -> None:
         # 周一推送上一周，其他日子推送本周
         week_end = today - timedelta(days=1) if today.weekday() == 0 else today
         webhook_entries: list[dict] = []
-        for user_id, cookie, display_name in students:
-            success, msg = _fetch_and_save(user_id, cookie, max_pages=1)
+        for user_id, cookie, display_name, student_key in students:
+            success, msg = _fetch_and_save(user_id, cookie, max_pages=1, student_key=student_key)
             if not success:
                 _send_notification(
                     user_id,
@@ -628,8 +675,8 @@ def push_electricity_monthly() -> None:
 
         last_month_last_day = datetime.now().replace(day=1) - timedelta(days=1)
         webhook_entries: list[dict] = []
-        for user_id, cookie, display_name in students:
-            success, msg = _fetch_and_save(user_id, cookie, max_pages=2)
+        for user_id, cookie, display_name, student_key in students:
+            success, msg = _fetch_and_save(user_id, cookie, max_pages=2, student_key=student_key)
             if not success:
                 _send_notification(
                     user_id,
@@ -695,7 +742,7 @@ def check_cookie_validity() -> None:
         from app.modules.electricity.formatter import ElectricityFormatter
 
         invalid_count = 0
-        for user_id, cookie in students:
+        for user_id, cookie, _sk in students:
             crawler = _make_crawler(cookie)
             is_valid, reason = crawler.check_cookie_valid()
             if not is_valid:
@@ -730,7 +777,7 @@ def check_low_power() -> None:
     if not students:
         logger.info("[电量] 无学生配置电表 Cookie，低电量检测空转")
         return
-    for user_id, _cookie in students:
+    for user_id, _cookie, _sk in students:
         remaining = _get_remaining(user_id)
         _check_low_power_internal(user_id, remaining)
 
@@ -753,8 +800,8 @@ def push_electricity_full_crawl() -> None:
             return
 
         success_count = 0
-        for user_id, cookie in students:
-            success, msg = _fetch_and_save(user_id, cookie, max_pages=50)
+        for user_id, cookie, student_key in students:
+            success, msg = _fetch_and_save(user_id, cookie, max_pages=50, student_key=student_key)
             if success:
                 success_count += 1
                 logger.info(f"[电量] 用户 {user_id} 全量爬取完成: {msg}")

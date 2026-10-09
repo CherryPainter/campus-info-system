@@ -90,15 +90,17 @@ class ElectricityCapacityManager:
     # 低电量警告阈值
     LOW_POWER_WARNING_THRESHOLD: float = 10.0
 
-    def __init__(self, meter: str = "default", user_id: int | None = None) -> None:
+    def __init__(self, meter: str = "default", student_key: str | None = None, user_id: int | None = None) -> None:
         """
         初始化容量管理器
 
         Args:
-            meter: 电表名称，默认为'default'（用户维度下可传 str(user_id) 作 key）
-            user_id: 归属用户ID（None=历史全局/管理员视图），容量记录会写该列
+            meter: 电表名称，默认为'default'（身份维度下可传 student_key 作 key）
+            student_key: 归属学生身份键（学校|学号），None=历史全局/管理员视图
+            user_id: 审计列：写入时的微信账号ID（不参与归属过滤）
         """
         self._meter = meter
+        self._student_key = student_key
         self._user_id = user_id
         self._cache: CapacityRecord | None = None
         self._cache_time: datetime | None = None
@@ -132,7 +134,7 @@ class ElectricityCapacityManager:
         try:
             # 获取上一次记录的剩余电量（取第二条，跳过刚插入的最新条）
             last_remaining_record = ElectricityRepository.get_previous_remaining(
-                session, self._meter, user_id=self._user_id
+                session, self._meter, student_key=self._student_key
             )
             last_remaining = last_remaining_record.remaining if last_remaining_record else None
 
@@ -216,7 +218,7 @@ class ElectricityCapacityManager:
         try:
             # 获取最新剩余电量
             remaining_record = ElectricityRepository.get_latest_remaining(
-                session, self._meter, user_id=self._user_id
+                session, self._meter, student_key=self._student_key
             )
             remaining = remaining_record.remaining if remaining_record else 0.0
 
@@ -321,8 +323,8 @@ class ElectricityCapacityManager:
                 ElectricityTotalCapacity.meter == self._meter,
                 ElectricityTotalCapacity.recorded_at >= cutoff_time,
             )
-            if self._user_id is not None:
-                q = q.filter(ElectricityTotalCapacity.user_id == self._user_id)
+            if self._student_key is not None:
+                q = q.filter(ElectricityTotalCapacity.student_key == self._student_key)
             records = q.order_by(ElectricityTotalCapacity.recorded_at.desc()).all()
 
             return [
@@ -366,6 +368,7 @@ class ElectricityCapacityManager:
             remaining_at_record=remaining_at_record,
             record_reason=reason,
             recorded_at=datetime.utcnow(),
+            student_key=self._student_key,
             user_id=self._user_id,
         )
         session.add(db_record)
@@ -402,8 +405,8 @@ class ElectricityCapacityManager:
             session.query(ElectricityTotalCapacity)
             .filter(ElectricityTotalCapacity.meter == self._meter)
         )
-        if self._user_id is not None:
-            record = record.filter(ElectricityTotalCapacity.user_id == self._user_id)
+        if self._student_key is not None:
+            record = record.filter(ElectricityTotalCapacity.student_key == self._student_key)
         record = record.order_by(ElectricityTotalCapacity.recorded_at.desc()).first()
 
         if record:
@@ -436,8 +439,8 @@ class ElectricityCapacityManager:
             ElectricityTotalCapacity.record_reason == RecordReason.LOW_POWER.value,
             ElectricityTotalCapacity.recorded_at >= cutoff_time,
         )
-        if self._user_id is not None:
-            q = q.filter(ElectricityTotalCapacity.user_id == self._user_id)
+        if self._student_key is not None:
+            q = q.filter(ElectricityTotalCapacity.student_key == self._student_key)
         record = q.order_by(ElectricityTotalCapacity.recorded_at.desc()).first()
 
         if record:
@@ -467,25 +470,36 @@ class ElectricityCapacityManager:
         return max(0.0, min(100.0, percentage))
 
 
-# 实例缓存（按 (user_id, meter) 区分，避免多用户共用同一管理器导致容量/百分比串数据）
-_manager_cache: dict[tuple[int | None, str], ElectricityCapacityManager] = {}
+# 实例缓存（按 (student_key, meter) 区分，避免多身份共用同一管理器导致容量/百分比串数据）
+_manager_cache: dict[tuple[str | None, str], ElectricityCapacityManager] = {}
 
 
-def get_capacity_manager(meter: str = "default", user_id: int | None = None) -> ElectricityCapacityManager:
+def get_capacity_manager(meter: str = "default", student_key: str | None = None, user_id: int | None = None) -> ElectricityCapacityManager:
     """
     获取容量管理器实例
 
     Args:
         meter: 电表名称
-        user_id: 归属用户ID（None=历史全局/管理员视图）
+        student_key: 归属学生身份键（学校|学号）；None=历史全局/管理员视图
+        user_id: 审计列：若未显式传 student_key，则据此反解为归属维度
 
     Returns:
         ElectricityCapacityManager: 容量管理器实例
     """
+    if student_key is None and user_id is not None:
+        from app.core.database import get_db
+        from app.repository.electricity_repository import ElectricityRepository
+
+        db = get_db()
+        try:
+            student_key = ElectricityRepository.student_key_of_user(db, user_id)
+        finally:
+            db.close()
+
     global _manager_cache
-    key = (user_id, meter)
+    key = (student_key, meter)
     manager = _manager_cache.get(key)
     if manager is None:
-        manager = ElectricityCapacityManager(meter, user_id=user_id)
+        manager = ElectricityCapacityManager(meter, student_key=student_key, user_id=user_id)
         _manager_cache[key] = manager
     return manager

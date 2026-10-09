@@ -1,6 +1,6 @@
 # Linux 部署指南
 
-> 校园信息聚合与智能推送系统 v6.21.0 — Linux 生产环境完整部署文档
+> 校园信息聚合与智能推送系统 v6.21.1 — Linux 生产环境完整部署文档
 
 ---
 
@@ -59,7 +59,7 @@ mkdir -p data/auth data/electricity/charts data/weather logs output
 
 # 7. 启动测试
 python3 run.py
-# 看到 "校园信息聚合与智能推送系统 v6.21.0 启动完成" 表示成功
+# 看到 "校园信息聚合与智能推送系统 v6.21.1 启动完成" 表示成功
 ```
 
 ---
@@ -227,7 +227,7 @@ python3 run.py
 看到以下日志表示启动成功：
 
 ```
-校园信息聚合与智能推送系统 v6.21.0 启动完成
+校园信息聚合与智能推送系统 v6.21.1 启动完成
  * Running on http://127.0.0.1:29528
 ```
 
@@ -249,7 +249,7 @@ curl http://localhost:29528/api/health
 
 ```ini
 [Unit]
-Description=Campus Push System v6.21.0
+Description=Campus Push System v6.21.1
 Documentation=https://github.com/your-repo/Push_System_Flask
 After=network-online.target
 Wants=network-online.target

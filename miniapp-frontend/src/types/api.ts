@@ -77,6 +77,8 @@ export interface BindStatusResult extends ApiSuccess {
 /** 提交绑定结果 */
 export interface BindResult extends ApiSuccess {
   bound: boolean;
+  /** 本次为换绑（已绑定身份后再次提交新身份）而非首次绑定 */
+  switched?: boolean;
   profile: StudentProfile;
 }
 

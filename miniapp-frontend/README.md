@@ -16,7 +16,7 @@ npm run dev:weapp
 
 # 3. 用微信开发者工具打开本目录
 #    - 导入项目：项目目录选 miniapp-frontend/
-#    - AppID：project.config.json 已填入（wx5d3af9c6cc818db3）
+#    - AppID：project.config.json 已填入（wx7a871672e2153ca3）
 #    - 本地设置 → 勾选「不校验合法域名」（开发期后端为 http://127.0.0.1:29528）
 ```
 

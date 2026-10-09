@@ -73,3 +73,8 @@ export function saveCookie(cookie: string): Promise<ApiSuccess> {
 export function testCookie(cookie: string): Promise<ElectricityCookieTestResult> {
   return post<ElectricityCookieTestResult>('/api/miniapp/electricity/cookie/test', { cookie });
 }
+
+/** 解绑本人电表接入信息（清空 Cookie，保留历史电量数据） */
+export function unbindCookie(): Promise<ApiSuccess> {
+  return post<ApiSuccess>('/api/miniapp/electricity/cookie/unbind');
+}

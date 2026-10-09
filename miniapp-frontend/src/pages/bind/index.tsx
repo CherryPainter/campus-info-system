@@ -38,12 +38,19 @@ export default function BindPage() {
   const [loading, setLoading] = useState(true);
   const [schoolError, setSchoolError] = useState(false);
   const [schoolAuthError, setSchoolAuthError] = useState(false);
+  // 换绑模式：从电量详情页「换绑身份」进入，已绑定也停留在绑定页填写新身份
+  const [switchMode, setSwitchMode] = useState(false);
 
   // 加载学校列表 + 绑定状态；两个请求独立 catch，避免一个失败导致另一个结果也被丢弃
   const loadData = useCallback(async () => {
     setLoading(true);
     setSchoolError(false);
     setSchoolAuthError(false);
+
+    // 读取进入参数：mode=switch 表示换绑身份（已绑定也留在绑定页）
+    const params = Taro.getCurrentInstance().router?.params;
+    const isSwitch = params?.mode === 'switch';
+    setSwitchMode(isSwitch);
 
     try {
       const schoolsRes = await userApi.getSchools();
@@ -62,12 +69,16 @@ export default function BindPage() {
     try {
       const statusRes = await userApi.getBindStatus();
       if (statusRes.status === 'success' && statusRes.bound) {
-        // 已绑定用户误入绑定页（如登录页查绑定状态网络抖动失败被当作未绑定）：
-        // 先结束引导期再跳走，既清除标记、又广播事件让首页补拉需登录数据，
-        // 否则标记残留会持续吞掉后续真正的 403 降级，且今日课程无人补拉
-        finishBindGuide();
-        Taro.switchTab({ url: '/pages/home/index' });
-        return;
+        if (isSwitch) {
+          // 换绑模式：已绑定也停留在绑定页，让用户填写新身份完成换绑
+        } else {
+          // 已绑定用户误入绑定页（如登录页查绑定状态网络抖动失败被当作未绑定）：
+          // 先结束引导期再跳走，既清除标记、又广播事件让首页补拉需登录数据，
+          // 否则标记残留会持续吞掉后续真正的 403 降级，且今日课程无人补拉
+          finishBindGuide();
+          Taro.switchTab({ url: '/pages/home/index' });
+          return;
+        }
       }
     } catch {
       // 绑定状态查询失败不阻断页面，允许用户停留在绑定页重试
@@ -112,8 +123,9 @@ export default function BindPage() {
       });
       if (res.status === 'success' && res.bound) {
         if (res.profile) setProfile(res.profile);
-        finishBindGuide();
-        Taro.showToast({ title: '绑定成功', icon: 'success' });
+        if (!switchMode) finishBindGuide();
+        const okMsg = res.switched ? '换绑成功' : '绑定成功';
+        Taro.showToast({ title: okMsg, icon: 'success' });
         setTimeout(() => Taro.switchTab({ url: '/pages/home/index' }), 600);
       } else {
         Taro.showToast({ title: res.message || '绑定失败，请重试', icon: 'none' });
@@ -129,7 +141,9 @@ export default function BindPage() {
   return (
     <View className="bind-page">
       <View className="bind-intro">
-        <Text className="bind-intro-text">选择所在学校并填写认证信息</Text>
+        <Text className="bind-intro-text">
+          {switchMode ? '换绑学生身份（填写新身份的学校 / 学号 / 绑定码）' : '选择所在学校并填写认证信息'}
+        </Text>
       </View>
 
       <View className="bind-group">
@@ -208,10 +222,12 @@ export default function BindPage() {
         hoverClass="bind-submit-hover"
         onClick={handleSubmit}
       >
-        <Text className="bind-submit-text">{submitting ? '提交中…' : '确认绑定'}</Text>
+        <Text className="bind-submit-text">{submitting ? '提交中…' : (switchMode ? '确认换绑' : '确认绑定')}</Text>
       </View>
 
-      <Text className="bind-footnote">绑定码由管理员发放，一次性有效</Text>
+      <Text className="bind-footnote">
+        {switchMode ? '换绑后将以新身份继续，本账号下的电量等历史数据保留' : '绑定码由管理员发放，一次性有效'}
+      </Text>
     </View>
   );
 }

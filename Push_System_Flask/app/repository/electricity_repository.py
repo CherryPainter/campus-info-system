@@ -5,6 +5,17 @@
 职责：
 - 封装电量相关的数据库操作
 - 提供类型安全的 CRUD 接口
+
+归属维度说明（2026-10-09 重构）：
+- 电量数据的**逻辑归属**统一改为「学生身份 (student_key = 学校|学号)」，不再按
+  微信账号 (user_id) 归属。原因：换绑学生身份 / 换小程序 appid 导致 openid 变化
+  会新建 user_id，按 user_id 归属会把历史电量打成孤儿数据。
+- `student_key` 为可空索引列：已绑定身份的用户其数据写该键；为 NULL 的行表示
+  历史全局数据或未绑定身份（仅管理员全局视图可见，学生端读不到）。
+- `user_id` 保留为**审计列**：记录数据写入时的微信账号，便于回溯与回滚，
+  不再参与任何读写过滤逻辑。
+- 读取/写入方法统一以 `student_key` 为准；`student_key is None` 表示「全部」
+  （管理员全局视图 / 历史全局数据），与旧 `user_id is None` 语义一致。
 """
 
 from datetime import datetime, timedelta
@@ -14,6 +25,42 @@ from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
 from app.model.electricity import ElectricityRecord, ElectricityRemaining, ElectricityTotalCapacity
+
+
+# ------------------------------------------------------------------
+# 身份键辅助
+# ------------------------------------------------------------------
+
+
+def make_student_key(school: str | None, student_number: str | None) -> str | None:
+    """
+    由 (学校, 学号) 构造学生身份键。
+
+    NULL 规则：学校或学号任一为空都返回 None（未绑定身份），
+    此时数据不归属任何具体身份（仅全局视图可见）。
+    """
+    if not school or not student_number:
+        return None
+    return f"{school}|{student_number}"
+
+
+def student_key_of_user(session: Session, user_id: int) -> str | None:
+    """
+    由 user_id 反查其当前绑定身份的学生身份键（student_key）。
+
+    用于采集/读取入口拿到 JWT 的 user_id 时，反解为数据归属维度。
+    无资料 / 未绑定身份时返回 None。
+    """
+    from app.model.student_profile import StudentProfile
+
+    row = (
+        session.query(StudentProfile.school, StudentProfile.student_number)
+        .filter(StudentProfile.user_id == user_id)
+        .first()
+    )
+    if not row:
+        return None
+    return make_student_key(row.school, row.student_number)
 
 
 class ElectricityRepository:
@@ -29,6 +76,7 @@ class ElectricityRepository:
         record_time: datetime,
         usage: float,
         meter: str,
+        student_key: str | None = None,
         user_id: int | None = None,
     ) -> ElectricityRecord:
         """
@@ -39,7 +87,8 @@ class ElectricityRepository:
             record_time: 记录时间
             usage: 用电量
             meter: 电表名称
-            user_id: 归属用户ID（每宿舍独立电表，学生各自的数据归各自）
+            student_key: 归属学生身份键（学校|学号），NULL=历史全局数据
+            user_id: 审计列：写入时的微信账号ID
 
         Returns:
             ElectricityRecord: 创建的记录对象
@@ -48,6 +97,7 @@ class ElectricityRepository:
             record_time=record_time,
             usage=usage,
             meter=meter,
+            student_key=student_key,
             user_id=user_id,
         )
         session.add(record)
@@ -87,10 +137,11 @@ class ElectricityRepository:
     def create_records_batch(
         session: Session,
         records: list[tuple[datetime, float, str]],
+        student_key: str | None = None,
         user_id: int | None = None,
     ) -> int:
         """
-        批量创建用电记录（按「用户 + 用电日期 + 归一化电表」去重）
+        批量创建用电记录（按「学生身份 + 用电日期 + 归一化电表」去重）
 
         去重逻辑变更说明（重要）：
             旧逻辑按 (record_time 精确到秒, meter 原始字符串) 精确匹配。但同一个
@@ -101,18 +152,19 @@ class ElectricityRepository:
             （7.37 × 3 份重复）；列表总条数也随之虚高到单用户 2000+。
 
             修正：先用电表写法归一化（normalize_meter）去掉 "电表:" 前缀与
-            "照明" 后缀，再按 (user_id, DATE(record_time), 归一化电表) 去重。
+            "照明" 后缀，再按 (student_key, DATE(record_time), 归一化电表) 去重。
 
         特别强调：
             一个宿舍有**多块分表**（如照明 / 空调），归一化后仍是不同标识
             （"31栋512" 与 "310512" 是两块表，同一天用电量分别是 1.8 和 5.57）。
-            因此去重必须带上电表维度，绝不能只按「用户 + 日期」，
+            因此去重必须带上电表维度，绝不能只按「学生身份 + 日期」，
             否则会把另一块分表当成重复数据误删，日用量直接少算一大截。
 
         Args:
             session: 数据库会话
             records: [(record_time, usage, meter), ...]
-            user_id: 归属用户ID，None 表示历史全局数据
+            student_key: 归属学生身份键，None 表示历史全局数据
+            user_id: 审计列：写入时的微信账号ID
 
         Returns:
             int: 实际创建的记录数（已存在被更新、重复被删除的不计入）
@@ -132,10 +184,10 @@ class ElectricityRepository:
                     ElectricityRecord.record_time < day_end,
                 )
             )
-            if user_id is not None:
-                q = q.filter(ElectricityRecord.user_id == user_id)
+            if student_key is not None:
+                q = q.filter(ElectricityRecord.student_key == student_key)
             else:
-                q = q.filter(ElectricityRecord.user_id.is_(None))
+                q = q.filter(ElectricityRecord.student_key.is_(None))
 
             # 在当天记录里找出「归一化后是同一块表」的那些
             same_meter = [
@@ -149,6 +201,8 @@ class ElectricityRepository:
                 keep = same_meter[0]
                 keep.usage = usage
                 keep.meter = norm_meter
+                keep.student_key = student_key
+                keep.user_id = user_id
                 for dup in same_meter[1:]:
                     session.delete(dup)
                 continue
@@ -157,6 +211,7 @@ class ElectricityRepository:
                 record_time=record_time,
                 usage=usage,
                 meter=norm_meter,
+                student_key=student_key,
                 user_id=user_id,
             )
             session.add(record)
@@ -167,18 +222,18 @@ class ElectricityRepository:
     @staticmethod
     def deduplicate_records(
         session: Session,
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> dict:
         """
-        清理历史重复用电记录：同一用户 + 同一日期 + 同一块电表 只保留一条
+        清理历史重复用电记录：同一学生身份 + 同一日期 + 同一块电表 只保留一条
 
         用于修复「按 (record_time, meter) 精确字符串去重」时期已经写进库的脏数据
         （同一块表被写成 "电表: 31栋512照明" 和 "31栋512" 等多种写法，
         精确匹配不上，导致同一块表同一天被插入多条，趋势图数值成倍放大）。
 
-        分组维度必须是「用户 + 日期 + 归一化电表」：
+        分组维度必须是「学生身份 + 日期 + 归一化电表」：
             一个宿舍有多块分表（"31栋512" 和 "310512" 是两块不同的表，
-            同一天用电量分别是 1.8 和 5.57），只按「用户+日期」分组会把
+            同一天用电量分别是 1.8 和 5.57），只按「学生身份+日期」分组会把
             另一块分表误判为重复而删除，导致日用量少算。
 
         保留策略（同一分组内）：保留 created_at 最新的一条
@@ -186,7 +241,7 @@ class ElectricityRepository:
 
         Args:
             session: 数据库会话
-            user_id: 指定用户ID；None 表示清理全部用户（含 NULL 的历史全局数据）
+            student_key: 指定学生身份键；None 表示清理全部（含 NULL 的历史全局数据）
 
         Returns:
             dict: {"groups": 重复的分组数, "deleted": 删除条数, "kept": 保留条数}
@@ -194,17 +249,17 @@ class ElectricityRepository:
         from collections import defaultdict
 
         q = session.query(ElectricityRecord)
-        if user_id is not None:
-            q = q.filter(ElectricityRecord.user_id == user_id)
+        if student_key is not None:
+            q = q.filter(ElectricityRecord.student_key == student_key)
         all_records = q.all()
 
-        # 按 (user_id, 日期, 归一化电表) 分组
+        # 按 (student_key, 日期, 归一化电表) 分组
         groups: dict[tuple, list] = defaultdict(list)
         for r in all_records:
             if r.record_time is None:
                 continue
             key = (
-                r.user_id,
+                r.student_key,
                 r.record_time.date(),
                 ElectricityRepository.normalize_meter(r.meter),
             )
@@ -244,7 +299,7 @@ class ElectricityRepository:
         end_time: datetime | None = None,
         limit: int = 1000,
         offset: int = 0,
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> list[ElectricityRecord]:
         """
         查询用电记录
@@ -256,15 +311,15 @@ class ElectricityRepository:
             end_time: 结束时间
             limit: 返回条数限制
             offset: 跳过的条数（用于分页）
-            user_id: 归属用户ID，None 表示全部（管理员视图）
+            student_key: 归属学生身份键，None 表示全部（管理员全局视图）
 
         Returns:
             List[ElectricityRecord]: 用电记录列表
         """
         query = session.query(ElectricityRecord)
 
-        if user_id is not None:
-            query = query.filter(ElectricityRecord.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRecord.student_key == student_key)
         if meter:
             query = query.filter(ElectricityRecord.meter == meter)
         if start_time:
@@ -285,7 +340,7 @@ class ElectricityRepository:
         meter: str | None = None,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> int:
         """
         统计用电记录总数（与 get_records 相同的过滤条件，用于分页 total）
@@ -295,8 +350,8 @@ class ElectricityRepository:
         """
         query = session.query(func.count(ElectricityRecord.id))
 
-        if user_id is not None:
-            query = query.filter(ElectricityRecord.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRecord.student_key == student_key)
         if meter:
             query = query.filter(ElectricityRecord.meter == meter)
         if start_time:
@@ -333,7 +388,7 @@ class ElectricityRepository:
     @staticmethod
     def get_daily_aggregates(
         session: Session,
-        user_id: int | None = None,
+        student_key: str | None = None,
         limit: int = 30,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
@@ -360,8 +415,8 @@ class ElectricityRepository:
             func.max(ElectricityRecord.record_time).label("settle_time"),
         ).filter(ElectricityRecord.record_time.isnot(None))
 
-        if user_id is not None:
-            query = query.filter(ElectricityRecord.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRecord.student_key == student_key)
 
         rows = (
             query.group_by(day)
@@ -386,21 +441,21 @@ class ElectricityRepository:
         return result
 
     @staticmethod
-    def count_daily_aggregates(session: Session, user_id: int | None = None) -> int:
+    def count_daily_aggregates(session: Session, student_key: str | None = None) -> int:
         """统计有记录的「结算日」天数（用于按天分页的 total）"""
         day = ElectricityRepository._settle_date_expr()
         query = session.query(func.count(func.distinct(day))).filter(
             ElectricityRecord.record_time.isnot(None)
         )
-        if user_id is not None:
-            query = query.filter(ElectricityRecord.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRecord.student_key == student_key)
         return int(query.scalar() or 0)
 
     @staticmethod
     def get_records_of_usage_day(
         session: Session,
         usage_date: str,
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> list[ElectricityRecord]:
         """
         取某个**用电日**的全部原始记录（该日各分表各一条）
@@ -419,8 +474,8 @@ class ElectricityRepository:
                 ElectricityRecord.record_time < end,
             )
         )
-        if user_id is not None:
-            query = query.filter(ElectricityRecord.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRecord.student_key == student_key)
         return query.order_by(ElectricityRecord.meter).all()
 
     @staticmethod
@@ -428,7 +483,7 @@ class ElectricityRepository:
         session: Session,
         start_time: datetime,
         end_time: datetime,
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> list[tuple[str, float]]:
         """
         取时间范围内按结算日的每日合计，返回 [(结算日 'YYYY-MM-DD', 合计), ...] 升序
@@ -446,8 +501,8 @@ class ElectricityRepository:
                 ElectricityRecord.record_time < end_time,
             )
         )
-        if user_id is not None:
-            query = query.filter(ElectricityRecord.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRecord.student_key == student_key)
 
         rows = query.group_by(day).order_by(day).all()
         return [
@@ -460,7 +515,7 @@ class ElectricityRepository:
         session: Session,
         cutoff: datetime,
         meter: str = "default",
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> ElectricityRemaining | None:
         """
         取 cutoff 时刻（含）之前最近一条剩余电量记录
@@ -473,8 +528,8 @@ class ElectricityRepository:
                 ElectricityRemaining.recorded_at <= cutoff,
             )
         )
-        if user_id is not None:
-            query = query.filter(ElectricityRemaining.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRemaining.student_key == student_key)
         return query.order_by(desc(ElectricityRemaining.recorded_at)).first()
 
     @staticmethod
@@ -482,7 +537,7 @@ class ElectricityRepository:
         session: Session,
         target_date: datetime,
         meter: str | None = None,
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> tuple[float, int]:
         """
         获取某日用电统计
@@ -491,7 +546,7 @@ class ElectricityRepository:
             session: 数据库会话
             target_date: 目标日期
             meter: 电表名称筛选
-            user_id: 归属用户ID，None 表示全部
+            student_key: 归属学生身份键，None 表示全部
 
         Returns:
             Tuple[float, int]: (总用电量, 记录数)
@@ -509,8 +564,8 @@ class ElectricityRepository:
             )
         )
 
-        if user_id is not None:
-            query = query.filter(ElectricityRecord.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRecord.student_key == student_key)
         if meter:
             query = query.filter(ElectricityRecord.meter == meter)
 
@@ -523,7 +578,7 @@ class ElectricityRepository:
     def get_usage_by_meter(
         session: Session,
         days: int = 30,
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> list[tuple[str, float]]:
         """
         按电表统计用电量
@@ -531,7 +586,7 @@ class ElectricityRepository:
         Args:
             session: 数据库会话
             days: 统计最近多少天
-            user_id: 归属用户ID，None 表示全部
+            student_key: 归属学生身份键，None 表示全部
 
         Returns:
             List[Tuple[str, float]]: [(meter, total_usage), ...]
@@ -544,8 +599,8 @@ class ElectricityRepository:
                 func.sum(ElectricityRecord.usage),
             ).filter(ElectricityRecord.record_time >= cutoff_time)
         )
-        if user_id is not None:
-            query = query.filter(ElectricityRecord.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRecord.student_key == student_key)
         results = (
             query.group_by(ElectricityRecord.meter)
             .order_by(desc(func.sum(ElectricityRecord.usage)))
@@ -560,7 +615,7 @@ class ElectricityRepository:
         start_time: datetime,
         end_time: datetime,
         meter: str | None = None,
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> list[tuple[str, float]]:
         """
         按电表统计指定时间范围的用电量
@@ -570,7 +625,7 @@ class ElectricityRepository:
             start_time: 开始时间
             end_time: 结束时间
             meter: 电表名称筛选（可选）
-            user_id: 归属用户ID，None 表示全部
+            student_key: 归属学生身份键，None 表示全部
 
         Returns:
             List[Tuple[str, float]]: [(meter, total_usage), ...]
@@ -585,8 +640,8 @@ class ElectricityRepository:
             )
         )
 
-        if user_id is not None:
-            query = query.filter(ElectricityRecord.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRecord.student_key == student_key)
         if meter:
             query = query.filter(ElectricityRecord.meter == meter)
 
@@ -602,7 +657,7 @@ class ElectricityRepository:
     def sum_usage_since(
         session: Session,
         start_time: datetime,
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> float:
         """
         统计某个时间点之后的累计用电量（不按电表分组，直接求和）
@@ -615,7 +670,7 @@ class ElectricityRepository:
         Args:
             session: 数据库会话
             start_time: 起始时间（含），通常传本月 1 号 00:00
-            user_id: 归属用户ID，None 表示全部
+            student_key: 归属学生身份键，None 表示全部
 
         Returns:
             float: 累计用电量（度），无记录时返回 0.0
@@ -623,8 +678,8 @@ class ElectricityRepository:
         query = session.query(func.sum(ElectricityRecord.usage)).filter(
             ElectricityRecord.record_time >= start_time
         )
-        if user_id is not None:
-            query = query.filter(ElectricityRecord.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRecord.student_key == student_key)
         total = query.scalar()
         return float(total or 0.0)
 
@@ -635,6 +690,7 @@ class ElectricityRepository:
         session: Session,
         remaining: float,
         meter: str = "default",
+        student_key: str | None = None,
         user_id: int | None = None,
     ) -> ElectricityRemaining:
         """
@@ -644,7 +700,8 @@ class ElectricityRepository:
             session: 数据库会话
             remaining: 剩余电量
             meter: 电表名称
-            user_id: 归属用户ID
+            student_key: 归属学生身份键，NULL=历史全局数据
+            user_id: 审计列：写入时的微信账号ID
 
         Returns:
             ElectricityRemaining: 创建的记录对象
@@ -653,6 +710,7 @@ class ElectricityRepository:
             meter=meter,
             remaining=remaining,
             recorded_at=datetime.utcnow(),
+            student_key=student_key,
             user_id=user_id,
         )
         session.add(record)
@@ -663,7 +721,7 @@ class ElectricityRepository:
     def get_latest_remaining(
         session: Session,
         meter: str = "default",
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> ElectricityRemaining | None:
         """
         获取最新剩余电量
@@ -671,21 +729,21 @@ class ElectricityRepository:
         Args:
             session: 数据库会话
             meter: 电表名称
-            user_id: 归属用户ID，None 表示全部
+            student_key: 归属学生身份键，None 表示全部
 
         Returns:
             Optional[ElectricityRemaining]: 最新记录或 None
         """
         query = session.query(ElectricityRemaining).filter(ElectricityRemaining.meter == meter)
-        if user_id is not None:
-            query = query.filter(ElectricityRemaining.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRemaining.student_key == student_key)
         return query.order_by(desc(ElectricityRemaining.recorded_at)).first()
 
     @staticmethod
     def get_previous_remaining(
         session: Session,
         meter: str = "default",
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> ElectricityRemaining | None:
         """
         获取上一条剩余电量（跳过最新条，用于容量充值对比）
@@ -693,8 +751,8 @@ class ElectricityRepository:
         因为最新条通常是本次爬取刚插入的，用次新条来对比才能发现"昨天 < 今天"的充值场景。
         """
         query = session.query(ElectricityRemaining).filter(ElectricityRemaining.meter == meter)
-        if user_id is not None:
-            query = query.filter(ElectricityRemaining.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRemaining.student_key == student_key)
         return query.order_by(desc(ElectricityRemaining.recorded_at)).offset(1).limit(1).first()
 
     @staticmethod
@@ -702,7 +760,7 @@ class ElectricityRepository:
         session: Session,
         meter: str = "default",
         days: int = 30,
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> list[ElectricityRemaining]:
         """
         获取剩余电量历史
@@ -711,7 +769,7 @@ class ElectricityRepository:
             session: 数据库会话
             meter: 电表名称
             days: 查询最近多少天
-            user_id: 归属用户ID，None 表示全部
+            student_key: 归属学生身份键，None 表示全部
 
         Returns:
             List[ElectricityRemaining]: 剩余电量记录列表
@@ -724,8 +782,8 @@ class ElectricityRepository:
                 ElectricityRemaining.recorded_at >= cutoff_time,
             )
         )
-        if user_id is not None:
-            query = query.filter(ElectricityRemaining.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityRemaining.student_key == student_key)
 
         return query.order_by(ElectricityRemaining.recorded_at).all()
 
@@ -738,6 +796,7 @@ class ElectricityRepository:
         remaining_at_record: float,
         meter: str = "default",
         reason: str = "auto_detect",
+        student_key: str | None = None,
         user_id: int | None = None,
     ) -> ElectricityTotalCapacity:
         """
@@ -749,7 +808,8 @@ class ElectricityRepository:
             remaining_at_record: 记录时的剩余电量（度）
             meter: 电表名称
             reason: 记录原因
-            user_id: 归属用户ID
+            student_key: 归属学生身份键，NULL=历史全局数据
+            user_id: 审计列：写入时的微信账号ID
 
         Returns:
             ElectricityTotalCapacity: 创建的记录对象
@@ -760,6 +820,7 @@ class ElectricityRepository:
             remaining_at_record=remaining_at_record,
             record_reason=reason,
             recorded_at=datetime.utcnow(),
+            student_key=student_key,
             user_id=user_id,
         )
         session.add(record)
@@ -770,7 +831,7 @@ class ElectricityRepository:
     def get_latest_capacity_record(
         session: Session,
         meter: str = "default",
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> ElectricityTotalCapacity | None:
         """
         获取最新容量记录
@@ -778,7 +839,7 @@ class ElectricityRepository:
         Args:
             session: 数据库会话
             meter: 电表名称
-            user_id: 归属用户ID，None 表示全部
+            student_key: 归属学生身份键，None 表示全部
 
         Returns:
             Optional[ElectricityTotalCapacity]: 最新记录或 None
@@ -786,8 +847,8 @@ class ElectricityRepository:
         query = session.query(ElectricityTotalCapacity).filter(
             ElectricityTotalCapacity.meter == meter
         )
-        if user_id is not None:
-            query = query.filter(ElectricityTotalCapacity.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityTotalCapacity.student_key == student_key)
         return query.order_by(desc(ElectricityTotalCapacity.recorded_at)).first()
 
     @staticmethod
@@ -795,7 +856,7 @@ class ElectricityRepository:
         session: Session,
         meter: str = "default",
         days: int = 30,
-        user_id: int | None = None,
+        student_key: str | None = None,
     ) -> list[ElectricityTotalCapacity]:
         """
         获取容量历史记录
@@ -804,7 +865,7 @@ class ElectricityRepository:
             session: 数据库会话
             meter: 电表名称
             days: 查询最近多少天
-            user_id: 归属用户ID，None 表示全部
+            student_key: 归属学生身份键，None 表示全部
 
         Returns:
             List[ElectricityTotalCapacity]: 容量记录列表
@@ -817,7 +878,7 @@ class ElectricityRepository:
                 ElectricityTotalCapacity.recorded_at >= cutoff_time,
             )
         )
-        if user_id is not None:
-            query = query.filter(ElectricityTotalCapacity.user_id == user_id)
+        if student_key is not None:
+            query = query.filter(ElectricityTotalCapacity.student_key == student_key)
 
         return query.order_by(desc(ElectricityTotalCapacity.recorded_at)).all()

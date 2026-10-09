@@ -139,13 +139,14 @@ def student_schools():
 @student_required
 def bind_student():
     """
-    身份绑定：校验「学校 + 学号 + 一次性绑定码」命中预录名单（启用中）后写入本人资料
+    身份绑定 / 换绑：校验「学校 + 学号 + 一次性绑定码」命中预录名单（启用中）后写入本人资料
 
-    - 学校/学号/码 命中且名单条目 is_active=1 才绑定成功；
-    - 学院/专业/班级 由名单所在组织树继承写入 profile（学生无需填写、不可自填）；
+    - 首次绑定：写入身份字段（学校/学号/班级/学院/专业/宿舍由名单所在组织树继承，学生不可自填）；
+    - 已绑定学生调用本接口即视为「换绑」：校验新身份码通过后覆盖本人资料上的身份字段，
+      原身份对应的名单条目随之释放（绑定码已核销，可由管理员重新发放），
+      按 user_id 隔离的电量历史等数据保留、不因换绑而丢失；
     - 绑定码一次性：绑定成功即核销（防重放/转借/先到先得冒绑）；
-    - 已绑定学生不可重复调用本接口（防覆盖为他人学号，ALREADY_BOUND 403）；
-      如需解绑/换绑请联系管理员走管理端。
+    - 安全围栏：若目标身份（school+student_number）已被其他账号绑定，则拒绝换绑，提示联系管理员。
     """
     from app.core.database import get_db
     from app.model.student_profile import StudentProfile
@@ -161,32 +162,11 @@ def bind_student():
 
     user_id = int(g.current_user["user_id"])
 
-    # 防重复绑定：已绑定身份的学生不可再次调用本接口（防止覆盖为他人学号）
-    db = get_db()
-    try:
-        existing = (
-            db.query(StudentProfile)
-            .filter_by(user_id=user_id)
-            .first()
-        )
-        if existing and existing.student_number:
-            logger.warning(
-                f"身份已绑定拒绝重复bind: user_id={user_id}, "
-                f"current_school={existing.school}, "
-                f"current_student_number={existing.student_number}"
-            )
-            return api_error(
-                message="已绑定身份，不可重复绑定。如需换绑请联系管理员",
-                http_status=403,
-                code="ALREADY_BOUND",
-            )
-    finally:
-        db.close()
-
+    # 校验目标身份命中预录名单（启用中 + 一次性码匹配）
     ok, _matched = StudentRosterService.verify(school, student_number, bind_code)
     if not ok:
         logger.warning(
-            f"身份绑定校验未通过: user_id={g.current_user.get('user_id')}, "
+            f"身份绑定/换绑校验未通过: user_id={user_id}, "
             f"school={school}, student_number={student_number}"
         )
         return api_error(
@@ -195,6 +175,23 @@ def bind_student():
 
     db = get_db()
     try:
+        # 安全围栏：目标身份若已被「其他」账号绑定，拒绝换绑（防抢占 / 冒绑）
+        conflict = (
+            db.query(StudentProfile)
+            .filter(
+                StudentProfile.school == school,
+                StudentProfile.student_number == student_number,
+                StudentProfile.user_id != user_id,
+            )
+            .first()
+        )
+        if conflict:
+            return api_error(
+                message="该身份已被其他账号绑定，如需换绑请联系管理员",
+                http_status=403,
+                code="IDENTITY_CONFLICT",
+            )
+
         # 重新在同一事务取名单行（verify 的会话已关闭，避免跨 session 操作 detached 对象）
         roster = (
             db.query(StudentRoster)
@@ -207,30 +204,40 @@ def bind_student():
         )
         if not roster:
             return api_error(message="名单不存在或已停用", http_status=403)
-        profile = db.query(StudentProfile).filter_by(user_id=user_id).first()
-        if not profile:
-            profile = StudentProfile(user_id=user_id)
-            db.add(profile)
+
+        # 是否已绑定其他身份（用于区分首次绑定 / 换绑）
+        existing = db.query(StudentProfile).filter_by(user_id=user_id).first()
+        is_switch = bool(existing and existing.student_number)
+        if not existing:
+            existing = StudentProfile(user_id=user_id)
+            db.add(existing)
+
         # 身份字段全部以名单（组织树冗余列）为准写入，学生不可自填/篡改
-        profile.school = roster.school
-        profile.student_number = roster.student_number
-        profile.class_name = roster.class_name
-        profile.college = roster.college
-        profile.major = roster.major
-        profile.dorm = roster.dorm
+        existing.school = roster.school
+        existing.student_number = roster.student_number
+        existing.class_name = roster.class_name
+        existing.college = roster.college
+        existing.major = roster.major
+        existing.dorm = roster.dorm
         # 核销一次性绑定码（同一事务，绑定成功即作废）
         roster.bind_code_hash = None
         db.commit()
-        db.refresh(profile)
+        db.refresh(existing)
         logger.info(
-            f"身份绑定成功: user_id={user_id}, school={school}, "
-            f"student_number={student_number}, class_name={roster.class_name}"
+            f"身份{'换绑' if is_switch else '绑定'}成功: user_id={user_id}, "
+            f"school={school}, student_number={student_number}, "
+            f"class_name={roster.class_name}"
         )
-        return api_success(bound=True, profile=profile.to_dict(), message="绑定成功")
+        return api_success(
+            bound=True,
+            switched=is_switch,
+            profile=existing.to_dict(),
+            message="换绑成功" if is_switch else "绑定成功",
+        )
     except Exception as exc:
         db.rollback()
-        logger.error(f"身份绑定落库失败: user_id={user_id}: {exc}")
-        return api_error(message="绑定失败，请稍后重试", http_status=500)
+        logger.error(f"身份绑定/换绑落库失败: user_id={user_id}: {exc}")
+        return api_error(message="操作失败，请稍后重试", http_status=500)
     finally:
         db.close()
 
@@ -929,6 +936,39 @@ def electricity_cookie_test():
     crawler = ElectricityCrawler(cookie=cookie)
     is_valid, reason = crawler.check_cookie_valid()
     return api_success(data={"valid": is_valid, "reason": reason})
+
+
+@miniapp_bp.route("/electricity/cookie/unbind", methods=["POST"])
+@student_bound_required
+def electricity_cookie_unbind():
+    """
+    解绑当前学生电表接入信息（仅清空 student_profiles.electricity_cookie）
+
+    - 仅停采集：清空 Cookie 后定时任务不再为本人拉取电量；
+    - 历史数据保留：electricity_records / remaining / total_capacity 均按学生身份
+      (student_key = 学校|学号) 归属，与 Cookie / 微信账号无关，解绑后历史记录仍然在、
+      重新配置后接续采集；换绑身份也不会丢数据（按身份键归属）；
+    - 不解绑身份、不删除任何电量数据。
+    """
+    from app.core.database import get_db
+    from app.model.student_profile import StudentProfile
+
+    user_id = int(g.current_user["user_id"])
+    db = get_db()
+    try:
+        profile = db.query(StudentProfile).filter_by(user_id=user_id).first()
+        if not profile or not profile.electricity_cookie:
+            return api_success(message="当前未配置电表接入信息，无需解绑")
+        profile.electricity_cookie = None
+        db.commit()
+        logger.info(f"[miniapp] 用户 {user_id} 已解绑电表 Cookie（历史电量数据保留）")
+        return api_success(message="已解绑电表接入信息，历史电量数据已保留")
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"[miniapp] 解绑电表 Cookie 失败 user_id={user_id}: {exc}")
+        return api_error(message="解绑失败，请稍后重试", http_status=500)
+    finally:
+        db.close()
 
 
 # ==================== 个人站内通知（user_notifications） ====================

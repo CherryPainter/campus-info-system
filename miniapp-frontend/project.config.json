@@ -1,7 +1,7 @@
 {
   "description": "项目配置文件",
   "projectname": "miniapp-frontend",
-  "appid": "wx5d3af9c6cc818db3",
+  "appid": "wx7a871672e2153ca3",
   "setting": {
     "urlCheck": false,
     "es6": true,

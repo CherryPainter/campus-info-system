@@ -145,6 +145,44 @@ export default function ElectricityPage() {
     Taro.navigateTo({ url: `/pages/electricity-daily/index?date=${date}` });
   };
 
+  // 电量管理操作：点编辑图标弹出「换绑 / 解绑接入信息」「换绑身份」
+  const handleElecManage = () => {
+    Taro.showActionSheet({
+      itemList: ['换绑电表接入信息', '解绑电表接入信息', '换绑学生身份'],
+      success: (res) => {
+        if (res.tapIndex === 0) {
+          // 换绑 = 重新粘贴新的接入信息（复用配置页）
+          Taro.navigateTo({ url: '/pages/electricity-config/index' });
+        } else if (res.tapIndex === 1) {
+          Taro.showModal({
+            title: '解绑电表接入信息',
+            content:
+              '解绑后将停止自动采集电量，但历史电量数据会保留，重新配置后可继续采集。确定解绑？',
+            confirmText: '解绑',
+            success: (m) => {
+              if (m.confirm) doUnbindCookie();
+            },
+          });
+        } else if (res.tapIndex === 2) {
+          // 换绑身份：跳绑定页（switch 模式），由绑定页覆盖本人身份字段
+          Taro.navigateTo({ url: '/pages/bind/index?mode=switch' });
+        }
+      },
+    });
+  };
+
+  // 解绑本人电表接入信息（保留历史电量数据）
+  const doUnbindCookie = async () => {
+    try {
+      await electricityApi.unbindCookie();
+      Taro.showToast({ title: '已解绑，历史数据保留', icon: 'success' });
+      setCookieConfigured(false);
+      setCurrent(null);
+    } catch (e) {
+      Taro.showToast({ title: (e as Error).message || '解绑失败', icon: 'none' });
+    }
+  };
+
   // 切换趋势区间：仅重新拉取趋势点（轻量）
   const changeTrendTab = (tab: TrendTab) => {
     setTrendTab(tab);
@@ -455,7 +493,10 @@ export default function ElectricityPage() {
               <View className="elec-hero-left">
                 <View className="elec-meter-row">
                   <Text className="elec-meter-name">{roomText || '--'}</Text>
-                  <Text className="iconfont icon-bianji elec-edit-icon" />
+                  <Text
+                    className="iconfont icon-bianji elec-edit-icon"
+                    onClick={handleElecManage}
+                  />
                 </View>
 
                 <View className="elec-value-row">

@@ -114,21 +114,27 @@ def dedupe_records():
     """
     from app.core.database import get_db
     from app.model.electricity import ElectricityRecord
-    from app.repository.electricity_repository import ElectricityRepository
+    from app.repository.electricity_repository import (
+        ElectricityRepository,
+        student_key_of_user,
+    )
 
     data = request.get_json(silent=True) or {}
     target_user_id = data.get("user_id")
+    target_student_key = None
     if target_user_id is not None:
         try:
             target_user_id = int(target_user_id)
         except (TypeError, ValueError):
             return api_error(message="user_id 格式错误", http_status=400)
+        # 反解为学生身份键（数据归属维度）
+        target_student_key = student_key_of_user(session, target_user_id)
 
     session = get_db()
     try:
         before = session.query(ElectricityRecord).count()
         result = ElectricityRepository.deduplicate_records(
-            session=session, user_id=target_user_id
+            session=session, student_key=target_student_key
         )
         session.commit()
         after = session.query(ElectricityRecord).count()
@@ -136,7 +142,7 @@ def dedupe_records():
         user = g.get("current_user", {})
         logger.info(
             f'[电量] {user.get("username")} 清理重复用电记录: '
-            f'user_id={target_user_id or "全部"} {result}'
+            f'student_key={target_student_key or "全部"} {result}'
         )
         return api_success(
             message=f'已清理 {result["deleted"]} 条重复记录',

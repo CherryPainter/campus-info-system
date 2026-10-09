@@ -1087,7 +1087,10 @@ def get_electricity_students():
     from app.core.database import get_db
     from app.model.student_profile import StudentProfile
     from app.model.user import User
-    from app.repository.electricity_repository import ElectricityRepository
+    from app.repository.electricity_repository import (
+        ElectricityRepository,
+        student_key_of_user,
+    )
     from app.services.electricity_service import ElectricityService
 
     session = get_db()
@@ -1118,7 +1121,7 @@ def get_electricity_students():
             is_low_power = False
             if configured:
                 rec = ElectricityRepository.get_latest_remaining(
-                    session, "default", user_id=user.id
+                    session, "default", student_key=student_key_of_user(session, user.id)
                 )
                 if rec:
                     remaining = rec.remaining
@@ -1162,6 +1165,27 @@ def get_electricity_students():
         session.close()
 
 
+def _electricity_svc_for_user(user_id: int):
+    """
+    按 user_id 解析其绑定身份的学生身份键并取电量服务实例。
+
+    电量数据归属维度是「学生身份 (student_key)」而非微信账号 (user_id)：
+    未绑定身份的学生没有 student_key，不返电量服务（避免回退成全局视图泄露他人数据）。
+    """
+    from app.core.database import get_db
+    from app.repository.electricity_repository import student_key_of_user
+    from app.services.electricity_service import get_electricity_service
+
+    db = get_db()
+    try:
+        sk = student_key_of_user(db, user_id)
+    finally:
+        db.close()
+    if sk is None:
+        return None
+    return get_electricity_service(student_key=sk, user_id=user_id)
+
+
 @admin_bp.route("/students/dorms")
 @admin_required
 def get_student_dorms():
@@ -1201,7 +1225,9 @@ def get_student_electricity_remaining(user_id: int):
     """
     from app.services.electricity_service import get_electricity_service
 
-    svc = get_electricity_service(user_id=user_id, meter="default")
+    svc = _electricity_svc_for_user(user_id)
+    if svc is None:
+        return api_success(data=None, message="该学生未绑定身份，无电量数据")
     data = svc.get_remaining_power()
     if data is None:
         return api_success(data=None, message="该学生暂无电量数据")
@@ -1237,7 +1263,10 @@ def get_student_electricity_records(user_id: int):
     offset = max(request.args.get("offset", 0, type=int), 0)
     meter_filter = request.args.get("meter_filter", "").strip() or None
 
-    svc = get_electricity_service(user_id=user_id, meter="default")
+    svc = _electricity_svc_for_user(user_id)
+    if svc is None:
+        return api_success(data={"records": [], "total": 0, "limit": limit, "offset": offset},
+                           message="该学生未绑定身份，无电量数据")
     records = svc.get_usage_records(
         meter=meter_filter, days=None, limit=limit, offset=offset
     )
@@ -1261,6 +1290,10 @@ def get_student_electricity_statistics(user_id: int):
 
     from app.services.electricity_service import ElectricityService, get_electricity_service
 
+    svc = _electricity_svc_for_user(user_id)
+    if svc is None:
+        return api_success(data=None, message="该学生未绑定身份，无电量数据")
+
     range_type = request.args.get("range_type", "month")
     start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
@@ -1274,7 +1307,6 @@ def get_student_electricity_statistics(user_id: int):
     except ValueError as exc:
         return api_error(message=str(exc), http_status=400)
 
-    svc = get_electricity_service(user_id=user_id, meter="default")
     stats = svc.get_statistics_by_range(
         start_time_utc, end_time_utc, local_start, local_end
     )

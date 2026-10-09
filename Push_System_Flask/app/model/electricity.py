@@ -22,7 +22,8 @@ class ElectricityRecord(Base):
     __tablename__ = "electricity_records"
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键ID")
-    user_id = Column(Integer, nullable=True, index=True, comment="归属用户ID（NULL=历史全局数据）")
+    user_id = Column(Integer, nullable=True, index=True, comment="归属用户ID（审计列：数据写入时的微信账号，逻辑归属见 student_key）")
+    student_key = Column(String(255), nullable=True, index=True, comment="归属学生身份键（学校|学号，NULL=历史全局数据/未绑定身份）")
     record_time = Column(DateTime, nullable=False, index=True, comment="记录时间")
     usage = Column(Float, nullable=False, comment="用电量(度)")
     meter = Column(String(100), nullable=False, comment="电表名称")
@@ -58,7 +59,8 @@ class ElectricityRemaining(Base):
     __tablename__ = "electricity_remaining"
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键ID")
-    user_id = Column(Integer, nullable=True, index=True, comment="归属用户ID（NULL=历史全局数据）")
+    user_id = Column(Integer, nullable=True, index=True, comment="归属用户ID（审计列：数据写入时的微信账号，逻辑归属见 student_key）")
+    student_key = Column(String(255), nullable=True, index=True, comment="归属学生身份键（学校|学号，NULL=历史全局数据/未绑定身份）")
     meter = Column(String(100), nullable=False, default="default", comment="电表名称")
     remaining = Column(Float, nullable=False, comment="剩余电量(度)")
     recorded_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="记录时间")
@@ -96,7 +98,8 @@ class ElectricityTotalCapacity(Base):
     __tablename__ = "electricity_total_capacity"
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键ID")
-    user_id = Column(Integer, nullable=True, index=True, comment="归属用户ID（NULL=历史全局数据）")
+    user_id = Column(Integer, nullable=True, index=True, comment="归属用户ID（审计列：数据写入时的微信账号，逻辑归属见 student_key）")
+    student_key = Column(String(255), nullable=True, index=True, comment="归属学生身份键（学校|学号，NULL=历史全局数据/未绑定身份）")
     meter = Column(String(100), nullable=False, default="default", comment="电表名称")
     total_capacity = Column(Float, nullable=False, comment="总量(度)")
     remaining_at_record = Column(Float, nullable=False, comment="记录时的剩余电量(度)")

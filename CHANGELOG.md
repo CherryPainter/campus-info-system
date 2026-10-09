@@ -6,6 +6,25 @@
 
 ## Unreleased
 
+### 后端 · 电量数据归属维度重构：由「微信账号 user_id」改为「学生身份 student_key」（2026-10-09）
+- **背景**：换绑学生身份 / 换小程序 appid 会让 openid 变化、新建 user_id，原按 `user_id` 归属的电量历史被打成孤儿数据、换绑后查不到。决策：电量数据应绑定在「学生」而非「微信账号」上。
+- **模型层**（`app/model/electricity.py`）：`electricity_records` / `electricity_remaining` / `electricity_total_capacity` 三表各新增 `student_key VARCHAR(255) NULL INDEX`（取值 `学校|学号`，NULL=历史全局数据/未绑定身份）；`user_id` 降级为**审计列**（记录写入时的微信账号，不参与读写过滤，便于回滚）。
+- **仓库层**（`app/repository/electricity_repository.py`）：新增 `make_student_key(school, number)` 与 `student_key_of_user(session, user_id)`（由 user_id 反查当前绑定身份键）；全部读方法统一按 `student_key` 过滤（`student_key is not None → = ?`，为 None → `IS NULL`，兼容旧全局视图语义）；写方法同时回填 `student_key`（逻辑归属）+ `user_id`（审计）；批量去重与保留行同步回填两列；去重分组键由 `(user_id, date, meter)` 改为 `(student_key, date, meter)`。
+- **服务层**（`app/services/electricity_service.py` + `app/modules/electricity/capacity_manager.py`）：主归属维度由 `self._user_id` 改为 `self._student_key`；全部业务方法对仓库调用改用 `student_key=self._student_key`；两级缓存键由 `(user_id, meter)` 改为 `(student_key, meter)`（冷却状态按身份独立）；两个工厂 `get_electricity_service` / `get_capacity_manager` 在只传 `user_id` 时内部反解为 `student_key` 再走缓存。
+- **采集任务**（`app/modules/electricity/tasks.py`）：`_iter_students_with_cookie(_named)` 追加返回 `student_key`；`_is_first_fetch` / `_has_data` 优先按 `student_key` 判定、为 None 时回落 `user_id`（兼容未绑定身份老账号）；`lazy_fetch_for_user` / `_fetch_and_save` 透传 `student_key`；统计/剩余量构建改用 `_student_key_for(session, user_id)` 反解。
+- **路由层**：`app/api/admin_routes.py` 三个 per-student 端点经 `_electricity_svc_for_user(user_id)` 反解，未绑定身份返回"无电量数据"（不回退全局视图泄露他人数据）；`app/api/electricity_routes.py` 的 `/records/dedupe` 支持按 `target_user_id` 反解为 `target_student_key`；`app/api/miniapp_routes.py` 解绑接口 docstring 更新为按学生身份归属（解绑/换绑均不丢历史）。
+- **Schema 自动迁移**：`student_key` 列由启动期 `cmd_migrate(quiet=True)` 对比模型自动补建，生产重启即生效，无需手写 ALTER、零停机。
+- **孤儿数据回填脚本**（一次性）：`技术总结/dev-scripts/backfill_electricity_student_key.py`——遍历三表中 `student_key IS NULL 且 user_id IS NOT NULL` 的行，由 `student_profits` 反查 `(school, student_number)` 回填 `student_key`（旧 Profile 因身份相同自动并入同一键）；不可从库内恢复身份的 user_id 收集列表、可用 `--map user_id,student_key.csv` 补充后重跑；`student_key IS NULL 且 user_id IS NULL` 的历史全局数据保持 NULL。默认演练（只统计不写库），`--apply` 实际回填；幂等、可回滚（仅写 student_key，user_id 审计列保留）。
+- **验证**：`python -m py_compile` 对全部改动文件（model / repository / service / capacity_manager / tasks / 三个路由 / 回填脚本）通过；回填脚本未对生产库执行（部署后手动运行，见脚本头部用法）。
+
+### 小程序 · 电量详情页新增「解绑 / 换绑」功能（2026-10-09）
+- **电量详情页入口**：电表名右侧编辑图标（`.elec-edit-icon`）接上点击，弹操作面板，提供三项——换绑电表接入信息（跳配置页重新粘贴）、解绑电表接入信息、换绑学生身份。
+- **解绑接口**：新增 `POST /api/miniapp/electricity/cookie/unbind`——仅清空 `student_profiles.electricity_cookie` 以停止采集；电量历史（`electricity_records` / `remaining` / `total_capacity` 均按学生身份 `student_key` 归属、与 Cookie 无关）全部保留，重新配置后接续采集。前端二次确认弹窗明确"历史数据保留"。
+- **身份自助换绑**：`POST /api/miniapp/student/bind` 放开原先"已绑定即 `ALREADY_BOUND 403`"的硬拦，已绑定学生再次提交视为换绑——校验新身份的一次性码通过后覆盖本人资料身份字段，原身份名单条目随之释放；因电量等历史数据按学生身份 (`student_key`) 归属，换绑到同一身份后历史自动接续可见。安全围栏：目标身份若已被其他账号绑定则拒绝（`IDENTITY_CONFLICT 403`）。绑定页新增 `?mode=switch` 换绑模式（已绑定时不自动跳首页、文案改为"确认换绑"、附"历史数据保留"提示）。
+- 验证：后端 `py_compile` 通过；小程序 `taro build --type weapp` 编译成功（16.79s），`tsc` 0 错；`BindResult` 新增可选 `switched` 字段。
+
+## v6.21.1 (2026-10-09)
+
 ### 管理端：登录页两步验证码漏改 —— 4 处输入口全部收敛到 OtpInput（2026-10-09）
 - 上一轮改 MFA 验证码时只覆盖了个人中心（设置/禁用）与管理端设置页共 3 处，**登录页「两步验证」弹窗漏改**，仍是旧的「6 个真实 input + 自动跳格」——用户在登录验证时依然踩到退格停当前格、清空要点 12 次、长按只删一个、反复弹软键盘。
 - `Login.tsx` 改用共用 `OtpInput`；为此给组件补两个能力：`onEnter`（输完 6 位回车直接提交，Enter 判定收在组件内）与 `forwardRef` 暴露 `focus()`（校验失败后重新聚焦），替换原先散落的 `inputRefs` 数组与手写跳格/退格/粘贴逻辑（净删约 55 行）。
@@ -39,6 +58,10 @@
 - 管理端：`npm run build`（tsc + vite）成功（14.48s）；产物 `index-*.js` 含 `otp-native/otp-input/otp-cell`，`index-*.css` 含 `.otp-*` 样式。
 - 开关几何实测（无头 Chrome，375px 视口按 1rpx=0.5px 复现）：20×20 圆点在 44×24 胶囊内上下间距各 2.00px（垂直居中），水平为关闭态左 2/右 22、开启态左 22/右 2 的标准停靠。
 - 说明：以上源码修复此前已存在于工作区但**从未重新构建**，用户看到的仍是旧产物（旧 NutUI 开关裸节点 / 旧 `ctx.filter` 白化 / 旧 6 格验证码），本次一并构建落盘。
+
+### 小程序：首页天气卡片图标放大（48rpx → 64rpx）（2026-10-09）
+- 首页头部右侧 `WeatherCard` 的 `.weather-mini-icon` 由 `48rpx × 48rpx` 放大到 `64rpx × 64rpx`，与温度文字（`56rpx`、行高 1.1）视觉平衡，且仍落在卡片 `min-width:240rpx` + `space-between` 布局内不溢出；图标走彩色版 `getWeatherIconSrc(text)`（浅底），太阳橙色保持不变。
+- 验证：`taro build --type weapp` 成功（17.04s），`dist/pages/home/index.wxss` 编译为 `height:64rpx;width:64rpx`。
 
 ## v6.21.0 (2026-10-01)
 
