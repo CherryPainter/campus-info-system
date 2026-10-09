@@ -699,6 +699,68 @@ def toggle_push(course_id: int):
         session.close()
 
 
+def _resolve_default_course_data_file() -> str:
+    """默认定位爬虫产出的 processed_course_table.json。
+
+    爬虫现在按学期隔离输出到 ``processed/semester_<eams_id>/`` 子目录
+    （见 app/cqie-course-timetable/main.py 与 services/crawl_task_service.py），
+    扁平的 ``processed/processed_course_table.json`` 已不再生成，手动「导入」按钮
+    若仍读扁平路径会 404。这里按以下优先级定位：
+
+      1. 扁平文件（向后兼容历史产物）
+      2. 当前学期子目录 ``processed/semester_<eams_id>/``
+         （eams_id 由 course_meta 经 _resolve_eams_id 反查，与 _get_current_semester_id 同源）
+      3. ``processed`` 下最近修改的 ``semester_*/processed_course_table.json``（兜底，
+         保证只要有任一已爬取数据，按钮就不会 404）
+
+    找不到任何文件时返回扁平路径（交给后续 404 提示，错误信息清晰）。
+    """
+    import os
+
+    base = os.path.realpath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "cqie-course-timetable",
+            "output",
+            "course-data",
+            "processed",
+        )
+    )
+    flat = os.path.join(base, "processed_course_table.json")
+    if os.path.exists(flat):
+        return flat
+
+    # 候选：当前学期子目录（与导入归属学期口径一致，避免把旧碎片搬进当前学期）
+    _cid = _get_current_semester_id()
+    if _cid:
+        try:
+            from app.services.crawl_task_service import _resolve_eams_id
+
+            eams = _resolve_eams_id(_cid)
+        except Exception:
+            eams = str(_cid)[-3:]
+        _cur = os.path.join(base, f"semester_{eams}", "processed_course_table.json")
+        if os.path.exists(_cur):
+            return _cur
+
+    # 兜底：扫描所有 semester_*/ 取最近修改
+    if os.path.isdir(base):
+        best = None
+        best_mtime = -1
+        for name in os.listdir(base):
+            cand = os.path.join(base, name, "processed_course_table.json")
+            if os.path.isfile(cand):
+                mtime = os.path.getmtime(cand)
+                if mtime > best_mtime:
+                    best_mtime = mtime
+                    best = cand
+        if best:
+            return best
+
+    return flat
+
+
 @course_bp.route("/import", methods=["POST"])
 @admin_required
 def import_courses():
@@ -713,17 +775,11 @@ def import_courses():
     from app.repository.course_repository import CourseRepository
 
     data_file = request.json.get("file_path") if request.json else None
+    _resolved_default = False
     if not data_file:
-        # 默认使用最新处理后的数据
-        data_file = os.path.join(
-            os.path.dirname(__file__),
-            "..",
-            "cqie-course-timetable",
-            "output",
-            "course-data",
-            "processed",
-            "processed_course_table.json",
-        )
+        # 默认定位：扁平文件 -> 当前学期子目录 -> 最近修改兜底（不再只盯扁平路径）
+        _resolved_default = True
+        data_file = _resolve_default_course_data_file()
     else:
         # 路径白名单：只允许读爬虫产物目录内的 .json，避免管理员（或被盗用的管理令牌）
         # 借 file_path 读服务器任意文件（原先把客户端字符串直接丢给 open()）。
@@ -883,12 +939,30 @@ def import_courses():
             logger.info(
                 f"[课程] 导入 {created_count} 门（新增 {created_count} / 更新 {updated_count}）"
             )
+            # 实际读取来源（相对爬虫产物根目录），便于管理员核对是否导入了期望学期
+            try:
+                _base = os.path.realpath(
+                    os.path.join(
+                        os.path.dirname(__file__),
+                        "..",
+                        "cqie-course-timetable",
+                        "output",
+                        "course-data",
+                    )
+                )
+                _rel = os.path.relpath(data_file, _base)
+            except Exception:
+                _rel = data_file
             return api_success(
                 message=f"成功导入 {created_count} 门课程（新增 {created_count} / 更新 {updated_count}）",
                 data={
                     "imported_count": created_count,
                     "created_count": created_count,
                     "updated_count": updated_count,
+                    "source_file": _rel,
+                    "semester_id": _sem["semester_id"],
+                    "semester_name": _sem["semester_name"],
+                    "resolved_default": _resolved_default,
                 },
             )
         finally:

@@ -33,11 +33,11 @@ export default function HolidayCourseView({
   return (
     <div
       style={{
-        background: "linear-gradient(135deg, #e6f7ff 0%, #f9f0ff 55%, #fff7e6 100%)",
+        background: "#f5f7fa",
         borderRadius: 12,
         padding: "40px 24px",
         textAlign: "center",
-        boxShadow: "0 2px 12px rgba(0, 0, 0, 0.05)",
+        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.06)",
         marginBottom: 8,
       }}
     >
@@ -51,7 +51,7 @@ export default function HolidayCourseView({
           alignItems: "center",
           justifyContent: "center",
           margin: "0 auto 18px",
-          boxShadow: "0 4px 14px rgba(24, 144, 255, 0.18)",
+          boxShadow: "0 1px 6px rgba(0, 0, 0, 0.08)",
         }}
       >
         <CalendarOutlined style={{ fontSize: 30, color: "#1890ff" }} />

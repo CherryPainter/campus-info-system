@@ -17,6 +17,8 @@
 - GET  /api/admin/electricity/students/<id>/remaining  — 指定学生最新剩余电量
 - GET  /api/admin/electricity/students/<id>/records    — 指定学生用电记录（分页）
 - GET  /api/admin/electricity/students/<id>/statistics — 指定学生用电统计
+- GET  /api/admin/electricity/students/<id>/cookie     — 获取指定学生电表 Cookie（管理员）
+- PUT  /api/admin/electricity/students/<id>/cookie     — 更新/清空指定学生电表 Cookie
 - GET  /api/admin/schedules               — 获取课表数据
 - POST /api/admin/tasks/spider            — 手动触发爬虫
 - GET  /api/admin/tasks/spider/status    — 爬虫状态
@@ -1253,25 +1255,117 @@ def get_student_electricity_records(user_id: int):
         limit (int): 每页条数，默认 20，上限 200
         offset (int): 偏移量，默认 0
         meter_filter (str): 电表名筛选（可选，精确匹配）
+        start_date (str): 日期范围起（YYYY-MM-DD，可选）
+        end_date (str): 日期范围止（YYYY-MM-DD，可选）
 
     响应：
         { "records": [...], "total": N, "limit": 20, "offset": 0 }
     """
+    from datetime import datetime as _dt, time as _time
+
     from app.services.electricity_service import get_electricity_service
 
     limit = min(max(request.args.get("limit", 20, type=int), 1), 200)
     offset = max(request.args.get("offset", 0, type=int), 0)
     meter_filter = request.args.get("meter_filter", "").strip() or None
+    start_date_str = request.args.get("start_date", "").strip() or None
+    end_date_str = request.args.get("end_date", "").strip() or None
+
+    start_time = None
+    end_time = None
+    if start_date_str:
+        try:
+            start_time = _dt.combine(_dt.strptime(start_date_str, "%Y-%m-%d").date(), _time.min)
+        except ValueError:
+            return api_error(message="start_date 格式错误，应为 YYYY-MM-DD", http_status=400)
+    if end_date_str:
+        try:
+            end_time = _dt.combine(_dt.strptime(end_date_str, "%Y-%m-%d").date(), _time.max)
+        except ValueError:
+            return api_error(message="end_date 格式错误，应为 YYYY-MM-DD", http_status=400)
 
     svc = _electricity_svc_for_user(user_id)
     if svc is None:
         return api_success(data={"records": [], "total": 0, "limit": limit, "offset": offset},
                            message="该学生未绑定身份，无电量数据")
     records = svc.get_usage_records(
-        meter=meter_filter, days=None, limit=limit, offset=offset
+        meter=meter_filter,
+        days=None,
+        start_time=start_time,
+        end_time=end_time,
+        limit=limit,
+        offset=offset,
     )
-    total = svc.count_usage_records(meter=meter_filter, days=None)
+    total = svc.count_usage_records(
+        meter=meter_filter, days=None, start_time=start_time, end_time=end_time
+    )
     return api_success(data={"records": records, "total": total, "limit": limit, "offset": offset})
+
+
+@admin_bp.route("/electricity/students/<int:user_id>/cookie")
+@admin_required
+def get_student_electricity_cookie(user_id: int):
+    """
+    获取指定学生电表 Cookie（管理员查看）
+
+    响应：
+        { "cookie": "...", "updated_at": "..." }
+        未配置时 cookie 为空字符串
+    """
+    from app.core.database import get_db
+    from app.model.student_profile import StudentProfile
+
+    session = get_db()
+    try:
+        profile = session.query(StudentProfile).filter(StudentProfile.user_id == user_id).first()
+        if not profile:
+            return api_success(data={"cookie": "", "updated_at": None}, message="该学生尚未完善资料")
+        return api_success(
+            data={
+                "cookie": profile.electricity_cookie or "",
+                "updated_at": profile.updated_at.strftime("%Y-%m-%d %H:%M:%S") if profile.updated_at else None,
+            }
+        )
+    finally:
+        session.close()
+
+
+@admin_bp.route("/electricity/students/<int:user_id>/cookie", methods=["PUT"])
+@admin_required
+def update_student_electricity_cookie(user_id: int):
+    """
+    管理端更新/清空指定学生电表 Cookie
+
+    请求体：
+        { "cookie": "..." }   # 传空字符串即解绑
+
+    说明：
+        - 仅清空 cookie 不会删除历史电量数据，便于学生重新配置或管理员换绑。
+        - 修改后学生将再次变为「未配置」状态，直到重新提交 cookie。
+    """
+    from app.core.database import get_db
+    from app.model.student_profile import StudentProfile
+
+    data = request.get_json(silent=True) or {}
+    cookie = (data.get("cookie") or "").strip()
+
+    session = get_db()
+    try:
+        profile = session.query(StudentProfile).filter(StudentProfile.user_id == user_id).first()
+        if not profile:
+            return api_error(message="该学生尚未完善资料", http_status=404)
+
+        old = profile.electricity_cookie or ""
+        profile.electricity_cookie = cookie if cookie else None
+        session.commit()
+
+        if cookie:
+            logger.info("管理员更新学生电表 Cookie: user_id=%s", user_id)
+            return api_success(data={"cookie": cookie}, message="已更新电表 Cookie")
+        logger.info("管理员解绑学生电表 Cookie: user_id=%s", user_id)
+        return api_success(data={"cookie": ""}, message="已解绑电表 Cookie，学生需重新配置")
+    finally:
+        session.close()
 
 
 @admin_bp.route("/electricity/students/<int:user_id>/statistics")

@@ -36,6 +36,9 @@ import {
   Typography,
   Tooltip,
   Upload,
+  Dropdown,
+  Row,
+  Col,
 } from "antd";
 import type { DataNode } from "antd/es/tree";
 import {
@@ -48,10 +51,11 @@ import {
   KeyOutlined,
   ApartmentOutlined,
   DownOutlined,
+  MoreOutlined,
 } from "@ant-design/icons";
 import { formatDateTime } from "@/utils/datetime";
 import ResponsiveTable from "@/components/ResponsiveTable";
-import { rosterApi, orgApi } from "@/api/admin";
+import { rosterApi, orgApi, adminApi } from "@/api/admin";
 import type { OrgUnit, RosterStudent } from "@/api/admin";
 
 const { Text } = Typography;
@@ -135,6 +139,67 @@ export default function UserManagementRoster() {
   const [editTarget, setEditTarget] = useState<RosterStudent | null>(null);
   const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
+
+  // 编辑弹窗中展示已绑定用户的电表 Cookie
+  const [editCookie, setEditCookie] = useState<{
+    loading: boolean;
+    cookie: string;
+    updatedAt: string | null;
+  }>({ loading: false, cookie: "", updatedAt: null });
+  const [editCookieSaving, setEditCookieSaving] = useState(false);
+
+  // 打开编辑弹窗（含电表 Cookie 加载）
+  const openEditModal = (record: RosterStudent) => {
+    setEditTarget(record);
+    editForm.setFieldsValue({
+      real_name: record.real_name,
+      dorm: record.dorm,
+      remark: record.remark,
+      is_active: record.is_active,
+    });
+    // 班级级联默认值：按学校/学院/专业/班级 名称路径回填
+    const path = findClassPath(tree, record);
+    editForm.setFieldsValue({ class_path: path });
+
+    // 若已绑定用户，加载其电表 Cookie
+    setEditCookie({ loading: false, cookie: "", updatedAt: null });
+    if (record.bound_user_id) {
+      setEditCookie({ loading: true, cookie: "", updatedAt: null });
+      adminApi
+        .getStudentElectricityCookie(record.bound_user_id)
+        .then((res) => {
+          if (res.status === "success" && res.data) {
+            setEditCookie({
+              loading: false,
+              cookie: res.data.cookie,
+              updatedAt: res.data.updated_at,
+            });
+          } else {
+            setEditCookie({ loading: false, cookie: "", updatedAt: null });
+          }
+        })
+        .catch(() => {
+          setEditCookie({ loading: false, cookie: "", updatedAt: null });
+        });
+    }
+  };
+
+  const handleSaveEditCookie = async (userId: number, cookie: string) => {
+    setEditCookieSaving(true);
+    try {
+      const res = await adminApi.updateStudentElectricityCookie(userId, cookie);
+      if (res.status === "success") {
+        message.success(res.message || "已保存");
+        setEditCookie((prev) => ({ ...prev, cookie: cookie || "" }));
+      } else {
+        message.error(res.message || "保存失败");
+      }
+    } catch {
+      message.error("保存失败");
+    } finally {
+      setEditCookieSaving(false);
+    }
+  };
 
   // ---- 绑定码 ----
   const [codeModal, setCodeModal] = useState<{
@@ -653,20 +718,20 @@ export default function UserManagementRoster() {
       key: "student_number",
       ellipsis: true,
       fixed: "left" as const,
-      width: 130,
+      width: 120,
     },
     {
       title: "姓名",
       dataIndex: "real_name",
       key: "real_name",
-      width: 100,
+      width: 90,
       render: (v: string | null) => v || "-",
     },
     {
       title: "宿舍",
       dataIndex: "dorm",
       key: "dorm",
-      width: 110,
+      width: 100,
       ellipsis: true,
       render: (v: string | null) => v || "-",
     },
@@ -675,13 +740,14 @@ export default function UserManagementRoster() {
       dataIndex: "school",
       key: "school",
       ellipsis: true,
-      width: 150,
+      width: 120,
     },
     {
       title: "学院",
       dataIndex: "college",
       key: "college",
       ellipsis: true,
+      width: 120,
       render: (v: string | null) => v || "-",
     },
     {
@@ -689,6 +755,7 @@ export default function UserManagementRoster() {
       dataIndex: "major",
       key: "major",
       ellipsis: true,
+      width: 120,
       render: (v: string | null) => v || "-",
     },
     {
@@ -696,27 +763,28 @@ export default function UserManagementRoster() {
       dataIndex: "class_name",
       key: "class_name",
       ellipsis: true,
-      width: 120,
+      width: 110,
     },
     {
       title: "备注",
       dataIndex: "remark",
       key: "remark",
       ellipsis: true,
+      width: 120,
       render: (v: string | null) => v || "-",
     },
     {
       title: "状态",
       dataIndex: "is_active",
       key: "is_active",
-      width: 80,
+      width: 70,
       render: (v: boolean) =>
         v ? <Tag color="green">启用</Tag> : <Tag color="default">停用</Tag>,
     },
     {
       title: "绑定状态",
       key: "binding",
-      width: 180,
+      width: 150,
       ellipsis: true,
       render: (_: unknown, record: RosterStudent) =>
         record.bound_username ? (
@@ -733,74 +801,65 @@ export default function UserManagementRoster() {
       title: "创建时间",
       dataIndex: "created_at",
       key: "created_at",
-      width: 150,
+      width: 140,
       render: (v: string | null) => (v ? formatDateTime(v) : "-"),
     },
     {
       title: "操作",
       key: "action",
-      width: 230,
+      width: 140,
       fixed: "right" as const,
-      render: (_: unknown, record: RosterStudent) => (
-        <Space size={4} wrap>
-          <Button
-            size="small"
-            icon={<KeyOutlined />}
-            onClick={() => handleGenerateCode(record)}
-            disabled={!!record.bound_username}
-            title={record.bound_username ? "已绑定无需再发码" : undefined}
-          >
-            {record.has_bind_code ? "重新发码" : "生成码"}
-          </Button>
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => {
-              setEditTarget(record);
-              editForm.setFieldsValue({
-                real_name: record.real_name,
-                dorm: record.dorm,
-                remark: record.remark,
-                is_active: record.is_active,
-              });
-              // 班级级联默认值：按学校/学院/专业/班级 名称路径回填
-              const path = findClassPath(tree, record);
-              editForm.setFieldsValue({ class_path: path });
-            }}
-          >
-            编辑
-          </Button>
-          <Button
-            size="small"
-            onClick={() => handleToggle(record)}
-            danger={record.is_active}
-          >
-            {record.is_active ? "停用" : "启用"}
-          </Button>
-          {record.bound_user_id ? (
+      render: (_: unknown, record: RosterStudent) => {
+        const moreItems = [
+          {
+            key: "toggle",
+            label: (
+              <span style={{ color: record.is_active ? "#cf1322" : "#3f8600" }}>
+                {record.is_active ? "停用" : "启用"}
+              </span>
+            ),
+            onClick: () => handleToggle(record),
+          },
+          ...(record.bound_user_id
+            ? [
+                {
+                  key: "unbind",
+                  label: "解绑身份",
+                  onClick: () => handleUnbind(record),
+                },
+              ]
+            : []),
+        ];
+        return (
+          <Space size={4} wrap>
+            <Button
+              size="small"
+              icon={<KeyOutlined />}
+              onClick={() => handleGenerateCode(record)}
+              disabled={!!record.bound_username}
+              title={record.bound_username ? "已绑定无需再发码" : record.has_bind_code ? "重新发码" : "生成绑定码"}
+            />
+            <Button
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => openEditModal(record)}
+              title="编辑"
+            />
             <Popconfirm
-              title="收回身份"
-              description="将清空该学生已绑定的身份并强制其重新登录，名单保留且自动重发绑定码。确定？"
-              onConfirm={() => handleUnbind(record)}
+              title="确认删除"
+              description="删除名单后，已绑定该身份的学生仍将保留原身份且无法自行解绑；若要让学生重新绑定，请改用「解绑」。确定删除名单？"
+              onConfirm={() => handleDelete(record)}
               okText="确定"
               cancelText="取消"
             >
-              <Button size="small">解绑</Button>
+              <Button size="small" danger icon={<DeleteOutlined />} title="删除" />
             </Popconfirm>
-          ) : null}
-          <Popconfirm
-            title="确认删除"
-            description="删除名单后，已绑定该身份的学生仍将保留原身份且无法自行解绑；若要让学生重新绑定，请改用「解绑」。确定删除名单？"
-            onConfirm={() => handleDelete(record)}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Button size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Dropdown menu={{ items: moreItems }} placement="bottomRight" arrow>
+              <Button size="small" icon={<MoreOutlined />} title="更多" />
+            </Dropdown>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -1178,40 +1237,107 @@ export default function UserManagementRoster() {
       <Modal
         title="编辑名单条目"
         open={!!editTarget}
-        onCancel={() => setEditTarget(null)}
+        width={720}
+        onCancel={() => {
+          setEditTarget(null);
+          setEditCookie({ loading: false, cookie: "", updatedAt: null });
+        }}
         footer={null}
       >
         <Form form={editForm} layout="vertical" onFinish={handleEdit}>
-          <Form.Item label="学号">
-            <Input value={editTarget?.student_number} disabled />
-          </Form.Item>
-          <Form.Item label="班级（可换班）" name="class_path">
-            <Cascader
-              options={cascaderOptions}
-              placeholder="选择学校 → 学院 → 专业 → 班级"
-              showSearch
-              expandTrigger="hover"
-              allowClear
-            />
-          </Form.Item>
-          <Form.Item label="姓名（选填）" name="real_name">
-            <Input placeholder="请输入姓名" />
-          </Form.Item>
-          <Form.Item label="宿舍（选填）" name="dorm">
-            <Input placeholder="如 A栋305，同宿舍学生将自动编组用于电量推送" />
-          </Form.Item>
-          <Form.Item label="备注（选填）" name="remark">
-            <Input placeholder="备注信息" />
-          </Form.Item>
-          <Form.Item label="启用状态" name="is_active" valuePropName="checked">
-            <Switch checkedChildren="启用" unCheckedChildren="停用" />
-          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="学号">
+                <Input value={editTarget?.student_number} disabled />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="班级（可换班）" name="class_path">
+                <Cascader
+                  options={cascaderOptions}
+                  placeholder="选择学校 → 学院 → 专业 → 班级"
+                  showSearch
+                  expandTrigger="hover"
+                  allowClear
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="姓名（选填）" name="real_name">
+                <Input placeholder="请输入姓名" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="宿舍（选填）" name="dorm">
+                <Input placeholder="如 A栋305，同宿舍学生将自动编组用于电量推送" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="备注（选填）" name="remark">
+                <Input placeholder="备注信息" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="启用状态" name="is_active" valuePropName="checked">
+                <Switch checkedChildren="启用" unCheckedChildren="停用" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {editTarget?.bound_user_id && (
+            <>
+              <Divider style={{ margin: "4px 0 16px" }} />
+              {editCookie.loading ? (
+                <Form.Item label="电表 Cookie">
+                  <Spin size="small" />
+                </Form.Item>
+              ) : (
+                <>
+                  <Form.Item label="电表 Cookie" extra={editCookie.updatedAt ? `更新于 ${editCookie.updatedAt}` : undefined}>
+                    <Input.TextArea
+                      rows={4}
+                      value={editCookie.cookie}
+                      placeholder="尚未配置电表 Cookie"
+                      onChange={(e) => setEditCookie((prev) => ({ ...prev, cookie: e.target.value }))}
+                    />
+                  </Form.Item>
+                  <Form.Item>
+                    <Space>
+                      <Button
+                        type="primary"
+                        size="small"
+                        loading={editCookieSaving}
+                        onClick={() => handleSaveEditCookie(editTarget.bound_user_id!, editCookie.cookie)}
+                      >
+                        保存 Cookie
+                      </Button>
+                      <Popconfirm
+                        title="解绑电表 Cookie"
+                        description="清空后学生将变为未配置状态，确定？"
+                        onConfirm={() => handleSaveEditCookie(editTarget.bound_user_id!, "")}
+                        okText="确定"
+                        cancelText="取消"
+                      >
+                        <Button size="small" danger>
+                          解绑
+                        </Button>
+                      </Popconfirm>
+                    </Space>
+                  </Form.Item>
+                </>
+              )}
+            </>
+          )}
+
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
                 保存
               </Button>
-              <Button onClick={() => setEditTarget(null)}>取消</Button>
+              <Button onClick={() => {
+                setEditTarget(null);
+                setEditCookie({ loading: false, cookie: "", updatedAt: null });
+              }}>取消</Button>
             </Space>
           </Form.Item>
         </Form>

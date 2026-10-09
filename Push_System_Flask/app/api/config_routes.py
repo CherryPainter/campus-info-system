@@ -161,7 +161,12 @@ def update_config(module: str, key: str):
             return api_error(message=f"值类型错误: {e}", http_status=400)
 
         # 更新值
-        config.value = str(new_value)
+        # 布尔统一规范为小写 true/false，与默认值 / 其它读路径（均 .lower() 兜底）一致，
+        # 避免通用端点用 str(bool) 存成 "False"/"True"、与天气页专属端点("false"/"true")不一致
+        if config.value_type == "boolean":
+            config.value = "true" if str(new_value).lower() in ("true", "1", "yes") else "false"
+        else:
+            config.value = str(new_value)
         config.updated_at = datetime.now()
         session.commit()
 
@@ -244,8 +249,13 @@ def update_config(module: str, key: str):
                             k, v = line.split("=", 1)
                             env_vars[k] = v
 
-            # 更新值
-            env_vars[env_key] = str(new_value)
+            # 更新值（布尔同样规范为小写 true/false，与库内存储保持一致）
+            if config.value_type == "boolean":
+                env_vars[env_key] = (
+                    "true" if str(new_value).lower() in ("true", "1", "yes") else "false"
+                )
+            else:
+                env_vars[env_key] = str(new_value)
 
             # 写回 .env 文件
             with open(env_file, "w", encoding="utf-8") as f:

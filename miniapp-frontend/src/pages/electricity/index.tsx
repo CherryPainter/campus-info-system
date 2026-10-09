@@ -106,7 +106,7 @@ export default function ElectricityPage() {
       // 后端懒采集：该学生首次进入（无任何记录）且已配置 Cookie 时已自动触发全量爬取，
       // 本次仍返回空数据，提示稍后下拉刷新查看
       if (hRes?.data?.fetch_triggered) {
-        Taro.showToast({ title: '正在首次采集电量数据，请稍后下拉刷新查看', icon: 'none', duration: 2500 });
+        Taro.showToast({ title: '正在获取电量数据，稍后下拉刷新查看', icon: 'none', duration: 2500 });
       }
       // 本月已用：直接用后端聚合结果（month_used），不再用首屏记录本地累加
       setMonthUsed(mRes?.data?.month_used ?? 0);
@@ -157,7 +157,7 @@ export default function ElectricityPage() {
           Taro.showModal({
             title: '解绑电表接入信息',
             content:
-              '解绑后将停止自动采集电量，但历史电量数据会保留，重新配置后可继续采集。确定解绑？',
+              '解绑后将停止自动获取电量，历史数据仍保留。确定解绑？',
             confirmText: '解绑',
             success: (m) => {
               if (m.confirm) doUnbindCookie();
@@ -432,7 +432,7 @@ export default function ElectricityPage() {
         </View>
         <View className="state-wrap" style={{ paddingTop: '160rpx' }}>
           <Text className="state-title">未配置电表接入信息</Text>
-          <Text className="state-desc">每个宿舍有独立的电表，配置后即可自动采集电量数据</Text>
+          <Text className="state-desc">每个宿舍有独立的电表，配置后自动获取电量</Text>
           <View
             className="state-retry"
             onClick={() => Taro.navigateTo({ url: '/pages/electricity-config/index' })}
@@ -482,7 +482,7 @@ export default function ElectricityPage() {
 
       {isEmpty ? (
         <View className="card">
-          <EmptyState title="暂无电量数据" desc="学校尚未采集宿舍电量" />
+          <EmptyState title="暂无电量数据" desc="暂未获取到电量数据" />
         </View>
       ) : (
         <>

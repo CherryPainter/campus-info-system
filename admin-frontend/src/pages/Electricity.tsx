@@ -10,6 +10,7 @@
  * 清空记录入口已移除。学生有头像（小程序上传）时优先显示头像，无头像用首字母兜底。
  */
 import { useState, useEffect, useCallback } from "react";
+import dayjs from "dayjs";
 import {
   Card,
   Tabs,
@@ -28,6 +29,9 @@ import {
   Grid,
   Empty,
   Typography,
+  Modal,
+  Popconfirm,
+  DatePicker,
 } from "antd";
 import ResponsiveTable from "@/components/ResponsiveTable";
 import {
@@ -41,6 +45,8 @@ import {
   CheckCircleOutlined,
   MinusCircleOutlined,
   WarningOutlined,
+  EditOutlined,
+  DisconnectOutlined,
 } from "@ant-design/icons";
 import {
   adminApi,
@@ -73,7 +79,20 @@ export default function Electricity() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [recordPage, setRecordPage] = useState(1);
   const [recordPageSize, setRecordPageSize] = useState(10);
+  const [recordStartDate, setRecordStartDate] = useState<string | null>(null);
+  const [recordEndDate, setRecordEndDate] = useState<string | null>(null);
+  const [recordMeterFilter, setRecordMeterFilter] = useState("");
   const [fetchAllLoading, setFetchAllLoading] = useState(false);
+
+  // 电表 Cookie 编辑弹窗
+  const [cookieModal, setCookieModal] = useState<{
+    visible: boolean;
+    student: ElectricityStudent | null;
+    cookie: string;
+    loading: boolean;
+    saving: boolean;
+  }>({ visible: false, student: null, cookie: "", loading: false, saving: false });
+  const [cookieForm] = Form.useForm();
 
   // ============ 学生总览 ============
   const fetchOverview = useCallback(async () => {
@@ -109,6 +128,9 @@ export default function Electricity() {
         const res = await adminApi.getStudentElectricityRecords(userId, {
           limit: pageSize,
           offset: (page - 1) * pageSize,
+          meter_filter: recordMeterFilter || undefined,
+          start_date: recordStartDate || undefined,
+          end_date: recordEndDate || undefined,
         });
         if (res.status === "success" && res.data) setRecords(res.data);
       } catch (error) {
@@ -117,7 +139,7 @@ export default function Electricity() {
         setDetailLoading(false);
       }
     },
-    []
+    [recordMeterFilter, recordStartDate, recordEndDate]
   );
 
   // 选中学生：切入「用电明细」Tab 并加载其数据
@@ -126,6 +148,9 @@ export default function Electricity() {
     setRemaining(null);
     setRecords(null);
     setRecordPage(1);
+    setRecordStartDate(null);
+    setRecordEndDate(null);
+    setRecordMeterFilter("");
     setActiveTab("detail");
   };
 
@@ -136,14 +161,76 @@ export default function Electricity() {
     fetchOverview();
   };
 
-  // 明细 Tab 数据加载（选中学生变化 / 记录翻页时）
+  // 打开电表 Cookie 编辑弹窗
+  const openCookieModal = async (student: ElectricityStudent) => {
+    setCookieModal({ visible: true, student, cookie: "", loading: true, saving: false });
+    cookieForm.resetFields();
+    try {
+      const res = await adminApi.getStudentElectricityCookie(student.user_id);
+      if (res.status === "success" && res.data) {
+        const cookie = res.data.cookie;
+        setCookieModal((prev) => ({ ...prev, cookie, loading: false }));
+        cookieForm.setFieldsValue({ cookie });
+      } else {
+        setCookieModal((prev) => ({ ...prev, loading: false }));
+      }
+    } catch (error) {
+      console.error("加载电表 Cookie 失败:", error);
+      message.error("加载电表 Cookie 失败");
+      setCookieModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const closeCookieModal = () => {
+    setCookieModal({ visible: false, student: null, cookie: "", loading: false, saving: false });
+    cookieForm.resetFields();
+  };
+
+  const saveCookieModal = async () => {
+    const values = await cookieForm.validateFields();
+    const student = cookieModal.student;
+    if (!student) return;
+    setCookieModal((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await adminApi.updateStudentElectricityCookie(student.user_id, values.cookie || "");
+      if (res.status === "success") {
+        message.success(res.message || "已保存");
+        closeCookieModal();
+        fetchOverview();
+      } else {
+        message.error(res.message || "保存失败");
+      }
+    } catch (error) {
+      console.error("保存电表 Cookie 失败:", error);
+      message.error("保存失败");
+    } finally {
+      setCookieModal((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  const handleUnbindCookie = async (student: ElectricityStudent) => {
+    try {
+      const res = await adminApi.updateStudentElectricityCookie(student.user_id, "");
+      if (res.status === "success") {
+        message.success("已解绑电表 Cookie");
+        fetchOverview();
+      } else {
+        message.error(res.message || "解绑失败");
+      }
+    } catch (error) {
+      console.error("解绑电表 Cookie 失败:", error);
+      message.error("解绑失败");
+    }
+  };
+
+  // 明细 Tab 数据加载（选中学生变化 / 记录翻页 / 筛选条件变化时）
   useEffect(() => {
     if (activeTab === "detail" && selected) {
       fetchRemaining(selected.user_id);
       fetchRecords(selected.user_id, recordPage, recordPageSize);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, selected, recordPage, recordPageSize]);
+  }, [activeTab, selected, recordPage, recordPageSize, recordMeterFilter, recordStartDate, recordEndDate]);
 
   // ============ 全量爬取（遍历所有已配置电表 Cookie 的学生） ============
   const handleTriggerFetch = () => {
@@ -303,18 +390,42 @@ export default function Electricity() {
     {
       title: "操作",
       key: "action",
-      width: "10%",
+      width: "18%",
       render: (_: unknown, record: ElectricityStudent) => (
-        <Button type="link" size="small" onClick={() => handleSelectStudent(record)}>
-          查看明细
-        </Button>
+        <Space size={4} wrap>
+          <Button type="link" size="small" onClick={() => handleSelectStudent(record)}>
+            查看明细
+          </Button>
+          {record.configured ? (
+            <>
+              <Button size="small" icon={<EditOutlined />} onClick={() => openCookieModal(record)}>
+                换绑
+              </Button>
+              <Popconfirm
+                title="解绑电表 Cookie"
+                description="解绑后该学生将变为未配置状态，历史数据仍保留。确定？"
+                onConfirm={() => handleUnbindCookie(record)}
+                okText="确定"
+                cancelText="取消"
+              >
+                <Button size="small" danger icon={<DisconnectOutlined />}>
+                  解绑
+                </Button>
+              </Popconfirm>
+            </>
+          ) : (
+            <Button size="small" icon={<EditOutlined />} onClick={() => openCookieModal(record)}>
+              配置 Cookie
+            </Button>
+          )}
+        </Space>
       ),
     },
   ];
 
   // 用电记录列（与旧版保持一致，数据来自分页接口）
   const recordColumns = [
-    { title: "日期", dataIndex: "record_time", key: "record_time", width: "40%", ellipsis: true },
+    { title: "日期", dataIndex: "time", key: "time", width: "40%", ellipsis: true },
     {
       title: "用电量",
       dataIndex: "usage",
@@ -328,7 +439,7 @@ export default function Electricity() {
 
   const recordsWithKeys = (records?.records ?? []).map((item, idx) => ({
     ...item,
-    _uid: `${item.record_time}-${idx}`,
+    _uid: `${item.time}-${idx}`,
   }));
 
   // ============ 学生总览 Tab ============
@@ -368,7 +479,7 @@ export default function Electricity() {
         <Alert
           type="info"
           showIcon
-          message="电表 Cookie 由学生在小程序「设置 - 电表配置」自行配置；未配置的学生不产生电量数据。"
+          message="电表 Cookie 由学生在小程序自行配置"
           style={{ marginBottom: 16 }}
         />
         <Space style={{ marginBottom: 16 }}>
@@ -450,7 +561,7 @@ export default function Electricity() {
             <Alert
               type="warning"
               showIcon
-              message="该学生未配置电表 Cookie，暂无电量数据。请引导学生在小程序「设置 - 电表配置」完成配置。"
+              message="该学生未配置电表 Cookie，暂无电量数据"
               style={{ width: "100%" }}
             />
           )}
@@ -477,7 +588,7 @@ export default function Electricity() {
                       </div>
                       {remaining.is_low_power && (
                         <Alert
-                          message="电量不足，请提醒学生及时充值"
+                          message="电量不足，需提醒学生及时充值"
                           type="warning"
                           showIcon
                           style={{ marginTop: 16 }}
@@ -504,7 +615,65 @@ export default function Electricity() {
               </Col>
             </Row>
 
-            <Card title="用电记录" size="small" style={{ marginBottom: 16 }}>
+            <Card
+              title={
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>用电记录</span>
+                  <Space size={8} wrap>
+                    <DatePicker.RangePicker
+                      size="small"
+                      value={
+                        recordStartDate && recordEndDate
+                          ? [
+                              dayjs(recordStartDate),
+                              dayjs(recordEndDate),
+                            ]
+                          : null
+                      }
+                      onChange={(dates) => {
+                        setRecordPage(1);
+                        setRecordStartDate(dates?.[0]?.format("YYYY-MM-DD") || null);
+                        setRecordEndDate(dates?.[1]?.format("YYYY-MM-DD") || null);
+                      }}
+                      allowClear
+                      placeholder={["开始日期", "结束日期"]}
+                    />
+                    <Input
+                      size="small"
+                      placeholder="电表名精确筛选"
+                      value={recordMeterFilter}
+                      onChange={(e) => {
+                        setRecordPage(1);
+                        setRecordMeterFilter(e.target.value);
+                      }}
+                      style={{ width: 140 }}
+                      allowClear
+                    />
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        setRecordPage(1);
+                        setRecordStartDate(null);
+                        setRecordEndDate(null);
+                        setRecordMeterFilter("");
+                      }}
+                    >
+                      重置
+                    </Button>
+                  </Space>
+                </div>
+              }
+              size="small"
+              style={{ marginBottom: 16 }}
+            >
               {detailLoading ? (
                 <div style={{ textAlign: "center", padding: 30 }}>
                   <Spin />
@@ -553,8 +722,8 @@ export default function Electricity() {
         <Alert
           type="info"
           showIcon
-          message="电表 Cookie 由学生在小程序「设置 - 电表配置」自行配置"
-          description={`当前已有 ${config.configured_students ?? 0} 名学生配置了电表 Cookie，系统将按用户分别采集并推送。`}
+          message="电表 Cookie 由学生在小程序自行配置"
+          description={`当前 ${config.configured_students ?? 0} 名学生已配置`}
           style={{ marginBottom: 16 }}
         />
         <Form form={form} layout="vertical" onFinish={handleSaveConfig}>
@@ -585,6 +754,53 @@ export default function Electricity() {
       <Card styles={{ body: { padding: isMobile ? 12 : 24 } }}>
         <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabs} />
       </Card>
+
+      <Modal
+        title={`电表 Cookie · ${cookieModal.student?.display_name || ""}`}
+        open={cookieModal.visible}
+        onCancel={closeCookieModal}
+        confirmLoading={cookieModal.saving}
+        onOk={saveCookieModal}
+        width={640}
+      >
+        {cookieModal.loading ? (
+          <div style={{ textAlign: "center", padding: 24 }}>
+            <Spin />
+          </div>
+        ) : (
+          <Form form={cookieForm} layout="vertical">
+            <Alert
+              type="info"
+              showIcon
+              message="留空保存即解绑"
+              style={{ marginBottom: 16 }}
+            />
+            <Form.Item
+              label="Cookie"
+              name="cookie"
+              rules={[{ required: false }]}
+            >
+              <Input.TextArea
+                rows={6}
+                placeholder="粘贴电表爬虫 Cookie，留空表示解绑"
+                allowClear
+              />
+            </Form.Item>
+            {cookieModal.student?.configured && (
+              <Button
+                danger
+                size="small"
+                icon={<DisconnectOutlined />}
+                onClick={() => {
+                  cookieForm.setFieldsValue({ cookie: "" });
+                }}
+              >
+                清空 Cookie
+              </Button>
+            )}
+          </Form>
+        )}
+      </Modal>
     </div>
   );
 }

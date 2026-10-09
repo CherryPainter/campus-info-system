@@ -43,39 +43,8 @@ import {
 } from "@/api/weather";
 import { holidayApi, type HolidayStatus } from "@/api/holiday";
 import WeatherChart from "@/components/WeatherChart";
+import HourlyForecastStrip from "@/components/HourlyForecast";
 import { useUser } from "@/contexts/UserContext";
-
-/** 天气文字 → emoji 图标（按常见中文天气描述匹配） */
-const WEATHER_EMOJI: [RegExp, string][] = [
-  [/雷|暴/, "⛈️"],
-  [/雨/, "🌧️"],
-  [/雪/, "❄️"],
-  [/雾|霾|沙|尘/, "🌫️"],
-  [/阴/, "☁️"],
-  [/多云/, "⛅"],
-  [/晴/, "☀️"],
-];
-const weatherEmoji = (text: string): string => {
-  for (const [re, emoji] of WEATHER_EMOJI) if (re.test(text || "")) return emoji;
-  return "🌡️";
-};
-
-/** 天气文字 → 主题强调色 */
-const weatherAccent = (text: string): string => {
-  if (/雨|雪|雷/.test(text || "")) return "#1677ff";
-  if (/晴/.test(text || "")) return "#fa8c16";
-  if (/多云/.test(text || "")) return "#13c2c2";
-  if (/阴|雾|霾/.test(text || "")) return "#8c8c8c";
-  return "#1677ff";
-};
-
-/** 格式化时间字符串为 HH:mm */
-const fmtHour = (t: string): string => {
-  if (!t) return "--:--";
-  const d = new Date(t);
-  if (isNaN(d.getTime())) return t;
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-};
 
 /** 格式化时间字符串为 YYYY-MM-DD HH:mm（预警历史列表用） */
 const fmtDateTime = (t?: string): string => {
@@ -340,7 +309,7 @@ export default function Weather() {
               message={
                 <Space>
                   <LoadingOutlined spin />
-                  <span>任务运行中，自动刷新...</span>
+                  <span>任务运行中，自动刷新</span>
                 </Space>
               }
               type="info"
@@ -441,7 +410,7 @@ export default function Weather() {
             </div>
           ) : (
             <div style={{ textAlign: "center", padding: 40 }}>
-              <Alert message="暂无数据，请先触发数据采集" type="info" />
+              <Alert message="暂无天气数据" type="info" />
               {isAdmin && (
                 <Button
                   type="primary"
@@ -462,87 +431,7 @@ export default function Weather() {
     {
       key: "hourly",
       label: "24h预报",
-      children: loading ? (
-        <Spin />
-      ) : hourlyData.length > 0 ? (
-        <div style={{ paddingLeft: 4 }}>
-          {hourlyData.map((item, idx) => {
-            const accent = weatherAccent(item.text);
-            const isCurrent = idx === 0;
-            const len = hourlyData.length;
-            return (
-              <div
-                key={`${item.time}-${idx}`}
-                title={item.text}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 0" }}
-              >
-                {/* 轴线 + emoji 节点 */}
-                <div
-                  style={{
-                    position: "relative",
-                    width: 34,
-                    flexShrink: 0,
-                    display: "flex",
-                    justifyContent: "center",
-                  }}
-                >
-                  {idx < len - 1 && (
-                    <span
-                      style={{
-                        position: "absolute",
-                        top: "50%",
-                        bottom: "calc(-50% - 7px)",
-                        left: "50%",
-                        transform: "translateX(-50%)",
-                        width: 2,
-                        background: "#eee",
-                      }}
-                    />
-                  )}
-                  <div
-                    style={{
-                      position: "relative",
-                      zIndex: 1,
-                      width: 30,
-                      height: 30,
-                      borderRadius: "50%",
-                      background: isCurrent ? `${accent}1a` : "#fff",
-                      border: `1px solid ${isCurrent ? accent : "#f0f0f0"}`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 15,
-                      boxShadow: isCurrent ? `0 2px 8px ${accent}22` : "none",
-                    }}
-                  >
-                    {weatherEmoji(item.text)}
-                  </div>
-                </div>
-                {/* 内容行 */}
-                <div style={{ flex: 1, display: "flex", alignItems: "baseline", gap: 10 }}>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: isCurrent ? accent : "#999",
-                      fontWeight: isCurrent ? 600 : 400,
-                      width: 40,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {isCurrent ? "现在" : fmtHour(item.time)}
-                  </span>
-                  <span style={{ fontSize: 16, fontWeight: 700, color: accent }}>{item.temp}°</span>
-                  <span style={{ fontSize: 12, color: "#1677ff", marginLeft: "auto" }}>
-                    💧{item.pop}%
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <Alert message="暂无 24h 预报数据，请先触发数据采集" type="info" showIcon />
-      ),
+      children: <HourlyForecastStrip data={hourlyData} loading={loading} />,
     },
     {
       key: "alert",
@@ -780,13 +669,6 @@ export default function Weather() {
             <Input placeholder="如：07:00" />
           </Form.Item>
 
-          <Alert
-            type="info"
-            showIcon
-            message="推送时段与频率控制"
-            description="开启夜间免打扰后，安静时段内天气模块完全休息、不再推送任何消息；每日上限用于防止白天频繁打扰。"
-            style={{ marginBottom: 16 }}
-          />
           <Form.Item
             name="quiet_hours_enabled"
             label="夜间免打扰"

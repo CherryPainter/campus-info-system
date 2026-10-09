@@ -6,6 +6,22 @@
 
 ## Unreleased
 
+### 前端去除 AI 味（文案 + 装饰性样式）（2026-10-09）
+- **文案**：清理两个前端界面文案里的 AI 腔——管理端「请先触发数据采集」「任务运行中…」等技术黑话与省略号、成段生效说明 Alert、「请引导/请提醒」客套腔；小程序把面向学生的「采集电量数据」等技术词统一为「获取/更新」等通俗说法。**保留**管理端「全量爬取」「采集」等既定运维术语（管理员语境准确）。
+- **样式**：清理装饰性 `135deg` 浅色渐变与彩色发光阴影，改为纯色/普通阴影——管理端 Contact 联系我们卡、HolidayCourseView 假期空状态卡、Tasks 任务分类卡、Course「正在上课」标签、Login 登录页毛玻璃卡片与渐变 logo；小程序 CampusCard/UserInfoCard 蓝色渐变头、coursedetail 课程详情头、「正在上课」徽章。**保留**功能性渐变（骨架屏 shimmer、课程进度条填充、文字渐隐遮罩）与氛围设计（天气页深色氛围、首页/我的页 hero 径向渐变）。
+- **验证**：管理端 `npm run typecheck` 0 错；小程序 `tsc --noEmit` 0 错。
+
+### 管理端「24h预报」可视化重构（2026-10-09）
+- 原实现为竖向逐行时间轴（每小时一行：轴线圆点 + emoji + 温度 + 降水），信息密度低、24 行把页面拉得冗长。
+- 新增 `admin-frontend/src/components/HourlyForecast.tsx` 横向时间轴组件（手写 SVG，无新增依赖）：
+  - 温度平滑曲线（Catmull-Rom 转三次贝塞尔）+ 逐时白底蓝描边节点 + 温度标签；
+  - 逐时天气 emoji 图标、降水概率（0% 不显示，降低噪音）、底部时间轴；
+  - 当前小时浅蓝底带 + 强调色标注（「现在」+ 蓝色温度/时间）；跨天处画虚线分隔并标注日期（如 `10/10`）；
+  - 卡片头部显示「未来 24 小时 · 最高 X° / 最低 Y°」；每列带透明热区，悬停原生 tooltip 显示"时间 天气 温度 降水概率"；
+  - 横向滚动查看全部 24 列（列宽 62px），加载/空数据状态内置（Spin / Alert）。
+- `admin-frontend/src/pages/Weather.tsx`：24h预报 Tab 改用新组件；`weatherEmoji` / `weatherAccent` / `fmtHour` 三个辅助函数迁移进组件文件（grep 确认仅 24h Tab 使用，无其他调用方）。
+- **验证**：`tsc --noEmit` 0 错；`npm run build` 成功（33.96s，chunk 体积警告为既有）；grep `dist/assets` 确认产物含新组件字符串。改动前备份 `Weather.tsx.bak`。
+
 ### 课表三处 bug 修复 + 课程删除能力增强（2026-10-09）
 **一、三处越界/误标 bug 根因修复**
 - **管理端删除当前学期后冒出历史学期数据 / 列表来回跳（学期翻钟摆）**（`app/repository/course_repository.py`）：`get_current_semester_id()` 原本在候选学期库内无课时，无门槛地回退到「行数最多的学期」并当成当前学期，导致删光当前学期课程后立刻翻转成历史学期、重爬后翻回，列表数据反复横跳。新增 `_candidate_term_not_started(candidate)` 门槛：候选学期**已开课**（今天 ≥ 其第 1 周周一）时**禁止翻转**，只有寒暑假空档期（候选尚未开课）才允许回退到库内存量学期；学期已开课却无课只可能是被清空，此时返回空课表才是正确行为。
@@ -26,6 +42,14 @@
 - 按用户决定，随后物理清除库内全部 80 条软删残留行（含本次 7 条 + 历史 73 条）；现 `courses` 表仅 9 条有效数据，与列表视图截图表一致。软删残留清理为一次性 SQL，无回滚（用户确认硬删口径）。
 
 **验证**：后端 `py_compile` 对 `course_routes.py` 通过；前端 `tsc --noEmit` 0 错（Course.tsx / Tasks.tsx / course.ts）。
+
+### 课程导入 404 修复（2026-10-09）
+- **根因**：爬虫现在按学期隔离输出到 `app/cqie-course-timetable/output/course-data/processed/semester_<eams_id>/` 子目录（见 `main.py` 与 `services/crawl_task_service.py`），扁平的 `processed/processed_course_table.json` 已不再生成；而手动「导入」按钮（`app/api/course_routes.py` 的 `POST /course/import`）默认仍读扁平路径 → `os.path.exists` 失败返回 404。自动化管道（`pipeline.save_to_database` 由 `crawl_task_service` 传入 `semester_<eams_id>` 子目录）不受影响，仅管理端手动导入坏掉。
+- **修复**（`app/api/course_routes.py`）：新增模块级 `_resolve_default_course_data_file()`，默认定位按优先级——① 扁平文件（向后兼容历史产物）→ ② 当前学期子目录 `processed/semester_<eams_id>/`（eams_id 经 `_resolve_eams_id(当前学期DB id)` 反查，与 `get_current_semester_id()` 同源，确保导入的恰是当前学期数据而非旧碎片）→ ③ `processed` 下最近修改的 `semester_*/processed_course_table.json`（兜底，保证有任一已爬取数据时按钮不 404）。`file_path` 覆盖机制（目录白名单）保留不变。
+- **透明化**：导入成功响应新增 `source_file`（相对爬虫产物根目录的实际读取路径）、`semester_id` / `semester_name` / `resolved_default`，便于管理员核对导入的是否为期望学期。
+- **验证**：真实调用 `import_courses`（绕过 `@admin_required`、假 session 顶替 DB）对当前 `semester_291`（修复后干净数据，11 门）跑通——返回 200，11 门全部正确解析（连堂合并正确：综合实训 周二/周三均为 `[1-4]+[5-8]`；Web服务器 周三 `[1,2]` 与 `[9,10]` 因隔 3-8 节且周次不同正确分开），学期归属全部为 20261 / 2026-2027-1（异常 0 条），`periods` 为空 0 条。实际写库走既有 `CourseRepository.create_batch`（本次未改），建议管理端点「导入」按钮用真实库确认条数。
+
+> 注：`output/course-data/processed/semester_261/`（14:40 较早爬取，仍是修复前的逐节碎片形态）为旧文件，最新爬取 `semester_291`（15:55）已无碎片；如不再需要可手动删除 `semester_261` 目录，不影响导入（默认走 291）。
 
 ### 管理端 · 电量与学生身份页修复与优化（2026-10-09）
 - **电量详情页日期列丢失修复**（`admin-frontend/src/pages/Electricity.tsx`、`admin-frontend/src/api/admin.ts`）：后端 `ElectricityRecord.to_dict()` 返回的字段名为 `time`，前端原类型与表格均错误使用 `record_time`，导致日期列为空。已把类型和列定义改为 `time`，列表 key 同步修正。
@@ -56,6 +80,22 @@
 - **解绑接口**：新增 `POST /api/miniapp/electricity/cookie/unbind`——仅清空 `student_profiles.electricity_cookie` 以停止采集；电量历史（`electricity_records` / `remaining` / `total_capacity` 均按学生身份 `student_key` 归属、与 Cookie 无关）全部保留，重新配置后接续采集。前端二次确认弹窗明确"历史数据保留"。
 - **身份自助换绑**：`POST /api/miniapp/student/bind` 放开原先"已绑定即 `ALREADY_BOUND 403`"的硬拦，已绑定学生再次提交视为换绑——校验新身份的一次性码通过后覆盖本人资料身份字段，原身份名单条目随之释放；因电量等历史数据按学生身份 (`student_key`) 归属，换绑到同一身份后历史自动接续可见。安全围栏：目标身份若已被其他账号绑定则拒绝（`IDENTITY_CONFLICT 403`）。绑定页新增 `?mode=switch` 换绑模式（已绑定时不自动跳首页、文案改为"确认换绑"、附"历史数据保留"提示）。
 - 验证：后端 `py_compile` 通过；小程序 `taro build --type weapp` 编译成功（16.79s），`tsc` 0 错；`BindResult` 新增可选 `switched` 字段。
+
+### 天气告警推送开关 `alert_enabled` 端到端验证 + 一致性修复（2026-10-09）
+- **背景（用户疑问）**：用户发现「系统设置」页 `alert_enabled=是`（开）与「天气管理」页头部的开关（关）状态不一致，质疑「信谁的」、并要求证明该设置**真的有效**（此前未端到端测过）。
+- **结论（已验证）**：**信 `module_configs.weather.alert_enabled` 这一行——它是唯一真相源**。三条读路径（① 运行时推送 `tasks.py:552-560` 经 `ConfigService.get`、② 天气页 GET `admin_routes.py:get_weather_config → _read_weather_push_config`、③ 系统设置 GET `config_routes.py:get_all_configs`）全部读同一张表同一行，`ConfigService.get` 又以 DB 优先于 `.env` 与默认值。因此**生产环境不存在持久化分歧**；用户截图的 ON/OFF 不一致是**前端陈旧状态**（某页在开关传播/乐观更新未刷新前渲染）导致，不是存储分裂。
+- **端到端测试**（`tests/test_weather_alert_enabled_e2e.py`，7 项全过）：用 SQLite 克隆 `module_configs` + `tmp_path` 重定向 `.env` 写入，**完全隔离真实 MySQL 与真实 `.env`**。覆盖：
+  1. `test_source_of_truth_is_module_configs` —— 三条读路径读同一行；
+  2. `test_weather_page_write_path_lands_in_module_configs` —— 天气页专属 `PUT` 落库小写 `"false"`；
+  3. `test_settings_page_write_path_lands_in_module_configs` —— 系统设置通用 `PUT` 落库小写 `"false"` 并写 `.env` `WEATHER_ALERT_ENABLED=false`；
+  4. `test_runtime_gate_skips_push_when_disabled` —— `alert=false` 时 `_maybe_push` 不被调用；
+  5. `test_runtime_gate_pushes_when_enabled` —— `alert=true` 时 `_maybe_push` 被调用一次；
+  6. `test_no_persistent_divergence_between_two_uis` —— 任一路径切换后两个 UI 的 GET 永远一致；
+  7. `test_capitalization_quirk` —— 两写路径均规范为小写。
+  **证明**：该开关**确实生效**（运行时闸门 ON/OFF 由测试实打实驱动），且两 UI 共享单一真相源。
+- **一致性修复**（`app/api/config_routes.py` 的通用 `PUT /api/admin/config/<module>/<key>`）：原 `update_config` 用 `config.value = str(new_value)` 与 `.env` `env_vars[env_key] = str(new_value)` 存储，JS 布尔 `false` 经 Python `str(bool)` 会变成大写 `"False"/"True"`，与天气页专属端点（小写 `"false"/"true"`）不一致。现对 `value_type=="boolean"` 统一规范为小写 `true/false`（DB 行 166-169、`.env` 行 253-256）。各读路径本就 `.lower()` 兜底，故**此前无实际 bug**，本次仅消除不一致、避免隐患。
+- **测试隔离教训（已记入 memory）**：`config_routes.py` 在**模块顶层** `from app.core.database import get_db`，故 `mock.patch("app.core.database.get_db")` 覆盖不到（其命名空间内仍是真实函数）；须同时 `mock.patch("app.api.config_routes.get_db")`，并把任何 `".env"` 路径经 `os.path.join` 重定向到临时文件，否则会污染真实 `.env`/MySQL。
+- **验证**：`pytest tests/test_weather_alert_enabled_e2e.py` 7 passed；全量 `tests/` 回归 670 passed / 12 failed（12 项失败均在 electricity / bind 模块，与本次改动无关、为预存问题）/ 1 skipped。真实 `.env` 已确认无 `WEATHER_ALERT_ENABLED` 行（测试过程中曾因未隔离被误写，已字节级还原）。
 
 ## v6.21.1 (2026-10-09)
 

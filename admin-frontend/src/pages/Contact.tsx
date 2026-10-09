@@ -24,7 +24,7 @@ export default function Contact() {
             <Card
               style={{
                 borderRadius: 12,
-                background: "linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%)",
+                background: "#f0f5ff",
                 border: "none",
               }}
               styles={{ body: { padding: 24 } }}
@@ -43,7 +43,7 @@ export default function Contact() {
             <Card
               style={{
                 borderRadius: 12,
-                background: "linear-gradient(135deg, #fff7e6 0%, #fffbe6 100%)",
+                background: "#fff7e6",
                 border: "none",
               }}
               styles={{ body: { padding: 24 } }}

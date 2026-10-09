@@ -382,6 +382,8 @@ class ElectricityService:
         self,
         meter: str | None = None,
         days: int | None = 30,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         limit: int = 1000,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
@@ -391,6 +393,8 @@ class ElectricityService:
         Args:
             meter: 电表名称筛选
             days: 查询最近多少天；为 None 时不做时间过滤，仅按 limit 返回最新记录
+            start_time: 自定义起始时间（优先于 days）
+            end_time: 自定义结束时间（优先于 days）
             limit: 返回条数限制
 
         Returns:
@@ -404,10 +408,8 @@ class ElectricityService:
         """
         session = get_db()
         try:
-            start_time = None
-            end_time = None
-            # 仅当显式指定天数时才做时间过滤
-            if days is not None:
+            # 优先级：显式时间范围 > days > 不过滤
+            if start_time is None and end_time is None and days is not None:
                 end_time = datetime.utcnow()
                 start_time = end_time - timedelta(days=days)
 
@@ -428,6 +430,8 @@ class ElectricityService:
         self,
         meter: str | None = None,
         days: int | None = 30,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> int:
         """
         统计用电记录总数（与 get_usage_records 一致的过滤条件，用于列表分页 total）
@@ -435,15 +439,15 @@ class ElectricityService:
         Args:
             meter: 电表名称筛选
             days: 最近多少天；为 None 时不做时间过滤
+            start_time: 自定义起始时间（优先于 days）
+            end_time: 自定义结束时间（优先于 days）
 
         Returns:
             int: 记录总数
         """
         session = get_db()
         try:
-            start_time = None
-            end_time = None
-            if days is not None:
+            if start_time is None and end_time is None and days is not None:
                 end_time = datetime.utcnow()
                 start_time = end_time - timedelta(days=days)
             return ElectricityRepository.count_records(

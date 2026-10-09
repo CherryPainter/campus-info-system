@@ -256,9 +256,8 @@ export default function Login() {
             maxWidth: 400,
             borderRadius: 6,
             boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
-            backdropFilter: "blur(10px)",
-            backgroundColor: "rgba(255, 255, 255, 0.6)",
-            border: "1px solid rgba(255, 255, 255, 0.3)",
+            backgroundColor: "#fff",
+            border: "1px solid #f0f0f0",
             paddingBottom: 32,
           }}
         >
@@ -272,8 +271,8 @@ export default function Login() {
                 alignItems: "center",
                 justifyContent: "center",
                 margin: "0 auto 16px",
-                background: "linear-gradient(135deg, #e0f2fe 0%, #bae6fd 50%, #7dd3fc 100%)",
-                boxShadow: "0 4px 12px rgba(147, 197, 253, 0.4)",
+                background: "#e0f2fe",
+                boxShadow: "0 1px 6px rgba(0, 0, 0, 0.08)",
               }}
             >
               <CloudServerOutlined style={{ fontSize: 32, color: "#0369a1" }} />

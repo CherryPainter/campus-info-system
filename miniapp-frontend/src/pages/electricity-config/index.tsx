@@ -99,7 +99,7 @@ export default function ElectricityConfigPage() {
           {configured ? (
             <Text className="ecfg-status-preview">当前：{preview}</Text>
           ) : (
-            <Text className="ecfg-status-preview empty">配置后可自动采集您宿舍的电量数据</Text>
+            <Text className="ecfg-status-preview empty">配置后自动获取宿舍电量</Text>
           )}
         </View>
       </View>

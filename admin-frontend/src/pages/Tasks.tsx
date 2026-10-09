@@ -37,7 +37,7 @@ const taskCategories = [
     name: "课程任务",
     icon: <BookOutlined />,
     color: "#722ed1",
-    bgColor: "linear-gradient(135deg, #f9f0ff 0%, #f3e8ff 100%)",
+    bgColor: "#f9f0ff",
     tasks: [
       {
         key: "spider",
@@ -82,7 +82,7 @@ const taskCategories = [
     name: "天气任务",
     icon: <CloudOutlined />,
     color: "#1890ff",
-    bgColor: "linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%)",
+    bgColor: "#e6f7ff",
     tasks: [
       {
         key: "update_weather_now",
@@ -126,7 +126,7 @@ const taskCategories = [
     name: "电量任务",
     icon: <ThunderboltOutlined />,
     color: "#faad14",
-    bgColor: "linear-gradient(135deg, #fffbe6 0%, #fff1b8 100%)",
+    bgColor: "#fffbe6",
     tasks: [
       {
         key: "push_electricity_daily",

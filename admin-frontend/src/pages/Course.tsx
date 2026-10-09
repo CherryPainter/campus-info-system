@@ -1152,7 +1152,7 @@ export default function Course() {
           {isCurrentCourse && (
             <div
               style={{
-                background: "linear-gradient(135deg, #ff4d4f, #ff7875)",
+                background: "#ff4d4f",
                 color: "#fff",
                 padding: isMobile ? "1px 3px" : "2px 8px",
                 borderRadius: "4px",
@@ -1634,7 +1634,7 @@ export default function Course() {
               <div>
                 <Space>
                   <LoadingOutlined spin />
-                  <span>任务运行中，自动刷新...</span>
+                  <span>任务运行中，自动刷新</span>
                 </Space>
                 {runningTasks.length > 0 && (
                   <div style={{ marginTop: 8 }}>

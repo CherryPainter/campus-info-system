@@ -157,7 +157,7 @@ export default function CourseDetailPage() {
       {/* ====== 浅色头部卡片（半透淡彩） ======
           原先用 baseColor 全饱和渐变 + 白字，整体过艳；现在改为低透明度淡彩渐变 +
           文字用基色自身（深）以保证可读性；通过 .cd-header 下的类名区分两个主题。 */}
-      <View className="cd-header" style={{ background: `linear-gradient(135deg, ${baseColor}1a, ${baseColor}0d)` }}>
+      <View className="cd-header" style={{ background: `${baseColor}1a` }}>
         <Text className="cd-header-title" style={{ color: baseColor }}>
           {currentCourse.course_name}
           {periodText ? ` (${periodText})` : ''}

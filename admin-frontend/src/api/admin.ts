@@ -241,11 +241,28 @@ export const adminApi = {
   /** 指定学生用电记录（分页） */
   getStudentElectricityRecords: (
     userId: number,
-    params?: { limit?: number; offset?: number; meter_filter?: string }
+    params?: {
+      limit?: number;
+      offset?: number;
+      meter_filter?: string;
+      start_date?: string;
+      end_date?: string;
+    }
   ) =>
     request.get<any, ApiResponse<StudentElectricityRecords>>(
       `/admin/electricity/students/${userId}/records`,
       { params }
+    ),
+  /** 获取指定学生电表 Cookie（管理员） */
+  getStudentElectricityCookie: (userId: number) =>
+    request.get<any, ApiResponse<{ cookie: string; updated_at: string | null }>>(
+      `/admin/electricity/students/${userId}/cookie`
+    ),
+  /** 更新/清空指定学生电表 Cookie（管理员，传空字符串即解绑） */
+  updateStudentElectricityCookie: (userId: number, cookie: string) =>
+    request.put<any, ApiResponse<{ cookie: string }>>(
+      `/admin/electricity/students/${userId}/cookie`,
+      { cookie }
     ),
   /** 指定学生用电统计 */
   getStudentElectricityStatistics: (
@@ -333,7 +350,8 @@ export interface StudentElectricityRemaining {
 export interface StudentElectricityRecords {
   records: Array<{
     id: number;
-    record_time: string;
+    /** 后端 ElectricityRecord.to_dict() 返回的字段名为 time */
+    time: string;
     usage: number;
     meter: string;
   }>;
