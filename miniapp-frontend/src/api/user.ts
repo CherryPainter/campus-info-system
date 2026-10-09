@@ -33,9 +33,9 @@ export function updateProfile(
   return put<StudentProfileResult>('/api/miniapp/student/profile', data);
 }
 
-/** 更新本人头像（data URI），返回最新用户信息 */
-export function updateAvatar(avatar: string): Promise<UserMeResult> {
-  return put<UserMeResult>('/api/miniapp/user/avatar', { avatar });
+/** 更新本人头像（data URI）。头像归属学生身份维度，返回最新学生资料（含 avatar） */
+export function updateAvatar(avatar: string): Promise<StudentProfileResult> {
+  return put<StudentProfileResult>('/api/miniapp/user/avatar', { avatar });
 }
 
 /** 身份绑定状态（是否已通过预录名单绑定） */

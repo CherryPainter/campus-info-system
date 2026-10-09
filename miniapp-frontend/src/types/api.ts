@@ -47,10 +47,12 @@ export interface StudentProfile {
   campus_card_number: string | null;
   real_name: string | null;
   nickname: string | null;
+  avatar: string | null;
   college: string | null;
   major: string | null;
   class_name: string | null;
   grade: string | null;
+  dorm: string | null;
   phone: string | null;
   created_at: string | null;
   updated_at: string | null;

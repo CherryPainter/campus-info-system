@@ -34,7 +34,7 @@ import IconArrow from '@/components/IconArrow';
 import './index.scss';
 
 export default function ProfileDetail() {
-  const { user, setUser, refreshToken, logout: clearAuth } = useAuthStore();
+  const { user, refreshToken, logout: clearAuth } = useAuthStore();
   const { setProfile: syncProfile } = useUserStore();
   // 页面本地资料源：进入时拉取，展示 + 编辑后合并更新
   const [profile, setProfile] = useState<StudentProfile | null>(null);
@@ -147,9 +147,13 @@ export default function ProfileDetail() {
     setSaving(true);
     try {
       // 1) 头像（仅当用户真的选过新头像才上传；没选则跳过，沿用后端现值）
+      // 头像归属学生身份维度，接口返回最新 profile（含 avatar）；同步到本地与全局 user store
       if (pendingAvatarUri) {
         const upd = await updateAvatar(pendingAvatarUri);
-        setUser(upd.user);
+        if (upd.profile) {
+          setProfile(upd.profile);
+          syncProfile(upd.profile);
+        }
       }
       // 2) 昵称
       const res = await updateProfile({ nickname: trimmed });
@@ -173,8 +177,8 @@ export default function ProfileDetail() {
       {/* 非编辑态：顶部 hero（大头像 + 已保存昵称 + 班级），编辑态让位给编辑信息卡 */}
       {!editing && (
         <View className="detail-hero">
-          {user?.avatar ? (
-            <Image src={user.avatar} className="detail-avatar" mode="aspectFill" />
+          {profile?.avatar || user?.avatar ? (
+            <Image src={(profile?.avatar || user?.avatar) as string} className="detail-avatar" mode="aspectFill" />
           ) : (
             <View className="detail-avatar detail-avatar-placeholder">
               <Text className="detail-avatar-text">{name.slice(0, 1)}</Text>
@@ -198,8 +202,8 @@ export default function ProfileDetail() {
             <View className="detail-row-right">
               {pendingAvatarUri ? (
                 <Image src={pendingAvatarUri} className="detail-avatar-sm" mode="aspectFill" />
-              ) : user?.avatar ? (
-                <Image src={user.avatar} className="detail-avatar-sm" mode="aspectFill" />
+              ) : profile?.avatar || user?.avatar ? (
+                <Image src={(profile?.avatar || user?.avatar) as string} className="detail-avatar-sm" mode="aspectFill" />
               ) : (
                 <View className="detail-avatar-sm detail-avatar-placeholder">
                   <Text className="detail-avatar-text-sm">{name.slice(0, 1)}</Text>

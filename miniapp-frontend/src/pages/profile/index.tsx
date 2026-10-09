@@ -235,8 +235,8 @@ export default function ProfilePage() {
                 : Taro.navigateTo({ url: '/pages/login/index' })
             }
           >
-            {isLoggedIn && user?.avatar ? (
-              <Image src={user.avatar} className="profile-avatar" mode="aspectFill" />
+            {isLoggedIn && (profile?.avatar || user?.avatar) ? (
+              <Image src={(profile?.avatar || user?.avatar) as string} className="profile-avatar" mode="aspectFill" />
             ) : (
               <View className="profile-avatar profile-avatar-placeholder">
                 <Text className="profile-avatar-text">

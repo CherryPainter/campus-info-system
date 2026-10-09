@@ -120,6 +120,13 @@
 - **测试隔离教训（已记入 memory）**：`config_routes.py` 在**模块顶层** `from app.core.database import get_db`，故 `mock.patch("app.core.database.get_db")` 覆盖不到（其命名空间内仍是真实函数）；须同时 `mock.patch("app.api.config_routes.get_db")`，并把任何 `".env"` 路径经 `os.path.join` 重定向到临时文件，否则会污染真实 `.env`/MySQL。
 - **验证**：`pytest tests/test_weather_alert_enabled_e2e.py` 7 passed；全量 `tests/` 回归 670 passed / 12 failed（12 项失败均在 electricity / bind 模块，与本次改动无关、为预存问题）/ 1 skipped。真实 `.env` 已确认无 `WEATHER_ALERT_ENABLED` 行（测试过程中曾因未隔离被误写，已字节级还原）。
 
+### 小程序 · 头像学生维度读取 + 列表页显示即刷新 + 首页节流（归入 v6.21.2，2026-10-09）
+- **头像按学生维度读取**：重构后头像存 `student_profiles.avatar`（学生维度，换微信号 / 换 appid 不丢），但前端此前全站读 `user?.avatar`（微信维度），导致上传成功却不显示、只显示名字首字。修复：`StudentProfile` 接口补 `avatar` 字段；`updateAvatar` 返回 `{profile}` 后回调写 `setProfile`；profile / profile-detail / UserInfoCard 三处头像渲染改为「学生维度优先、user 兜底」（`profile?.avatar || user?.avatar`）。
+- **列表页显示即刷新**：反馈 / 收藏 / 课程 / 天气 / 通知总览 5 个数据列表页挂 `useDidShow`，切 Tab / 从详情返回即重拉（首进用 `firstShowRef` 守卫避免与 `useLoad` 重复）；home 页此前已加。表单 / 过渡页按约定跳过。
+- **首页自动刷新节流 + silent 模式**：首页是 TabBar 主入口，原每次切回都并行拉 4 接口且整页闪骨架，频繁且卡。新增 `HOME_AUTO_REFRESH_INTERVAL=60s` 节流（阈值常量可调大）；自动重拉走 silent 模式，不弹全页骨架、数据原地静默更新。下拉刷新 / 登录态变化仍走原带骨架逻辑。
+- **生产遗留（非代码）**：`student_profiles.avatar` 列类型代码已为 `MEDIUMTEXT`，但迁移脚本只增列不改列类型，生产库仍为 `TEXT`(64KB)，大头像上传仍会 `1406`；需手动 `ALTER TABLE student_profiles MODIFY COLUMN avatar MEDIUMTEXT;` 后重启、重传头像（部署步骤由用户执行）。
+- **验证**：小程序 `tsc --noEmit` 0 错。
+
 ## v6.21.1 (2026-10-09)
 
 ### 管理端：登录页两步验证码漏改 —— 4 处输入口全部收敛到 OtpInput（2026-10-09）

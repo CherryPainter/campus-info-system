@@ -22,8 +22,8 @@ export default function UserInfoCard({ user, profile, onEdit }: UserInfoCardProp
 
   return (
     <View className="user-card" onClick={onEdit}>
-      {user?.avatar ? (
-        <Image className="user-avatar" src={user.avatar} mode="aspectFill" />
+      {profile?.avatar || user?.avatar ? (
+        <Image className="user-avatar" src={(profile?.avatar || user?.avatar) as string} mode="aspectFill" />
       ) : (
         <View className="user-avatar user-avatar-placeholder">
           <Text className="avatar-text">{name.slice(0, 1)}</Text>

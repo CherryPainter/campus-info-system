@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { View, Text, ScrollView, Canvas, Image } from '@tarojs/components';
-import { useLoad, getWindowInfo, stopPullDownRefresh, usePullDownRefresh } from '@tarojs/taro';
+import { useLoad, useDidShow, getWindowInfo, stopPullDownRefresh, usePullDownRefresh } from '@tarojs/taro';
 import Taro from '@tarojs/taro';
 
 import { getWeatherIconSrcOnDark } from '@/utils/weatherIcons';
@@ -393,6 +393,8 @@ function MinutelyRainCard({ data }: { data: { summary?: string; minutely: Weathe
 export default function WeatherPage() {
   const [statusBarHeight, setStatusBarHeight] = useState(20);
   const [loading, setLoading] = useState(true);
+  // 显示即刷新：首次进入由 useLoad 拉取，之后每次回到本页（切 Tab / 从详情返回）重拉
+  const firstShowRef = useRef(true);
   const [weather, setWeather] = useState<WeatherNow | null>(null);
   const [hourly, setHourly] = useState<WeatherHourlyItem[]>([]);
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
@@ -524,6 +526,14 @@ export default function WeatherPage() {
       const info = getWindowInfo();
       if (info.statusBarHeight) setStatusBarHeight(info.statusBarHeight);
     } catch { /* 兜底 */ }
+    loadAll();
+  });
+
+  useDidShow(() => {
+    if (firstShowRef.current) {
+      firstShowRef.current = false;
+      return;
+    }
     loadAll();
   });
 

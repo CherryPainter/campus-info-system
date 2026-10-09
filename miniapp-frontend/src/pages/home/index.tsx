@@ -51,8 +51,15 @@ export default function HomePage() {
   // 身份状态主动监察：管理员解绑后清空身份缓存并跳绑定页（承接「解绑/收回身份」）
   useBindStatusWatcher();
 
-  const loadAll = async () => {
-    setLoading(true);
+  // 自动刷新节流：首页是 TabBar 主入口，切 Tab / 从子页返回会频繁触发 useDidShow，
+  // 若每次都全量重拉（天气 + 今日课程 + 资料）既打后端又整页闪骨架。
+  // 策略：两次自动刷新间隔小于阈值则跳过重拉；自动重拉走 silent 模式，不弹全页骨架，数据原地静默更新。
+  const HOME_AUTO_REFRESH_INTERVAL = 60 * 1000; // 60s，可按生产压力调大
+  const lastRefreshAtRef = useRef(0);
+
+  const loadAll = async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+    if (!silent) setLoading(true);
     // 需登录数据（今日课程/资料）的拉取条件：已登录且不在绑定引导期。
     // 游客（isLoggedIn=false）打了必 401、引导期（登录成功未绑定）打了必 403，
     // 都是纯浪费 + 刷错误噪音，直接跳过，交由登录引导占位/事件补拉。
@@ -96,7 +103,8 @@ export default function HomePage() {
     // 本轮登录态的需登录数据已拉过（无论成败）：后续 bindGuide 事件不再重复补拉，
     // 失败场景由用户下拉刷新兜底重试
     if (privateReady) privateLoadedRef.current = true;
-    setLoading(false);
+    lastRefreshAtRef.current = Date.now();
+    if (!silent) setLoading(false);
   };
 
   useLoad(() => {
@@ -110,9 +118,19 @@ export default function HomePage() {
     loadAll();
   });
 
-  // 首页是 TabBar 第 0 项：每次显示广播自身下标，保证 TabBar 选中态与任意进入路径一致
+  // 首页是 TabBar 第 0 项：每次显示广播自身下标，保证 TabBar 选中态与任意进入路径一致；
+  // 同时非首次显示（切 Tab 离开再回来 / 从子页返回）重新拉取数据，免去手动下拉刷新
+  const homeFirstShowRef = useRef(true);
   useDidShow(() => {
     setTabIndex(0);
+    if (homeFirstShowRef.current) {
+      homeFirstShowRef.current = false;
+      return; // 首次进入走 useLoad，不重复
+    }
+    // 节流：距上次刷新不足阈值（默认 60s）跳过重拉，避免 Tab 频繁切换打爆后端；
+    // 重拉走 silent 模式，不弹全页骨架，数据原地静默更新
+    if (Date.now() - lastRefreshAtRef.current < HOME_AUTO_REFRESH_INTERVAL) return;
+    loadAll({ silent: true });
   });
 
   usePullDownRefresh(async () => {

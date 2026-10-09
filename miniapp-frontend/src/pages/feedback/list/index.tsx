@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { View, Text, Image } from '@tarojs/components';
 import Taro, {
   useLoad,
+  useDidShow,
   usePullDownRefresh,
   useReachBottom,
   stopPullDownRefresh,
@@ -42,6 +43,8 @@ export default function FeedbackListPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [highlightId, setHighlightId] = useState<number | null>(null);
+  // 显示即刷新：首次进入由 useLoad 拉取，之后每次回到本页（切 Tab / 从详情返回）重拉
+  const firstShowRef = useRef(true);
 
   const loadData = useCallback(async (targetPage: number, append: boolean) => {
     if (append) setLoadingMore(true);
@@ -66,6 +69,14 @@ export default function FeedbackListPage() {
   useLoad((opts) => {
     Taro.setNavigationBarTitle({ title: '我的反馈' });
     if (opts?.highlight) setHighlightId(Number(opts.highlight));
+    loadData(1, false);
+  });
+
+  useDidShow(() => {
+    if (firstShowRef.current) {
+      firstShowRef.current = false;
+      return;
+    }
     loadData(1, false);
   });
 

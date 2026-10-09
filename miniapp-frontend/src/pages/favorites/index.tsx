@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, {
   useLoad,
+  useDidShow,
   usePullDownRefresh,
   useReachBottom,
   stopPullDownRefresh,
@@ -41,6 +42,8 @@ export default function FavoritesPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  // 显示即刷新：首次进入由 useLoad 拉取，之后每次回到本页（切 Tab / 从详情返回）重拉
+  const firstShowRef = useRef(true);
 
   const loadData = useCallback(async (targetPage: number, append: boolean) => {
     if (append) setLoadingMore(true);
@@ -67,6 +70,14 @@ export default function FavoritesPage() {
 
   useLoad(() => {
     Taro.setNavigationBarTitle({ title: '我的收藏' });
+    loadData(1, false);
+  });
+
+  useDidShow(() => {
+    if (firstShowRef.current) {
+      firstShowRef.current = false;
+      return;
+    }
     loadData(1, false);
   });
 

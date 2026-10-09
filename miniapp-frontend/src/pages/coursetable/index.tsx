@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useRef } from 'react';
 import { View, Text, PickerView, PickerViewColumn } from '@tarojs/components';
-import { useLoad, usePullDownRefresh, stopPullDownRefresh, navigateTo } from '@tarojs/taro';
+import { useLoad, useDidShow, usePullDownRefresh, stopPullDownRefresh, navigateTo } from '@tarojs/taro';
 import dayjs from 'dayjs';
 
 import * as scheduleApi from '@/api/schedule';
@@ -249,6 +249,8 @@ function buildCellMap(
 
 export default function CourseTablePage() {
   const [loading, setLoading] = useState(true);
+  // 显示即刷新：首次进入由 useLoad 拉取，之后每次回到本页（切 Tab / 从详情返回）重拉
+  const firstShowRef = useRef(true);
 
   // 整周课程（课程表版式用）
   const [weekCourses, setWeekCourses] = useState<ScheduleCourse[]>([]);
@@ -360,6 +362,14 @@ export default function CourseTablePage() {
   }, [loadWeekCourses, getWeekStartDate]);
 
   useLoad(() => {
+    loadAll();
+  });
+
+  useDidShow(() => {
+    if (firstShowRef.current) {
+      firstShowRef.current = false;
+      return;
+    }
     loadAll();
   });
 

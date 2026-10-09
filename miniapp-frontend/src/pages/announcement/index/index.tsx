@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { View, Text, ScrollView, Input } from '@tarojs/components';
-import Taro, { useLoad, usePullDownRefresh, useReachBottom, stopPullDownRefresh } from '@tarojs/taro';
+import Taro, { useLoad, useDidShow, usePullDownRefresh, useReachBottom, stopPullDownRefresh } from '@tarojs/taro';
 
 import * as announcementsApi from '@/api/announcements';
 import type { AnnouncementChannel, AnnouncementItem } from '@/types/api';
@@ -46,6 +46,8 @@ export default function AnnouncementListPage() {
 
   // 请求序号：切换频道时丢弃过期响应，避免串数据
   const reqIdRef = useRef(0);
+  // 显示即刷新：首次进入由 useLoad 拉取，之后每次回到本页（切 Tab / 从详情返回）重拉
+  const firstShowRef = useRef(true);
 
   /** 拉第一页（首屏 / 下拉刷新 / 切换频道 / 选频道 / 搜索共用） */
   const loadFirst = useCallback(async (tab: string) => {
@@ -150,6 +152,15 @@ export default function AnnouncementListPage() {
 
   useLoad(() => {
     loadFirst(TAB_ALL);
+    loadChannels();
+  });
+
+  useDidShow(() => {
+    if (firstShowRef.current) {
+      firstShowRef.current = false;
+      return;
+    }
+    loadFirst(activeTab);
     loadChannels();
   });
 
