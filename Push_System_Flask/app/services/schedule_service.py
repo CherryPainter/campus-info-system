@@ -62,6 +62,32 @@ class ScheduleService:
         self._refresh_timer.daemon = True
         self._refresh_timer.start()
 
+    def ensure_worker_refresh(self) -> None:
+        """worker 进程内重新激活课表缓存刷新（幂等）。
+
+        Gunicorn `preload_app=True` 下 app 只在 master 进程创建一次、随后 fork
+        出多个 worker。fork 只保留调用线程，master 里启动的 60 秒刷新定时器线程
+        不会复制到 worker —— 于是每个 worker 的课表缓存是 fork 时刻的冻结快照，
+        定时刷新在 worker 内实际是死的；只有处理过写请求（_reload_schedule_cache）
+        的那个 worker 才拿到新数据，其余 worker 持续返回旧数据，造成小程序
+        「今日课程」刷新一会新一会旧。
+
+        本方法在 `gunicorn_config.py` 的 `post_fork` 中对每个 worker 调用一次：
+        先立即从 DB 重载缓存，再为本 worker 启动属于自己的刷新定时器。
+        幂等：若本进程内定时器仍存活（如非 preload 模式下 create_app 已启动），
+        则不重复启动，避免定时器线程泄漏。
+        """
+        try:
+            self.load_schedules()
+        except Exception as e:
+            logger.warning(
+                f"[课程] worker 启动期课表缓存加载失败（忽略，等待下次定时器）: {e}"
+            )
+        # fork 后继承的定时器线程在本进程从未启动过 → is_alive() 为 False；
+        # 非 preload 模式下 create_app 已启动的定时器则 is_alive() 为 True。
+        if self._refresh_timer is None or not self._refresh_timer.is_alive():
+            self._start_auto_refresh()
+
     def _auto_refresh(self) -> None:
         """自动刷新循环"""
         self.load_schedules()

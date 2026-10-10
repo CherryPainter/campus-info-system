@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+### 课表编辑 500 + 多 worker 课表缓存不一致修复（2026-10-10）
+- **编辑课程新增节次 500（生产事故根因）**（`app/api/course_routes.py` 编辑分支 `to_add` 构造）：编辑课程把节次从「1」扩到「1,3」时，新增的节次会单独 INSERT 一行，但该行漏传 `course_code`，而 `courses.course_code` 列 `nullable=False`（`app/model/course.py:73`），commit 抛 `IntegrityError(1048 "Column 'course_code' cannot be null")`，整次编辑 500（前端只弹「保存失败」）。修复：编辑分支 `to_add` 与创建分支同口径兜底 `generate_course_code(...)`，保证新增行 `course_code` 非空。
+- **多 worker 课表缓存冻结（「今日课程」一会一节一会两节根因）**（`app/services/schedule_service.py` + `gunicorn_config.py`）：`schedule_service` 是进程内单例，靠 60s `threading.Timer` 重读 DB；生产 `preload_app=True` 下 app 只在 master 创建一次、fork 出 4 个 worker，fork 不复制主线程外的定时器线程 → **worker 内课表缓存是 fork 时的冻结快照、定时刷新在 worker 中是死的**；写课程后 `_reload_schedule_cache()` 只刷新处理写请求的那 1 个 worker，其余 worker 持续返回旧数据，小程序请求被随机分配到不同 worker 就「一会新一会旧」。修复：给 `ScheduleService` 加幂等的 `ensure_worker_refresh()`（定时线程未 alive 才重启，避免线程泄漏），并在 `gunicorn_config.py` 的 `post_fork` 对每个 worker 调一次 `load_schedules() + ensure_worker_refresh()`，使各 worker 自己有活的刷新定时器，课程变更最迟 60s 全量生效。**生效需服务器 `systemctl restart gunicorn`**。
+- **测试**：新增 `tests/test_course_edit_add_period.py`（路由级，构造编辑新增节次场景，断言 200 且新增行 `course_code` 非空；含对照组「缩节次删除行」）与 `tests/test_schedule_worker_refresh.py`（断言 `ensure_worker_refresh` fork 后启动本进程定时器、幂等不重复启动、立即重载缓存）。均做反向验证（撤掉 `course_code` 兜底则该用例复现 500 变红）。
+- **验证**：`pytest tests/test_course_edit_add_period.py tests/test_schedule_worker_refresh.py` 本地 6 passed（Python 3.12.7）。
+
 ## v6.21.2 (2026-10-09)
 
 ### 前端去除 AI 味（文案 + 装饰性样式）（2026-10-09）

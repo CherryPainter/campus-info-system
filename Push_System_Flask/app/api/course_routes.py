@@ -411,6 +411,18 @@ def create_or_update_course():
             added_courses = []
             for p in to_add:
                 course = Course(
+                    # 修复：编辑分支「新增节次」原本漏传 course_code，而该列
+                    # nullable=False，导致 commit 时 IntegrityError(1048) 整次
+                    # 编辑 500 失败。这里与创建分支同口径兜底生成稳定课程代码。
+                    course_code=data.get("course_code")
+                    or generate_course_code(
+                        {
+                            "course_name": data["course_name"],
+                            "week_day": data["week_day"],
+                            "period_idx": p,
+                            "classroom": data.get("classroom", ""),
+                        }
+                    ),
                     course_name=data["course_name"],
                     teacher=data.get("teacher", ""),
                     classroom=data.get("classroom", ""),

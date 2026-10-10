@@ -79,6 +79,18 @@ def post_fork(server, worker):
     """
     os.environ["GUNICORN_WORKER"] = "1"
 
+    # 修复：preload 模式下 fork 会丢掉 master 的课表缓存刷新线程，worker 内
+    # schedule_service 缓存是 fork 时刻的冻结快照、定时刷新失效，导致课程增删改
+    # 后部分 worker 仍返回旧数据（小程序「今日课程」一会一节一会两节）。
+    # 这里为每个 worker 重新加载并启动属于自己的刷新定时器（幂等）。
+    try:
+        from app.services.schedule_service import schedule_service
+
+        schedule_service.ensure_worker_refresh()
+    except Exception:
+        # 缓存刷新失败不应阻塞 worker 启动，等待 60s 定时器兜底
+        pass
+
 
 def when_ready(server):
     """服务就绪回調。"""
