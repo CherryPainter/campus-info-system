@@ -219,23 +219,43 @@ def _scope_member_error(scope: str, scope_target):
 @admin_required
 def get_webhooks():
     """
-    获取所有 webhook 列表（支持分页）
+    获取所有 webhook 列表（支持分页 + 筛选）
 
     查询参数：
         enabled_only: true 只返回启用的
+        keyword: 名称/URL 关键字模糊匹配
+        module: 按模块过滤（course/weather/electricity/system/all）
+        scope: 按接收范围过滤（global/dorm/student）
         page: 页码（从 1 开始，默认 1）
         page_size: 每页条数（默认 20，最大 100）
     """
     enabled_only = request.args.get("enabled_only", "false").lower() == "true"
+    keyword = (request.args.get("keyword") or "").strip() or None
+    module = (request.args.get("module") or "").strip() or None
+    scope = (request.args.get("scope") or "").strip() or None
     page = request.args.get("page", 1, type=int) or 1
     page_size = min(100, max(1, request.args.get("page_size", 20, type=int) or 20))
 
     session = get_db()
     try:
         if enabled_only:
-            result = Webhook.get_enabled_webhooks(session, page=page, page_size=page_size)
+            result = Webhook.get_enabled_webhooks(
+                session,
+                module=module,
+                scope=scope,
+                keyword=keyword,
+                page=page,
+                page_size=page_size,
+            )
         else:
-            result = Webhook.get_all_webhooks(session, page=page, page_size=page_size)
+            result = Webhook.get_all_webhooks(
+                session,
+                module=module,
+                scope=scope,
+                keyword=keyword,
+                page=page,
+                page_size=page_size,
+            )
 
         # 新分页接口返回 tuple；旧调用（无 page）返回 list 以保持兼容
         if isinstance(result, tuple):

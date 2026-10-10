@@ -4,13 +4,26 @@
 
 ---
 
-## Unreleased
+## v6.21.3 (2026-10-10)
 
 ### 课表编辑 500 + 多 worker 课表缓存不一致修复（2026-10-10）
 - **编辑课程新增节次 500（生产事故根因）**（`app/api/course_routes.py` 编辑分支 `to_add` 构造）：编辑课程把节次从「1」扩到「1,3」时，新增的节次会单独 INSERT 一行，但该行漏传 `course_code`，而 `courses.course_code` 列 `nullable=False`（`app/model/course.py:73`），commit 抛 `IntegrityError(1048 "Column 'course_code' cannot be null")`，整次编辑 500（前端只弹「保存失败」）。修复：编辑分支 `to_add` 与创建分支同口径兜底 `generate_course_code(...)`，保证新增行 `course_code` 非空。
 - **多 worker 课表缓存冻结（「今日课程」一会一节一会两节根因）**（`app/services/schedule_service.py` + `gunicorn_config.py`）：`schedule_service` 是进程内单例，靠 60s `threading.Timer` 重读 DB；生产 `preload_app=True` 下 app 只在 master 创建一次、fork 出 4 个 worker，fork 不复制主线程外的定时器线程 → **worker 内课表缓存是 fork 时的冻结快照、定时刷新在 worker 中是死的**；写课程后 `_reload_schedule_cache()` 只刷新处理写请求的那 1 个 worker，其余 worker 持续返回旧数据，小程序请求被随机分配到不同 worker 就「一会新一会旧」。修复：给 `ScheduleService` 加幂等的 `ensure_worker_refresh()`（定时线程未 alive 才重启，避免线程泄漏），并在 `gunicorn_config.py` 的 `post_fork` 对每个 worker 调一次 `load_schedules() + ensure_worker_refresh()`，使各 worker 自己有活的刷新定时器，课程变更最迟 60s 全量生效。**生效需服务器 `systemctl restart gunicorn`**。
 - **测试**：新增 `tests/test_course_edit_add_period.py`（路由级，构造编辑新增节次场景，断言 200 且新增行 `course_code` 非空；含对照组「缩节次删除行」）与 `tests/test_schedule_worker_refresh.py`（断言 `ensure_worker_refresh` fork 后启动本进程定时器、幂等不重复启动、立即重载缓存）。均做反向验证（撤掉 `course_code` 兜底则该用例复现 500 变红）。
 - **验证**：`pytest tests/test_course_edit_add_period.py tests/test_schedule_worker_refresh.py` 本地 6 passed（Python 3.12.7）。
+
+### 管理端电量页「已配置优先」+ 筛选搜索；Webhook 管理筛选搜索（2026-10-10）
+- **电量管理页「已绑定/已配置优先」**（`admin-frontend/src/pages/Electricity.tsx`）：学生总览列表原按后端返回顺序平铺，已配置（绑定电表 Cookie）与未配置混在一起、且千级名单下找不到人。新增客户端 `displayStudents`（`useMemo`）：默认按 `configured` 降序排（已配置优先、组内保持原顺序），解决「为什么不优先显示已绑定用户」。
+- **电量管理页筛选 + 搜索**（`admin-frontend/src/pages/Electricity.tsx`）：学生总览 Tab 顶部新增——① 搜索 `Input`（placeholder「搜索姓名 / 学号 / 班级」，`allowClear`，匹配 `display_name` / `student_number` / `class_name`，不区分大小写）；② `Segmented` 状态快捷筛选「全部 / 已配置 / 未配置」。数据已在内存（后端一次性返回全部学生），筛选/排序在客户端完成，与现有前端分页口径一致。空态文案区分「暂无学生用户」与「无匹配的学生」。
+- **Webhook 管理筛选 + 搜索（服务端）**（`app/model/webhook.py` + `app/api/webhook_routes.py` + `admin-frontend/src/pages/Webhooks.tsx` + `admin-frontend/src/api/admin.ts`）：Webhook 列表原只支持 `enabled_only`，千条名单下无检索。模型层 `get_all_webhooks` / `get_enabled_webhooks` 扩展 `scope`（精确 `Webhook.scope == scope`）、`keyword`（模糊 `Webhook.name LIKE` 或 `Webhook.url LIKE`，`from sqlalchemy import or_`）两参数；路由 `get_webhooks` 读 `keyword` / `module` / `scope` 查询参数透传；前端加搜索 `Input`（placeholder「搜索名称 / URL」、`allowClear`、300ms 防抖）、模块 `Select`、范围 `Select`（global/dorm/student，与 `SCOPE_MAP` 一致），三者组合为后端分页筛选条件。
+- **测试**：新增 `tests/test_webhook_list_filter.py`（sqlite in-memory，7 passed）——覆盖 keyword 命中 name、命中 url、module 包含匹配、scope 精确匹配、keyword+scope 取交集（断言修正：keyword「群」∩ scope「global」= {班级群}，因「电量告警群」scope=dorm、「系统告警」name 不含「群」均被正确排除）、`enabled_only` 叠加 keyword 排除禁用项、反向（无关关键字必须为空）。均做正向 + 反向验证。
+- **验证**：后端 `py_compile` 对 `webhook.py` / `webhook_routes.py` / 测试文件通过；前端 `tsc --noEmit` 0 错；管理端 `npm run build` 成功（19.08s）。
+
+### 个人中心登录记录「失败行误显示在线中」修复（2026-10-10）
+- **现象**：登录记录表里「密码错误」的失败行在「退出 / 在线时长」列显示「在线中」。
+- **根因**（`admin-frontend/src/pages/Profile.tsx:438`）：该列渲染只判断 `logout_time` 是否为空，为空一律显示「在线中」；失败登录永远没有 `logout_time`，于是落进「在线中」分支——失败记录根本没有会话，无「在线」概念。
+- **修复**：渲染分支改为 `logout_time` 有值 → 显示登出时间+时长；无值且 `status === "success"` → 「在线中」；否则（失败行）显示 `-`。最小改动，不改后端数据。
+- **验证**：`tsc --noEmit` 0 错。
 
 ## v6.21.2 (2026-10-09)
 

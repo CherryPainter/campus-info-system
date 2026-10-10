@@ -441,8 +441,11 @@ export default function Profile() {
             {formatTimeShort(r.logout_time)}
             {r.duration ? ` · ${r.duration}` : ""}
           </span>
-        ) : (
+        ) : r.status === "success" ? (
+          // 成功登录且尚无登出时间 = 会话仍在线；失败记录没有「在线」概念，显示 -
           <Text type="secondary">在线中</Text>
+        ) : (
+          <Text type="secondary">-</Text>
         ),
     },
     {

@@ -572,8 +572,15 @@ export interface Webhook {
 
 /** Webhook 管理 API */
 export const webhookApi = {
-  /** 获取 webhook 列表（支持分页） */
-  getList: (params?: { page?: number; page_size?: number; enabled_only?: boolean }) =>
+  /** 获取 webhook 列表（支持分页 + 筛选） */
+  getList: (params?: {
+    page?: number;
+    page_size?: number;
+    enabled_only?: boolean;
+    keyword?: string;
+    module?: string;
+    scope?: string;
+  }) =>
     request.get<
       any,
       ApiResponse<Webhook[]> & { total: number; page: number; page_size: number }

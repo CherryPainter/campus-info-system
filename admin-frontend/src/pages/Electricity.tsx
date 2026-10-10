@@ -9,7 +9,7 @@
  * 历史全局数据（user_id 为 NULL）已完全移除展示；提供「全量爬取」入口（遍历所有已配置电表 Cookie 的学生），
  * 清空记录入口已移除。学生有头像（小程序上传）时优先显示头像，无头像用首字母兜底。
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import dayjs from "dayjs";
 import {
   Card,
@@ -32,6 +32,7 @@ import {
   Modal,
   Popconfirm,
   DatePicker,
+  Segmented,
 } from "antd";
 import ResponsiveTable from "@/components/ResponsiveTable";
 import {
@@ -45,7 +46,6 @@ import {
   CheckCircleOutlined,
   MinusCircleOutlined,
   WarningOutlined,
-  EditOutlined,
   DisconnectOutlined,
 } from "@ant-design/icons";
 import {
@@ -72,6 +72,11 @@ export default function Electricity() {
   const [overview, setOverview] = useState<ElectricityStudentsOverview | null>(null);
   const [students, setStudents] = useState<ElectricityStudent[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
+  // 学生总览筛选：关键字（姓名/学号/班级）+ 配置状态快捷筛选
+  const [studentKeyword, setStudentKeyword] = useState("");
+  const [studentConfigFilter, setStudentConfigFilter] = useState<
+    "all" | "configured" | "unconfigured"
+  >("all");
   // 明细：当前选中学生 + 剩余电量 + 记录分页
   const [selected, setSelected] = useState<ElectricityStudent | null>(null);
   const [remaining, setRemaining] = useState<StudentElectricityRemaining | null>(null);
@@ -398,7 +403,7 @@ export default function Electricity() {
           </Button>
           {record.configured ? (
             <>
-              <Button size="small" icon={<EditOutlined />} onClick={() => openCookieModal(record)}>
+              <Button type="link" size="small" onClick={() => openCookieModal(record)}>
                 换绑
               </Button>
               <Popconfirm
@@ -408,13 +413,13 @@ export default function Electricity() {
                 okText="确定"
                 cancelText="取消"
               >
-                <Button size="small" danger icon={<DisconnectOutlined />}>
+                <Button type="link" size="small" danger>
                   解绑
                 </Button>
               </Popconfirm>
             </>
           ) : (
-            <Button size="small" icon={<EditOutlined />} onClick={() => openCookieModal(record)}>
+            <Button type="link" size="small" onClick={() => openCookieModal(record)}>
               配置 Cookie
             </Button>
           )}
@@ -441,6 +446,26 @@ export default function Electricity() {
     ...item,
     _uid: `${item.time}-${idx}`,
   }));
+
+  // 学生总览展示列表：默认「已配置(已绑定)优先」，再按关键字/配置状态筛选。
+  // 数据已在内存（后端一次性返回全部学生），在客户端过滤/排序，与现有前端分页一致。
+  const displayStudents = useMemo(() => {
+    const kw = studentKeyword.trim().toLowerCase();
+    let list = students.filter((s) => {
+      if (studentConfigFilter === "configured" && !s.configured) return false;
+      if (studentConfigFilter === "unconfigured" && s.configured) return false;
+      if (kw) {
+        const hay = `${s.display_name || ""} ${s.student_number || ""} ${
+          s.class_name || ""
+        }`.toLowerCase();
+        if (!hay.includes(kw)) return false;
+      }
+      return true;
+    });
+    // 已配置优先：把 configured 的排前面，组内保持原顺序（已按 user_id 稳定）
+    list = [...list].sort((a, b) => Number(b.configured) - Number(a.configured));
+    return list;
+  }, [students, studentKeyword, studentConfigFilter]);
 
   // ============ 学生总览 Tab ============
   const studentsTab = {
@@ -497,15 +522,36 @@ export default function Electricity() {
             </Button>
           )}
         </Space>
+        <div style={{ marginBottom: 16, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          <Input
+            allowClear
+            placeholder="搜索姓名 / 学号 / 班级"
+            value={studentKeyword}
+            onChange={(e) => setStudentKeyword(e.target.value)}
+            style={{ width: 220 }}
+          />
+          <Segmented
+            value={studentConfigFilter}
+            onChange={(v) => setStudentConfigFilter(v as "all" | "configured" | "unconfigured")}
+            options={[
+              { label: "全部", value: "all" },
+              { label: "已配置", value: "configured" },
+              { label: "未配置", value: "unconfigured" },
+            ]}
+          />
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            已配置优先
+          </Text>
+        </div>
         {overviewLoading ? (
           <div style={{ textAlign: "center", padding: 40 }}>
             <Spin />
           </div>
-        ) : students.length === 0 ? (
-          <Empty description="暂无学生用户（学生首次登录微信小程序后才会出现在此）" />
+        ) : displayStudents.length === 0 ? (
+          <Empty description={students.length === 0 ? "暂无学生用户（学生首次登录微信小程序后才会出现在此）" : "无匹配的学生"} />
         ) : (
           <ResponsiveTable
-            dataSource={students}
+            dataSource={displayStudents}
             columns={studentColumns}
             rowKey="user_id"
             mobileNativeTable

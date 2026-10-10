@@ -137,6 +137,12 @@ export default function Webhooks() {
   const [reloading, setReloading] = useState(false);
   const [testingId, setTestingId] = useState<number | null>(null);
 
+  // 列表筛选：关键字（名称/URL）+ 模块 + 接收范围；服务端筛选，防抖打请求
+  const [keyword, setKeyword] = useState("");
+  const [moduleFilter, setModuleFilter] = useState<string>("");
+  const [scopeFilter, setScopeFilter] = useState<string>("");
+  const kwTimer = useRef<number | null>(null);
+
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingWebhook, setEditingWebhook] = useState<Webhook | null>(null);
   const [form] = Form.useForm();
@@ -208,7 +214,13 @@ export default function Webhooks() {
     async (p: number, ps: number) => {
       setLoading(true);
       try {
-        const res = await webhookApi.getList({ page: p, page_size: ps });
+        const res = await webhookApi.getList({
+          page: p,
+          page_size: ps,
+          keyword: keyword || undefined,
+          module: moduleFilter || undefined,
+          scope: scopeFilter || undefined,
+        });
         if (res.status === "success") {
           setWebhooks(((res.data as Webhook[]) || []).slice());
           setTotal((res as any).total ?? 0);
@@ -219,8 +231,24 @@ export default function Webhooks() {
         setLoading(false);
       }
     },
-    [message]
+    [message, keyword, moduleFilter, scopeFilter]
   );
+
+  /** 关键字搜索防抖 300ms（与受众学生搜索同口径，避免逐字打请求） */
+  const handleKeywordChange = useCallback((v: string) => {
+    if (kwTimer.current) window.clearTimeout(kwTimer.current);
+    kwTimer.current = window.setTimeout(() => {
+      setPage(1);
+      setKeyword(v);
+    }, 300);
+  }, []);
+
+  /** 模块/范围筛选切换：重置到第 1 页 */
+  const applyFilter = (patch: { module?: string; scope?: string }) => {
+    setPage(1);
+    if ("module" in patch) setModuleFilter(patch.module ?? "");
+    if ("scope" in patch) setScopeFilter(patch.scope ?? "");
+  };
 
   /** 加载宿舍枚举（一次拉全；宿舍量级远小于人数） */
   useEffect(() => {
@@ -718,6 +746,41 @@ export default function Webhooks() {
               添加 Webhook
             </Button>
           </Space>
+        </div>
+        <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <Input
+            allowClear
+            placeholder="搜索名称 / URL"
+            defaultValue=""
+            onChange={(e) => handleKeywordChange(e.target.value)}
+            style={{ width: 220 }}
+          />
+          <Select
+            allowClear
+            placeholder="模块"
+            value={moduleFilter || undefined}
+            onChange={(v) => applyFilter({ module: v })}
+            style={{ width: 140 }}
+            options={[
+              { value: "course", label: "课表" },
+              { value: "weather", label: "天气" },
+              { value: "electricity", label: "电量" },
+              { value: "system", label: "系统" },
+              { value: "all", label: "全局" },
+            ]}
+          />
+          <Select
+            allowClear
+            placeholder="接收范围"
+            value={scopeFilter || undefined}
+            onChange={(v) => applyFilter({ scope: v })}
+            style={{ width: 140 }}
+            options={[
+              { value: "global", label: "全局" },
+              { value: "dorm", label: "指定宿舍" },
+              { value: "student", label: "指定学生" },
+            ]}
+          />
         </div>
       </Card>
 

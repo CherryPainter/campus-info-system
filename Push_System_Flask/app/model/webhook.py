@@ -94,13 +94,22 @@ class Webhook(Base):
         return [m.strip() for m in self.modules.split(",") if m.strip()]
 
     @staticmethod
-    def get_enabled_webhooks(session, module=None, page=None, page_size=None):
+    def get_enabled_webhooks(
+        session,
+        module=None,
+        scope=None,
+        keyword=None,
+        page=None,
+        page_size=None,
+    ):
         """
         获取启用的 webhook 列表
 
         Args:
             session: 数据库会话
             module: 按模块过滤，None 则返回所有启用的
+            scope: 按接收范围过滤（global/dorm/student），None 不过滤
+            keyword: 名称/URL 关键字模糊匹配，None 不过滤
             page: 分页页码（从 1 开始）；不传则返回全部
             page_size: 分页大小；不传则返回全部
 
@@ -108,15 +117,20 @@ class Webhook(Base):
             list[Webhook] | tuple[list[Webhook], int]: 不分页时返回列表；
             分页时返回 (items, total)
         """
+        from sqlalchemy import or_
+
         query = session.query(Webhook).filter(Webhook.is_enabled.is_(True))
 
         if module:
             # 匹配包含指定模块的 webhook
-            from sqlalchemy import or_
-
+            query = query.filter(Webhook.modules.like(f"%{module}%"))
+        if scope:
+            query = query.filter(Webhook.scope == scope)
+        if keyword:
             query = query.filter(
                 or_(
-                    Webhook.modules.like(f"%{module}%"),
+                    Webhook.name.like(f"%{keyword}%"),
+                    Webhook.url.like(f"%{keyword}%"),
                 )
             )
 
@@ -149,12 +163,22 @@ class Webhook(Base):
         return result
 
     @staticmethod
-    def get_all_webhooks(session, page=None, page_size=None):
+    def get_all_webhooks(
+        session,
+        module=None,
+        scope=None,
+        keyword=None,
+        page=None,
+        page_size=None,
+    ):
         """
         获取所有 webhook（包括禁用的）
 
         Args:
             session: 数据库会话
+            module: 按模块过滤，None 不过滤
+            scope: 按接收范围过滤（global/dorm/student），None 不过滤
+            keyword: 名称/URL 关键字模糊匹配，None 不过滤
             page: 分页页码（从 1 开始）；不传则返回全部
             page_size: 分页大小；不传则返回全部
 
@@ -162,7 +186,21 @@ class Webhook(Base):
             list[Webhook] | tuple[list[Webhook], int]: 不分页时返回列表；
             分页时返回 (items, total)
         """
-        query = session.query(Webhook).order_by(Webhook.created_at.desc())
+        from sqlalchemy import or_
+
+        query = session.query(Webhook)
+        if module:
+            query = query.filter(Webhook.modules.like(f"%{module}%"))
+        if scope:
+            query = query.filter(Webhook.scope == scope)
+        if keyword:
+            query = query.filter(
+                or_(
+                    Webhook.name.like(f"%{keyword}%"),
+                    Webhook.url.like(f"%{keyword}%"),
+                )
+            )
+        query = query.order_by(Webhook.created_at.desc())
         if page and page_size:
             total = query.count()
             items = query.offset((page - 1) * page_size).limit(page_size).all()
