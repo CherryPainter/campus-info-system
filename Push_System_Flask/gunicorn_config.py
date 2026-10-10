@@ -79,6 +79,24 @@ def post_fork(server, worker):
     """
     os.environ["GUNICORN_WORKER"] = "1"
 
+    # 关键修复：preload_app=True 下 create_app 在 master 进程里就创建了 SQLAlchemy
+    # 引擎并打开了数据库连接（init_services → schedule_service.init_app → load_schedules）。
+    # fork 会把 master 的连接池（含已打开连接的 socket FD）原样复制到每个 worker，
+    # 导致多个 worker 进程共用同一个 MySQL 连接 → 协议错位，偶发
+    # 「Packet sequence number wrong」「(2013) Lost connection during query」
+    # 「(2014) Command Out of Sync」。这正是生产日志里课表缓存加载批量报错的根因。
+    # 这里在 fork 后立刻 dispose 引擎，丢弃继承来的共享连接；各 worker 下次取连接时
+    # 自建独立连接池（FD 不再跨进程共享），彻底消除跨进程共用连接。
+    # 注意：dispose 只关掉当前 worker 继承的连接副本，master 的连接不受影响（fork 后
+    # FD 引用独立计数，关闭子进程副本不会破坏父进程连接）。
+    try:
+        from app.core.database import db_manager
+
+        if db_manager.engine is not None:
+            db_manager.engine.dispose()
+    except Exception:
+        pass
+
     # 修复：preload 模式下 fork 会丢掉 master 的课表缓存刷新线程，worker 内
     # schedule_service 缓存是 fork 时刻的冻结快照、定时刷新失效，导致课程增删改
     # 后部分 worker 仍返回旧数据（小程序「今日课程」一会一节一会两节）。

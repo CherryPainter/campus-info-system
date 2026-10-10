@@ -251,6 +251,9 @@ export default function Course() {
 
   // 监听教学楼变化，用于动态显示节次时间
   const selectedBuilding = Form.useWatch("building", form);
+  // 监听弹窗表单里的星期与周次，用于实时计算被占用的节次
+  const formWeekDay = Form.useWatch("week_day", form);
+  const formWeeks = Form.useWatch("weeks", form);
 
   // 每分钟更新当前时间（统一轮询 Hook）
   useIntervalPolling(() => setCurrentTime(new Date()), 60000);
@@ -700,15 +703,27 @@ export default function Course() {
     }
   };
 
-  /** 批量硬删除选中的课程（精确按 id，不级联） */
+  /** 批量硬删除选中的课程（精确按 id，不级联）
+   *  仅允许删除「非爬虫来源」课程：爬虫爬取的课（data_source=full/daily）
+   *  不可删，需停推请改用推送开关；后台自建课（admin）及任何非爬虫标记均可删。
+   *  选中的爬虫课会被跳过并提示。 */
   const handleBatchDelete = async () => {
     if (selectedRowKeys.length === 0) return;
-    const ids = selectedRowKeys.map((k) => Number(k));
+    const adminIds = selectedRowKeys
+      .map((k) => Number(k))
+      .filter((id) => {
+        const c = courses.find((x) => x.id === id);
+        return c ? c.data_source !== "full" && c.data_source !== "daily" : false;
+      });
+    if (adminIds.length === 0) {
+      message.warning("所选课程均为爬虫爬取，不可删除（如需停推请关闭推送提醒）");
+      return;
+    }
     try {
       setIsDeleting(true);
-      const res = await courseApi.batchDelete(ids);
+      const res = await courseApi.batchDelete(adminIds);
       if (res.status === "success") {
-        message.success(`已删除 ${ids.length} 条课程`);
+        message.success(`已删除 ${adminIds.length} 条课程`);
       } else {
         message.error(res.message || "批量删除失败");
       }
@@ -749,6 +764,38 @@ export default function Course() {
       });
     }
   };
+
+  /**
+   * 被占用的节次集合：同学期 + 同星期 + 周次重叠 的已存在课程所占用的节次。
+   * 用于在前端节次多选里禁用这些选项，与后端写入层冲突守卫口径一致（教学周感知）。
+   * 编辑时排除正在修改的课程自身（按 id 与 course_key 排除同课程组其他行）。
+   */
+  const occupiedPeriods = useMemo<Set<number>>(() => {
+    const result = new Set<number>();
+    if (formWeekDay == null) return result;
+    const editingId = editingCourse?.id;
+    const editingKey = editingCourse?.course_key;
+    const source = [...(timetableData?.courses || []), ...(courses || [])];
+    const seen = new Set<number>();
+    for (const c of source) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      if (c.id === editingId) continue;
+      if (editingKey && c.course_key === editingKey) continue;
+      if (c.semester_id !== selectedSemester) continue;
+      if (c.week_day !== formWeekDay) continue;
+      if (!weeksOverlap(c.weeks, formWeeks)) continue;
+      const ps = Array.isArray(c.periods)
+        ? c.periods
+        : c.periods
+        ? [c.period_idx]
+        : [c.period_idx];
+      for (const p of ps) {
+        if (typeof p === "number" && p >= 1 && p <= 12) result.add(p);
+      }
+    }
+    return result;
+  }, [timetableData, courses, formWeekDay, formWeeks, editingCourse, selectedSemester]);
 
   /** 同步当前周课程 */
   const handleSyncCurrentWeek = async () => {
@@ -1324,11 +1371,13 @@ export default function Course() {
             <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
               编辑
             </Button>
-            <Popconfirm title="确定删除该课程的所有节次吗？" onConfirm={() => handleDelete(record)}>
-              <Button type="link" danger icon={<DeleteOutlined />}>
-                删除
-              </Button>
-            </Popconfirm>
+            {record.data_source !== 'full' && record.data_source !== 'daily' && (
+              <Popconfirm title="确定删除该课程的所有节次吗？" onConfirm={() => handleDelete(record)}>
+                <Button type="link" danger icon={<DeleteOutlined />}>
+                  删除
+                </Button>
+              </Popconfirm>
+            )}
           </Space>
         ),
       } as any);
@@ -1861,16 +1910,6 @@ export default function Course() {
           >
             取消
           </Button>,
-          editingCourse && (
-            <Button
-              key="delete"
-              danger
-              onClick={() => editingCourse && handleDelete(editingCourse)}
-              loading={isDeleting}
-            >
-              删除
-            </Button>
-          ),
           <Button
             key="submit"
             type="primary"
@@ -1954,7 +1993,11 @@ export default function Course() {
                   {(() => {
                     const schedule = getScheduleByBuilding(selectedBuilding || "");
                     return Object.entries(schedule).map(([value, { name, start, end }]) => (
-                      <Option key={value} value={Number(value)}>
+                      <Option
+                        key={value}
+                        value={Number(value)}
+                        disabled={occupiedPeriods.has(Number(value))}
+                      >
                         {name} ({start}-{end})
                       </Option>
                     ));

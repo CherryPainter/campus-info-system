@@ -4,6 +4,47 @@
 
 ---
 
+## Unreleased（待正式发布）
+
+### 课程节次冲突防护（教学周感知）（2026-10-10）
+- **需求**：同一学期、同一星期几，若某节次已存在课程且教学周重叠，则不允许再选该节次（后台建课/编辑与小程序一致）。
+- **冲突语义**（与前端 `weeksOverlap` 对齐）：冲突 = 同 `semester_id` + 同 `week_day` + 节次集合有交集（`periods_overlap`）+ 教学周集合有交集（`weeks_overlap`）。
+  - `weeks` 缺失 / 空 / `[]` 一律按「所有周」处理，与另一方保守判为重叠（避免漏拦「未设周次」的课）；`periods` 与 `period_idx` 经 JSON 存储可能为字符串或 int，统一 `_normalize_periods` 转 int 集合比较。
+- **后端写入层三处围栏**（`app/api/course_routes.py`）：
+  - 创建分支（`create_or_update_course` 非 edit）：解析节次后立即 `_find_period_conflict(...)`（不排己），命中返回 400，message 含「星期X第Y节与课程《名称》冲突（周次重叠，请改选其他节次）」。
+  - 编辑分支（POST `is_edit`）：计算 `to_delete/to_keep/to_add` 后、在 `session.delete/add` **之前**先算 `_schedule_changed`（week_day / 节次 int 集合 / 周次集合是否变化）；仅当排课字段变化才校验，且用 `exclude_course_id` / `exclude_course_key` 排除自身课程组，避免「只改教师/教室」被误拦、也避免 autoflush 把尚未提交的 `to_add` 新课行误判为自身冲突（缩节次这类合法编辑原先会被 400 拒绝，已修复）。
+  - `PUT /course/<id>`（`update_course`，无前端调用但补围栏以保 API 完整）：当请求体含 week_day / period_idx / periods / weeks 任一变动时，按已变更字段算有效节次并重算冲突，同样排除自身 id。
+- **新增纯函数**（`app/utils/course_helpers.py`）：`periods_overlap(a, b)`、`_weeks_set(w)`（解析 `None/""/[]` → 所有周；JSON 数组字符串或「1-16」「1,3,5」→ 集合）、`weeks_overlap(a, b)`，语义与前端保持一致。
+- **前端实时禁用已占节次**（`admin-frontend/src/pages/Course.tsx` + `src/api/course.ts`）：用 `Form.useWatch` 监听 week_day / weeks，`useMemo` 汇总「今日课表 + 当前学期全部课程」中同星期、周次重叠的已占节次（`Set<number>`），在 `period_idx` 多选 `Select` 的每个选项上加 `disabled`，与后端围栏口径一致；`Course` 接口补 `periods?: number[]|string` 与 `course_key?: string` 供引用。
+- **测试**：新增 `tests/test_course_period_conflict.py`（sqlite in-memory，8 passed）——覆盖创建同周重叠→400、异周→200、异星期→200、异学期→200、编辑改到已占节次→400、仅改教师（排课未变）→200、PUT 改节次→400 / 改教师→200，并做反向验证（mock `_find_period_conflict` 恒返回 None 时冲突能通过，证明围栏确为唯一拦截点）。另修复并保留 `tests/test_course_edit_add_period.py::test_edit_remove_period_deletes_row`（缩节次合法编辑，原先被 edit 分支误拦 400，上移冲突检查后恢复 200）。
+- **验证**：`pytest tests/test_course_edit_add_period.py tests/test_course_split.py tests/test_course_admin_protection.py tests/test_course_period_conflict.py` 本地 24 passed（Python 3.12.7）；`py_compile` 对 `course_routes.py` / `course_helpers.py` 通过；管理端 `tsc --noEmit` 0 错。（注：`tests/` 下 `test_electricity_*` 共 10 failed / 35 errors 为电量模块既有接口-测试不匹配，与本次课程改动无关。）
+
+### 课程删除权限收敛：爬虫课不显示删除（2026-10-10）
+- **需求变更**：用户取消「移除本节排课」独立能力——课程数据模型为「节次 × 周次」笛卡尔积、单行存储，无法精确取消「某周某节」这一次课（需改存储模型，价值不足）。删除收敛为「**列表视图可删、课表视图不提供**」：爬虫爬取的课（`data_source` 为 `full`/`daily`）不显示删除按钮，需停推改用推送开关；仅自建课（`data_source === 'admin'`）可在列表视图删除。
+- **已移除**：`POST /course/<id>/remove-period` 端点（`app/api/course_routes.py` 的 `remove_course_period`）、`course.ts` 的 `removePeriod`、前端 `handleRemovePeriod` 与课表视图「移除本节」按钮、`tests/test_course_remove_period.py` 全部回退删除；`_normalize_periods` / `get_schedule_by_building` 仍被创建/编辑/冲突分支使用，import 保留。
+- **保留并收口**：`DELETE /course/<id>`（整行硬删）、`POST /course/batch-delete`、`DELETE /course/all` 仍在，前端入口按 `data_source` 收口——
+  - 列表「操作」列删除按钮（`Course.tsx` `render` 内）：仅 `record.data_source !== 'full' && record.data_source !== 'daily'` 时渲染（即「非爬虫来源即可删」；`=== 'admin'` 口径见下方 10-11 修正）；
+  - 编辑弹窗**不再包含**「删除」按钮（课表视图点格子弹出的正是此弹窗，故课表视图无任何删除入口；自建课删除统一走列表「操作」列）；
+  - 批量删除 `handleBatchDelete`：仅对选中项里 `data_source` 非 `full`/`daily` 的行生效，选中项全为爬虫课时提示「所选课程均为爬虫爬取，不可删除（如需停推请关闭推送提醒）」且不发起请求。`Course` 接口补 `data_source?: string`（后端 `Course.to_dict` 已含该字段，`course.py`）。
+  - **口径修正（2026-10-11）**：原「仅 `=== 'admin'`」会漏掉 v6.11.2 之前创建、带 `full` 默认值的旧自建课（被当爬虫课、无删除按钮）。改为负向口径「非 `full`/`daily` 即可删」并新增 `ops/course-data-repair-kit/backfill_admin_data_source.py` 回填历史课 `data_source='admin'`，详见 10-11 条目。
+- **说明**：节次冲突防护（教学周感知）不受影响，保留。
+
+### Gunicorn fork 共享 MySQL 连接修复（课表缓存批量报错根因，2026-10-11）
+- **现象**：gunicorn 重启后 worker 启动期 `schedule_service` 加载课表缓存连续报错——`(pymysql.err.InternalError) Packet sequence number wrong - got 188 expected 1`、`(2013) Lost connection to MySQL server during query`、`QueuePool Exception during reset → InterfaceError(0,'')`。`SELECT ... FROM courses` 在 `load_schedules` 执行（`schedule_service.py:113` → `course_repository.py:463`，`.all()` 全量消费，非未读结果集 bug）。
+- **根因（代码 bug，非纯服务器抖动）**：`preload_app=True`（`gunicorn_config.py:19`）下 `create_app` 在 **master** 进程创建 SQLAlchemy 引擎并打开连接（`services/__init__.py:19` `schedule_service.init_app` → `load_schedules` → `get_db`，master 先于 fork）。fork 把 master 的连接池（含已打开连接的 socket FD）原样复制到每个 worker，多个 worker 进程共用同一 MySQL 连接 → 协议错位（packet 序列号错乱 / 服务器中止会话）。`pool_pre_ping` 只能检"死"连接，检不出"被多进程共用"的脏连接。这也就是 10-10 那次 2013/2014 的真实来源，当时误判为服务器不稳定。
+- **修复**：`gunicorn_config.py` 的 `post_fork` fork 后立即 `db_manager.engine.dispose()`（`database.py:117` 引擎单例），丢弃继承来的共享连接；各 worker 下次取连接时自建独立连接池（FD 不再跨进程共享）。dispose 只关子进程继承的连接副本，master 连接不受影响（fork 后 FD 引用独立计数）。`ensure_worker_refresh`（fork 后重建课表刷新定时器）在 dispose 之后调用，使用新建连接。
+- **测试**：新增 `tests/test_db_engine_dispose_after_fork.py`（sqlite in-memory，2 passed）——dispose 丢弃继承连接后 worker 仍能新建连接并 `SELECT 1`；`post_fork` 调用不抛异常且 dispose 后引擎仍可用。
+- **验证**：`py_compile gunicorn_config.py` OK；`pytest tests/test_db_engine_dispose_after_fork.py tests/test_schedule_worker_refresh.py` 6 passed；课程测试 31 passed。`tsc --noEmit` 0 错（前端未动）。
+- **生效需服务器 `systemctl restart gunicorn`**；未提交（延续「暂不提交」，等用户确认）。
+
+### 编辑多节次课程 400 修复 + 删除按钮判定收口（2026-10-11）
+- **编辑自建课 400（生产现象「修改又错了」）根因**：课程按单节存多行（period_idx=1/2/3 各行 `periods` 均为 `[1,2,3]`）。编辑分支（`create_or_update_course` 的 `is_edit` 分支，`course_routes.py:419` 起）原只把「被点击的那一行 `old_course_id`」传给 `_find_period_conflict` 的 `exclude_course_id`；当编辑改动节次/星期/周次（`_schedule_changed=True`）触发冲突扫描时，该课**自身的兄弟行**（同 week_day、节次重叠、周次重叠）被当成冲突方 → 返回 400「与课程《X》冲突（周次重叠，请改选其他节次）」。本质是 10-10 上线的「节次冲突防护」把多节次课的自家兄弟行误判为冲突。
+- **修复**：编辑分支先收集整组兄弟行 `old_course_ids = [c.id for c in old_courses]`（`course_routes.py:437` 原先是一句丢弃的列表推导，现改为有效变量），并在调用 `_find_period_conflict` 时传 `exclude_course_ids=old_course_ids`（`course_routes.py:459`）；`_find_period_conflict` 循环体新增 `if exclude_course_ids is not None and c.id in exclude_course_ids: continue`（`course_routes.py:91`），整组兄弟行整体排除，不再与自身误判。
+- **删除按钮判定收口（「自建课被当爬虫课、无删除按钮」根因）**：`courses.data_source` 列默认值是 `"full"`（`app/model/course.py:140`），v6.11.2 之后后台建/编课才显式打 `data_source='admin'`。**在此之前创建的自建课（以及任何未显式标来源的课）带 `full` 默认值**，被管理端当成爬虫课、列表不显示删除按钮，也无法享受「爬虫不覆盖」保护。前端两处判定由「仅 `data_source === 'admin'`」改为**语义正确的负向口径**：`data_source` 不是 `full` 且不是 `daily` 即可删（覆盖 `admin` 及任何异常值），见 `admin-frontend/src/pages/Course.tsx:1373`（列表单删）与 `handleBatchDelete`（`:715`），后端 `DELETE` 路由不校验来源（任何 admin 都能删），故前端是唯一收口点。
+- **历史数据回填（生产必做）**：爬虫 `create_batch` 在 upsert/insert 都给 `course_key` 赋值（`course_repository.py:771`/`:783`），后台自建课 `course_key` 恒为 NULL，故 `course_key IS NULL 且 data_source 非 admin` 可可靠识别历史自建课。新增 `ops/course-data-repair-kit/backfill_admin_data_source.py`：默认 dry-run 预览候选清单，加 `--apply` 才把 `data_source` 写回 `admin`（幂等可重跑）。**本机改完代码只是让「新」自建课正确；生产库里已有的 `full` 默认值旧课需跑该脚本才会出现删除按钮**（服务器执行，非开发机）。
+- **测试**：新增 `tests/test_course_edit_self_conflict.py`（sqlite in-memory，4 passed）——编辑多节次课改节次→200（反向：撤掉 `exclude_course_ids` 接线复现 400）、编辑改星期后 `data_source` 仍 `admin`、新建多节次课每行 `data_source` 均 `admin`、列表合并记录 `data_source` 保留 `admin`（决定删除按钮显示）。
+- **验证**：`pytest tests/test_course_edit_self_conflict.py tests/test_course_edit_add_period.py tests/test_course_period_conflict.py tests/test_course_admin_protection.py` 21 passed（Python 3.12.7）；`py_compile` 对改动文件通过；管理端 `tsc --noEmit` 0 错。未提交（延续「暂不提交」，等用户确认）。
+
 ## v6.21.3 (2026-10-10)
 
 ### 课表编辑 500 + 多 worker 课表缓存不一致修复（2026-10-10）

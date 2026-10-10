@@ -15,8 +15,11 @@ export interface Course {
   start_time: string;
   end_time: string;
   weeks?: string;
+  periods?: number[] | string;
   week_number?: number;
   push_enabled?: boolean;
+  course_key?: string;
+  data_source?: string;
   created_at?: string;
   updated_at?: string;
 }

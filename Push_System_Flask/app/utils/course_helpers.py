@@ -314,6 +314,68 @@ def is_course_in_week(course_weeks, target_week: int) -> bool:
     return True
 
 
+def periods_overlap(a, b) -> bool:
+    """两个课程的节次集合是否有交集（任一为空则视为不冲突，返回 False）。"""
+    sa = set(_normalize_periods(a))
+    sb = set(_normalize_periods(b))
+    if not sa or not sb:
+        return False
+    return bool(sa & sb)
+
+
+def _weeks_set(w):
+    """把 weeks 字段统一成周次集合；空/无 → 返回 None（语义：所有周都有课）。
+
+    兼容 list / JSON 数组字符串（数据库以 TEXT 存 list 时常见）/ 旧式 "1-16" 或 "1,3,5" 字符串。
+    """
+    if w is None:
+        return None
+    if isinstance(w, str):
+        s = w.strip()
+        if not s:
+            return None
+        # JSON 数组字符串（如 "[18]" 或 '[2, 3, 4]'）
+        if s.startswith("["):
+            try:
+                import json as _json
+
+                parsed = _json.loads(s)
+                if isinstance(parsed, str):
+                    parsed = _json.loads(parsed)
+                if isinstance(parsed, list):
+                    w = parsed
+                else:
+                    return parse_weeks(s) or None
+            except (ValueError, TypeError):
+                return parse_weeks(s) or None
+        else:
+            return parse_weeks(s) or None
+    if isinstance(w, list):
+        if not w:
+            return None
+        out = set()
+        for x in w:
+            try:
+                out.add(int(x))
+            except (TypeError, ValueError):
+                continue
+        return out or None
+    return None
+
+
+def weeks_overlap(a, b) -> bool:
+    """两个课程的周次集合是否有交集。
+
+    口径与前端 weeksOverlap 一致：任一缺失（空/None）→ 视为"所有周都有课"，
+    返回 True（保守，避免漏报冲突）；两者都有 → 任一周次重叠即冲突。
+    """
+    sa = _weeks_set(a)
+    sb = _weeks_set(b)
+    if sa is None or sb is None:
+        return True
+    return bool(sa & sb)
+
+
 def get_current_week_number() -> int:
     """当前周次（int 语义兼容历史调用方）。
 

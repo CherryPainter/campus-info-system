@@ -43,15 +43,77 @@ def _reload_schedule_cache() -> None:
         logger.warning(f"[课程] 课表缓存主动刷新失败（忽略，等待定时器兜底）: {e}")
 
 
+def _human_periods(periods):
+    """把节次集合格式化成『1、2、3』，用于冲突错误提示。"""
+    return "、".join(str(p) for p in sorted({int(p) for p in periods if p is not None}))
+
+
+def _find_period_conflict(
+    session,
+    semester_id,
+    week_day,
+    periods,
+    weeks,
+    exclude_course_id=None,
+    exclude_course_key=None,
+    exclude_course_ids=None,
+):
+    """查找同 (semester_id, week_day) 下节次重叠且周次重叠的已存在课程。
+
+    冲突判定（教学周感知）：同学期 + 同星期 + 节次集合有交集 + 周次集合有交集。
+    任一条件不满足即不算冲突。
+
+    Args:
+        exclude_course_id: 编辑时排除自身行（避免与正在修改的课程冲突）。
+        exclude_course_key: 编辑时排除同课程组的其他行（同课程按 course_key 归一）。
+        exclude_course_ids: 编辑时排除「整组」已存在行（一门课按单节存多行，
+            编辑时这些行整体被删除/保留/新增接管，必须全部排除，否则会与自身
+            兄弟行误判冲突——这是 2026-10-11 编辑多节次课程 400 的根因）。
+
+    Returns:
+        冲突的 Course 对象（首个）；无冲突返回 None。
+    """
+    candidates = (
+        session.query(Course)
+        .filter(
+            Course.is_deleted.is_(False),
+            Course.semester_id == semester_id,
+            Course.week_day == week_day,
+        )
+        .all()
+    )
+    new_periods = _normalize_periods(periods)
+    if not new_periods:
+        return None
+    for c in candidates:
+        if exclude_course_id is not None and c.id == exclude_course_id:
+            continue
+        if exclude_course_key is not None and c.course_key == exclude_course_key:
+            continue
+        if exclude_course_ids is not None and c.id in exclude_course_ids:
+            continue
+        c_periods = _normalize_periods(c.periods) or [c.period_idx]
+        if not periods_overlap(new_periods, c_periods):
+            continue
+        if not weeks_overlap(c.weeks, weeks):
+            continue
+        return c
+    return None
+
+
 # 课程时间 / 周次相关的纯函数与常量已下沉到 app.utils.course_helpers。
 # 这里只导入本文件路由处理函数实际用到的名字（其余名字由调用方直接 import course_helpers）。
 from app.tasks.scheduler import _is_in_teaching_week
 from app.utils.course_helpers import (
     PERIOD_TIME_MAP,
+    _normalize_periods,
+    _weeks_set,
     get_current_period_and_status,
     get_current_week_number,
     get_schedule_by_building,
     is_course_in_week,
+    periods_overlap,
+    weeks_overlap,
 )
 
 
@@ -374,7 +436,9 @@ def create_or_update_course():
                 .all()
             )
 
-            [c.id for c in old_courses]
+            # 整组兄弟行（同一门课按单节存多行）id 收集，编辑冲突扫描时整体排除，
+            # 否则会与自身兄弟行误判冲突（2026-10-11 编辑多节次课程 400 的根因）。
+            old_course_ids = [c.id for c in old_courses]
             old_periods = {c.period_idx for c in old_courses}
             new_periods = set(periods)
 
@@ -382,6 +446,34 @@ def create_or_update_course():
             to_delete = old_periods - new_periods
             to_keep = old_periods & new_periods
             to_add = new_periods - old_periods
+
+            # 节次冲突防护（教学周感知）：仅当排课字段变化时才校验，避免改教师/教室被误拦。
+            # 必须在 session.delete / session.add 之前执行：否则 autoflush 会把尚未提交的
+            # to_add 新课行刷入查询，被自身课程组误判为冲突（缩节次这类合法编辑会被 400 拒绝）。
+            _old_periods_set = set(int(p) for p in _normalize_periods(old_course.periods) or [old_course.period_idx])
+            _new_periods_set = set(int(p) for p in periods)
+            _old_weeks_set = set(_weeks_set(old_course.weeks) or [])
+            _new_weeks_set = set(_weeks_set(weeks_list) or [])
+            _schedule_changed = (
+                data["week_day"] != old_course.week_day
+                or _new_periods_set != _old_periods_set
+                or _new_weeks_set != _old_weeks_set
+            )
+            if _schedule_changed:
+                _conflict = _find_period_conflict(
+                    session,
+                    old_course.semester_id,
+                    data["week_day"],
+                    periods,
+                    weeks_list,
+                    exclude_course_ids=old_course_ids,
+                )
+                if _conflict:
+                    _cp = _normalize_periods(_conflict.periods) or [_conflict.period_idx]
+                    return api_error(
+                        message=f"星期{data['week_day']}第{_human_periods(_cp)}节与课程《{_conflict.course_name}》冲突（周次重叠，请改选其他节次）",
+                        http_status=400,
+                    )
 
             # 删除不需要的节次
             for c in old_courses:
@@ -485,6 +577,21 @@ def create_or_update_course():
                 _sem = semester_info_from_id(_cid)
         if _sem is None:
             _sem = derive_current_semester()
+
+        # 节次冲突防护（教学周感知）：同学期 + 同星期 + 节次重叠 + 周次重叠 → 冲突
+        _conflict = _find_period_conflict(
+            session,
+            _sem["semester_id"],
+            data["week_day"],
+            periods,
+            weeks_list,
+        )
+        if _conflict:
+            _cp = _normalize_periods(_conflict.periods) or [_conflict.period_idx]
+            return api_error(
+                message=f"星期{data['week_day']}第{_human_periods(_cp)}节与课程《{_conflict.course_name}》冲突（周次重叠，请改选其他节次）",
+                http_status=400,
+            )
 
         for p in periods:
             course = Course(
@@ -600,6 +707,43 @@ def update_course(course_id: int):
                     course.weeks = []
         if "week_number" in data:
             course.week_number = data["week_number"]
+
+        # 节次冲突防护（教学周感知）：仅当排课相关字段变化时校验，
+        # 排除自身「整组」兄弟行（一门课按单节存多行，只排 course_id 单行会与
+        # 兄弟行误判冲突——与 2026-10-11 编辑分支 400 同源）。
+        if any(f in data for f in ("week_day", "period_idx", "periods", "weeks")):
+            _eff_week_day = data.get("week_day", course.week_day)
+            if "periods" in data:
+                _eff_periods = course.periods
+            elif "period_idx" in data:
+                _eff_periods = [course.period_idx]
+            else:
+                _eff_periods = course.periods if course.periods else [course.period_idx]
+            # 同课程组（同名/同教室/同周次）兄弟行整体排除，避免与自身误判
+            _siblings = (
+                session.query(Course.id)
+                .filter(
+                    Course.course_name == course.course_name,
+                    Course.classroom == course.classroom,
+                    Course.week_number == course.week_number,
+                )
+                .all()
+            )
+            _sibling_ids = [r.id for r in _siblings]
+            _conflict = _find_period_conflict(
+                session,
+                course.semester_id,
+                _eff_week_day,
+                _eff_periods,
+                course.weeks,
+                exclude_course_ids=_sibling_ids,
+            )
+            if _conflict:
+                _cp = _normalize_periods(_conflict.periods) or [_conflict.period_idx]
+                return api_error(
+                    message=f"星期{_eff_week_day}第{_human_periods(_cp)}节与课程《{_conflict.course_name}》冲突（周次重叠，请改选其他节次）",
+                    http_status=400,
+                )
 
         # v6.11.2：后台编辑标记为手动课，使爬虫后续不再覆盖本次人工修正
         course.data_source = "admin"
