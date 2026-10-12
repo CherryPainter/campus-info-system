@@ -465,20 +465,6 @@ def schedule_week():
         c for c in all_courses if is_course_in_week(c["extra_info"]["weeks"], week_number)
     ]
 
-    # ===== 端到端诊断日志（临时，定位"切周无数据"）=====
-    logger.warning(
-        f"[DIAG-week] sem={semester_id} week={week_number} "
-        f"raw_count={len(all_courses)} filtered={len(courses)}"
-    )
-    for _c in all_courses:
-        logger.warning(
-            f"[DIAG-week]   id={_c.get('id')} name={_c.get('course_name')} "
-            f"weeks={_c['extra_info'].get('weeks')!r} "
-            f"week_number_field={_c.get('week_number')} source={_c.get('data_source')} "
-            f"in_week={is_course_in_week(_c['extra_info'].get('weeks'), week_number)}"
-        )
-    # ===================================================
-
     return api_success(
         data={
             "courses": courses,

@@ -381,10 +381,14 @@ def check_push_rules():
 
     schedules = schedule_service.get_schedules()
 
-    # 从未成功加载过数据时，跳过所有推送规则（避免在系统刚部署无数据时误触发）
+    # 课表数据未就绪（启动加载失败 / 刚部署无数据）：不再静默等 60s 定时器自愈，
+    # 改为在本次规则检查时按需即时重载；重载仍失败才跳过，避免漏推。
     if not schedule_service.is_data_ready:
-        logger.debug("课表数据未就绪，跳过推送规则检查")
-        return
+        logger.warning("课表数据未就绪，尝试按需即时重载缓存（避免静默漏推）")
+        schedules = schedule_service.get_schedules(force_reload=True)
+        if not schedule_service.is_data_ready:
+            logger.warning("课表数据重载后仍不可用，跳过本次推送规则检查")
+            return
 
     # 数据已就绪但课表为空（如周末/假期），仍允许规则引擎判断（如 daily_no_class）
     tasks = rule_service.check_conditions(now, schedules)
