@@ -43,11 +43,6 @@ from app.model.user import User
 from app.utils.auth_middleware import admin_required
 from app.utils.jwt_auth import JWTManager
 
-import sqlalchemy as _sa
-
-# User.avatar 是 MySQL MEDIUMTEXT，SQLite 无法渲染，测试环境替换为通用 TEXT
-User.__table__.c.avatar.type = _sa.Text()
-
 
 def _make_token(app, user_id, username, role, expire_offset=3600):
     """直接构造指定角色的 access token"""

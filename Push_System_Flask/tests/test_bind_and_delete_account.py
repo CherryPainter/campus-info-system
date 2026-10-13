@@ -5,7 +5,8 @@
 - 组织树：四级链路创建 / 同父重名拒绝 / 非法层级拒绝 / 名称路径定位班级
 - 名单：service.create(class_id) 冗余路径继承 / 批量导入按名称路径定位
 - 绑定码：生成 8 位码（sha256 落库）/ 正确码绑定成功 / 错码 403 / 核销后不可复用
-- 绑定：重复 POST /student/bind → 403 ALREADY_BOUND（防覆盖他人学号）
+- 绑定：首绑成功 / 错码 403 / 未发码 403；已绑定用户可换绑（200 switched=True）；
+  目标身份已被其他账号占用 → 403 IDENTITY_CONFLICT（防抢占/冒绑）
 - 注销：DELETE /user/me 后 users.is_active=False + token 撤销 + 受保护接口 401
 
 设计：SQLite 内存库 + User/StudentProfile/OrgUnit/StudentRoster/WechatAccount/
@@ -44,11 +45,6 @@ from app.services.org_unit_service import OrgUnitService
 from app.services.student_roster_service import StudentRosterService, _hash_code
 from app.utils.jwt_auth import JWTManager
 from app.utils.student_auth import student_required
-
-import sqlalchemy as _sa
-
-# User.avatar 是 MySQL MEDIUMTEXT，SQLite 无法渲染，测试环境替换为通用 TEXT
-User.__table__.c.avatar.type = _sa.Text()
 
 SECRET = "test-secret-key-0123456789abcdef0123456789abcdef"
 
@@ -431,8 +427,12 @@ def test_bind_rejects_without_code(client, db_session):
     assert resp.status_code == 403
 
 
-def test_bind_rejects_already_bound(client, db_session):
-    """已绑定学生重复 bind → 403 ALREADY_BOUND（防覆盖为他人学号）"""
+def test_bind_switch_rebinds_new_identity(client, db_session):
+    """已绑定学生换绑到另一条名单：200 + switched=True，身份更新为新学号
+
+    产品语义（miniapp_routes.bind_student 文档字符串）：已绑定用户调用本接口
+    即视为「换绑」，新身份码校验通过后覆盖本人资料；原身份对应的名单条目释放。
+    """
     user, profile = _create_student(db_session, user_id=1)
     # 模拟已绑定
     profile.school = SCHOOL
@@ -440,7 +440,43 @@ def test_bind_rejects_already_bound(client, db_session):
     profile.class_name = CLASS_NAME
     db_session.commit()
 
-    # 构造另一个学号也在预录名单里（模拟"想换成他人学号"）
+    # 构造另一个学号也在预录名单里（换绑目标）
+    _seed_roster(db_session, "20260002", bind_code=CODE)
+    token = _make_token(1)
+    resp = client.post(
+        "/api/miniapp/student/bind",
+        json={
+            "school": SCHOOL,
+            "student_number": "20260002",
+            "bind_code": CODE,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body.get("switched") is True, "已绑定用户的再次绑定应标记为换绑"
+    # 关键：profile 的 student_number 更新为新学号（换绑生效）
+    profile_after = (
+        db_session.query(StudentProfile).filter_by(user_id=1).first()
+    )
+    assert profile_after.student_number == "20260002"
+
+
+def test_bind_rejects_identity_conflict(client, db_session):
+    """目标身份已被其他账号绑定 → 403 IDENTITY_CONFLICT（防抢占/冒绑）"""
+    user, profile = _create_student(db_session, user_id=1)
+    # 本人已绑定一个身份
+    profile.school = SCHOOL
+    profile.student_number = "20260001"
+    db_session.commit()
+
+    # 另一个账号已占用目标身份 20260002
+    _create_student(db_session, user_id=2, username="wx_other")
+    other_profile = db_session.query(StudentProfile).filter_by(user_id=2).first()
+    other_profile.school = SCHOOL
+    other_profile.student_number = "20260002"
+    db_session.commit()
+
     _seed_roster(db_session, "20260002", bind_code=CODE)
     token = _make_token(1)
     resp = client.post(
@@ -454,8 +490,8 @@ def test_bind_rejects_already_bound(client, db_session):
     )
     assert resp.status_code == 403
     body = resp.get_json()
-    assert body.get("code") == "ALREADY_BOUND"
-    # 关键：profile 的 student_number 没被覆盖（重新 query，避免 refresh 跨 session 报错）
+    assert body.get("code") == "IDENTITY_CONFLICT"
+    # 关键：本人资料没被覆盖
     profile_after = (
         db_session.query(StudentProfile).filter_by(user_id=1).first()
     )

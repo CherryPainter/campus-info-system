@@ -9,14 +9,66 @@
 """
 
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Any
+
+from sqlalchemy.exc import OperationalError
 
 from app.core.database import get_db
 from app.modules.weather.fetcher import WeatherFetcher
 from app.repository.weather_repository import WeatherRepository
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------
+# 数据库瞬时错误重试（单点收口）
+#
+# weather_records 的写者有多个：定时任务（master 进程，实时天气/逐小时预报）
+# 与读路径补写（worker 进程 + 后台线程）。多个写者并发做「DELETE 旧行 + INSERT 新行」
+# 时会互锁，MySQL 侧表现为 OperationalError：
+#   1213 Deadlock found            —— 死锁，InnoDB 毫秒级检测并回滚改动行数少的一方
+#   1205 Lock wait timeout         —— 锁等待超时
+#   2013 Lost connection           —— 查询中途连接断开
+#   2006 MySQL server has gone away —— 连接已被关闭
+#   2014 Command Out of Sync       —— 协议乱序（跨进程共用连接的残指纹）
+# 这些都是瞬时错误，退避重试即可恢复，不属于业务失败。
+# ---------------------------------------------------------------------
+_RETRYABLE_MYSQL_CODES = {1213, 1205, 2013, 2006, 2014}
+_DB_MAX_ATTEMPTS = 3
+
+
+def _is_retryable_db_error(exc: Exception) -> bool:
+    """判断是否为可重试的 MySQL 瞬时错误（依据 pymysql 错误码）。"""
+    if not isinstance(exc, OperationalError):
+        return False
+    orig = getattr(exc, "orig", None)
+    orig_args = getattr(orig, "args", None) or ()
+    return bool(orig_args) and orig_args[0] in _RETRYABLE_MYSQL_CODES
+
+
+def _run_db_op(op):
+    """执行一次完整的 DB 操作（op 内部自含 session 生命周期），遇瞬时错误退避重试。
+
+    op 必须是「从 get_db() 到 commit/close」的完整单元，保证每次重试都拿到
+    全新的 session 与连接，不会复用已进入错误状态的事务。
+
+    Raises:
+        Exception: 重试耗尽或非瞬时错误时原样抛出，由调用方决定降级方式。
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1, _DB_MAX_ATTEMPTS + 1):
+        try:
+            return op()
+        except Exception as exc:
+            if attempt >= _DB_MAX_ATTEMPTS or not _is_retryable_db_error(exc):
+                raise
+            last_exc = exc
+            logger.warning(
+                f"[WeatherService] 数据库瞬时错误，第 {attempt}/{_DB_MAX_ATTEMPTS} 次重试: {exc}"
+            )
+            time.sleep(0.5 * attempt)
+    raise last_exc  # 理论不可达，防御性兜底
 
 
 class WeatherService:
@@ -51,22 +103,29 @@ class WeatherService:
             city_name: 城市名称
 
         Returns:
-            Optional[Dict]: 保存的天气数据或 None
+            Optional[Dict]: 保存的天气数据；上游（和风 API）无数据时返回 None
+
+        Raises:
+            Exception: 数据库写入失败时抛出（含重试耗尽），由调用方决定降级方式。
+                定时任务调用方据此标记 failed，读路径调用方据此返回旧数据/空，
+                不再出现「DB 写失败却返回 None 与『无数据』混淆」的情况。
         """
-        try:
-            fetcher = self._get_fetcher()
-            data = fetcher.fetch_now()
+        fetcher = self._get_fetcher()
+        data = fetcher.fetch_now()
 
-            if not data:
-                logger.warning("[WeatherService] 获取实时天气失败")
-                return None
+        if not data:
+            logger.warning("[WeatherService] 获取实时天气失败")
+            return None
 
+        city = data.get("city_name", city_name)
+
+        def _op() -> dict[str, Any]:
             session = get_db()
             try:
                 # 清理所有旧数据
                 deleted = WeatherRepository.delete_all_now_records(
                     session=session,
-                    city_name=data.get("city_name", city_name),
+                    city_name=city,
                 )
                 logger.debug(f"[WeatherService] 清理 {deleted} 条旧实时天气")
 
@@ -74,7 +133,7 @@ class WeatherService:
                 record = WeatherRepository.create_weather_record(
                     session=session,
                     record_type="now",
-                    city_name=data.get("city_name", city_name),
+                    city_name=city,
                     temp=float(data.get("temp")) if data.get("temp") else None,
                     feels_like=float(data.get("feels_like")) if data.get("feels_like") else None,
                     text=data.get("text"),
@@ -94,9 +153,7 @@ class WeatherService:
             finally:
                 session.close()
 
-        except Exception as e:
-            logger.error(f"[WeatherService] 获取并保存实时天气失败: {e}")
-            return None
+        return _run_db_op(_op)
 
     def fetch_and_save_hourly(self, city_name: str = "重庆") -> list[dict[str, Any]]:
         """
@@ -106,16 +163,19 @@ class WeatherService:
             city_name: 城市名称
 
         Returns:
-            List[Dict]: 保存的天气数据列表
+            List[Dict]: 保存的天气数据列表；上游（和风 API）无数据时返回空列表
+
+        Raises:
+            Exception: 数据库写入失败时抛出（含重试耗尽），由调用方决定降级方式。
         """
-        try:
-            fetcher = self._get_fetcher()
-            data_list = fetcher.fetch_hourly()
+        fetcher = self._get_fetcher()
+        data_list = fetcher.fetch_hourly()
 
-            if not data_list:
-                logger.warning("[WeatherService] 获取24h预报失败")
-                return []
+        if not data_list:
+            logger.warning("[WeatherService] 获取24h预报失败")
+            return []
 
+        def _op() -> list[dict[str, Any]]:
             session = get_db()
             try:
                 # 清理所有旧数据
@@ -160,9 +220,7 @@ class WeatherService:
             finally:
                 session.close()
 
-        except Exception as e:
-            logger.error(f"[WeatherService] 获取并保存24h预报失败: {e}")
-            return []
+        return _run_db_op(_op)
 
     def get_now_weather(self, city_name: str = "重庆") -> dict[str, Any] | None:
         """
@@ -179,7 +237,10 @@ class WeatherService:
             record = WeatherRepository.get_latest_now_record(session, city_name)
             if record:
                 # 检查数据是否过期（超过30分钟）
-                if record.created_at and datetime.utcnow() - record.created_at < timedelta(
+                # 注意：created_at 由 datetime.now()（本地时间）写入，必须同口径比较；
+                # 早期误用 utcnow 与之比较，相差约 8 小时导致「数据永不过期」，
+                # 定时任务写库失败时读路径也不会补写（2026-10-13 修复）
+                if record.created_at and datetime.now() - record.created_at < timedelta(
                     minutes=30
                 ):
                     return record.to_dict()
@@ -189,15 +250,24 @@ class WeatherService:
                     # 在后台线程中刷新数据，不阻塞当前请求
                     import threading
 
-                    thread = threading.Thread(
-                        target=self.fetch_and_save_now, args=(city_name,), daemon=True
-                    )
+                    def _bg_refresh() -> None:
+                        # 后台刷新失败不能让异常逃出线程（否则 traceback 直接刷 gunicorn 日志）
+                        try:
+                            self.fetch_and_save_now(city_name)
+                        except Exception as exc:
+                            logger.warning(f"[WeatherService] 后台刷新实时天气失败: {exc}")
+
+                    thread = threading.Thread(target=_bg_refresh, daemon=True)
                     thread.start()
                     logger.info("[WeatherService] 实时天气数据已过期，返回旧数据并在后台刷新")
                     return old_data
 
-            # 数据库无数据，重新获取
-            return self.fetch_and_save_now(city_name)
+            # 数据库无数据，重新获取；刷新失败时降级返回 None（读路径不 500）
+            try:
+                return self.fetch_and_save_now(city_name)
+            except Exception as exc:
+                logger.warning(f"[WeatherService] 读取时刷新实时天气失败，降级返回空: {exc}")
+                return None
         finally:
             session.close()
 
@@ -220,9 +290,10 @@ class WeatherService:
                 # 跨天判定：缓存数据是「昨天或更早」写入的，说明还停留在跨零点之前的旧批次，
                 # 必须刷新（否则 00:05 仍返回「昨天→今天00:00」的倒序脏数据）
                 latest_date = (latest_record.created_at or datetime.min).date()
+                # created_at 以本地时间写入，过期判定必须同口径用 datetime.now()（勿改回 utcnow）
                 is_stale = (
                     latest_record.created_at is None
-                    or datetime.utcnow() - latest_record.created_at >= timedelta(minutes=60)
+                    or datetime.now() - latest_record.created_at >= timedelta(minutes=60)
                 )
                 is_cross_day = latest_date < datetime.now().date()
                 if is_stale or is_cross_day:
@@ -231,12 +302,21 @@ class WeatherService:
                         "[WeatherService] 24h预报%s，同步刷新",
                         "已过期" if is_stale else "跨天需更新",
                     )
-                    hourly = self.fetch_and_save_hourly(city_name)
+                    try:
+                        hourly = self.fetch_and_save_hourly(city_name)
+                    except Exception as exc:
+                        # 刷新失败降级返回旧数据（旧数据好过空列表）
+                        logger.warning(f"[WeatherService] 读取时刷新24h预报失败，降级返回旧数据: {exc}")
+                        hourly = [r.to_dict() for r in records]
                 else:
                     hourly = [r.to_dict() for r in records]
             else:
-                # 数据库无数据，重新获取
-                hourly = self.fetch_and_save_hourly(city_name)
+                # 数据库无数据，重新获取；刷新失败时降级返回空列表（读路径不 500）
+                try:
+                    hourly = self.fetch_and_save_hourly(city_name)
+                except Exception as exc:
+                    logger.warning(f"[WeatherService] 读取时刷新24h预报失败，降级返回空列表: {exc}")
+                    hourly = []
         finally:
             session.close()
 

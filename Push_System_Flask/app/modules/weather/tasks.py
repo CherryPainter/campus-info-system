@@ -6,7 +6,7 @@
 
 import os
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from app.core.logger import get_logger
 
@@ -915,10 +915,15 @@ def register_tasks(scheduler, app) -> None:
     logger.info("[天气] 实时天气更新任务已注册: 每 30 分钟")
 
     # 2. 逐小时预报更新（每 60 分钟）
+    # start_time 延后 60 秒：实时天气任务（30 分钟）与逐小时预报任务（60 分钟）从同一
+    # 注册时刻对齐时，每小时会有一个同时触发的并发点（如 :38 两个任务一起跑），两个任务
+    # 都要 DELETE + INSERT weather_records 同一张表，曾导致 now 写入固定失败
+    # （OperationalError）。错开 60 秒让两个写者不再同秒撞表。
     scheduler.add_job(
         update_weather_hourly,
         trigger="interval",
         minutes=60,
+        start_time=datetime.now() + timedelta(seconds=60),
         id="weather_update_hourly",
         name="天气逐小时预报更新",
         replace_existing=True,

@@ -380,34 +380,42 @@ class DeliveryService:
 
         merged = []
         for _, group in groups.items():
-            # 按节次排序
-            group = sorted(group, key=lambda x: x.get("period_idx", 0))
+            try:
+                # 按节次排序
+                group = sorted(group, key=lambda x: x.get("period_idx", 0))
 
-            # 收集该课程所有节次，拼成一个代表记录，再按大课拆分
-            all_periods = []
-            rep = None
-            for c in group:
-                if "至" in c.get("period_name", ""):
-                    rep = dict(c)
-                p = c.get("periods")
-                if isinstance(p, list | tuple):
-                    all_periods.extend(int(x) for x in p if str(x).isdigit())
-                elif isinstance(p, str) and p:
-                    try:
-                        all_periods.extend(int(x) for x in json.loads(p) if str(x).isdigit())
-                    except Exception:
-                        pass
-                elif c.get("period_idx"):
-                    all_periods.append(int(c["period_idx"]))
-            if rep is None:
-                rep = dict(group[0])
-            if all_periods:
-                rep["periods"] = sorted(set(all_periods))
+                # 收集该课程所有节次，拼成一个代表记录，再按大课拆分
+                all_periods = []
+                rep = None
+                for c in group:
+                    if "至" in c.get("period_name", ""):
+                        rep = dict(c)
+                    p = c.get("periods")
+                    if isinstance(p, list | tuple):
+                        all_periods.extend(int(x) for x in p if str(x).isdigit())
+                    elif isinstance(p, str) and p:
+                        try:
+                            all_periods.extend(
+                                int(x) for x in json.loads(p) if str(x).isdigit()
+                            )
+                        except Exception:
+                            pass
+                    elif c.get("period_idx"):
+                        all_periods.append(int(c["period_idx"]))
+                if rep is None:
+                    rep = dict(group[0])
+                if all_periods:
+                    rep["periods"] = sorted(set(all_periods))
 
-            # 按课表规定时间填充，并拆成单组大课（去除减10分钟）
-            from app.utils.course_helpers import split_course_to_big_classes
+                # 按课表规定时间填充，并拆成单组大课（去除减10分钟）
+                from app.utils.course_helpers import split_course_to_big_classes
 
-            merged.extend(split_course_to_big_classes(rep))
+                merged.extend(split_course_to_big_classes(rep))
+            except Exception as exc:
+                # 单门课数据异常（如 period_idx 非数字）不应崩掉整批推送：跳过该课并
+                # 告警，其余课照常合并推送（2026-10-13 兜底，对应生产每日课表推送 failed）。
+                _name = group[0].get("course_name") if group else "?"
+                logger.warning(f"[课表推送] 合并课程失败，跳过该课: {_name!r} ({exc})")
 
         return merged
 

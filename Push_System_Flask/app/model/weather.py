@@ -7,7 +7,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, Index, Integer, String, Text
 
 from app.core.database import Base
 
@@ -21,9 +21,16 @@ class WeatherRecord(Base):
 
     __tablename__ = "weather_records"
 
+    # (record_type, city_name) 联合索引：所有查询（实时/逐时）都以这两个字段为条件，
+    # 联合索引让 DELETE 精确定位，缩小加锁范围；其左前缀同时覆盖单按 record_type 的查询，
+    # 因此不再需要单独的 record_type 单列索引。
+    __table_args__ = (
+        Index("idx_record_type_city", "record_type", "city_name"),
+    )
+
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键ID")
     record_type = Column(
-        String(20), nullable=False, index=True, comment="记录类型: now实时/hourly逐时"
+        String(20), nullable=False, comment="记录类型: now实时/hourly逐时"
     )
     city_name = Column(String(50), nullable=False, default="重庆", comment="城市名称")
     temp = Column(Float, nullable=True, comment="温度(°C)")

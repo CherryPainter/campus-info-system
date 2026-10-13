@@ -36,8 +36,6 @@ import sqlalchemy as _sa
 
 from app.model.course import Course, JSONEncodedList
 from app.repository.course_repository import CourseRepository
-
-Course.__table__.c.term.type = _sa.Integer()
 _orig_load = JSONEncodedList.load_dialect_impl
 
 

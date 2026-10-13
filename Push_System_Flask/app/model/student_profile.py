@@ -13,7 +13,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import relationship
 
@@ -43,7 +43,12 @@ class StudentProfile(Base):
     campus_card_number = Column(String(30), nullable=True, comment="校园卡号（一卡通号，与学号不同，用于校园卡卡片展示）")
     real_name = Column(String(50), nullable=True, comment="真实姓名")
     nickname = Column(String(50), nullable=True, comment="昵称（展示名，优先于真实姓名）")
-    avatar = Column(MEDIUMTEXT, nullable=True, comment="头像URL或Base64（学生维度，换微信号不丢；原 users.avatar 迁此）")
+    # 同 users.avatar：MySQL 渲染 MEDIUMTEXT（Base64 头像可达 16MB），
+    # SQLite 等方言退化为 TEXT（MEDIUMTEXT 无方言支持会炸测试 fixture 建表）
+    avatar = Column(
+        Text().with_variant(MEDIUMTEXT, "mysql"), nullable=True,
+        comment="头像URL或Base64（学生维度，换微信号不丢；原 users.avatar 迁此）",
+    )
     college = Column(String(100), nullable=True, comment="学院")
     major = Column(String(100), nullable=True, comment="专业")
     class_name = Column(String(100), nullable=True, comment="班级")

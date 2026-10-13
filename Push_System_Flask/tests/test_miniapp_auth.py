@@ -23,7 +23,6 @@ from unittest import mock
 
 import jwt as _jwt
 import pytest
-import sqlalchemy as _sa
 from flask import Blueprint, Flask
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -43,9 +42,6 @@ from app.model.wechat_account import WechatAccount
 from app.services.wechat_auth_service import WechatAuthError, wechat_auth_service
 from app.utils.auth_middleware import admin_required
 from app.utils.jwt_auth import JWTManager
-
-# User.avatar 是 MySQL MEDIUMTEXT，SQLite 无法渲染，测试环境替换为通用 TEXT（不影响生产库）
-User.__table__.c.avatar.type = _sa.Text()
 
 # 测试用的固定 openid（真实流程中由微信 code2Session 返回，测试里 mock）
 OPENID = "oGZ8U5JxTestOpenId1234567890"

@@ -30,7 +30,12 @@ class User(Base):
 
     # 个人信息扩展字段
     email = Column(String(100), nullable=True, comment="邮箱")
-    avatar = Column(MEDIUMTEXT, nullable=True, comment="头像URL或Base64")
+    # 头像可达 16MB（Base64），MySQL 需 MEDIUMTEXT（64KB 的 Text 不够）；
+    # 但 MEDIUMTEXT 无 SQLite 方言支持，直接用会让内存库测试 fixture 建表即炸，
+    # 故用 variant：MySQL 渲染 MEDIUMTEXT，其余方言（SQLite）退化为 TEXT。
+    avatar = Column(
+        Text().with_variant(MEDIUMTEXT, "mysql"), nullable=True, comment="头像URL或Base64"
+    )
     avatar_change_log = Column(Text, nullable=True, comment="头像修改记录(JSON时间戳列表)")
 
     # 登录相关

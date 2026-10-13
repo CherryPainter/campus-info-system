@@ -117,8 +117,17 @@ class RuleService:
     def check_conditions(self, current_time, schedules):
         """检查触发条件"""
         tasks = []
-        today = current_time.strftime("%Y-%m-%d")
-        today_schedules = [s for s in schedules if s["extra_info"]["full_date"] == today]
+        # 今日课程口径与显示端 get_today_schedules 统一（2026-10-13 修复）：
+        # 旧实现用 `full_date == today` 字符串匹配过滤今日课程，而 full_date 由
+        # schedule_service._calculate_date 按课程静态 week_number 锚定算得——
+        # 爬虫课 week_number = weeks_list[0]（课程第一周，如第2周），full_date 落在
+        # 其第一周那天、永远 ≠ 今天 → 定时推送（每日课表 / 课前 / 下课提醒）漏掉全部
+        # 爬虫课；自建课 week_number=None 锚定本周 → 能推。表现为「自建能推、爬虫不推」。
+        # 改为直接委托 get_today_schedules()：按「星期几==今天 且 当前教学周∈weeks」
+        # 过滤，并把 start_ts/end_ts/full_date 重算到「今天」，与小程序/网页显示同源。
+        from app.services.schedule_service import schedule_service
+
+        today_schedules = schedule_service.get_today_schedules()
         now_ts = current_time.timestamp()
 
         # 定期清理防重复触发记录
@@ -186,34 +195,42 @@ class RuleService:
 
         merged = []
         for _, group in groups.items():
-            # 按节次排序
-            group = sorted(group, key=lambda x: x.get("period_idx", 0))
+            try:
+                # 按节次排序
+                group = sorted(group, key=lambda x: x.get("period_idx", 0))
 
-            # 收集该课程所有节次，拼成一个代表记录，再按“每2节=1门大课”拆分
-            all_periods = []
-            rep = None
-            for c in group:
-                if "至" in c.get("period_name", ""):
-                    rep = dict(c)
-                p = c.get("periods")
-                if isinstance(p, list | tuple):
-                    all_periods.extend(int(x) for x in p if str(x).isdigit())
-                elif isinstance(p, str) and p:
-                    try:
-                        all_periods.extend(int(x) for x in json.loads(p) if str(x).isdigit())
-                    except Exception:
-                        pass
-                elif c.get("period_idx"):
-                    all_periods.append(int(c["period_idx"]))
-            if rep is None:
-                rep = dict(group[0])
-            if all_periods:
-                rep["periods"] = sorted(set(all_periods))
+                # 收集该课程所有节次，拼成一个代表记录，再按“每2节=1门大课”拆分
+                all_periods = []
+                rep = None
+                for c in group:
+                    if "至" in c.get("period_name", ""):
+                        rep = dict(c)
+                    p = c.get("periods")
+                    if isinstance(p, list | tuple):
+                        all_periods.extend(int(x) for x in p if str(x).isdigit())
+                    elif isinstance(p, str) and p:
+                        try:
+                            all_periods.extend(
+                                int(x) for x in json.loads(p) if str(x).isdigit()
+                            )
+                        except Exception:
+                            pass
+                    elif c.get("period_idx"):
+                        all_periods.append(int(c["period_idx"]))
+                if rep is None:
+                    rep = dict(group[0])
+                if all_periods:
+                    rep["periods"] = sorted(set(all_periods))
 
-            # 按课表规定时间填充，并拆成 1-2 / 3-4 这样的单组大课（去除减10分钟）
-            from app.utils.course_helpers import split_course_to_big_classes
+                # 按课表规定时间填充，并拆成 1-2 / 3-4 这样的单组大课（去除减10分钟）
+                from app.utils.course_helpers import split_course_to_big_classes
 
-            merged.extend(split_course_to_big_classes(rep))
+                merged.extend(split_course_to_big_classes(rep))
+            except Exception as exc:
+                # 单门课数据异常（如 period_idx/periods 非数字，apply/split 抛错）不应
+                # 崩掉整批推送：跳过该课并告警，其余课照常合并推送（2026-10-13 兜底）。
+                _name = group[0].get("course_name") if group else "?"
+                logger.warning(f"[课表推送] 合并课程失败，跳过该课: {_name!r} ({exc})")
 
         return merged
 

@@ -32,8 +32,11 @@ from app.model.electricity import ElectricityRecord
 from app.repository.electricity_repository import ElectricityRepository
 from app.services.electricity_service import ElectricityService
 
-# 使用不存在的用户 ID，避免与真实数据混淆（与 test_electricity_dedup 区分开）
+# 使用不存在的用户 ID 与学生身份键，避免与真实数据混淆（与 test_electricity_dedup 区分开）
+# 归属维度是 student_key（学校|学号），user_id 只是审计列（见 electricity_repository 模块注释）
 TEST_USER = 999998
+TEST_SK = "测试学校|999998"
+OTHER_SK = "测试学校|999997"
 # 结算时刻：用电日 2026-09-17 的结算记录落在 2026-09-18 00:09:51
 SETTLE_0918 = datetime(2026, 9, 18, 0, 9, 51)
 
@@ -51,7 +54,7 @@ def _seed(session, rows):
     """写入用电记录：rows = [(record_time, usage, meter), ...]"""
     session.add_all(
         [
-            ElectricityRecord(record_time=t, usage=u, meter=m, user_id=TEST_USER)
+            ElectricityRecord(record_time=t, usage=u, meter=m, student_key=TEST_SK, user_id=TEST_USER)
             for t, u, m in rows
         ]
     )
@@ -73,13 +76,13 @@ def test_daily_aggregates_merge_sub_meters(session):
         ],
     )
 
-    rows = ElectricityRepository.get_daily_aggregates(session, user_id=TEST_USER)
+    rows = ElectricityRepository.get_daily_aggregates(session, student_key=TEST_SK)
 
     assert len(rows) == 1, f"同一天应聚合成一条，实际 {len(rows)} 条"
     assert rows[0]["settle_date"] == "2026-09-18"
     assert rows[0]["total_usage"] == pytest.approx(2.46), "当日合计应为两块分表之和"
     assert rows[0]["record_count"] == 2
-    assert ElectricityRepository.count_daily_aggregates(session, user_id=TEST_USER) == 1, (
+    assert ElectricityRepository.count_daily_aggregates(session, student_key=TEST_SK) == 1, (
         "分页 total 统计的是「天」不是原始条数"
     )
 
@@ -95,31 +98,32 @@ def test_daily_aggregates_order_desc_and_page_by_day(session):
         ],
     )
 
-    all_rows = ElectricityRepository.get_daily_aggregates(session, user_id=TEST_USER, limit=10)
+    all_rows = ElectricityRepository.get_daily_aggregates(session, student_key=TEST_SK, limit=10)
     assert [r["settle_date"] for r in all_rows] == ["2026-09-18", "2026-09-17", "2026-09-16"]
     assert [r["total_usage"] for r in all_rows] == [1.00, 2.00, 3.00]
 
     # offset=1 表示跳过最近 1 天（不是跳过 1 条记录）
     page = ElectricityRepository.get_daily_aggregates(
-        session, user_id=TEST_USER, limit=2, offset=1
+        session, student_key=TEST_SK, limit=2, offset=1
     )
     assert [r["settle_date"] for r in page] == ["2026-09-17", "2026-09-16"]
-    assert ElectricityRepository.count_daily_aggregates(session, user_id=TEST_USER) == 3
+    assert ElectricityRepository.count_daily_aggregates(session, student_key=TEST_SK) == 3
 
 
 def test_daily_aggregates_user_isolated(session):
-    """不同用户的数据不得混入同一份合计"""
+    """不同学生身份的数据不得混入同一份合计"""
     _seed(session, [(SETTLE_0918, 1.00, "31栋512")])
     session.add(
         ElectricityRecord(
-            record_time=SETTLE_0918, usage=99.00, meter="31栋512", user_id=TEST_USER + 1
+            record_time=SETTLE_0918, usage=99.00, meter="31栋512",
+            student_key=OTHER_SK, user_id=TEST_USER + 1
         )
     )
     session.flush()
 
-    rows = ElectricityRepository.get_daily_aggregates(session, user_id=TEST_USER)
+    rows = ElectricityRepository.get_daily_aggregates(session, student_key=TEST_SK)
     assert [r["total_usage"] for r in rows] == [1.00]
-    assert ElectricityRepository.count_daily_aggregates(session, user_id=TEST_USER) == 1
+    assert ElectricityRepository.count_daily_aggregates(session, student_key=TEST_SK) == 1
 
 
 # ------------------------------------------------------------------
@@ -140,7 +144,7 @@ def test_usage_day_window_excludes_neighbour_days(session):
     )
 
     recs = ElectricityRepository.get_records_of_usage_day(
-        session, "2026-09-17", user_id=TEST_USER
+        session, "2026-09-17", student_key=TEST_SK
     )
     assert len(recs) == 2, f"只应命中 09-17 那天的两条，实际 {len(recs)} 条"
     assert sum(float(r.usage or 0) for r in recs) == pytest.approx(2.46)
@@ -159,7 +163,7 @@ def test_usage_day_window_boundaries(session):
     )
 
     recs = ElectricityRepository.get_records_of_usage_day(
-        session, "2026-09-17", user_id=TEST_USER
+        session, "2026-09-17", student_key=TEST_SK
     )
     assert sorted(r.meter for r in recs) == ["in-2359", "start-0000"]
 
@@ -180,7 +184,7 @@ def test_daily_totals_between_is_ascending(session):
         session,
         start_time=datetime(2026, 9, 18),
         end_time=datetime(2026, 9, 20),
-        user_id=TEST_USER,
+        student_key=TEST_SK,
     )
     assert totals == [("2026-09-18", 1.50), ("2026-09-19", 2.00)]
 
@@ -260,16 +264,17 @@ def test_build_report_payload_zero_days_does_not_divide_by_zero():
 # ------------------------------------------------------------------
 
 
-def _pick_user_with_records(session):
-    """挑一个用电记录最多的用户（真实数据只读校验用）"""
+def _pick_student_with_records(session):
+    """挑一个用电记录最多的学生身份（真实数据只读校验用）"""
     row = (
-        session.query(ElectricityRecord.user_id)
+        session.query(ElectricityRecord.student_key)
         .filter(ElectricityRecord.record_time.isnot(None))
-        .group_by(ElectricityRecord.user_id)
+        .filter(ElectricityRecord.student_key.isnot(None))
+        .group_by(ElectricityRecord.student_key)
         .order_by(func.count(ElectricityRecord.id).desc())
         .first()
     )
-    return int(row[0]) if row else None
+    return row[0] if row else None
 
 
 def test_service_daily_records_and_detail_are_consistent(session):
@@ -281,20 +286,20 @@ def test_service_daily_records_and_detail_are_consistent(session):
       2. 取回的一天，其 total_usage == 各分表用量之和（容差 0.01）；
       3. 各分表占比之和约等于 100%。
     """
-    user_id = _pick_user_with_records(session)
-    if user_id is None:
+    student_key = _pick_student_with_records(session)
+    if student_key is None:
         pytest.skip("库内无用电记录，跳过真实数据一致性校验")
 
-    svc = ElectricityService(user_id=user_id)
+    svc = ElectricityService(student_key=student_key)
     page = svc.get_daily_records(limit=10, offset=0)
 
     days = page["days"]
-    assert days, "该用户应至少有一天记录"
+    assert days, "该学生应至少有一天记录"
     dates = [d["date"] for d in days]
     assert dates == sorted(dates, reverse=True), "应按用电日倒序"
     assert len(set(dates)) == len(dates), "同一天不应出现两次（一天一条）"
     assert page["total"] == ElectricityRepository.count_daily_aggregates(
-        session, user_id=user_id
+        session, student_key=student_key
     )
 
     detail = svc.get_daily_detail(dates[0])

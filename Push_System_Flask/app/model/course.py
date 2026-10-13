@@ -77,7 +77,12 @@ class Course(Base):
     semester_id = Column(Integer, nullable=False, comment="学期ID（教务系统）")
     semester_name = Column(String(100), nullable=False, comment="学期名称（如：2025-2026-2）")
     academic_year = Column(String(20), nullable=False, comment="学年（如：2025-2026）")
-    term = Column(TINYINT, nullable=False, comment="学期（1=春季，2=秋季）")
+    # MySQL 渲染 TINYINT（1 字节，与历史 DDL 一致）；SQLite 等方言退化为 INTEGER。
+    # 勿改回裸 TINYINT： dialects.mysql.TINYINT 无 SQLite 方言实现，
+    # 会让内存库测试 fixture 建表即抛 UnsupportedCompilationError。
+    term = Column(
+        Integer().with_variant(TINYINT, "mysql"), nullable=False, comment="学期（1=春季，2=秋季）"
+    )
 
     # 课程时间信息
     week_day = Column(Integer, nullable=False, comment="星期几（1-7，1=周一）")

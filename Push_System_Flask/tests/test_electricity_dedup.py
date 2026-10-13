@@ -27,8 +27,10 @@ from app.core.database import get_db
 from app.model.electricity import ElectricityRecord
 from app.repository.electricity_repository import ElectricityRepository
 
-# 使用一个不存在的用户 ID，避免与真实数据混淆
+# 使用不存在的用户 ID 与学生身份键，避免与真实数据混淆
+# 归属维度是 student_key（学校|学号），user_id 只是审计列（见 electricity_repository 模块注释）
 TEST_USER = 999999
+TEST_SK = "测试学校|999999"
 TEST_DAY = datetime(2026, 9, 6, 0, 9, 51)
 
 
@@ -41,8 +43,8 @@ def session():
     s.close()
 
 
-def _records_of(session, user_id: int):
-    return session.query(ElectricityRecord).filter(ElectricityRecord.user_id == user_id).all()
+def _records_of(session, student_key: str):
+    return session.query(ElectricityRecord).filter(ElectricityRecord.student_key == student_key).all()
 
 
 def test_normalize_meter_strips_noise():
@@ -67,6 +69,7 @@ def test_same_meter_different_wording_is_merged(session):
             record_time=TEST_DAY,
             usage=1.80,
             meter="电表: 31栋512照明",  # 历史未清洗写法
+            student_key=TEST_SK,
             user_id=TEST_USER,
         )
     )
@@ -74,12 +77,12 @@ def test_same_meter_different_wording_is_merged(session):
 
     # 新爬取写入的是清洗后的写法，且用电量有更新
     created = ElectricityRepository.create_records_batch(
-        session, [(TEST_DAY, 2.10, "31栋512")], user_id=TEST_USER
+        session, [(TEST_DAY, 2.10, "31栋512")], student_key=TEST_SK, user_id=TEST_USER
     )
     session.flush()
 
     assert created == 0, "同一块表应命中已有记录，不应新增"
-    rows = _records_of(session, TEST_USER)
+    rows = _records_of(session, TEST_SK)
     assert len(rows) == 1, f"应只有 1 条记录，实际 {len(rows)}"
     assert rows[0].usage == 2.10, "用电量应被更新"
     assert rows[0].meter == "31栋512", "电表写法应统一为归一化值"
@@ -92,6 +95,7 @@ def test_two_sub_meters_are_both_kept(session):
             record_time=TEST_DAY,
             usage=1.80,
             meter="31栋512",
+            student_key=TEST_SK,
             user_id=TEST_USER,
         )
     )
@@ -99,12 +103,12 @@ def test_two_sub_meters_are_both_kept(session):
 
     # 另一块分表（照明/空调），归一化后是不同标识
     created = ElectricityRepository.create_records_batch(
-        session, [(TEST_DAY, 5.57, "310512")], user_id=TEST_USER
+        session, [(TEST_DAY, 5.57, "310512")], student_key=TEST_SK, user_id=TEST_USER
     )
     session.flush()
 
     assert created == 1, "另一块分表应作为新记录插入"
-    rows = _records_of(session, TEST_USER)
+    rows = _records_of(session, TEST_SK)
     assert len(rows) == 2, f"两块分表都应保留，实际 {len(rows)} 条"
 
     # 当天真实用量 = 各分表之和
@@ -117,18 +121,20 @@ def test_repeated_crawl_does_not_grow(session):
     ElectricityRepository.create_records_batch(
         session,
         [(TEST_DAY, 1.80, "31栋512"), (TEST_DAY, 5.57, "310512")],
+        student_key=TEST_SK,
         user_id=TEST_USER,
     )
     session.flush()
-    assert len(_records_of(session, TEST_USER)) == 2
+    assert len(_records_of(session, TEST_SK)) == 2
 
     # 再爬一次，且故意用不同的写法
     created = ElectricityRepository.create_records_batch(
         session,
         [(TEST_DAY, 1.80, "电表: 31栋512照明"), (TEST_DAY, 5.57, "电表: 310512")],
+        student_key=TEST_SK,
         user_id=TEST_USER,
     )
     session.flush()
 
     assert created == 0, "重复爬取不应新增记录"
-    assert len(_records_of(session, TEST_USER)) == 2, "记录数应保持 2 条"
+    assert len(_records_of(session, TEST_SK)) == 2, "记录数应保持 2 条"

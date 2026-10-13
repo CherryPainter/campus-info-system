@@ -4,6 +4,55 @@
 
 ---
 
+## v6.21.5 (2026-10-13)
+
+### 存量测试口径对齐与模型方言兼容修复：全量回归红单清零（2026-10-13）
+- **背景**：本轮修复前全量回归长期带着 8 failed + 35 errors 的红单，真假回归混在一起难分辨。逐项定位后确认全部是「测试停留在旧口径 / 模型方言不兼容」的存量问题，与业务代码正确性无关（已用 git stash 隔离验证）。
+- **修复一：模型 MySQL 专有类型改 variant，SQLite 测试 fixture 不再炸（35 errors 归零）**：
+  - `app/model/user.py` / `app/model/student_profile.py` 的 `avatar` 列：`Column(MEDIUMTEXT)` → `Column(Text().with_variant(MEDIUMTEXT, "mysql"))`——MySQL 渲染 MEDIUMTEXT（Base64 头像可达 16MB，DDL 与容量不变），SQLite 渲染 TEXT。
+  - `app/model/course.py` 的 `term` 列：`Column(TINYINT)` → `Column(Integer().with_variant(TINYINT, "mysql"))`——同理，MySQL DDL 不变。
+  - **清理 7 处测试 import 时覆写共享 Table 的 hack**（`User.__table__.c.avatar.type = _sa.Text()` ×3、`Course.__table__.c.term.type = _sa.Integer()` ×4）：这类 hack 在模块收集时就地修改进程内共享的 Table 列类型，只修了 `User` 没修 `StudentProfile` 所以 35 errors 一直遗留，且会污染其他测试对同一模型的编译。模型层 variant 修复后 hack 全部删除，测试改为在真实 variant 机制下运行。
+  - 新增 `tests/test_model_avatar_variant.py`：用 mysql 方言**离线编译** CreateTable，锁死生产 DDL 中 avatar 仍为 MEDIUMTEXT（不需要连数据库）。
+- **修复二：电量测试对齐「学生身份归属」口径（8 failed 归零）**：
+  - `tests/test_electricity_daily_aggregate.py` / `tests/test_electricity_dedup.py` 停留在电量重构早期的 `user_id` 归属口径（`get_daily_aggregates(user_id=...)` 等）。项目现行权威口径（`electricity_repository` 模块注释、`identity_keys` 单点）：归属维度是 `student_key`（学校|学号），`user_id` 只是审计列。repository 全线 `student_key` 过滤是**正确实现，未动**；测试改为按 `student_key` seed 与查询，隔离用例相应改为「不同 student_key 互不可见」，service 一致性测试改按 student_key 挑真实数据。
+- **修复三：绑定测试对齐「换绑」产品语义**：
+  - `tests/test_bind_and_delete_account.py::test_bind_rejects_already_bound` 期望「重复绑定 → 403 ALREADY_BOUND」，但该错误码全仓不存在——现行设计（`miniapp_routes.bind_student` 文档字符串）是「已绑定用户可换绑，仅当目标身份已被其他账号占用时拒绝（IDENTITY_CONFLICT）」。旧用例改写为 `test_bind_switch_rebinds_new_identity`（换绑 200 + switched=True + 学号更新）与 `test_bind_rejects_identity_conflict`（403 IDENTITY_CONFLICT + 本人资料不被覆盖）。
+- **修复四：天气过期判定时区 bug（读路径「永不过期」）**：
+  - `weather_service.get_now_weather` / `get_hourly_forecast` 用 `datetime.utcnow()` 与 `datetime.now()`（本地时间）写入的 `created_at` 比较，相差约 8 小时 → 数据永远判不过期 → 定时任务写库失败时读路径不会补写（本次天气故障链的一环）。两处改为 `datetime.now()` 同口径比较，注释标明勿改回。
+  - `tests/test_weather_save_contract.py` 新增 `TestStalenessClock`（4 用例）：35/90 分钟前的记录必须触发刷新、10 分钟前不触发。**反向验证**：改回 utcnow 后 stale 用例精准变红。
+- **验证**：全量回归 **730 passed / 1 skipped / 0 failed / 0 errors**（修复前 680 passed + 8 failed + 35 errors）；唯一的 skip 是本机无 Redis 的 TOTP Lua 测试（既有环境限制）。
+
+### 天气实时数据写入失败修复：并发互锁防御 + 写路径契约收紧（2026-10-13）
+- **现象（生产）**：10-13 07:38 / 09:38 固定报 `[WeatherService] 获取并保存实时天气失败: (pymysql.err.OperationalError)`，SQL 为 `DELETE FROM weather_records WHERE record_type='now' AND city_name='永川区'`；ERROR 后 1ms 紧跟「实时天气已更新（缓存+数据库）」+ `status=completed`，日志极具误导性（数据库实际未写入）。24h 预报每次都正常（稳定 24 条）。
+- **失败点与误导性日志链**：`weather_service.fetch_and_save_now` 的 DB 异常被 `:97-99` 外层 except 吞掉只返回 None；调用方 `weather/tasks.py:257-259` 不检查返回值，照常打「已更新」并标 completed。Redis 缓存在 DB 操作之前（`tasks.py:253`）已写成功，掩盖了 DB 失败。
+- **根因（已代码级坐实机制，错误码待用户贴完整行最终定性）**：`weather_records` 写者有多个——定时任务（master 进程：实时天气 30min / 逐小时预报 60min）与读路径补写（worker 进程 + 后台线程，`get_now_weather`/`get_hourly_forecast` 发现无数据/过期时触发）。两个 APScheduler interval 任务从同一注册时刻对齐，每小时 :38 同时触发，并发对同一张表 DELETE+INSERT（now 删 1 行 vs hourly 删 24 行）→ InnoDB 毫秒级死锁检测（1213），固定回滚改动行数少的一方（now），故 now 固定失败、hourly 稳定成功。诱因：`weather_records` 原只有 `record_type` 单列索引，`city_name` 无索引、无联合索引，DELETE 加锁范围偏大。
+- **修复（四处）**：
+  1. **写路径契约收紧**（`app/services/weather_service.py`）：`fetch_and_save_now` / `fetch_and_save_hourly` DB 失败（含重试耗尽）改为**抛异常**，不再吞掉返回 None/[]——「上游无数据返回 None/[]」与「DB 失败」彻底分离（消除一个返回值同时表示合法值与错误）。定时任务调用方异常自然进入 `tasks.py` 既有 except → 记 ERROR + `complete_task_process(failed)`，管理端任务面板直接暴露失败，不再被 completed 掩盖。
+  2. **读路径降级**（`weather_service.py`）：`get_now_weather` / `get_hourly_forecast` 对刷新的调用包 try/except——同步路径失败返回 None/空列表/旧数据，后台线程 target 包一层 warning（防 traceback 直接刷 gunicorn 日志），API 不 500。
+  3. **瞬时错误重试**（`weather_service.py` 新增单点 `_run_db_op`）：对 OperationalError 的可重试 MySQL 错误码（1213 死锁 / 1205 锁等待 / 2013 / 2006 / 2014）退避重试 3 次；非瞬时错误（如 1045）立即抛出不浪费重试。每次重试都是完整的新 session（`op` 内自含 get_db→commit→close 生命周期）。
+  4. **错峰触发 + 联合索引**：`weather/tasks.py` 的逐小时预报任务加 `start_time` 延后 60 秒，与实时天气任务的每小时并发点错开；`app/model/weather.py` 的 `WeatherRecord` 将 `record_type` 单列索引替换为 `(record_type, city_name)` 联合索引 `idx_record_type_city`（左前缀覆盖原有全部查询场景，DELETE 精确定位缩小锁范围）。
+- **测试**：新增 `tests/test_weather_save_contract.py`（9 passed）——DB 失败重试耗尽后 raise、上游无数据返回 None/[]、正常路径返回 dict、1213 重试后成功（DELETE 只多调一次）、非瞬时错误不重试立即抛、读路径刷新失败降级不 500。**反向验证**：单独撤掉 raise 行为 → 2 个契约用例精准变红；单独撤掉读路径 try/except → 2 个降级用例精准变红；恢复后全绿。
+- **生产需执行的 DDL**（索引为结构性变更，`create_all` 不会改已存在的表）：
+  ```sql
+  ALTER TABLE weather_records ADD INDEX idx_record_type_city (record_type, city_name);
+  ALTER TABLE weather_records DROP INDEX record_type;  -- 已成为联合索引左前缀的冗余项，可选
+  ```
+- **生效需服务器 `systemctl restart gunicorn`**（改的是 `app/` 后端，`preload_app=True` 不热重载）。
+- **遗留**：① 生产 07:00:47 课程推送 failed 的原始 error 行仍未贴到（已有代码级复现坐实 `ValueError` 机制，建议最终复核无第二异常）；② 本轮全量回归中 `test_electricity_*` 8 failed / `test_miniapp_*` 等 35 errors 为**既有问题**（`app/model/user.py:33` 与 `app/model/student_profile.py:46` 的 `avatar` 列用 MySQL 专有 `MEDIUMTEXT`，SQLite 测试 fixture 建表即炸；`ElectricityRepository.get_records_of_usage_day()` 签名与测试不匹配），已用 git stash 隔离验证与本次天气改动无关；③ 发现但未修：`get_now_weather:240` / `get_hourly_forecast:283` 用 `datetime.utcnow()` 与本地时区写入的 `created_at` 比较，相差 8 小时导致「数据永不过期」判定，读路径几乎不会补写——待用户确认是否单独修。
+
+### 课程推送「今日课程」口径修复：爬虫课漏推 + 每日推送装配崩溃（2026-10-13）
+- **现象（生产）**：定时课程推送「自建课能推、爬虫课不推」；10-13 07:00 每日课表推送进程 `status=failed`（创建后 26ms 即失败，快到来不及发 webhook）。小程序/网页课表显示正常（爬虫课都在）；手动触发也能正常推。
+- **根因一（漏推爬虫课：推送与显示两套口径分叉）**：推送规则层 `rule_service.check_conditions` 旧用 `full_date == today` 字符串匹配过滤「今日课程」（原 `rule_service.py:121`），而 `full_date` 由 `schedule_service._calculate_date`（`schedule_service.py:340`）按课程静态 `week_number` 锚定：`full_date = 本周一 + (week_number − 当前教学周)*7 + (week_day-1)`，要等于今天必须 `week_number == 当前教学周`。
+  - **爬虫课** `week_number = weeks_list[0]`（课程第一周，`cqie-course-timetable/main.py:2065`）→ full_date 落在其第一周那天、永远 ≠ 今天 → 定时推送（每日课表 / 课前15min / 下课10min）漏掉全部爬虫课。
+  - **自建课** `week_number=None`（`course_routes.py:617` 后台不传即空）→ `_calculate_date:328` 锚定本周 → full_date=今天 → 能推。
+  - 显示端 `get_today_schedules`（`schedule_service.py:462`）早已改用「星期几 + `is_course_in_week`」并重算时间戳，推送端没跟着改 → 显示对、推送漏。手动触发走 `get_today_schedules` 故正常，定时走 `check_conditions` 故漏——与「手动能发、定时漏」吻合。**与 env 无关**（`COURSE_PUSH_ENABLED`/`push_enabled` 不在推送链路做过滤）。
+- **根因二（每日推送 failed：装配崩溃）**：爬虫课 `period_idx` 出现非数字值（如 `"1-2"`）时，课程合并里 `int(c["period_idx"])`（原 `delivery_service.py:401` / `rule_service.py:207`）抛 `ValueError`，冒泡到 `delivery_service._process_pending_tasks` 外层 except → 整批推送标 failed。反向验证复现：回退修复后测试报 `ValueError: invalid literal for int() with base 10: '1-2'` @ `delivery_service.py:401`。
+- **修复**：
+  - `rule_service.check_conditions` 今日课程改委托 `schedule_service.get_today_schedules()`（与显示端同口径：星期几 + 当前教学周∈weeks，且 start_ts/end_ts/full_date 重算到今天），不再用 `full_date==today`。
+  - `rule_service._merge_courses_for_push` 与 `delivery_service._merge_courses` 的按课程组合并加**单课程组 try/except**：单门课数据异常只跳过该课 + `logger.warning`，不再崩掉整批推送。
+- **测试**：新增 `tests/test_course_push_today_filter.py`（3 passed）——① 今日课程必须来自 `get_today_schedules`（传 full_date 非今天的全量 schedules，断言 daily handler 收到的是 get_today_schedules 结果）；②/③ rule/delivery 合并遇非数字 `period_idx` 跳过脏课、保留正常课。均做**反向验证**（回退修复后 3 条全红，其中合并测试复现生产 `ValueError`）。相关 `test_course_push_skip.py`(5) / `test_miniapp_phase2.py`(19) 共 27 passed 无回归。
+- **生效需服务器 `systemctl restart gunicorn`**（改的是 `app/` 后端，`preload_app=True` 不热重载）。
+
 ## v6.21.4 (2026-10-12)
 
 ### 课程节次冲突防护（教学周感知）（2026-10-10）
