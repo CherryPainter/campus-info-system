@@ -1,8 +1,8 @@
 # 校园信息聚合与智能推送系统
 
-> **v6.21.5** | Flask 3.1 + React 19 + TypeScript + Vite + Ant Design 5
+> **v6.21.6** | Flask 3.1 + React 19 + TypeScript + Vite + Ant Design 5
 >
-> 集成课表自动爬取与推送、天气监控与预警、宿舍电量管理三大核心模块，通过企业微信 Webhook 实现消息推送，提供 React + Ant Design Pro 管理后台。
+> 集成课表自动爬取与推送、天气监控与预警、宿舍电量管理三大核心模块，通过企业微信 Webhook 实现消息推送，提供 React + Ant Design 5 + Pro Components 管理后台。
 
 ---
 
@@ -58,7 +58,7 @@
 
 ### 管理后台
 
-- **React + Ant Design Pro 前端**：基于 React 19 + TypeScript + Vite 8，使用 ProLayout 侧边栏布局，响应式设计
+- **React 19 + TypeScript + Vite 8 + Ant Design 5 + Pro Components 前端**：使用 ProLayout 侧边栏布局，响应式设计
 - **JWT 双 Token 认证**：access_token（1 小时）+ refresh_token（7 天），httpOnly Cookie 存储，前端 Axios 拦截器自动刷新
 - **MFA 多因素认证**：基于 TOTP 标准（兼容 Google Authenticator），支持设置、验证、禁用完整流程
 - **仪表盘**：系统状态总览（服务状态、模块健康、定时任务）、任务统计（ECharts 饼图）、最近任务时间线、快捷操作按钮
@@ -320,7 +320,7 @@ Push_System_Flask/
 |   |   |-- fingerprint.py                 # 数据库指纹漂移检测
 |   |   |-- reset.py                       # 重置（开发用）
 |   |
-|   |-- model/                            # 数据模型层（25 个模型文件 / 30+ 表）
+|   |-- model/                            # 数据模型层（25 个模型文件 / 32 张表）
 |   |   |-- __init__.py                   # 统一导出所有模型
 |   |   |-- user.py                       # User - 用户表
 |   |   |-- user_mfa.py                   # UserMFA - MFA 配置表
@@ -651,7 +651,7 @@ npm run dev
 | 变量          | 默认值                       | 说明                             |
 | ------------- | ---------------------------- | -------------------------------- |
 | `APP_NAME`    | `校园信息聚合与智能推送系统` | 应用名称                         |
-| `APP_VERSION` | `6.21.5`                     | 应用版本                         |
+| `APP_VERSION` | `6.21.6`                     | 应用版本                         |
 | `APP_ENV`     | （空）                       | 环境标记，填 `production` 即启用生产约束（生产未开 `FORCE_HTTPS` 则拒绝启动） |
 | `DEBUG`       | `false`                      | 调试模式（生产环境必须为 false） |
 | `HOST`        | `0.0.0.0`                    | 监听地址（**仅 `run.py` 开发服务器生效**；Gunicorn 下由 `GUNICORN_BIND` 决定） |
@@ -691,6 +691,10 @@ npm run dev
 | `QWEATHER_LOCATION`       | `106.55,29.56`                | 城市定位，必须「经度,纬度」（预警据此解析）|
 | `QWEATHER_CITY_NAME`      | `重庆`                        | 城市名称（推送消息显示用）                 |
 | `WEATHER_SCHEDULE_DAILY`  | `07:00`                       | 每日天气晨报推送时间                       |
+| `QWEATHER_PROJECT_ID`      | （空）     | JWT 项目 ID（sub），与 CREDENTIAL_ID 配套（Ed25519 JWT 认证） |
+| `QWEATHER_PRIVATE_KEY_PATH`| `ed25519-private.pem` | Ed25519 私钥文件路径（JWT 签名用） |
+| `QWEATHER_SECRET`          | （空）     | 旧版 SHA-256 密钥（已废弃，仅兼容） |
+| `WEATHER_WEBHOOK`          | （空）     | 天气独立推送 Webhook（为空则回退到 WECOM_WEBHOOK） |
 
 ### 电量模块配置
 
@@ -724,6 +728,11 @@ npm run dev
 | `JWXT_HEADLESS`            | `true`         | 无头浏览器模式                         |
 | `JWXT_TIMEOUT`             | `180`          | 爬虫超时（秒）                         |
 | `SPIDER_HEADLESS`          | `true`         | 爬虫无头模式开关                       |
+| `COURSE_SPIDER_ENABLED`     | `true`      | 定时爬取总开关（管理端「设置」页可改） |
+| `COURSE_SPIDER_INTERVAL_HOURS` | `6`       | 爬虫间隔（小时），`interval` 模式下生效 |
+| `COURSE_PUSH_ENABLED`       | `true`      | 课程推送总开关（前端可改） |
+| `COURSE_DEFAULT_PUSH_ENABLED` | `true`    | 新课程默认开启推送 |
+| `COURSE_ENABLE_BACKGROUND`  | `true`      | 课程表图片是否启用背景图 |
 
 ### 安全与跨域配置
 
@@ -747,6 +756,14 @@ npm run dev
 | `WECOM_WEBHOOK`        | （空） | 主推送 Webhook URL（支持多个，逗号分隔） |
 | `WECOM_STATUS_WEBHOOK` | （空） | 状态通知专用 Webhook（可选）             |
 
+### 小程序绑定配置
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `WECHAT_MINIAPP_APPID` | （空） | 微信小程序 AppID（小程序绑定登录用） |
+| `WECHAT_MINIAPP_SECRET` | （空） | 微信小程序 AppSecret（仅服务端，严禁进前端） |
+| `WECHAT_SESSION_TIMEOUT` | `259200` | 小程序会话闲置超时（秒，默认 3 天，与 JWT refresh idle 默认一致） |
+
 ### 其他配置
 
 | 变量            | 默认值   | 说明                                     |
@@ -758,9 +775,9 @@ npm run dev
 
 ## API 接口文档
 
-> **本节为常用端点摘录**（以管理端接口为主）。应用实际注册 **195 个路由**，其中小程序端 `/api/miniapp/*` 48 个、管理端 `/api/admin/*` 84 个，本节未逐一罗列。各组的权威端点清单见 `app/api/*_routes.py` 文件头部 docstring（路由定义在同一文件），或运行时以 `app.url_map` 为准。
+> **本节为常用端点摘录**（以管理端接口为主）。应用实际注册 **198 个路由**（静态 AST 解析自当前代码；运行时 `app.url_map` 条数可能因 Flask 对重复路径的内部去重而略有出入），其中小程序端 `/api/miniapp/*` 49 个、管理端 `/api/admin/*` 85 个，本节未逐一罗列。各组的权威端点清单见 `app/api/*_routes.py` 文件头部 docstring（路由定义在同一文件），或运行时以 `app.url_map` 为准。
 >
-> 本节**未收录**的端点组：`/api/miniapp/*`（小程序课表/天气/电量/反馈/公告/消息/绑定等）与 `/api/miniapp/auth/*`、`/api/holiday/*`（假期静默）、`/api/admin/announcements/*`（公告中心）、`/api/admin/notifications/*`、`/api/admin/ip-blacklist/*`、`/api/admin/roster/*`（学生名单）、`/api/admin/session*`、`/api/tasks/*`、`/api/admin/feedback` 与 `/api/miniapp/feedback/*`，以及静态资源 `/api/announcement-covers|images/*`、`/api/feedback-images/*`。
+> 本节**未收录**的端点组：`/api/miniapp/*`（小程序课表/天气/电量/反馈/公告/消息/绑定等）与 `/api/miniapp/auth/*`、`/api/holiday/*`（假期静默）、`/api/admin/announcements/*`（公告中心）、`/api/admin/notifications/*`、`/api/admin/ip-blacklist/*`、`/api/admin/roster/*`（学生名单）、`/api/auth/session*`（会话管理，实际注册前缀为 `/api/auth`）、`/api/tasks/*`、`/api/admin/feedback` 与 `/api/miniapp/feedback/*`，以及静态资源 `/api/announcement-covers/*`、`/api/announcement-images/*`、`/api/feedback-images/*`。
 
 ### 认证方式
 
@@ -850,7 +867,6 @@ POST /api/auth/login
 | 端点                        | 方法 | 认证              | 说明                                                      | 参数                 |
 | --------------------------- | ---- | ----------------- | --------------------------------------------------------- | -------------------- |
 | `/api/`                     | GET  | 无                | 服务信息，返回版本和端点索引                              | --                   |
-| `/api/ping`                 | GET  | 无                | 健康检查（轻量级）                                        | --                   |
 | `/api/health`               | GET  | 无                | 健康检查（含服务状态详情）                                | --                   |
 | `/api/status`               | GET  | `@jwt_required`   | 系统状态（认证开关、数据就绪、课表/任务统计、适配器状态） | --                   |
 | `/api/trigger`              | POST | `@jwt_required`   | 手动触发推送                                              | `?force=false&type=` |

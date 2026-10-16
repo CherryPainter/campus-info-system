@@ -69,7 +69,7 @@ export default function AdminLayout() {
   // 根据角色动态生成菜单
   const menuItems: MenuDataItem[] = isAdmin
     ? [
-        { path: "/dashboard", name: "仪表盘", icon: <DashboardOutlined /> },
+        { path: "/dashboard", name: "概览", icon: <DashboardOutlined /> },
         { path: "/access", name: "用户与权限", icon: <UserOutlined /> },
         { path: "/weather", name: "天气管理", icon: <CloudOutlined /> },
         { path: "/electricity", name: "电量管理", icon: <ThunderboltOutlined /> },

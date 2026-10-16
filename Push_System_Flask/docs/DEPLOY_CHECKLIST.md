@@ -1,6 +1,6 @@
 # Linux 部署检查报告与部署方案
 
-> 检查日期：2026-06-25 | 项目版本：v6.21.5 | 最近复核：2026-10-01（版本、键名、代码行号引用与 CORS 说明均已逐条对齐代码）
+> 检查日期：2026-06-25 | 项目版本：v6.21.6 | 最近复核：2026-10-01（版本、键名、代码行号引用与 CORS 说明均已逐条对齐代码）
 
 ---
 
@@ -57,7 +57,7 @@
 ```ini
 # ========== 应用配置 ==========
 APP_NAME=校园信息聚合与智能推送系统
-APP_VERSION=6.21.5
+APP_VERSION=6.21.6
 DEBUG=false
 # 填 production 即启用生产约束（当前是「生产未开 FORCE_HTTPS 拒绝启动」）
 APP_ENV=production
@@ -232,7 +232,7 @@ server {
 # /etc/systemd/system/push-system.service
 
 [Unit]
-Description=Campus Push System v6.21.5
+Description=Campus Push System v6.21.6
 After=network-online.target
 Wants=network-online.target
 

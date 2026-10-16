@@ -29,7 +29,7 @@ import pytest
 from flask import Flask, jsonify, redirect, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from _paths import BACKEND_ROOT as ROOT
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 

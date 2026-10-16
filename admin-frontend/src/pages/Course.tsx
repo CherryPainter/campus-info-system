@@ -127,6 +127,26 @@ function weeksOverlap(a: any, b: any): boolean {
 }
 
 /**
+ * 课程身份判定：同学期 + 同星期 + 同课名 + 同教室(空值兼容) + 同教师(空值兼容) + 周次重叠。
+ * 与删除级联（handleDelete 的 sameCourses）、后端编辑排除（old_courses 查询）同一口径，
+ * 用于编辑时在节次多选里「整体排除正在修改的这门课」自身。
+ *
+ * 之所以不能只按 id / course_key 排除：后端把一门多节次课按「单节存多行」存储，
+ * 且后台自建课 course_key 恒为 NULL —— 仅靠 id 排除只会排除首行，兄弟行（其余节次）
+ * 会被误判成「被占用」而禁用选项，导致编辑时「只能加节次、不能减节次」。
+ */
+function isSameCourseGroup(a: any, b: any): boolean {
+  return (
+    (a.semester_id ?? -1) === (b.semester_id ?? -1) &&
+    a.week_day === b.week_day &&
+    a.course_name === b.course_name &&
+    fieldsMatch(a.classroom, b.classroom) &&
+    fieldsMatch(a.teacher, b.teacher) &&
+    weeksOverlap(a.weeks, b.weeks)
+  );
+}
+
+/**
  * 按 course_weeks 真实日期区间计算某周某天的表头日期（MM-DD），保证与后端一致。
  * 优先用后端 available_weeks 中该周的 start_date 推算；缺数据时回退到写死的学期开学日。
  */
@@ -663,35 +683,11 @@ export default function Course() {
       setModalVisible(false);
       form.resetFields();
 
-      // 先删除当前点击的课程
+      // 后端按「课程身份」整组级联硬删（含该课全部节次），一次调用即整门课删除。
+      // 列表接口把同一门多节次课合并成一行返回，但 DB 按单节存多行；
+      // 旧前端逐行级联依赖列表里的兄弟行（已被合并、不存在）→ 只能逐节次删（1-4 节要删 4 次）。
+      // 现交由后端统一处理，前端只需删这一行 id。
       await courseApi.delete(course.id);
-
-      // 从两个数据源（timetableData 和 courses）中查找同一课程的其他记录
-      const allCourses = [...(timetableData?.courses || []), ...(courses || [])];
-
-      // 去重（通过 id）
-      const uniqueCourses = Array.from(new Map(allCourses.map((c) => [c.id, c])).values());
-
-      // 筛选出「同一门课」的其他记录并级联删除。
-      // 课程身份 = 同学期 + 同星期 + 同课名 + 同教室 + 同教师(空值兼容) + 周次有交集。
-      // 注意：不再按 week_number（入库批次标记）匹配——同源课程分批次入库时
-      // week_number 不同会导致漏删/错删；学期已由数据源（getList/getTimetable
-      // 已按 semester_id 过滤）限定，此处再加 semester_id 双保险。
-      const sameCourses = uniqueCourses.filter(
-        (c) =>
-          c.id !== course.id &&
-          (c.semester_id ?? -1) === (course.semester_id ?? -1) &&
-          c.week_day === course.week_day &&
-          c.course_name === course.course_name &&
-          fieldsMatch(c.classroom, course.classroom) &&
-          fieldsMatch(c.teacher, course.teacher) &&
-          weeksOverlap(c.weeks, course.weeks)
-      );
-
-      for (const c of sameCourses) {
-        await courseApi.delete(c.id);
-      }
-
       message.success("课程删除成功");
       fetchTimetable(selectedWeek);
       fetchCourses(selectedWeek);
@@ -773,15 +769,14 @@ export default function Course() {
   const occupiedPeriods = useMemo<Set<number>>(() => {
     const result = new Set<number>();
     if (formWeekDay == null) return result;
-    const editingId = editingCourse?.id;
-    const editingKey = editingCourse?.course_key;
     const source = [...(timetableData?.courses || []), ...(courses || [])];
     const seen = new Set<number>();
     for (const c of source) {
       if (seen.has(c.id)) continue;
       seen.add(c.id);
-      if (c.id === editingId) continue;
-      if (editingKey && c.course_key === editingKey) continue;
+      // 编辑时整体排除「正在修改的这门课」自身（含按单节存多行的兄弟行与 course_key 为 NULL 的后台课），
+      // 否则自身节次会被误判为「被占用」而禁用，导致只能加不能减。
+      if (editingCourse && isSameCourseGroup(c, editingCourse)) continue;
       if (c.semester_id !== selectedSemester) continue;
       if (c.week_day !== formWeekDay) continue;
       if (!weeksOverlap(c.weeks, formWeeks)) continue;

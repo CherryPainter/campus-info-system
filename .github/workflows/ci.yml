@@ -28,6 +28,7 @@ jobs:
       - name: 安装测试依赖
         run: pip install pytest
       - name: 运行测试
+        working-directory: .
         run: pytest -q
 
   frontend:

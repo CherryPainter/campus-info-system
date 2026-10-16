@@ -41,10 +41,12 @@ import os
 import re
 import sys
 
-# 把项目根目录加入 sys.path，确保能 import app.*
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
+# 把后端项目根目录加入 sys.path，确保能 import app.*
+# 本脚本已上移至仓库根 /tools，后端代码位于 /Push_System_Flask
+_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_BACKEND_ROOT = os.path.join(_BACKEND_ROOT, "Push_System_Flask")
+if _BACKEND_ROOT not in sys.path:
+    sys.path.insert(0, _BACKEND_ROOT)
 
 from app.core.config import Config
 

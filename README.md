@@ -1,13 +1,13 @@
 # 校园信息聚合与智能推送系统
 
-[![version](https://img.shields.io/badge/version-v6.21.5-blue)](https://github.com/CherryPainter/campus-info-system)
+[![version](https://img.shields.io/badge/version-v6.21.6-blue)](https://github.com/CherryPainter/campus-info-system)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![deploy](https://img.shields.io/badge/deploy-生产环境-success)](https://github.com/CherryPainter/campus-info-system)
 [![stack](https://img.shields.io/badge/stack-Flask%20%7C%20React%20%7C%20MySQL-blue)](https://github.com/CherryPainter/campus-info-system)
 
 > 一套「采集 → 聚合 → 主动推送」的校园信息中台：自动获取课表、天气、宿舍电量，并通过企业微信机器人主动推送到群，配套 React 管理后台统一展示与配置，并提供微信小程序学生端「校园宜知行」随身查看。
 >
-> 毕业设计项目 · 当前版本 `v6.21.5` · 已部署上线
+> 毕业设计项目 · 当前版本 `v6.21.6` · 已部署上线
 
 ---
 
@@ -158,9 +158,13 @@ push_system/
 
 - 后端详细技术文档 —— 后端分层架构、推送流水线、JWT 双 Token 认证、课表爬虫端到端、消息模板分发、登录安全信号感知（均含 mermaid 图）、数据入库管道与手动课保护等：[Push_System_Flask/README.md](Push_System_Flask/README.md)
 - 后端部署与安全文档 —— DEPLOY_LINUX / DEPLOY_CHECKLIST / 安全配置指南 / 安全配置审计 等：[Push_System_Flask/docs/](Push_System_Flask/docs/)
-- 参考文档（本地设计 / 验证资料，**未纳入版本控制**，因此仓库中不存在该目录）—— 课表爬虫爬取与解析设计、课程表结构设计、爬取验证报告
 - 小程序端技术文档 —— Taro 工程结构、环境变量、开发 / 生产构建与发布：[miniapp-frontend/README.md](miniapp-frontend/README.md)
 - 变更记录 CHANGELOG —— 版本迭代与功能变更（单一真相源）：[CHANGELOG.md](CHANGELOG.md)
+
+### 规划与设计稿（仓库内含）
+
+- [通知与订阅系统开发计划书.md](通知与订阅系统开发计划书.md) —— 站内通知与订阅消息系统的设计稿：数据模型、后端 API 清单、服务设计，以及小程序 / 管理端的实施分期。
+- [校园信息聚合与智能推送系统\[前端\].md](<校园信息聚合与智能推送系统[前端].md>) —— 微信小程序「校园宜知行」AI 协同开发指南；含 2026-10-01 复核结论（原则条款仍有效，技术栈 / 页面结构已演进，附对照说明）。
 
 ---
 

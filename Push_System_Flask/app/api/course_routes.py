@@ -760,8 +760,14 @@ def update_course(course_id: int):
 @course_bp.route("/<int:course_id>", methods=["DELETE"])
 @admin_required
 def delete_course(course_id: int):
-    """硬删除课程（从数据库中完全删除）"""
+    """硬删除课程（从数据库中完全删除）
 
+    级联删除「整门课」：后端 /list 把同一门多节次课（week_day + course_name +
+    classroom + week_number 同键）合并成一行返回，但 DB 按单节存多行（一门课按单节存多行）。
+    若只按 id 删一行，会出现「删一次只少一个节次、要删多次才删完」的问题（用户实报：
+    1-4 节的自建课需删 4 次）。此处按与列表合并一致的课程身份整组删除，列表点一次即
+    整门课（含全部节次）消失。
+    """
     session = get_db()
     try:
         course = session.query(Course).filter(Course.id == course_id).first()
@@ -769,11 +775,36 @@ def delete_course(course_id: int):
             return api_error(message="课程不存在", http_status=404)
 
         course_name = course.course_name
+
+        # 被点击的这行总是删（即便 semester_id 等为空也保证至少删这一行）
         session.delete(course)
+
+        # 课程身份（与 /list 合并键一致）：同学期 + 同星期 + 同课名 + 同教室 + 同 week_number。
+        # classroom / week_number 可能为 NULL，SQL 中 NULL == NULL 不成立，故分别用 is_(None) 比较。
+        sib_conds = [
+            Course.id != course.id,
+            Course.semester_id == course.semester_id,
+            Course.week_day == course.week_day,
+            Course.course_name == course.course_name,
+            Course.is_deleted.is_(False),
+        ]
+        if course.classroom is None:
+            sib_conds.append(Course.classroom.is_(None))
+        else:
+            sib_conds.append(Course.classroom == course.classroom)
+        if course.week_number is None:
+            sib_conds.append(Course.week_number.is_(None))
+        else:
+            sib_conds.append(Course.week_number == course.week_number)
+
+        siblings = session.query(Course).filter(*sib_conds).all()
+        for s in siblings:
+            session.delete(s)
+
         session.commit()
         _reload_schedule_cache()
 
-        logger.info(f"[课程] 硬删除课程: {course_name}")
+        logger.info(f"[课程] 硬删除课程: {course_name}（含 {len(siblings) + 1} 个节次行）")
         return api_success(message="课程已删除")
     finally:
         session.close()
@@ -817,15 +848,40 @@ def batch_delete_courses():
 
     session = get_db()
     try:
+        # 展开级联：每个给定 id 的「整门课」兄弟行一并删除（与 /list 合并键、单删级联一致），
+        # 避免勾选合并后的 1-4 节一行只删掉其中一节次。
+        all_ids = set(ids)
+        for cid in ids:
+            c = session.query(Course).filter(Course.id == cid).first()
+            if not c:
+                continue
+            conds = [
+                Course.id != cid,
+                Course.semester_id == c.semester_id,
+                Course.week_day == c.week_day,
+                Course.course_name == c.course_name,
+                Course.is_deleted.is_(False),
+            ]
+            if c.classroom is None:
+                conds.append(Course.classroom.is_(None))
+            else:
+                conds.append(Course.classroom == c.classroom)
+            if c.week_number is None:
+                conds.append(Course.week_number.is_(None))
+            else:
+                conds.append(Course.week_number == c.week_number)
+            for s in session.query(Course).filter(*conds).all():
+                all_ids.add(s.id)
+
         deleted = (
             session.query(Course)
-            .filter(Course.id.in_(ids))
+            .filter(Course.id.in_(all_ids))
             .delete(synchronize_session=False)
         )
         session.commit()
         _reload_schedule_cache()
 
-        logger.info(f"[课程] 批量硬删除 {deleted} 条课程（ids={ids[:50]}）")
+        logger.info(f"[课程] 批量硬删除 {deleted} 条课程（ids={sorted(all_ids)[:50]}）")
         return api_success(message=f"已删除 {deleted} 条课程")
     finally:
         session.close()

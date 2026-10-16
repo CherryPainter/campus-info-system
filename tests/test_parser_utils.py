@@ -11,7 +11,7 @@ CourseTableTool 上的同名方法行为完全一致（仅从实例方法变为�
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from _paths import BACKEND_ROOT as ROOT
 SPIDER_DIR = os.path.join(ROOT, "app", "cqie-course-timetable")
 if SPIDER_DIR not in sys.path:
     sys.path.insert(0, SPIDER_DIR)

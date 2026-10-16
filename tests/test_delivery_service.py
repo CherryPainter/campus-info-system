@@ -372,7 +372,7 @@ class TestProcessPendingTasks:
         assert uts.created, "主推送成功仍应写入执行历史"
 
     def test_missing_adapter_marks_failed_not_throws(self, monkeypatch):
-        """无对应 adapter：标记 failed，且不抛异常（fail-safe）。"""
+        """无对应 adapter 且无可补发的 markdown 内容（字符串模板）：标记 failed，不抛异常（fail-safe）。"""
         task, _, _, _, _ = _install_fakes(monkeypatch, holiday_active=False, adapter_instance=None)
         task.pending = [
             {"task_id": "t4", "task_type": "weather", "sub_type": "daily", "course_info": {}}
@@ -381,6 +381,92 @@ class TestProcessPendingTasks:
         ds._process_pending_tasks()  # 不应抛异常
 
         assert ("t4", "failed") in task.updates
+
+    def test_no_global_adapter_but_scoped_fanout_succeeds(self, monkeypatch):
+        """回归（2026-10-16「可全局可定向」）：模块只有定向 webhook、没有全局 webhook 时，
+        原逻辑 get_adapter 返回 None → 直接 failed 且不补发 → 定向 webhook 也收不到（死锁）。
+        修复后应退而把广播补发给定向 webhook；补发命中则标记成功，不再 failed。
+        """
+        task, _, _, _, uts = _install_fakes(
+            monkeypatch, holiday_active=False, adapter_instance=None
+        )
+        monkeypatch.setattr(ds_mod, "template_service", _FakeMarkdownTemplate())
+
+        from app.services import webhook_push_service as wps_mod
+
+        calls = []
+
+        def _record_fanout(module, content):
+            calls.append((module, content))
+            return 2  # 命中 2 个定向 webhook
+
+        monkeypatch.setattr(wps_mod, "fanout_broadcast_webhooks", _record_fanout)
+
+        task.pending = [
+            {
+                "task_id": "t7",
+                "task_type": "schedule_summary",
+                "sub_type": "daily",
+                "course_info": [],
+            }
+        ]
+        ds = _new_service()
+        ds._process_pending_tasks()
+
+        assert calls == [("course", "rendered:schedule_summary_daily")], "无全局适配器时应补发定向"
+        assert ("t7", "success") in task.updates, "补发命中应标记成功，而非 failed"
+        assert ("t7", "failed") not in task.updates
+        assert uts.created, "补发成功仍应写入执行历史"
+
+    def test_no_adapter_and_no_scoped_webhook_still_failed(self, monkeypatch):
+        """无全局适配器且无定向 webhook 可补发（fanout 命中 0）：仍标记 failed（不误判成功）。"""
+        task, _, _, _, _ = _install_fakes(
+            monkeypatch, holiday_active=False, adapter_instance=None
+        )
+        monkeypatch.setattr(ds_mod, "template_service", _FakeMarkdownTemplate())
+
+        from app.services import webhook_push_service as wps_mod
+
+        monkeypatch.setattr(wps_mod, "fanout_broadcast_webhooks", lambda module, content: 0)
+
+        task.pending = [
+            {
+                "task_id": "t8",
+                "task_type": "schedule_summary",
+                "sub_type": "daily",
+                "course_info": [],
+            }
+        ]
+        ds = _new_service()
+        ds._process_pending_tasks()
+
+        assert ("t8", "failed") in task.updates
+
+    def test_no_adapter_non_broadcast_module_not_fanned_out(self, monkeypatch):
+        """非广播模块（system）无全局适配器时不补发定向，保持 failed（避免范围蔓延）。"""
+        task, _, _, _, _ = _install_fakes(
+            monkeypatch, holiday_active=False, adapter_instance=None
+        )
+        monkeypatch.setattr(ds_mod, "template_service", _FakeMarkdownTemplate())
+
+        from app.services import webhook_push_service as wps_mod
+
+        called = []
+
+        def _record_fanout(module, content):
+            called.append(module)
+            return 5
+
+        monkeypatch.setattr(wps_mod, "fanout_broadcast_webhooks", _record_fanout)
+
+        task.pending = [
+            {"task_id": "t9", "task_type": "system", "sub_type": "alarm", "course_info": {}}
+        ]
+        ds = _new_service()
+        ds._process_pending_tasks()
+
+        assert called == [], "system 不是广播模块，不应补发定向"
+        assert ("t9", "failed") in task.updates
 
     def test_empty_pending_is_noop(self, monkeypatch):
         task, _, adapter_obj, _, uts = _install_fakes(monkeypatch, holiday_active=False)

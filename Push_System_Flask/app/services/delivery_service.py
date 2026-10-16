@@ -171,16 +171,44 @@ class DeliveryService:
                                 process_id, "failed", message="推送失败", error=result.get("error")
                             )
                     else:
-                        task_service.update_status(
-                            task["task_id"], "failed", {"error": f"No adapter for {adapter_name}"}
-                        )
-                        self._update_push_process(
-                            process_id,
-                            "failed",
-                            message="推送失败",
-                            error=f"No adapter for {adapter_name}",
-                        )
-                        self._notify_delivery_failure(task, f"No adapter for {adapter_name}")
+                        # 无全局适配器时的兜底（2026-10-16）：course/weather 属「公共广播」，
+                        # 内容不含个人隐私，定向 (student/dorm) webhook 本就应收到广播副本
+                        # （正常情况下由 adapter.send 之后的 fanout 补发）。若该模块**只有定向
+                        # webhook、没有全局 webhook**，get_adapter 返回 None，原逻辑直接 failed
+                        # 且不补发 → 形成「谁也收不到」的死锁。这里退而把广播补发给定向 webhook，
+                        # 使广播「可全局、可定向」：有全局走全局 + 补发定向，无全局则只发定向。
+                        content = ""
+                        if isinstance(message, dict):
+                            content = (message.get("markdown") or {}).get("content", "")
+                        sent = 0
+                        if adapter_name in ("course", "weather") and content:
+                            try:
+                                from app.services.webhook_push_service import (
+                                    fanout_broadcast_webhooks,
+                                )
+
+                                sent = fanout_broadcast_webhooks(adapter_name, content)
+                            except Exception as exc:
+                                logger.warning(
+                                    f"[推送执行] 无全局适配器时定向补发失败（不影响主流程）: {exc}"
+                                )
+                        if sent > 0:
+                            task_service.update_status(
+                                task["task_id"], "success", {"via": "scoped_fanout"}
+                            )
+                            self._update_push_process(
+                                process_id,
+                                "completed",
+                                message=f"无全局 webhook，已补发 {sent} 个定向 webhook",
+                                progress=100,
+                            )
+                        else:
+                            err = f"No adapter for {adapter_name}"
+                            task_service.update_status(task["task_id"], "failed", {"error": err})
+                            self._update_push_process(
+                                process_id, "failed", message="推送失败", error=err
+                            )
+                            self._notify_delivery_failure(task, err)
                 else:
                     task_service.update_status(
                         task["task_id"], "failed", {"error": "Template not found"}

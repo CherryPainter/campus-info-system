@@ -51,7 +51,7 @@ const features = [
   },
   {
     icon: <DashboardOutlined style={{ fontSize: 36, color: "#13c2c2" }} />,
-    title: "可视化仪表盘",
+    title: "可视化概览",
     desc: "管理后台集中展示系统运行状态、模块健康度、推送与任务统计，配合 ECharts 图表，帮助管理员全面掌握系统动态。",
     tag: "数据一目了然",
   },
@@ -69,7 +69,7 @@ const structureItems = [
 const moduleGroups = [
   {
     title: "概览",
-    items: "仪表盘（系统状态、任务与推送统计）",
+    items: "概览（系统状态、任务与推送统计）",
   },
   {
     title: "数据模块",

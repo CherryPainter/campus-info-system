@@ -4,6 +4,56 @@
 
 ---
 
+## v6.21.6 (2026-10-16)
+
+> 发版类型：**缺陷修复 + 文档/UI（patch）**。修复「模块只有定向 webhook 时广播推送失败」的死锁（广播现可全局可定向）；补完 README API 接口文档与代码一致性核对；课表编辑「只能加不能减节次」禁用误判修复；课程删除整组级联修复；管理端菜单「仪表盘」改名「概览」；测试 / 工具目录上移至仓库根并收口测试路径（全量回归转绿）；技术总结文档规模声明同步；版本号 v6.21.5 → v6.21.6。
+
+### 推送：修复「模块只有定向 webhook 时广播推送失败」的死锁（2026-10-16）
+- **现象**：course 模块只配了定向（student/dorm）webhook、没有全局 webhook 时，「每日课表推送」每次落 `task_processes.status=failed`，且**谁都收不到**（含那些定向 webhook 自身）。
+- **根因**：模块广播适配器（`adapter_service._load_webhooks_from_db`，`app/services/adapter_service.py:355-397`）只纳入 `scope=global` 的 webhook；定向 webhook 的广播副本本由 `fanout_broadcast_webhooks` 补发，但该补发**挂在 `adapter.send()` 之后**（`app/services/delivery_service.py:142-155`）。模块无全局 webhook 时 `get_adapter` 返回 `None` → 直接走 failed 分支、补发不执行 → 死锁。
+- **修复**（`Push_System_Flask/app/services/delivery_service.py`，仅改「无全局适配器」的 `else` 分支）：对**广播模块（course/weather）** 的 markdown 消息退而调用 `fanout_broadcast_webhooks` 补发给定向 webhook；补发命中 ≥1 → 标记 `success` / 执行历史 `completed`；命中 0 或非广播模块（system 等）仍保持原 `failed`（`No adapter for X`）语义，**不扩大到非广播模块，避免范围蔓延**。
+- **效果**：广播「可全局、可定向」——有全局 webhook 时走全局 + 补发定向；只有定向 webhook 时也照常投递，不再死锁。
+- **验证**：`tests/test_delivery_service.py` 新增 3 项用例（无全局+定向补发成功→success / 无全局且无定向→仍 failed / system 非广播模块不补发→仍 failed）；该文件 16 项全绿；已**反向验证**——临时换回修复前代码后「无全局+定向补发」用例确实变红。备份 `delivery_service.py.bak`（gitignored）。
+- **未验证边界**：本机无 DB/Redis，未做真实链路联调；真实数据下的端到端需在部署环境复跑。
+
+### README API 接口文档与代码一致性核对修正（2026-10-16）
+- **范围**：继续 2026-10-14 的「文档 vs 代码一致性审计」，补完 API 接口文档段（776+ 行）的逐端点核对。
+- **方法**：用 AST 静态解析全仓库 `*_routes.py` 的 `@bp.route` / `add_url_rule` 装饰器，结合 `app/__init__.py` 的 `register_blueprint` 前缀（注册前缀会**覆盖**蓝图自身 `url_prefix`），提取 **198 条唯一路径**作为权威基线（脚本：`技术总结/dev-scripts/extract_routes_ast.py`、`readme_api_check.py`，gitignored）。
+- **修正 1（虚构端点）**：删除核心课表 API 表中代码里不存在的 `/api/ping`（代码仅有 `/api/health`、`/api/status`，无 ping 路由）。
+- **修正 2（路由总数过时）**：顶部「195 个路由 / 小程序 48 / 管理端 84」更新为 **198 / 49 / 85**（静态 AST 解析值；同时注明运行时 `app.url_map` 条数可能因 Flask 对重复路径的内部去重而略有出入，以部署环境 `len(app.url_map.iter_rules())` 复核为准）。
+- **修正 3（未收录清单表述错误）**：`/api/admin/session*` 改为 `/api/auth/session*`（会话路由实际注册前缀为 `/api/auth`）；`/api/announcement-covers|images/*` 拆为 `/api/announcement-covers/*` 与 `/api/announcement-images/*`。
+- **核对结论**：101 个表格端点逐一比对，除已删的 `/api/ping` 外全部真实存在，方法 / 认证标注无明显不符。
+- **顺带发现**：README 顶部路由数此前是 2026-10-01 用 `create_app()` 跑 `url_map` 实测的旧值，之后代码路由已变动，文档数字滞后——本次以静态解析口径刷新并标注。
+
+### 技术总结文档与代码一致性同步（2026-10-16）
+- **背景**：上一节完成 README 的 API 文档核对后，同步把 `技术总结/`（本地笔记，gitignored，非项目文档）里与当前代码直接冲突的规模类声明对齐。
+- **规模声明刷新**（`技术总结/00-背景速览.md`）：原「约 115 个 Python 模块、19 张表、110 个左右的 API 端点；前端 65 个 TS/TSX 文件」刷新为实测值——后端约 153 个 Python 模块（含爬虫）、32 张 ORM 表（以 `__tablename__` 为准）、约 198 条路由（静态解析口径，README 有按业务域明细）、前端 181 个 TS/TSX 文件（admin-frontend 79 + miniapp-frontend 102，均不含 node_modules）。
+- **历史叙述加注（不改写事实）**：`G-数据与存储/G1`、`I-规范与质量/I3`、`A-后端架构与工程/A5` 中多处 v6.15.0 重构时的「19/20 张表」快照，补注「截至 2026-10-16 再次全量核对 `__tablename__` 为 32 张」，并保留原「文档漂移 / 删除比新增更易漏」的教训；其中 A5 原本挂的 `【待核实】当前运行实例真实表数` 待办已闭环为「已核实：32 张」。
+- **口径说明**：技术总结定位为「剥掉业务外壳的通用方法论」，故不收录「195/198 路由」类项目特定声明；上述同步只修正会直接误导读者的当前规模数字与现在时态的「代码=20 张」表述。
+
+### 仓库结构：测试与工具目录上移至仓库根 + 测试路径收口（2026-10-14 ~ 2026-10-16）
+- **背景**：`Push_System_Flask/{tests, pytest.ini, tools}` 上移到仓库根（`tests/`、`pytest.ini`、`tools/`），与 `admin-frontend/`、`miniapp-frontend/` 平级，使 `pytest` 在仓库根即可直接运行（CI 的测试步骤相应加 `working-directory: .`；`tests/conftest.py` 改为把 `Push_System_Flask` 加入 `sys.path`）。
+- **暴露的问题**：迁移时各测试顶部的 `ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))` 语义由「后端根」变成了「仓库根」，导致以 `ROOT/app/**`、`ROOT/.env.example`、`ROOT/app/cqie-course-timetable` 为基准读源码的 11 个测试（多为源码守卫 / fence 用例）读文件 `FileNotFoundError`，`tests/test_parser_utils.py` 更是在**收集阶段**就 `ModuleNotFoundError` → 整轮 `pytest` 被中断、一条都跑不了。
+- **修复**：新增 `tests/_paths.py` **单点**定义 `REPO_ROOT` / `BACKEND_ROOT`，11 个受影响测试改为 `from _paths import BACKEND_ROOT as ROOT`（其中 `tests/test_no_is_true_false_antipattern.py` 等按 `ROOT/app/**` 遍历的用例语义随之恢复）；`tools/clean_orphan_announcement_images.py` 的 `_BACKEND_ROOT` 同步按新结构推导。
+- **验证**：仓库根全量 `pytest` **736 passed / 1 skipped**（skip 为本机无 Redis 的 TOTP Lua 用例，环境限制）；修复前收集即报错、无法出结果。
+
+### 课表编辑：修复「只能加节次不能减节次」的禁用误判（2026-10-13）
+- **现象**：编辑一门占多节次（如第 1-2 节）的课，节次多选里该课自身的节次被禁用，无法取消勾选（不能减），只能勾选其他空闲节次（只能加）。
+- **根因**：后端把一门多节次课按「单节存多行」存储，且后台自建课 `course_key` 恒为 NULL（`Push_System_Flask/app/api/course_routes.py` 创建分支未传 `course_key`）。前端 `occupiedPeriods` 仅按 `id` 排除正在编辑课程的「首行」、按 `course_key` 排除同组——因 `course_key` 为 NULL，按 `course_key` 的排除分支不成立，导致该课的兄弟行（其余节次）被当成「其他课程的已占用节次」而禁用。
+- **修复**：`admin-frontend/src/pages/Course.tsx` 的 `occupiedPeriods` 改为按「课程身份」（同学期 + 同星期 + 同课名 + 同教室(空值兼容) + 同教师(空值兼容) + 周次重叠）整体排除正在编辑的这门课自身组，与删除级联（`handleDelete` 的 sameCourses）、后端编辑排除（`old_courses` 查询）同一口径。删除原 `editingId` / `editingKey` 两个失效变量。
+
+### 管理端菜单改名：仪表盘 → 概览（2026-10-13）
+- `admin-frontend/src/layouts/AdminLayout.tsx` 菜单项 `name` 由「仪表盘」改为「概览」（`PageContainer` 自动以菜单名为页面标题，故页面标题一并更新）。
+- `admin-frontend/src/pages/About.tsx` 关于页描述同步改为「可视化概览 / 概览（系统状态、任务与推送统计）」；`Dashboard.tsx` 文件头注释同步。
+
+### 课程删除「整组级联」修复：自建多节次课一次删净（2026-10-13）
+- **现象（用户实报）**：一门自建多节次课（如第 1-4 节）在列表里是一行，但删除要连点 4 次才删完——每次只少一个节次。
+- **根因（前后端数据模型不一致）**：后端 `GET /course/list`（`course_routes.py`）把同一门多节次课**合并成一行**返回（合并键 `week_day + course_name + classroom + week_number`），但数据库按「单节存多行」存储；而 `DELETE /<id>` 只按 id 删**一行**，不级联。前端 `handleDelete` 的旧逐行级联依赖列表里存在兄弟行（已被合并、根本不在 `courses` 中）→ 筛不到兄弟行 → 每次只删 1 行，刷新后又合成 1 行 → 删 4 次。
+- **修复**：
+  - `course_routes.py` 的 `delete_course` 与 `batch_delete_courses` 改为按「课程身份」（与列表合并键一致：`semester_id + week_day + course_name + classroom + week_number`，`classroom`/`week_number` 为 NULL 时走 `is_(None)` 比较，因 SQL 中 `NULL == NULL` 不成立）整组级联硬删。被点击行本身始终删除，保证至少删这一行。
+  - `admin-frontend/src/pages/Course.tsx` 的 `handleDelete` 去掉失效的逐行级联循环，只调一次 `courseApi.delete(course.id)`（后端已整组删），避免级联后对已删兄弟行再删触发 404 误报。
+- **测试**：新增 `tests/test_course_delete_cascade.py`（3 passed，均反向验证：撤掉单删级联 → 2 个断言整组清零用例变红；批量删除级联独立保留故 1 个仍绿）。课程相关测试全绿（47 passed）。
+
 ## v6.21.5 (2026-10-13)
 
 ### 存量测试口径对齐与模型方言兼容修复：全量回归红单清零（2026-10-13）
@@ -616,7 +666,7 @@
 - `ruff check` 数量 `HEAD` 298 → 现值 297（无新增，顺手消掉 1 处既有 I001）；`admin-frontend` `tsc --noEmit` 通过。
 
 ### 安全：A 级问题修复（5 项，后端，2026-10-01）
-按全系统审计的待决策清单，修复 5 项 🟠（A1–A5）。五项均已配套**反向验证过**的回归测试（撤掉修复 → 用例变红），全量测试 **410 passed / 0 failed**（本轮新增 102 项）。详情见 `技术总结/安全审计-全系统-2026-10-01.md` 的 §1-B 与 §5。
+按全系统审计的待决策清单，修复 5 项 🟠（A1–A5）。五项均已配套**反向验证过**的回归测试（撤掉修复 → 用例变红），全量测试 **410 passed / 0 failed**（本轮新增 102 项）。详情见 `Push_System_Flask/docs/安全审计-全系统-2026-10-01.md` 的 §1-B 与 §5。
 
 **A1 IP 黑名单「自锁」围栏（可用性事故）**
 - 手动封禁此前只校验 IP 格式，因此可以把①本机/保留地址、②管理员白名单、③**当前请求来源 IP** 写进黑名单；而黑名单命中后全局 `before_request` 会拦下**所有 `/api/*`**（仅登录路径豁免）→ 后台当场全部 403，连解封接口一起被拦，无法自助恢复。
@@ -652,7 +702,7 @@
 - `ruff check` 未引入新问题（`HEAD` 版 4 处 I001 → 现值 2 处，剩余两处为既有且未触碰）。
 
 ### 安全：全系统审计 + 补齐三项服务端围栏（后端，2026-10-01）
-对**整个后端**做了分域安全审计（认证鉴权 / 注入与上传 / 数据暴露与服务端围栏），并按审计结论补掉三项围栏。完整报告见 `技术总结/安全审计-全系统-2026-10-01.md`（含 5 项 🟠、13 项 🟡 待决策清单）。
+对**整个后端**做了分域安全审计（认证鉴权 / 注入与上传 / 数据暴露与服务端围栏），并按审计结论补掉三项围栏。完整报告见 `Push_System_Flask/docs/安全审计-全系统-2026-10-01.md`（含 5 项 🟠、13 项 🟡 待决策清单）。
 
 **新增 `app/utils/url_guard.py`：出站 URL 安全校验（SSRF 防护）**
 - 管理端 webhook 此前**只校验 `https://` 前缀**，等于允许管理员（或被盗用的管理员令牌）把服务端当内网探针。
@@ -681,7 +731,7 @@
 - 按你的决定：**宿舍值不做多院校拓展**，保持单校口径。
 
 ### 安全：Webhook 服务端围栏 + 一次真 bug 修复（后端 + 管理端，2026-10-01）
-本轮对本批未提交改动（webhook 范围/隐私链路、小程序自建 webhook、学生名单宿舍字段）做了安全审计，并按审计结果补了服务端围栏。完整报告见 `技术总结/安全审计-webhook范围与围栏-2026-10-01.md`。
+本轮对本批未提交改动（webhook 范围/隐私链路、小程序自建 webhook、学生名单宿舍字段）做了安全审计，并按审计结果补了服务端围栏。完整报告见 `Push_System_Flask/docs/安全审计-webhook范围与围栏-2026-10-01.md`。
 
 **🔴 修复 1：全局 webhook 存不进去（功能性回归，本轮引入）**
 - `app/api/webhook_routes.py` 的 `_normalize_scope_target()` 对 `scope=global` 返回 `None`，而调用方把 `None` 当作「格式错误」→ **任何 `scope=global` 的 webhook（课表/天气/系统的默认范围）创建/编辑都会返回 400「scope_target 格式错误」**。管理端默认就是全局，等于绝大多数 webhook 保存失败。
